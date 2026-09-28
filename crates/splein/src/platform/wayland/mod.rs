@@ -60,11 +60,8 @@ pub struct AppContext {
 }
 
 pub fn run_overlay_daemon() -> eyre::Result<()> {
-    eprintln!("[splein] Pre-caching vector icons at startup...");
     let _ = get_icons();
-    eprintln!("[splein] Vector icons pre-cached successfully");
 
-    eprintln!("[splein] Connecting to Wayland compositor...");
     let conn = Connection::connect_to_env()?;
     let (globals, event_queue) = registry_queue_init(&conn)?;
     let qh = event_queue.handle();
@@ -77,7 +74,9 @@ pub fn run_overlay_daemon() -> eyre::Result<()> {
     let seat_state = SeatState::new(&globals, &qh);
     let output_state = OutputState::new(&globals, &qh);
 
-    let overlay_surface = OverlaySurface::new(&compositor_state, &layer_shell, &shm_state, &qh)?;
+    // Bind initially to the active/primary output
+    let initial_output = output_state.outputs().next();
+    let overlay_surface = OverlaySurface::new(&compositor_state, &layer_shell, &shm_state, &qh, initial_output.as_ref())?;
     let cursor_manager = CursorManager::new(&compositor_state, &shm_state, &qh)?;
 
     let state = WaylandAppState {
@@ -122,25 +121,27 @@ pub fn run_overlay_daemon() -> eyre::Result<()> {
     }
     let listener = UnixListener::bind(sock_path)?;
     listener.set_nonblocking(true)?;
-    eprintln!("[splein] IPC socket ready at {}", SOCKET_PATH);
+    eprintln!("[splein] IPC socket listening on {}", SOCKET_PATH);
 
     let ipc_source = Generic::new(listener, Interest::READ, Mode::Level);
     loop_handle.insert_source(ipc_source, |_, listener, ctx| {
         if let Ok((mut stream, _)) = listener.accept() {
-            let mut buf = [0u8; 32];
+            let mut buf = [0u8; 64];
             if let Ok(n) = stream.read(&mut buf) {
                 let cmd_str = String::from_utf8_lossy(&buf[..n]);
                 let cmd = cmd_str.trim();
-                eprintln!("[splein] IPC command received: '{}'", cmd);
 
-                let action = match cmd {
-                    "toggle" => Some(ctx.state.session.toggle_active()),
-                    "clear" => Some(ctx.state.session.clear()),
-                    "undo" => Some(ctx.state.session.undo()),
-                    _ => None,
-                };
-                if let Some(act) = action {
-                    ctx.state.process_action(act);
+                if cmd.starts_with("toggle") {
+                    let target_screen = cmd.strip_prefix("toggle").map(str::trim).filter(|s| !s.is_empty());
+                    ctx.state.toggle_overlay(target_screen);
+                    let _ = ctx.conn.flush();
+                } else if cmd == "clear" {
+                    let action = ctx.state.session.clear();
+                    ctx.state.process_action(action);
+                    let _ = ctx.conn.flush();
+                } else if cmd == "undo" {
+                    let action = ctx.state.session.undo();
+                    ctx.state.process_action(action);
                     let _ = ctx.conn.flush();
                 }
             }
@@ -149,7 +150,7 @@ pub fn run_overlay_daemon() -> eyre::Result<()> {
     })?;
 
     let _ = ctx.conn.flush();
-    eprintln!("[splein] Daemon running. Ready for 'toggle' commands.");
+    eprintln!("[splein] Daemon running. Waiting for commands...");
 
     loop {
         event_loop.dispatch(None, &mut ctx)?;
@@ -158,11 +159,51 @@ pub fn run_overlay_daemon() -> eyre::Result<()> {
 }
 
 impl WaylandAppState {
+    pub fn toggle_overlay(&mut self, target_screen: Option<&str>) {
+        if !self.session.is_active() {
+            let target_output = self.find_output(target_screen);
+            let needs_rebind = match (&self.surface.target_output, &target_output) {
+                (Some(current), Some(target)) => current != target,
+                (None, Some(_)) => true,
+                _ => false,
+            };
+
+            if needs_rebind {
+                self.recreate_surface_on_output(target_output.as_ref());
+            }
+        }
+
+        let action = self.session.toggle_active();
+        self.process_action(action);
+    }
+
+    fn find_output(&self, screen_name: Option<&str>) -> Option<wl_output::WlOutput> {
+        let mut first = None;
+        for output in self.output_state.outputs() {
+            if let Some(info) = self.output_state.info(&output) {
+                if let Some(target) = screen_name {
+                    if info.name.as_deref() == Some(target) {
+                        return Some(output);
+                    }
+                }
+                if first.is_none() {
+                    first = Some(output);
+                }
+            }
+        }
+        first
+    }
+
+    fn recreate_surface_on_output(&mut self, output: Option<&wl_output::WlOutput>) {
+        if let Ok(new_surface) = OverlaySurface::new(&self.compositor_state, &self.layer_shell, &self.shm_state, &self.qh, output) {
+            self.surface = new_surface;
+        }
+    }
+
     pub fn process_action(&mut self, action: SessionAction) {
         match action {
             SessionAction::Redraw => self.request_redraw(),
             SessionAction::ChangeInputPassthrough(passthrough) => {
-                eprintln!("[splein] Toggling overlay: passthrough={}, active={}", passthrough, self.session.is_active());
                 self.surface.waiting_for_frame = false;
                 self.surface.set_passthrough(passthrough, &self.compositor_state, &self.qh);
                 if passthrough {
@@ -194,12 +235,10 @@ impl WaylandAppState {
     }
 
     pub fn recreate_surface(&mut self) {
-        eprintln!("[splein] Recreating layer surface on active output...");
-        if let Ok(new_surface) = OverlaySurface::new(&self.compositor_state, &self.layer_shell, &self.shm_state, &self.qh) {
-            self.surface = new_surface;
-            self.surface.set_passthrough(!self.session.is_active(), &self.compositor_state, &self.qh);
-            self.request_redraw();
-        }
+        let target_output = self.surface.target_output.clone();
+        self.recreate_surface_on_output(target_output.as_ref());
+        self.surface.set_passthrough(!self.session.is_active(), &self.compositor_state, &self.qh);
+        self.request_redraw();
     }
 }
 
@@ -207,7 +246,6 @@ impl wayland_client::Dispatch<wl_region::WlRegion, ()> for WaylandAppState {
     fn event(_: &mut Self, _: &wl_region::WlRegion, _: wl_region::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {}
 }
 
-// In-Canvas Exact Keycode Bindings (q, w, e, r, t, y, u, i, o and 1..5)
 impl wayland_client::Dispatch<wl_keyboard::WlKeyboard, ()> for WaylandAppState {
     fn event(state: &mut Self, _: &wl_keyboard::WlKeyboard, event: wl_keyboard::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {
         if let wl_keyboard::Event::Key { key, state: key_state, .. } = event {
@@ -298,7 +336,14 @@ impl LayerShellHandler for WaylandAppState {
         let (mut w, mut h) = configure.new_size;
 
         if w == 0 || h == 0 {
-            if let Some(output) = self.output_state.outputs().next() {
+            if let Some(ref target) = self.surface.target_output {
+                if let Some(info) = self.output_state.info(target) {
+                    if let Some(mode) = info.modes.iter().find(|m| m.current).or_else(|| info.modes.first()) {
+                        w = mode.dimensions.0 as u32;
+                        h = mode.dimensions.1 as u32;
+                    }
+                }
+            } else if let Some(output) = self.output_state.outputs().next() {
                 if let Some(info) = self.output_state.info(&output) {
                     if let Some(mode) = info.modes.iter().find(|m| m.current).or_else(|| info.modes.first()) {
                         w = mode.dimensions.0 as u32;
@@ -310,7 +355,7 @@ impl LayerShellHandler for WaylandAppState {
         if w == 0 { w = 1920; }
         if h == 0 { h = 1080; }
 
-        eprintln!("[splein] Layer surface configured by compositor: {}x{}", w, h);
+        self.surface.is_configured = true;
         self.surface.set_dimensions(w, h, &self.shm_state);
         self.session.set_dimensions(self.surface.width, self.surface.height);
 

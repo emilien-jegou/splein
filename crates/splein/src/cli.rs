@@ -1,4 +1,5 @@
 // crates/splein/src/cli.rs
+
 use clap::{Args as ClapArgs, Parser, Subcommand};
 use std::path::PathBuf;
 
@@ -34,8 +35,12 @@ pub struct CommonArgs {
 pub enum Commands {
     /// Start the background Wayland overlay daemon
     Daemon,
-    /// Instant 0ms toggle overlay visibility / click-through
-    Toggle,
+    /// Instant 0ms toggle overlay (opens on active screen with cursor if not specified)
+    Toggle {
+        /// Optional target monitor name (e.g. DP-1, eDP-1, HDMI-A-1)
+        #[arg(short, long)]
+        screen: Option<String>,
+    },
     /// Clear all drawings
     Clear,
     /// Undo the last stroke

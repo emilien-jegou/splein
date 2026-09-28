@@ -3,7 +3,6 @@
 ![GitHub top language](https://img.shields.io/github/languages/top/emilien-jegou/splein)
 [![Crates.io](https://img.shields.io/crates/v/splein.svg)](https://crates.io/crates/splein)
 ![Cargo Downloads](https://img.shields.io/crates/d/splein?label=cargo)
-![GitHub Downloads](https://img.shields.io/github/downloads/emilien-jegou/splein/total?label=github)
 [![Nix Flake](https://img.shields.io/badge/nix-flake-5277C3?logo=nixos&logoColor=white)](https://github.com/emilien-jegou/splein)
 [![dependency status](https://deps.rs/crate/splein/latest/status.svg)](https://deps.rs/crate/splein/latest)
 
@@ -18,7 +17,7 @@
 
 ## Features
 
-* ✍️ **$O(1)$ Pencil Tracing**: Silky, organic curves with zero cursor lag or wobble.
+* ✍️ **$O(1)$ Pencil Tracing**: Silky, organic vector curves with zero cursor lag or wobble.
 * ⚡ **Starts in ms**: Instant toggle via `wlr-layer-shell`.
 * ⌨️ **Collocated keybinds**: 'qwerty..' for tools, '12345' for colors.
 * 🎯 **Central Daemon**: Turn overlay on/off without losing your context or window running.
