@@ -8,7 +8,7 @@ use smithay_client_toolkit::shell::wlr_layer::{
 use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shm::slot::SlotPool;
 use smithay_client_toolkit::shm::Shm;
-use wayland_client::protocol::wl_shm;
+use wayland_client::protocol::{wl_output, wl_shm};
 use wayland_client::QueueHandle;
 
 pub struct OverlaySurface {
@@ -18,6 +18,8 @@ pub struct OverlaySurface {
     pub height: u32,
     pub needs_redraw: bool,
     pub waiting_for_frame: bool,
+    pub target_output: Option<wl_output::WlOutput>,
+    pub is_configured: bool,
 }
 
 impl OverlaySurface {
@@ -26,6 +28,7 @@ impl OverlaySurface {
         layer_shell: &LayerShell,
         shm: &Shm,
         qh: &QueueHandle<WaylandAppState>,
+        output: Option<&wl_output::WlOutput>,
     ) -> eyre::Result<Self> {
         let surface = compositor.create_surface(qh);
         let layer = layer_shell.create_layer_surface(
@@ -33,19 +36,17 @@ impl OverlaySurface {
             surface,
             Layer::Overlay,
             Some("presentify-overlay"),
-            None,
+            output,
         );
 
         layer.set_anchor(Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT);
         layer.set_exclusive_zone(-1);
         layer.set_keyboard_interactivity(KeyboardInteractivity::None);
 
-        // Configure initial passthrough input region BEFORE committing the surface
         let empty_region = compositor.wl_compositor().create_region(qh, ());
         layer.wl_surface().set_input_region(Some(&empty_region));
         empty_region.destroy();
 
-        // Exactly ONE commit to request the layer surface from compositor
         layer.commit();
 
         let initial_width = 1920;
@@ -55,8 +56,6 @@ impl OverlaySurface {
             shm,
         )?;
 
-        eprintln!("[splein] Layer surface requested (Overlay tier, passthrough input)");
-
         Ok(Self {
             layer,
             pool,
@@ -64,6 +63,8 @@ impl OverlaySurface {
             height: initial_height,
             needs_redraw: false,
             waiting_for_frame: false,
+            target_output: output.cloned(),
+            is_configured: false, // Must wait for compositor configure before attaching any buffer
         })
     }
 
@@ -75,7 +76,6 @@ impl OverlaySurface {
             if let Ok(new_pool) = SlotPool::new(required_bytes, shm) {
                 self.pool = new_pool;
             }
-            eprintln!("[splein] Surface resized to {}x{}", width, height);
         }
         self.waiting_for_frame = false;
     }
@@ -104,7 +104,7 @@ impl OverlaySurface {
         F: FnOnce(&mut [u8]),
     {
         self.needs_redraw = true;
-        if !self.waiting_for_frame {
+        if self.is_configured && !self.waiting_for_frame {
             self.draw_frame(qh, render);
         }
     }
@@ -114,7 +114,7 @@ impl OverlaySurface {
         F: FnOnce(&mut [u8]),
     {
         self.waiting_for_frame = false;
-        if self.needs_redraw {
+        if self.needs_redraw && self.is_configured {
             self.draw_frame(qh, render);
         }
     }
@@ -123,24 +123,25 @@ impl OverlaySurface {
     where
         F: FnOnce(&mut [u8]),
     {
+        // Enforce Wayland protocol: NEVER attach a buffer before initial configure
+        if !self.is_configured {
+            self.needs_redraw = true;
+            return;
+        }
+
         let (width, height) = (self.width, self.height);
         if width == 0 || height == 0 {
-            eprintln!("[splein] Cannot draw frame: dimensions are {}x{}", width, height);
             return;
         }
 
         let stride = width * 4;
-        let (buffer, canvas) = match self.pool.create_buffer(
+        let Ok((buffer, canvas)) = self.pool.create_buffer(
             width as i32,
             height as i32,
             stride as i32,
             wl_shm::Format::Argb8888,
-        ) {
-            Ok(b) => b,
-            Err(e) => {
-                eprintln!("[splein] Error: Failed to allocate SHM buffer ({}x{}): {:?}", width, height, e);
-                return;
-            }
+        ) else {
+            return;
         };
 
         render(canvas);
