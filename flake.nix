@@ -38,7 +38,7 @@
         packages = {
           splein = rustPlatform.buildRustPackage (commonBuildArgs // {
             pname = "splein";
-            version = "0.0.1";
+            version = "0.0.1-rc.1";
           });
 
           default = pkgs.symlinkJoin {
