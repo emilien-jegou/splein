@@ -1,0 +1,8 @@
+{
+  "packages": {
+    "splein": {
+      "version": "0.0.1-rc.0",
+      "lastStableVersion": "0.0.1-rc.0"
+    }
+  }
+}
