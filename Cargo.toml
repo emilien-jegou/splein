@@ -1,15 +1,11 @@
 [workspace]
 resolver = "2"
-members = ["crates/splein"]
+members = ["crates/splein", "crates/aurora"]
 
 [workspace.dependencies]
 smithay-client-toolkit = { version = "0.19", default-features = false }
 wayland-client = "0.31"
 wayland-protocols-wlr = { version = "0.3", features = ["client"] }
-
-# 2D Vector Graphics
-tiny-skia = "0.11"
-calloop = "0.13"
 
 # CLI & Logging
 clap = { version = "4.5", features = ["derive"] }
@@ -21,3 +17,9 @@ tracing-flame = "0.2"
 typed-builder = "0.20"
 eyre = "0.6"
 tokio = { version = "1.40", features = ["full"] }
+
+# Rendering
+tiny-skia = "0.11"
+calloop = "0.13"
+taffy = "0.5"
+cosmic-text = "0.12"

@@ -17,17 +17,17 @@
 
 !crates/
 
-!crates/splein-tasker/
-!crates/splein-tasker/**/*
-
-!crates/splein-rune-actions/
-!crates/splein-rune-actions/**/*
-
 !crates/splein/
 !crates/splein/**/*
 
-!crates/syndiff/
-!crates/syndiff/**/*
+!crates/aurora/
+!crates/aurora/Cargo.toml
+!crates/aurora/src/
+!crates/aurora/src/**/*
+!crates/aurora/tests/
+!crates/aurora/tests/**/*
+!crates/aurora/examples/
+!crates/aurora/examples/**/*
 
 !docs/
 !docs/**/*

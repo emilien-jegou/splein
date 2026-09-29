@@ -1,5 +1,3 @@
-// crates/splein/src/render/elements.rs
-
 use super::color::to_native_color;
 use crate::domain::canvas::{DrawingElement, Rgba, Stroke as DomainStroke};
 use crate::domain::geometry::{CubicBezierSegment, Vec2};
