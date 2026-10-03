@@ -2,6 +2,7 @@
 
 pub mod blur;
 pub mod error;
+pub mod stroke_geometry;
 pub mod swizzle;
 pub mod tiny_skia;
 

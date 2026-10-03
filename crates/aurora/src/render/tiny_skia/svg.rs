@@ -1,4 +1,4 @@
-// Single responsibility: Generational LRU raster cache for vector graphics.
+// Single responsibility: Bounded raster cache for vector graphics.
 
 use crate::scene::vector::VectorGraphic;
 use rustc_hash::FxHashMap;

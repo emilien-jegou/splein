@@ -42,9 +42,13 @@ impl ShadowRasterizer {
         transform: Transform,
         clip: Option<&Mask>,
     ) {
-        if shadow.blur <= 0.0 && shadow.offset_x == 0.0 && shadow.offset_y == 0.0 { return; }
+        if shadow.blur <= 0.0 && shadow.offset_x == 0.0 && shadow.offset_y == 0.0 {
+            return;
+        }
         let total_opacity = opacity * shadow.color.a;
-        if total_opacity <= 0.0 { return; }
+        if total_opacity <= 0.0 {
+            return;
+        }
 
         let r_scalar = match radius {
             Radius::Scalar(v) => v.max(0.0),
@@ -57,9 +61,22 @@ impl ShadowRasterizer {
         let corner_size = (r_scalar.ceil() as usize) + kernel_pad;
         let patch_dim = corner_size * 2;
 
-        let is_too_small = rect.width < (patch_dim as f32) || rect.height < (patch_dim as f32) || shadow.kind == ShadowKind::Inset;
+        let is_too_small = rect.width < (patch_dim as f32)
+            || rect.height < (patch_dim as f32)
+            || shadow.kind == ShadowKind::Inset;
         if is_too_small {
-            render_direct_blur(&mut self.scratch_a, &mut self.scratch_b, &mut self.scratch_temp, pixmap, rect, r_scalar, shadow, total_opacity, transform, clip);
+            render_direct_blur(
+                &mut self.scratch_a,
+                &mut self.scratch_b,
+                &mut self.scratch_temp,
+                pixmap,
+                rect,
+                r_scalar,
+                shadow,
+                total_opacity,
+                transform,
+                clip,
+            );
             return;
         }
 
@@ -71,15 +88,30 @@ impl ShadowRasterizer {
 
         if !self.patch_cache.contains_key(&key) {
             if self.patch_cache.len() >= MAX_SHADOW_PATCHES {
-                if let Some(&oldest) = self.patch_cache.keys().next() { self.patch_cache.remove(&oldest); }
+                if let Some(&oldest) = self.patch_cache.keys().next() {
+                    self.patch_cache.remove(&oldest);
+                }
             }
-            let patch = generate_patch(&mut self.scratch_a, &mut self.scratch_b, &mut self.scratch_temp, r_scalar, blur_r, kernel_pad, corner_size, patch_dim);
+            let patch = generate_patch(
+                &mut self.scratch_a,
+                &mut self.scratch_b,
+                &mut self.scratch_temp,
+                r_scalar,
+                blur_r,
+                kernel_pad,
+                corner_size,
+                patch_dim,
+            );
             self.patch_cache.insert(key, patch);
         }
 
         let patch = self.patch_cache.get(&key).unwrap();
-        blit_9patch(pixmap, rect, shadow, total_opacity, transform, patch);
+        blit_9patch(pixmap, rect, shadow, total_opacity, transform, patch, clip);
     }
 }
 
-impl Default for ShadowRasterizer { fn default() -> Self { Self::new() } }
+impl Default for ShadowRasterizer {
+    fn default() -> Self {
+        Self::new()
+    }
+}

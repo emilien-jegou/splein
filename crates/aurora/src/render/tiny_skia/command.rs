@@ -4,6 +4,7 @@ use tiny_skia::{FillRule, Mask, Pixmap, PixmapMut, PixmapPaint, Transform as Ski
 
 use crate::foundation::Radius;
 use crate::render::tiny_skia::clip::ClipStack;
+use crate::render::tiny_skia::image::ImageCache;
 use crate::render::tiny_skia::layer::LayerCompositor;
 use crate::render::tiny_skia::path::build_rounded_path;
 use crate::render::tiny_skia::shader::build_paint;
@@ -19,6 +20,7 @@ pub struct CommandContext<'a> {
     pub clip_stack: &'a mut ClipStack,
     pub text_ctx: &'a TextContext,
     pub svg_cache: &'a mut SvgCache,
+    pub image_cache: &'a mut ImageCache,
     pub shadow_rasterizer: &'a mut ShadowRasterizer,
     pub layer_compositor: &'a mut LayerCompositor,
     pub active_layers: &'a mut Vec<(LayerId, Pixmap)>,
@@ -36,43 +38,127 @@ pub fn execute_commands(
     tile_h: f32,
 ) {
     let (base_tx, base_op) = (ctx.tx_stack.len(), ctx.opacity_stack.len());
-    ctx.tx_stack.push(ctx.tx_stack.last().copied().unwrap_or_else(SkiaTransform::identity));
-    ctx.opacity_stack.push(ctx.opacity_stack.last().copied().unwrap_or(1.0));
+    ctx.tx_stack.push(
+        ctx.tx_stack
+            .last()
+            .copied()
+            .unwrap_or_else(SkiaTransform::identity),
+    );
+    ctx.opacity_stack
+        .push(ctx.opacity_stack.last().copied().unwrap_or(1.0));
 
     for cmd in commands {
-        let (cur_tx, cur_op) = (*ctx.tx_stack.last().unwrap(), *ctx.opacity_stack.last().unwrap());
+        let (cur_tx, cur_op) = (
+            *ctx.tx_stack.last().unwrap(),
+            *ctx.opacity_stack.last().unwrap(),
+        );
         match cmd {
             SceneCommand::PushTransform(t) => {
-                ctx.tx_stack.push(cur_tx.pre_concat(SkiaTransform::from_row(t.a, t.b, t.c, t.d, t.tx, t.ty)));
+                ctx.tx_stack.push(
+                    cur_tx.pre_concat(SkiaTransform::from_row(t.a, t.b, t.c, t.d, t.tx, t.ty)),
+                );
             }
-            SceneCommand::PopTransform => { ctx.tx_stack.pop(); }
+            SceneCommand::PopTransform => {
+                ctx.tx_stack.pop();
+            }
             SceneCommand::PushOffset(p) => ctx.tx_stack.push(cur_tx.pre_translate(p.x, p.y)),
-            SceneCommand::PopOffset => { ctx.tx_stack.pop(); }
+            SceneCommand::PopOffset => {
+                ctx.tx_stack.pop();
+            }
             SceneCommand::PushOpacity(o) => ctx.opacity_stack.push(cur_op * o.clamp(0.0, 1.0)),
-            SceneCommand::PopOpacity => { ctx.opacity_stack.pop(); }
+            SceneCommand::PopOpacity => {
+                ctx.opacity_stack.pop();
+            }
             SceneCommand::PushClip { rect, radius } => {
-                ctx.clip_stack.push(rect, *radius, cur_tx, target.width(), target.height());
+                ctx.clip_stack
+                    .push(rect, *radius, cur_tx, target.width(), target.height());
             }
             SceneCommand::PopClip => ctx.clip_stack.pop(),
-            SceneCommand::DrawShadow { rect, radius, shadow } => {
-                ctx.shadow_rasterizer.render(target, rect, *radius, shadow, cur_op, cur_tx, ctx.clip_stack.current());
+            SceneCommand::DrawShadow {
+                rect,
+                radius,
+                shadow,
+            } => {
+                ctx.shadow_rasterizer.render(
+                    target,
+                    rect,
+                    *radius,
+                    shadow,
+                    cur_op,
+                    cur_tx,
+                    ctx.clip_stack.current(),
+                );
             }
             SceneCommand::DrawRect { rect, appearance } => {
-                render_rect(target, rect, appearance, cur_op, cur_tx, ctx.clip_stack.current(), tile_w, tile_h);
+                render_rect(
+                    target,
+                    rect,
+                    appearance,
+                    cur_op,
+                    cur_tx,
+                    ctx.clip_stack.current(),
+                    tile_w,
+                    tile_h,
+                );
             }
             SceneCommand::DrawImage { rect, image } => {
-                render_image(target, rect, image, cur_op, cur_tx, ctx.clip_stack.current(), tile_w, tile_h);
+                ctx.image_cache.draw(
+                    target,
+                    rect,
+                    image,
+                    cur_op,
+                    cur_tx,
+                    ctx.clip_stack.current(),
+                    tile_w,
+                    tile_h,
+                );
             }
             SceneCommand::DrawSvg { rect, graphic } => {
-                ctx.svg_cache.draw(graphic, rect.width.round() as u32, rect.height.round() as u32, target, cur_op, cur_tx.pre_translate(rect.x, rect.y), ctx.clip_stack.current());
+                ctx.svg_cache.draw(
+                    graphic,
+                    rect.width.round() as u32,
+                    rect.height.round() as u32,
+                    target,
+                    cur_op,
+                    cur_tx.pre_translate(rect.x, rect.y),
+                    ctx.clip_stack.current(),
+                );
             }
-            SceneCommand::DrawText { origin, layout, color } => {
-                render_text(target, ctx.text_ctx, TextRenderParams { origin: *origin, layout, color: *color, opacity: cur_op, transform: cur_tx, clip: ctx.clip_stack.current() });
+            SceneCommand::DrawText {
+                origin,
+                layout,
+                color,
+            } => {
+                render_text(
+                    target,
+                    ctx.text_ctx,
+                    TextRenderParams {
+                        origin: *origin,
+                        layout,
+                        color: *color,
+                        opacity: cur_op,
+                        transform: cur_tx,
+                        clip: ctx.clip_stack.current(),
+                    },
+                );
             }
             SceneCommand::BeginLayer { id, rect } => {
-                let (lw, lh) = ((rect.width.ceil() as u32).max(1), (rect.height.ceil() as u32).max(1));
+                let (lw, lh) = (
+                    (rect.width.ceil() as u32).max(1),
+                    (rect.height.ceil() as u32).max(1),
+                );
                 if let Some(c) = ctx.layer_compositor.try_get_cached(*id, lw, lh) {
-                    target.draw_pixmap(rect.x.round() as i32, rect.y.round() as i32, c.as_ref(), &PixmapPaint { opacity: cur_op, ..Default::default() }, cur_tx, ctx.clip_stack.current());
+                    target.draw_pixmap(
+                        rect.x.round() as i32,
+                        rect.y.round() as i32,
+                        c.as_ref(),
+                        &PixmapPaint {
+                            opacity: cur_op,
+                            ..Default::default()
+                        },
+                        cur_tx,
+                        ctx.clip_stack.current(),
+                    );
                 } else if let Some(mut pm) = Pixmap::new(lw, lh) {
                     pm.fill(tiny_skia::Color::TRANSPARENT);
                     ctx.active_layers.push((*id, pm));
@@ -81,7 +167,17 @@ pub fn execute_commands(
             SceneCommand::EndLayer { id } => {
                 if let Some((lid, pm)) = ctx.active_layers.pop() {
                     if lid == *id {
-                        target.draw_pixmap(0, 0, pm.as_ref(), &PixmapPaint { opacity: cur_op, ..Default::default() }, cur_tx, ctx.clip_stack.current());
+                        target.draw_pixmap(
+                            0,
+                            0,
+                            pm.as_ref(),
+                            &PixmapPaint {
+                                opacity: cur_op,
+                                ..Default::default()
+                            },
+                            cur_tx,
+                            ctx.clip_stack.current(),
+                        );
                         ctx.layer_compositor.store(*id, pm);
                     }
                 }
@@ -92,23 +188,41 @@ pub fn execute_commands(
     ctx.opacity_stack.truncate(base_op);
 }
 
-fn render_rect(t: &mut PixmapMut, r: &crate::foundation::ResolvedRect, a: &crate::foundation::Appearance, op: f32, tx: SkiaTransform, clip: Option<&Mask>, tw: f32, th: f32) {
-    if (r.x + tx.tx) >= tw || (r.x + tx.tx + r.width) <= 0.0 || (r.y + tx.ty) >= th || (r.y + tx.ty + r.height) <= 0.0 { return; }
+fn render_rect(
+    t: &mut PixmapMut,
+    r: &crate::foundation::ResolvedRect,
+    a: &crate::foundation::Appearance,
+    op: f32,
+    tx: SkiaTransform,
+    clip: Option<&Mask>,
+    tw: f32,
+    th: f32,
+) {
+    if (r.x + tx.tx) >= tw
+        || (r.x + tx.tx + r.width) <= 0.0
+        || (r.y + tx.ty) >= th
+        || (r.y + tx.ty + r.height) <= 0.0
+    {
+        return;
+    }
     if let Some(fill) = &a.fill {
         if let Some(paint) = build_paint(fill, op * a.opacity) {
             if matches!(a.radius, Radius::Scalar(rad) if rad <= 0.0) {
-                if let Some(sk) = tiny_skia::Rect::from_xywh(r.x, r.y, r.width, r.height) { t.fill_rect(sk, &paint, tx, clip); }
+                if let Some(sk) = tiny_skia::Rect::from_xywh(r.x, r.y, r.width, r.height) {
+                    t.fill_rect(sk, &paint, tx, clip);
+                }
             } else {
-                t.fill_path(&build_rounded_path(r, a.radius), &paint, FillRule::Winding, tx, clip);
+                t.fill_path(
+                    &build_rounded_path(r, a.radius),
+                    &paint,
+                    FillRule::Winding,
+                    tx,
+                    clip,
+                );
             }
         }
     }
-    if let Some(stroke) = &a.stroke { render_stroke(t, r, a.radius, stroke, op * a.opacity, tx, clip); }
-}
-
-fn render_image(t: &mut PixmapMut, r: &crate::foundation::ResolvedRect, img: &crate::scene::image::ImageSource, op: f32, tx: SkiaTransform, clip: Option<&Mask>, tw: f32, th: f32) {
-    if img.width == 0 || img.height == 0 || (r.x + tx.tx) >= tw || (r.y + tx.ty) >= th || (r.x + tx.tx + r.width) <= 0.0 || (r.y + tx.ty + r.height) <= 0.0 { return; }
-    if let Some(pixmap) = Pixmap::from_vec(img.data.to_vec(), tiny_skia::IntSize::from_wh(img.width, img.height).unwrap()) {
-        t.draw_pixmap(0, 0, pixmap.as_ref(), &PixmapPaint { opacity: op, ..Default::default() }, tx.pre_translate(r.x, r.y).pre_scale(r.width / img.width as f32, r.height / img.height as f32), clip);
+    if let Some(stroke) = &a.stroke {
+        render_stroke(t, r, a.radius, stroke, op * a.opacity, tx, clip);
     }
 }

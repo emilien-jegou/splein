@@ -6,6 +6,7 @@ use crate::foundation::DamageRegion;
 use crate::render::error::BackendError;
 use crate::render::tiny_skia::clip::ClipStack;
 use crate::render::tiny_skia::command::{execute_commands, CommandContext};
+use crate::render::tiny_skia::image::ImageCache;
 use crate::render::tiny_skia::layer::LayerCompositor;
 use crate::render::tiny_skia::shadow::ShadowRasterizer;
 use crate::render::tiny_skia::svg::SvgCache;
@@ -19,6 +20,7 @@ pub struct TinySkiaRenderer {
     clip_stack: ClipStack,
     pub text_ctx: TextContext,
     svg_cache: SvgCache,
+    image_cache: ImageCache,
     shadow_rasterizer: ShadowRasterizer,
     layer_compositor: LayerCompositor,
     tx_stack: Vec<SkiaTransform>,
@@ -37,6 +39,7 @@ impl TinySkiaRenderer {
             clip_stack: ClipStack::new(),
             text_ctx: TextContext::new(),
             svg_cache: SvgCache::new(),
+            image_cache: ImageCache::new(),
             shadow_rasterizer: ShadowRasterizer::new(),
             layer_compositor: LayerCompositor::new(),
             tx_stack: Vec::with_capacity(32),
@@ -136,6 +139,7 @@ impl TinySkiaRenderer {
                 clip_stack: &mut self.clip_stack,
                 text_ctx: &self.text_ctx,
                 svg_cache: &mut self.svg_cache,
+                image_cache: &mut self.image_cache,
                 shadow_rasterizer: &mut self.shadow_rasterizer,
                 layer_compositor: &mut self.layer_compositor,
                 active_layers: &mut self.active_layers,

@@ -2,6 +2,7 @@
 
 pub mod clip;
 pub mod command;
+pub mod image;
 pub mod layer;
 pub mod path;
 pub mod renderer;

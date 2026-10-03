@@ -12,7 +12,6 @@ pub mod path;
 pub mod renderer;
 pub mod shader;
 pub mod shadow;
-pub mod stroke;
 pub mod svg;
 pub mod svg_paint;
 pub mod text;

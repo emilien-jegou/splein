@@ -7,10 +7,10 @@ use vello::kurbo::{Affine, Rect as KurboRect, Stroke as KurboStroke};
 use vello::peniko::{BlendMode, Blob, Fill as VelloFillRule, Format as PenikoFormat, Image as PenikoImage};
 use vello::Scene as VelloScene;
 
+use crate::render::stroke_geometry::adjust_stroke_geometry;
 use crate::render::vello::path::{build_kurbo_rect, build_kurbo_rounded_rect};
 use crate::render::vello::shader::build_vello_brush;
 use crate::render::vello::shadow::VelloShadowCache;
-use crate::render::vello::stroke::adjust_stroke_geometry;
 use crate::render::vello::svg::VelloSvgCache;
 use crate::render::vello::text::VelloGlyphCache;
 use crate::scene::command::SceneCommand;
