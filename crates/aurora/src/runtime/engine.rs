@@ -112,6 +112,12 @@ impl Engine {
         &self.scene
     }
 
+    /// Mutably accesses the scene so extensions can inject overlay chunks.
+    #[inline(always)]
+    pub fn scene_mut(&mut self) -> &mut Scene {
+        &mut self.scene
+    }
+
     /// Resizes engine viewport dimensions and records perimeter damage.
     pub fn resize(&mut self, width: u32, height: u32) {
         let (nw, nh) = (width.max(1), height.max(1));
@@ -120,8 +126,12 @@ impl Engine {
         }
         let (ow, oh) = self.logical_size;
         self.logical_size = (nw, nh);
-        self.pending_preserved_canvas_rect =
-            Some(ResolvedRect::new(0.0, 0.0, ow.min(nw) as f32, oh.min(nh) as f32));
+        self.pending_preserved_canvas_rect = Some(ResolvedRect::new(
+            0.0,
+            0.0,
+            ow.min(nw) as f32,
+            oh.min(nh) as f32,
+        ));
 
         if nw > ow {
             self.pending_damage.push(ResolvedRect::new(

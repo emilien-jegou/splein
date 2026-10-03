@@ -6,7 +6,7 @@ pub use foundation::*;
 pub use layout::layout_node;
 pub use pipeline::*;
 pub use reactive::{batch, Derived, Effect, ReactiveRuntime, Signal};
-pub use render::{RenderBackend, Renderer, TinySkiaRenderer};
+pub use render::{RenderBackend, TinySkiaRenderer};
 #[cfg(feature = "vello")]
 pub use render::VelloRenderer;
 pub use runtime::{Engine, FrameScheduler, FrameStats};

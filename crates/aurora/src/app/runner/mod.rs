@@ -1,9 +1,15 @@
 // Single responsibility: Winit event loop lifecycle coordination and late-latch frame pacing.
 
 pub mod backend;
+pub mod cpu_backend;
+#[cfg(feature = "vello")]
+pub mod gpu_backend;
 pub mod pacing;
 
-pub use backend::ActiveBackend;
+pub use backend::{Backend, PresentFrame};
+pub use cpu_backend::CpuBackend;
+#[cfg(feature = "vello")]
+pub use gpu_backend::GpuBackend;
 pub use pacing::FpsLimit;
 
 use std::sync::Arc;
@@ -22,7 +28,7 @@ pub fn run_event_loop(
     event_loop: EventLoop<()>,
     window: Arc<Window>,
     mut engine: Engine,
-    mut backend: ActiveBackend,
+    mut backend: Box<dyn Backend>,
     mut extensions: Vec<Box<dyn AppExtension>>,
     fps_limit: FpsLimit,
 ) {
@@ -63,24 +69,27 @@ pub fn run_event_loop(
 
                         let (_stats, _layers, mut diag) = engine.frame();
                         let text_ctx = engine.text_context();
-                        let mut scene = engine.scene().clone();
+                        let backend_tag = backend.tag();
 
                         for ext in &mut extensions {
-                            ext.render_overlay(&mut scene, &text_ctx, backend.tag(), &diag);
+                            ext.render_overlay(engine.scene_mut(), &text_ctx, backend_tag, &diag);
                         }
 
                         let damage = engine.current_damage().clone();
-                        let bg = engine.background();
-                        backend.present_frame(
-                            &scene,
-                            &damage,
-                            |age| engine.damage_for_age(age),
-                            bg,
-                            w,
-                            h,
-                            &mut diag,
-                            &mut extensions,
-                        );
+                        let background = engine.background();
+                        let frame = PresentFrame {
+                            scene: engine.scene(),
+                            damage: &damage,
+                            damage_for_age: &mut |age| engine.damage_for_age(age),
+                            background,
+                            width: w,
+                            height: h,
+                            diagnostics: &mut diag,
+                            extensions: &mut extensions,
+                        };
+                        if let Err(error) = backend.present(frame) {
+                            tracing::error!(%error, "frame presentation failed");
+                        }
 
                         let compute_dur = t_start.elapsed();
                         avg_compute = avg_compute.mul_f32(0.8) + compute_dur.mul_f32(0.2);

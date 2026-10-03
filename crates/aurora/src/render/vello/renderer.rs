@@ -2,11 +2,14 @@
 
 use std::sync::Arc;
 use vello::kurbo::{Affine, Rect as KurboRect};
-use vello::{AaConfig, AaSupport, RenderParams, Renderer as VelloEngine, RendererOptions, Scene as VelloScene};
+use vello::{
+    AaConfig, AaSupport, RenderParams, Renderer as VelloEngine, RendererOptions,
+    Scene as VelloScene,
+};
 use winit::window::Window;
 
-use crate::foundation::{Color, DamageRegion};
-use crate::render::backend::Renderer;
+use crate::foundation::Color;
+use crate::render::error::BackendError;
 use crate::render::vello::command::{compile_vello_chunk, VelloImageCache};
 use crate::render::vello::context::GpuContext;
 use crate::render::vello::shader::to_vello_color;
@@ -33,8 +36,9 @@ pub struct VelloRenderer {
 
 impl VelloRenderer {
     /// Creates a Vello compute renderer configured for the target OS window surface.
-    pub fn new(window: Arc<Window>, width: u32, height: u32) -> Result<Self, String> {
-        let gpu = pollster::block_on(GpuContext::init(Arc::clone(&window), width, height))?;
+    pub fn new(window: Arc<Window>, width: u32, height: u32) -> Result<Self, BackendError> {
+        let gpu = pollster::block_on(GpuContext::init(Arc::clone(&window), width, height))
+            .map_err(BackendError::init)?;
         let vello_engine = VelloEngine::new(
             &gpu.device,
             RendererOptions {
@@ -43,7 +47,8 @@ impl VelloRenderer {
                 antialiasing_support: AaSupport::all(),
                 num_init_threads: None,
             },
-        ).map_err(|e| format!("Failed to initialize Vello engine: {:?}", e))?;
+        )
+        .map_err(|e| BackendError::init(format!("Failed to initialize Vello engine: {e:?}")))?;
 
         let viewport_bound = KurboRect::new(0.0, 0.0, width.max(1) as f64, height.max(1) as f64);
         Ok(Self {
@@ -62,7 +67,9 @@ impl VelloRenderer {
     }
 
     /// Updates the typography shaper and glyph database handle.
-    pub fn set_text_context(&mut self, text_ctx: TextContext) { self.text_ctx = text_ctx; }
+    pub fn set_text_context(&mut self, text_ctx: TextContext) {
+        self.text_ctx = text_ctx;
+    }
 
     /// Resizes the WGPU swapchain and presentation bounds.
     pub fn resize(&mut self, width: u32, height: u32) {
@@ -72,7 +79,7 @@ impl VelloRenderer {
 
     /// Renders display list scene to the swapchain and presents.
     #[tracing::instrument(name = "Vello::RenderFrame", skip_all)]
-    pub fn render_frame(&mut self, scene: &Scene, base_color: Color) -> Result<(), String> {
+    pub fn render_frame(&mut self, scene: &Scene, base_color: Color) -> Result<(), BackendError> {
         self.vello_scene.reset();
         self.tx_stack.clear();
 
@@ -93,35 +100,38 @@ impl VelloRenderer {
         let surface_texture = match self.gpu.surface.get_current_texture() {
             Ok(t) => t,
             Err(wgpu::SurfaceError::Outdated | wgpu::SurfaceError::Lost) => {
-                self.gpu.surface.configure(&self.gpu.device, &self.gpu.config);
-                self.gpu.surface.get_current_texture().map_err(|e| format!("Swapchain recovery failed: {:?}", e))?
+                self.gpu
+                    .surface
+                    .configure(&self.gpu.device, &self.gpu.config);
+                self.gpu.surface.get_current_texture().map_err(|e| {
+                    BackendError::surface(format!("swapchain recovery failed: {e:?}"))
+                })?
             }
-            Err(e) => return Err(format!("Swapchain error: {:?}", e)),
+            Err(e) => {
+                return Err(BackendError::surface(format!(
+                    "swapchain acquire failed: {e:?}"
+                )))
+            }
         };
 
-        self.vello_engine.render_to_surface(
-            &self.gpu.device,
-            &self.gpu.queue,
-            &self.vello_scene,
-            &surface_texture,
-            &RenderParams {
-                base_color: to_vello_color(base_color, 1.0),
-                width: self.gpu.config.width,
-                height: self.gpu.config.height,
-                antialiasing_method: AaConfig::Area,
-            },
-        ).map_err(|e| format!("Vello GPU render execution failed: {:?}", e))?;
+        self.vello_engine
+            .render_to_surface(
+                &self.gpu.device,
+                &self.gpu.queue,
+                &self.vello_scene,
+                &surface_texture,
+                &RenderParams {
+                    base_color: to_vello_color(base_color, 1.0),
+                    width: self.gpu.config.width,
+                    height: self.gpu.config.height,
+                    antialiasing_method: AaConfig::Area,
+                },
+            )
+            .map_err(|e| {
+                BackendError::raster(format!("Vello GPU render execution failed: {e:?}"))
+            })?;
 
         surface_texture.present();
         Ok(())
-    }
-}
-
-impl Renderer for VelloRenderer {
-    type Error = String;
-
-    #[tracing::instrument(skip_all)]
-    fn render(&mut self, scene: &Scene, _damage: &DamageRegion) -> Result<(), Self::Error> {
-        self.render_frame(scene, Color::WHITE)
     }
 }

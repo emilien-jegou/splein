@@ -10,8 +10,8 @@ pub use crate::foundation::{
     ShadowKind, Size, Stroke, StrokeAlign, Transform,
 };
 pub use crate::reactive::{batch, computed, Derived, Effect, Signal};
-pub use crate::render::{RenderBackend, Renderer, TinySkiaRenderer};
 #[cfg(feature = "vello")]
 pub use crate::render::VelloRenderer;
+pub use crate::render::{RenderBackend, TinySkiaRenderer};
 pub use crate::runtime::Engine;
 pub use crate::scene::vector::VectorGraphic;

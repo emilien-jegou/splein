@@ -1,115 +1,39 @@
-// Single responsibility: Polymorphic presentation backend dispatch, resizing, and rendering.
-
-use softbuffer::Context;
-use std::num::NonZeroU32;
-use std::sync::Arc;
-use std::time::Instant;
-use winit::window::Window;
+// Single responsibility: Backend presentation contract and shared per-frame parameters.
 
 use crate::app::extension::AppExtension;
-use crate::app::presenter::SurfacePresenter;
-use crate::foundation::{Color, DamageRegion, ResolvedRect};
-use crate::render::TinySkiaRenderer;
-#[cfg(feature = "vello")]
-use crate::render::VelloRenderer;
+use crate::foundation::{Color, DamageRegion};
+use crate::render::BackendError;
 use crate::runtime::FrameDiagnostics;
 use crate::scene::Scene;
 
-/// Active presentation backend runtime instance preserving context lifetimes.
-pub enum ActiveBackend {
-    /// CPU SIMD rasterizer paired with softbuffer OS window presentation.
-    TinySkia {
-        /// Retained softbuffer display context.
-        _context: Context<Arc<Window>>,
-        /// TinySkia CPU rasterizer holding the persistent canvas.
-        renderer: TinySkiaRenderer,
-        /// Softbuffer presentation surface.
-        surface: softbuffer::Surface<Arc<Window>, Arc<Window>>,
-    },
-    /// Direct GPU compute rasterizer powered by Vello and WGPU.
-    #[cfg(feature = "vello")]
-    Vello {
-        /// Retained Vello GPU compute renderer.
-        renderer: VelloRenderer,
-    },
+/// Per-frame inputs shared by every presentation backend.
+pub struct PresentFrame<'a> {
+    /// Compiled display list for the frame, including extension overlays.
+    pub scene: &'a Scene,
+    /// Region changed since the previous frame; a raster optimization hint.
+    pub damage: &'a DamageRegion,
+    /// Resolves accumulated damage for a swapchain buffer age.
+    pub damage_for_age: &'a mut dyn FnMut(u8) -> DamageRegion,
+    /// Base clear color painted behind the scene.
+    pub background: Color,
+    /// Presentation width in physical pixels.
+    pub width: u32,
+    /// Presentation height in physical pixels.
+    pub height: u32,
+    /// Receives raster and present timing measurements.
+    pub diagnostics: &'a mut FrameDiagnostics,
+    /// Extensions polled for overlay damage and CPU post-processing.
+    pub extensions: &'a mut [Box<dyn AppExtension>],
 }
 
-impl ActiveBackend {
-    /// Resizes swapchain and persistent rasterizer buffers.
-    pub fn resize(&mut self, width: u32, height: u32) {
-        match self {
-            Self::TinySkia {
-                renderer, surface, ..
-            } => {
-                let _ = surface.resize(
-                    NonZeroU32::new(width).unwrap(),
-                    NonZeroU32::new(height).unwrap(),
-                );
-                renderer.resize(width, height);
-            }
-            #[cfg(feature = "vello")]
-            Self::Vello { renderer } => renderer.resize(width, height),
-        }
-    }
+/// Presents compiled frames to an OS window surface.
+pub trait Backend {
+    /// Resizes the surface and any retained rasterizer buffers.
+    fn resize(&mut self, width: u32, height: u32);
 
-    /// Backend label tag identifier.
-    pub fn tag(&self) -> &'static str {
-        match self {
-            Self::TinySkia { .. } => "CPU",
-            #[cfg(feature = "vello")]
-            Self::Vello { .. } => "GPU",
-        }
-    }
+    /// Human-readable backend tag, e.g. `"CPU"` or `"GPU"`.
+    fn tag(&self) -> &'static str;
 
-    /// Renders the frame and presents through the active backend.
-    pub fn present_frame(
-        &mut self,
-        scene: &Scene,
-        damage: &DamageRegion,
-        damage_age_fn: impl FnOnce(u8) -> DamageRegion,
-        bg: Color,
-        width: u32,
-        height: u32,
-        diag: &mut FrameDiagnostics,
-        extensions: &mut [Box<dyn AppExtension>],
-    ) {
-        let t_raster_start = Instant::now();
-        match self {
-            #[cfg(feature = "vello")]
-            Self::Vello { renderer } => {
-                let _ = renderer.render_frame(scene, bg);
-                diag.timings.raster = t_raster_start.elapsed();
-            }
-            Self::TinySkia {
-                renderer, surface, ..
-            } => {
-                let _ = renderer.render_damage(scene, damage);
-                diag.timings.raster = t_raster_start.elapsed();
-
-                let t_present_start = Instant::now();
-                if let Ok(buffer) = surface.buffer_mut() {
-                    let accumulated_damage = damage_age_fn(buffer.age());
-                    let extra: Vec<ResolvedRect> = extensions
-                        .iter()
-                        .filter_map(|e| e.overlay_damage())
-                        .collect();
-
-                    SurfacePresenter::present_damaged()
-                        .pixmap(renderer.canvas())
-                        .buffer(buffer)
-                        .damage(&accumulated_damage)
-                        .extra_damage(&extra)
-                        .active_w(width)
-                        .active_h(height)
-                        .post_process(|dst, dmg, stride, h| {
-                            for ext in extensions.iter_mut() {
-                                ext.on_present(dst, dmg, stride, h);
-                            }
-                        })
-                        .call();
-                    diag.timings.present = t_present_start.elapsed();
-                }
-            }
-        }
-    }
+    /// Rasterizes and presents exactly one frame.
+    fn present(&mut self, frame: PresentFrame<'_>) -> Result<(), BackendError>;
 }
