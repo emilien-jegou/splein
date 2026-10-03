@@ -7,9 +7,19 @@ use crate::tree::{NodeId, NodeKind, TreeArena};
 
 /// Derives resolved pixel size from sizing intent, intrinsic size, and parent bound.
 pub fn resolve_desired_dimension(size: Size, intrinsic: f32, parent_dim: Option<f32>) -> f32 {
-    let safe_intrinsic = if intrinsic.is_finite() { intrinsic.max(0.0) } else { 0.0 };
+    let safe_intrinsic = if intrinsic.is_finite() {
+        intrinsic.max(0.0)
+    } else {
+        0.0
+    };
     match size {
-        Size::Fixed(px) => if px.is_finite() { px.max(0.0) } else { 0.0 },
+        Size::Fixed(px) => {
+            if px.is_finite() {
+                px.max(0.0)
+            } else {
+                0.0
+            }
+        }
         Size::Fit => safe_intrinsic,
         Size::Fill => 0.0,
         Size::Percent(pct) => parent_dim
@@ -29,45 +39,77 @@ pub fn compute_intrinsic(
     constraints: Constraints,
     text_ctx: &TextContext,
 ) -> IntrinsicSize {
-    let (w_size, h_size) = {
+    let (w_size, h_size, is_text) = {
         let n = arena.get(node_id);
-        (n.style.width, n.style.height)
+        (
+            n.style.width,
+            n.style.height,
+            matches!(n.kind, NodeKind::Text(_)),
+        )
     };
 
     // 1. O(1) Fixed dimension short-circuit (0 allocations, 0 child traversals)
     if let (Size::Fixed(w), Size::Fixed(h)) = (w_size, h_size) {
-        return IntrinsicSize { width: w, height: h };
+        return IntrinsicSize {
+            width: w,
+            height: h,
+        };
     }
 
-    // For single-line text and fixed containers, intrinsic size is unconstrained by parent width
-    let is_multiline_text = match &arena.get(node_id).kind {
-        NodeKind::Text(t) => t.content.contains('\n'),
-        _ => false,
-    };
-
-    let safe_max_w = if is_multiline_text && constraints.max_width.is_finite() {
-        constraints.max_width.max(0.0)
+    // Text wraps against its inline width; groups measure unconstrained.
+    let max_width = if is_text {
+        text_inline_width(w_size, constraints.max_width)
     } else {
         f32::INFINITY
     };
 
     let effective_constraints = Constraints {
         min_width: 0.0,
-        max_width: match w_size {
-            Size::Fixed(_) => f32::INFINITY,
-            _ => safe_max_w,
-        },
+        max_width,
         min_height: 0.0,
         max_height: f32::INFINITY,
     };
 
     // 2. O(1) Cache Hit (0 tracing overhead)
-    if let Some(cached) = arena.get(node_id).state.cache.get_intrinsic(&effective_constraints) {
+    if let Some(cached) = arena
+        .get(node_id)
+        .state
+        .cache
+        .get_intrinsic(&effective_constraints)
+    {
         return cached;
     }
 
     // 3. Uncached Intrinsic Calculation (Explicitly Instrumented)
     measure_intrinsic_uncached(arena, node_id, effective_constraints, text_ctx)
+}
+
+/// Inline wrap width for a text node from its width intent and available space.
+fn text_inline_width(width: Size, available: f32) -> f32 {
+    match width {
+        Size::Fit => f32::INFINITY,
+        Size::Fill => {
+            if available.is_finite() {
+                available.max(0.0)
+            } else {
+                f32::INFINITY
+            }
+        }
+        Size::Fixed(value) => {
+            if available.is_finite() {
+                value.min(available).max(0.0)
+            } else {
+                value.max(0.0)
+            }
+        }
+        Size::Percent(ratio) => {
+            if available.is_finite() {
+                (available * ratio).max(0.0)
+            } else {
+                f32::INFINITY
+            }
+        }
+    }
 }
 
 #[tracing::instrument(level = "trace", skip(arena, text_ctx), fields(node = node_id.index))]
@@ -79,7 +121,11 @@ fn measure_intrinsic_uncached(
 ) -> IntrinsicSize {
     if matches!(arena.get(node_id).kind, NodeKind::Group) {
         let intrinsic = measure_group_intrinsic(arena, node_id, constraints, text_ctx);
-        arena.get_mut(node_id).state.cache.store_intrinsic(constraints, intrinsic);
+        arena
+            .get_mut(node_id)
+            .state
+            .cache
+            .store_intrinsic(constraints, intrinsic);
         return intrinsic;
     }
 
@@ -95,7 +141,10 @@ fn measure_intrinsic_uncached(
     };
 
     let target_node = arena.get_mut(node_id);
-    target_node.state.cache.store_intrinsic(constraints, intrinsic);
+    target_node
+        .state
+        .cache
+        .store_intrinsic(constraints, intrinsic);
     if let Some(layout) = shaped_layout {
         target_node.state.cached_text_layout = Some(layout);
     }
@@ -121,7 +170,10 @@ pub fn compute_child_desired(
     let intrinsic = if needs_intrinsic_w || needs_intrinsic_h {
         compute_intrinsic(arena, child_id, constraints, text_ctx)
     } else {
-        IntrinsicSize { width: 0.0, height: 0.0 }
+        IntrinsicSize {
+            width: 0.0,
+            height: 0.0,
+        }
     };
 
     DesiredSize {

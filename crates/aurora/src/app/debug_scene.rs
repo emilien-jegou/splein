@@ -174,9 +174,11 @@ fn emit_label(
     let cfg = crate::text::TextConfig {
         content: content.into(),
         font_id: None,
+        family: None,
+        style: crate::text::FontStyle::Normal,
         size: 11.0,
         weight: 700,
-        line_height: 14.0,
+        line_height: crate::text::LineHeight::Absolute(14.0),
         letter_spacing: 0.0,
         color,
     };

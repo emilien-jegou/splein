@@ -15,3 +15,4 @@ pub use crate::render::VelloRenderer;
 pub use crate::render::{RenderBackend, TinySkiaRenderer};
 pub use crate::runtime::Engine;
 pub use crate::scene::vector::VectorGraphic;
+pub use crate::text::{FontStyle, LineHeight};

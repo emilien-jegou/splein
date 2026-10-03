@@ -10,10 +10,10 @@ pub mod layout;
 pub mod shaper;
 
 pub use cache::ShapedTextCache;
-pub use config::TextConfig;
+pub use config::{LineHeight, TextConfig};
 pub use context::{GlyphBitmap, TextContext};
 pub use cosmic::CosmicTextEngine;
-pub use fonts::{FontData, FontId};
+pub use fonts::{FontData, FontId, FontStyle};
 pub use glyph::{GlyphKey, ShapedGlyph, ShapedLine};
 pub use layout::TextLayout;
 pub use shaper::{TextShapeParams, TextShaper};

@@ -14,6 +14,8 @@ pub struct ShapedGlyph {
     pub advance: f32,
     pub cluster: usize,
     pub cache_key: GlyphKey,
+    /// Index of the resolved font blob used to render this glyph.
+    pub font_blob: usize,
 }
 
 /// A shaped horizontal run of glyphs with line geometry metrics.
@@ -28,7 +30,19 @@ pub struct ShapedLine {
 
 impl ShapedLine {
     /// Constructs a shaped line run with explicit typographic metrics.
-    pub fn new(glyphs: Vec<ShapedGlyph>, width: f32, height: f32, baseline: f32, font_size: f32) -> Self {
-        Self { glyphs, width, height, baseline, font_size }
+    pub fn new(
+        glyphs: Vec<ShapedGlyph>,
+        width: f32,
+        height: f32,
+        baseline: f32,
+        font_size: f32,
+    ) -> Self {
+        Self {
+            glyphs,
+            width,
+            height,
+            baseline,
+            font_size,
+        }
     }
 }

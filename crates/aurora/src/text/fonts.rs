@@ -5,6 +5,18 @@ use std::sync::Arc;
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct FontId(pub u32);
 
+/// Typographic style selecting normal, italic, or oblique faces.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
+pub enum FontStyle {
+    /// Upright face.
+    #[default]
+    Normal,
+    /// Italic face.
+    Italic,
+    /// Slanted oblique face.
+    Oblique,
+}
+
 pub struct FontData {
     pub id: FontId,
     pub name: String,

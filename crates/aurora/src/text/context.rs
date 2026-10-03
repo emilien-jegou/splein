@@ -41,8 +41,20 @@ impl TextContext {
 
     /// Loads TrueType/OpenType font bytes into context and retains binary handle for GPU engines.
     pub fn load_font(&self, bytes: &[u8]) {
-        self.font_blobs.lock().unwrap().push(Arc::new(bytes.to_vec()));
-        self.engine.load_font(bytes);
+        let index = {
+            let mut blobs = self.font_blobs.lock().unwrap();
+            let index = blobs.len();
+            blobs.push(Arc::new(bytes.to_vec()));
+            index
+        };
+        self.engine.load_font(bytes, index);
+    }
+
+    /// Loads a font file from disk into the database for lazy system registration.
+    pub fn load_font_file(&self, path: impl AsRef<std::path::Path>) -> std::io::Result<()> {
+        let bytes = std::fs::read(path)?;
+        self.load_font(&bytes);
+        Ok(())
     }
 
     /// Accesses retained raw font binary data by registration index.
@@ -63,8 +75,10 @@ impl TextContext {
         self.shape(TextShapeParams {
             text: &config.content,
             font: config.font_id,
+            family: config.family.as_deref(),
+            style: config.style,
             size: config.size,
-            line_height: config.line_height,
+            line_height: config.line_height.resolve(config.size),
             letter_spacing: config.letter_spacing,
             weight: config.weight,
             constraints,

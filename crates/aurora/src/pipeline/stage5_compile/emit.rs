@@ -1,6 +1,6 @@
 // Single responsibility: Node coordinate framing, transformation, and display list command emission.
 
-use crate::foundation::{Constraints, Point, ResolvedRect, Size, Transform};
+use crate::foundation::{Constraints, Point, ResolvedRect, Transform};
 use crate::scene::{LayerId, PaintContext, SceneChunk, SceneCommand};
 use crate::text::TextContext;
 use crate::tree::{LayoutNode, NodeKind};
@@ -85,13 +85,15 @@ pub fn emit_node_content(node: &LayoutNode, chunk: &mut SceneChunk, text_ctx: &T
 
     match &node.kind {
         NodeKind::Text(t) => {
-            // Fit-width labels shape with unconstrained width to prevent 0.1px rounding from wrapping lines
-            let max_w = if node.style.width.is_fit() || node.style.width == Size::Fit {
-                f32::INFINITY
-            } else {
-                node.resolved_rect.width.max(1.0)
-            };
-            let layout = text_ctx.shape_config(t, Constraints::loose(max_w, f32::INFINITY));
+            // Reuse the measurement layout so wrapping and box height stay consistent.
+            let layout = node.state.cached_text_layout.clone().unwrap_or_else(|| {
+                let max_w = if node.style.width.is_fit() {
+                    f32::INFINITY
+                } else {
+                    node.resolved_rect.width.max(1.0)
+                };
+                text_ctx.shape_config(t, Constraints::loose(max_w, f32::INFINITY))
+            });
             chunk.push(SceneCommand::DrawText {
                 origin: Point::ZERO,
                 layout,

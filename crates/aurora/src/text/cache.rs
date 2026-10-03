@@ -1,21 +1,23 @@
 // Single responsibility: Thread-safe memoization cache for shaped typography layouts.
 
-use crate::text::fonts::FontId;
+use crate::text::fonts::{FontId, FontStyle};
 use crate::text::layout::TextLayout;
 use crate::text::shaper::TextShapeParams;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-// FIX: key now includes line_height and letter_spacing. Previously, changing
-// either silently returned a stale shaped layout.
+// Key includes content, font, family, style, size, weight, line height, letter
+// spacing, and the finite wrap width (0 = unconstrained).
 type TextCacheKey = (
-    String,          // content
-    Option<FontId>,  // font
-    u32,             // size_bits
-    u16,             // weight
-    u32,             // line_height_bits
-    u32,             // letter_spacing_bits
-    u32,             // max_width_bits (0 = unconstrained or single-line)
+    String,         // content
+    Option<FontId>, // font
+    Option<String>, // family
+    FontStyle,      // style
+    u32,            // size_bits
+    u16,            // weight
+    u32,            // line_height_bits (resolved absolute)
+    u32,            // letter_spacing_bits
+    u32,            // max_width_bits (0 = unconstrained)
 );
 const MAX_CACHE_ENTRIES: usize = 2048;
 
@@ -50,8 +52,7 @@ impl ShapedTextCache {
     }
 
     fn make_key(params: &TextShapeParams) -> TextCacheKey {
-        let is_multiline = params.text.contains('\n');
-        let max_w_bits = if is_multiline && params.constraints.max_width.is_finite() {
+        let max_w_bits = if params.constraints.max_width.is_finite() {
             params.constraints.max_width.to_bits()
         } else {
             0
@@ -59,6 +60,8 @@ impl ShapedTextCache {
         (
             params.text.to_string(),
             params.font,
+            params.family.map(|f| f.to_string()),
+            params.style,
             params.size.to_bits(),
             params.weight,
             params.line_height.to_bits(),
