@@ -52,38 +52,67 @@ impl RenderEngine for TinySkiaRenderer {
         }
 
         self.prepare_canvas(width, height);
-        if frame.canvas.needs_full_rebuild {
+        let drag = frame.canvas.drag;
+        let resize = frame.canvas.resize;
+        // A live move or resize rebuilds every frame so the ghost renders at its offset.
+        if frame.canvas.needs_full_rebuild || drag.is_some() || resize.is_some() {
             if let Some(ref mut c) = self.persistent_canvas {
                 c.fill(Color::TRANSPARENT);
-                for elem in frame.canvas.elements {
-                    self.element_renderer.render_element(elem, &mut c.as_mut());
+                for (i, elem) in frame.canvas.elements.iter().enumerate() {
+                    let ghost = resize
+                        .filter(|(idxs, _, _)| idxs.contains(&i))
+                        .map(|(_, base, target)| {
+                            let mut mapped = elem.clone();
+                            mapped.map_bounds(base, target);
+                            mapped
+                        })
+                        .or_else(|| {
+                            drag.filter(|(idxs, _)| idxs.contains(&i)).map(|(_, delta)| {
+                                let mut moved = elem.clone();
+                                moved.translate(delta);
+                                moved
+                            })
+                        });
+                    self.element_renderer
+                        .render_element(ghost.as_ref().unwrap_or(elem), &mut c.as_mut());
                 }
             }
         }
 
         if let Some(ref mut c) = self.persistent_canvas {
-            for (seg, col, w, h) in frame.canvas.new_segments {
+            for (seg, col, w) in frame.canvas.new_segments {
                 self.element_renderer
-                    .render_single_segment(seg, *col, *w, *h, &mut c.as_mut());
+                    .render_single_segment(seg, *col, *w, &mut c.as_mut());
             }
             pixmap.data_mut().copy_from_slice(c.data());
         }
 
-        if let Some(idx) = frame.canvas.hovered_idx {
-            if let Some(elem) = frame.canvas.elements.get(idx) {
-                self.element_renderer.render_hover_halo(
-                    elem,
-                    frame.canvas.is_eraser_hover,
-                    &mut pixmap,
-                );
+        if frame.canvas.drag.is_none()
+            && frame.canvas.resize.is_none()
+            && frame.canvas.band.is_none()
+        {
+            if let Some(idx) = frame.canvas.hovered_idx {
+                if let Some(elem) = frame.canvas.elements.get(idx) {
+                    self.element_renderer.render_hover_halo(
+                        elem,
+                        frame.canvas.is_eraser_hover,
+                        &mut pixmap,
+                    );
+                }
             }
         }
         if let Some((from, to, col, w, h)) = frame.canvas.live_tip {
             self.element_renderer
                 .render_live_tip(from, to, col, w, h, &mut pixmap);
         }
-        if let Some(shape) = frame.canvas.active_shape {
-            self.element_renderer.render_element(shape, &mut pixmap);
+        if let Some(elem) = frame.canvas.active_element {
+            self.element_renderer.render_element(elem, &mut pixmap);
+        }
+        if let Some(rect) = frame.canvas.selection {
+            self.element_renderer.render_handles(rect, &mut pixmap);
+        }
+        if let Some(rect) = frame.canvas.band {
+            self.element_renderer.render_band(rect, &mut pixmap);
         }
 
         let active_i = match frame.dock.active_tool {

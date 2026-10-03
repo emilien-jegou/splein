@@ -1,9 +1,9 @@
 // Single responsibility: Panic-safe RAII transactional batch scopes.
 
-use std::cell::RefCell;
-use std::rc::Rc;
 use crate::reactive::derived::drain_deferred_disposals;
 use crate::reactive::ReactiveRuntime;
+use std::cell::RefCell;
+use std::rc::Rc;
 
 struct BatchGuard<'a>(&'a Rc<RefCell<ReactiveRuntime>>);
 

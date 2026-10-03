@@ -25,7 +25,10 @@ pub fn diff_children(
         return old_children
             .iter()
             .enumerate()
-            .map(|(i, (id, _))| ChildOp::Reuse { old: *id, new_idx: i })
+            .map(|(i, (id, _))| ChildOp::Reuse {
+                old: *id,
+                new_idx: i,
+            })
             .collect();
     }
 
@@ -48,7 +51,10 @@ pub fn diff_children(
         match key {
             Some(k) => {
                 if let Some(old_id) = old_keyed.remove(k) {
-                    ops.push(ChildOp::Reuse { old: old_id, new_idx });
+                    ops.push(ChildOp::Reuse {
+                        old: old_id,
+                        new_idx,
+                    });
                 } else {
                     ops.push(ChildOp::Create { new_idx });
                 }
@@ -56,7 +62,10 @@ pub fn diff_children(
             None => {
                 if let Some(&old_id) = unkeyed_old.get(unkeyed_idx) {
                     unkeyed_idx += 1;
-                    ops.push(ChildOp::Reuse { old: old_id, new_idx });
+                    ops.push(ChildOp::Reuse {
+                        old: old_id,
+                        new_idx,
+                    });
                 } else {
                     ops.push(ChildOp::Create { new_idx });
                 }

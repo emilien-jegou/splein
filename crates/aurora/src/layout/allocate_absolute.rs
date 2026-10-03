@@ -4,7 +4,11 @@ use crate::foundation::{Anchor, ResolvedRect};
 use crate::tree::LayoutNode;
 
 #[derive(Copy, Clone)]
-enum Align1D { Start, Center, End }
+enum Align1D {
+    Start,
+    Center,
+    End,
+}
 
 /// Resolves 1D coordinate with safe-centering and symmetric margin bias.
 #[inline]

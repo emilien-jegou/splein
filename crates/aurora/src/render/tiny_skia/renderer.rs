@@ -7,10 +7,8 @@ use crate::render::error::BackendError;
 use crate::render::tiny_skia::clip::ClipStack;
 use crate::render::tiny_skia::command::{execute_commands, CommandContext};
 use crate::render::tiny_skia::image::ImageCache;
-use crate::render::tiny_skia::layer::LayerCompositor;
 use crate::render::tiny_skia::shadow::ShadowRasterizer;
 use crate::render::tiny_skia::svg::SvgCache;
-use crate::scene::command::LayerId;
 use crate::scene::scene::Scene;
 use crate::text::TextContext;
 
@@ -22,11 +20,9 @@ pub struct TinySkiaRenderer {
     svg_cache: SvgCache,
     image_cache: ImageCache,
     shadow_rasterizer: ShadowRasterizer,
-    layer_compositor: LayerCompositor,
     tx_stack: Vec<SkiaTransform>,
     opacity_stack: Vec<f32>,
     scratch_pixmap: Option<Pixmap>,
-    active_layers: Vec<(LayerId, Pixmap)>,
 }
 
 impl TinySkiaRenderer {
@@ -41,11 +37,9 @@ impl TinySkiaRenderer {
             svg_cache: SvgCache::new(),
             image_cache: ImageCache::new(),
             shadow_rasterizer: ShadowRasterizer::new(),
-            layer_compositor: LayerCompositor::new(),
             tx_stack: Vec::with_capacity(32),
             opacity_stack: Vec::with_capacity(32),
             scratch_pixmap: None,
-            active_layers: Vec::new(),
         }
     }
 
@@ -85,11 +79,6 @@ impl TinySkiaRenderer {
         self.text_ctx = text_ctx;
     }
 
-    /// Evicts an offscreen layer backing store by identifier.
-    pub fn invalidate_layer(&mut self, id: LayerId) {
-        self.layer_compositor.invalidate(id);
-    }
-
     /// Rasterizes damaged rectangles of the scene into the persistent canvas.
     #[tracing::instrument(name = "render_damage", skip_all)]
     pub fn render_damage(
@@ -100,8 +89,7 @@ impl TinySkiaRenderer {
         if damage.is_empty() {
             return Ok(());
         }
-        let _span = tracing::info_span!("Stage6::TinySkiaRaster").entered();
-        self.layer_compositor.advance_frame();
+        let _span = tracing::info_span!("Raster::TinySkia").entered();
         let (cw, ch) = (
             self.persistent_canvas.width(),
             self.persistent_canvas.height(),
@@ -133,6 +121,13 @@ impl TinySkiaRenderer {
                 .unwrap(),
             };
 
+            // Each tile starts from a clean clip and transform stack. Anything a previous
+            // tile left behind would otherwise bleed across, and the damage region caps
+            // the tile count at a small number, so the reset is free.
+            self.clip_stack.reset();
+            self.tx_stack.clear();
+            self.opacity_stack.clear();
+
             self.tx_stack
                 .push(SkiaTransform::from_translate(-(x as f32), -(y as f32)));
             let mut ctx = CommandContext {
@@ -141,13 +136,11 @@ impl TinySkiaRenderer {
                 svg_cache: &mut self.svg_cache,
                 image_cache: &mut self.image_cache,
                 shadow_rasterizer: &mut self.shadow_rasterizer,
-                layer_compositor: &mut self.layer_compositor,
-                active_layers: &mut self.active_layers,
                 tx_stack: &mut self.tx_stack,
                 opacity_stack: &mut self.opacity_stack,
             };
 
-            for chunk in scene.chunks.iter().filter(|c| c.bounds.intersects(rect)) {
+            for chunk in scene.chunks.iter().filter(|c| c.bounds.overlaps(rect)) {
                 execute_commands(
                     &chunk.commands,
                     &mut scratch.as_mut(),
@@ -157,6 +150,7 @@ impl TinySkiaRenderer {
                 );
             }
             self.tx_stack.pop();
+            self.clip_stack.reset();
 
             let (src, dst) = (scratch.data(), self.persistent_canvas.data_mut());
             for row in 0..rh as usize {

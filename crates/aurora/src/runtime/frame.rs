@@ -1,8 +1,8 @@
-// Single responsibility: Orchestrates multi-stage frame layout, damage culling, and scene compilation.
+// Single responsibility: Orchestrates the per-frame pass sequence: layout, damage, compile, and bounds commit.
 
 use crate::foundation::{Constraints, DamageRegion, ResolvedRect};
 use crate::layout::LayoutResult;
-use crate::pipeline::{commit_painted_bounds, CompileResult, DamagePlan, OverlapPlan};
+use crate::pipeline::{commit_painted_bounds, CompileResult, DamagePlan};
 use crate::runtime::scheduler::FrameScheduler;
 use crate::runtime::{
     CompileDiagnostics, FrameDiagnostics, FrameTimings, InvalidationDiagnostics, LayoutDiagnostics,
@@ -11,9 +11,9 @@ use crate::runtime::{
 use crate::scene::Scene;
 use crate::tree::NodeId;
 
-/// Runs stages 1-5 across arena state, emitting compiled scene and telemetry.
+/// Runs the frame passes over arena state, emitting the compiled scene and telemetry.
 #[tracing::instrument(name = "Engine::frame", skip_all)]
-pub fn execute_frame_stages(
+pub fn run_frame_passes(
     scheduler: &mut FrameScheduler,
     root: NodeId,
     scene: &mut Scene,
@@ -25,18 +25,71 @@ pub fn execute_frame_stages(
 ) -> (crate::runtime::FrameStats, FrameDiagnostics) {
     let t_start = std::time::Instant::now();
 
+    // One clock feeds everything time-driven this frame: the reactive tickers that drive
+    // userland animation.
+    scheduler.clock.tick();
+    // Animation integrates on a fixed grid rather than on whatever the frame measured, so a
+    // transition lands in the same place at 30fps as at 144fps. The measured delta still
+    // drives the pointer clock below, which is wall-clock rather than simulated.
+    let (steps, step) = scheduler.clock.animation_steps();
+    for _ in 0..steps {
+        crate::reactive::tick(&scheduler.runtime, step);
+    }
+    // Total time the tickers were given this frame, handed on to the post-layout phase so a
+    // transition that lives there integrates at exactly the same rate as one that lives here.
+    let ticked = step * steps as f32;
+    if steps == 0 {
+        // Poll the tickers with no time passing. Adopting a new target is not a function of
+        // elapsed time, so a frame too short to advance the clock still has to let a ticker
+        // notice that its target moved. Without this, an animation triggered while time is
+        // slowed or frozen is never observed as started, the engine reports itself idle, and
+        // the animation simply never begins.
+        crate::reactive::tick(&scheduler.runtime, 0.0);
+    }
+
     let t0 = std::time::Instant::now();
     let mut layout_res = LayoutResult::default();
+
+    // Forget last frame's geometry *before* layout writes this frame's, so a handle read after
+    // publication can tell "this frame put it here" from "nothing has measured it yet". Doing it
+    // in the other order would leave a stale entry readable for the whole layout pass.
+    scheduler.runtime.borrow_mut().begin_geometry_frame();
+
     let stats = {
-        let _span = tracing::info_span!("Stage1_2::LayoutPass").entered();
+        let _span = tracing::info_span!("Pass::Layout").entered();
         scheduler.commit_frame(Constraints::tight(w as f32, h as f32), &mut layout_res)
     };
     let t_layout = t0.elapsed();
 
+    // Publish watched geometry after layout and before anything reads it. This is a table rather
+    // than signals, so there is no invalidation to reason about: a handle that reads it is asking
+    // a question, and the answer cannot dirty anything.
+    if scheduler.runtime.borrow().geometry_watched() {
+        let watched = scheduler.runtime.borrow().watched_geometry();
+        let snapshot = scheduler.runtime.borrow().snapshot().clone();
+        scheduler
+            .arena
+            .publish_watched(&watched, |index, rect| snapshot.put(index, rect));
+    }
+
+    // Client work that has to see this frame's geometry and still reach this frame's transform.
+    //
+    // Placed after publication and before damage, so a callback that measures sees final boxes
+    // and a value it writes is picked up by this frame's compile rather than the next one. The
+    // only thing downstream is damage, and a callback cannot dirty a node — it writes signals,
+    // which the reactive layer resolves below — so the region computed here is the one this
+    // frame's compile will actually use.
+    crate::reactive::run_post_layout(&scheduler.runtime, ticked);
+
+    // Whatever those callbacks wrote into a bound signal is applied here, in the same frame.
+    // Without this the value would be picked up next frame, and a FLIP would show the row at its
+    // destination for one frame before jumping back to animate.
+    scheduler.drain_paint_after_layout();
+
     let t1 = std::time::Instant::now();
     let removed = scheduler.arena.drain_removed_damage();
     let _plan = {
-        let _span = tracing::info_span!("Stage3::DamageAnalysis").entered();
+        let _span = tracing::info_span!("Pass::Damage").entered();
         let plan = DamagePlan::compute(
             &mut scheduler.arena,
             root,
@@ -51,15 +104,10 @@ pub fn execute_frame_stages(
     };
     let t_spatial = t1.elapsed();
 
-    let overlap = {
-        let _span = tracing::info_span!("Stage4::OverlapCulling").entered();
-        OverlapPlan::compute(&scheduler.arena, root, frame_damage)
-    };
-
     let viewport = ResolvedRect::new(0.0, 0.0, w as f32, h as f32);
     let t2 = std::time::Instant::now();
     let comp = {
-        let _span = tracing::info_span!("Stage5::DisplayListCompile").entered();
+        let _span = tracing::info_span!("Pass::Compile").entered();
         CompileResult::compile(
             &mut scheduler.arena,
             root,
@@ -67,7 +115,6 @@ pub fn execute_frame_stages(
             &scheduler.text_ctx,
             frame_damage,
             viewport,
-            &overlap,
         )
     };
     let t_compile = t2.elapsed();

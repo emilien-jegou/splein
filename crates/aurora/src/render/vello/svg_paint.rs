@@ -22,7 +22,9 @@ pub fn convert_usvg_paint(paint: &usvg::Paint, opacity: f32) -> Option<Brush> {
             }
             let start = KurboPoint::new(lg.x1() as f64, lg.y1() as f64);
             let end = KurboPoint::new(lg.x2() as f64, lg.y2() as f64);
-            Some(Brush::Gradient(Gradient::new_linear(start, end).with_stops(stops.as_slice())))
+            Some(Brush::Gradient(
+                Gradient::new_linear(start, end).with_stops(stops.as_slice()),
+            ))
         }
         usvg::Paint::RadialGradient(rg) => {
             let mut stops = ColorStops::new();
@@ -36,7 +38,8 @@ pub fn convert_usvg_paint(paint: &usvg::Paint, opacity: f32) -> Option<Brush> {
             let center = KurboPoint::new(rg.cx() as f64, rg.cy() as f64);
             let focal = KurboPoint::new(rg.fx() as f64, rg.fy() as f64);
             Some(Brush::Gradient(
-                Gradient::new_two_point_radial(focal, 0.0f32, center, rg.r().get() as f32).with_stops(stops.as_slice()),
+                Gradient::new_two_point_radial(focal, 0.0f32, center, rg.r().get() as f32)
+                    .with_stops(stops.as_slice()),
             ))
         }
         usvg::Paint::Pattern(_) => None,

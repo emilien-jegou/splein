@@ -15,7 +15,7 @@ in {
     pkgs.wayland
     pkgs.libxkbcommon
     pkgs.libGL
-    tracy
+  #  tracy
   ];
 
   env.LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [

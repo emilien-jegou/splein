@@ -7,6 +7,7 @@ mod frame_flow;
 #[cfg(feature = "vello")]
 pub mod gpu_backend;
 pub mod pacing;
+pub mod pointer;
 
 pub use backend::{
     Backend, DamageResolver, FramePostProcess, Present, PresentReport, SurfaceRequest,
@@ -26,6 +27,7 @@ use crate::app::extension::AppExtension;
 use crate::runtime::Engine;
 use frame_flow::present_one;
 use pacing::{compute_jit_wake, compute_target_interval};
+use pointer::PointerBridge;
 
 /// Runs the native window event loop, driving frame updates and presentation.
 #[tracing::instrument(skip_all, fields(fps_limit = ?fps_limit))]
@@ -42,6 +44,7 @@ pub fn run_event_loop(
     let mut last_present = Instant::now();
     let mut redraw_pending = true;
     let mut avg_compute = Duration::from_millis(2);
+    let mut pointer = PointerBridge::new();
 
     let target_interval = compute_target_interval(fps_limit, &window);
     window.request_redraw();
@@ -52,6 +55,11 @@ pub fn run_event_loop(
                 event: win_event, ..
             } => {
                 last_activity = Instant::now();
+                // Input is forwarded before the extension hook so a demo's own handler and
+                // the engine's hit testing see events in the order they happened.
+                if pointer.dispatch(&win_event, &mut engine) {
+                    redraw_pending = true;
+                }
                 if extensions.iter_mut().any(|ext| ext.on_event(&win_event)) {
                     redraw_pending = true;
                 }
@@ -62,7 +70,10 @@ pub fn run_event_loop(
                         redraw_pending = true;
                     }
                     WindowEvent::RedrawRequested => {
-                        redraw_pending = false;
+                        let mut wants_redraw = false;
+                        for ext in extensions.iter_mut() {
+                            wants_redraw |= ext.on_update(&mut engine);
+                        }
                         let compute_dur = present_one(
                             &mut engine,
                             &mut *backend,
@@ -71,6 +82,7 @@ pub fn run_event_loop(
                         );
                         avg_compute = avg_compute.mul_f32(0.8) + compute_dur.mul_f32(0.2);
                         last_present = Instant::now();
+                        redraw_pending = wants_redraw || engine.has_active_motion();
                     }
                     _ => {}
                 }

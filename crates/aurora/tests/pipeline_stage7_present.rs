@@ -3,6 +3,7 @@
 use aurora::foundation::*;
 
 #[test]
+#[ntest::timeout(30_000)]
 fn test_7_1_buffer_age_1_copies_only_active_frame_damage() {
     let mut ring = DamageRing::new();
     let full_window = ResolvedRect::new(0.0, 0.0, 800.0, 600.0);
@@ -20,6 +21,7 @@ fn test_7_1_buffer_age_1_copies_only_active_frame_damage() {
 }
 
 #[test]
+#[ntest::timeout(30_000)]
 fn test_7_2_buffer_age_2_unions_previous_two_frames() {
     let mut ring = DamageRing::new();
     let full_window = ResolvedRect::new(0.0, 0.0, 800.0, 600.0);
@@ -38,6 +40,7 @@ fn test_7_2_buffer_age_2_unions_previous_two_frames() {
 }
 
 #[test]
+#[ntest::timeout(30_000)]
 fn test_7_3_buffer_age_0_forces_full_window_damage() {
     let mut ring = DamageRing::new();
     let full_window = ResolvedRect::new(0.0, 0.0, 800.0, 600.0);

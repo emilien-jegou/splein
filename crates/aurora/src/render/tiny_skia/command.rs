@@ -1,18 +1,17 @@
 // Single responsibility: Direct dispatch and execution of discrete SceneCommands on TinySkia targets.
 
-use tiny_skia::{FillRule, Mask, Pixmap, PixmapMut, PixmapPaint, Transform as SkiaTransform};
+use tiny_skia::{FillRule, Mask, PixmapMut, Transform as SkiaTransform};
 
 use crate::foundation::Radius;
 use crate::render::tiny_skia::clip::ClipStack;
 use crate::render::tiny_skia::image::ImageCache;
-use crate::render::tiny_skia::layer::LayerCompositor;
 use crate::render::tiny_skia::path::build_rounded_path;
 use crate::render::tiny_skia::shader::build_paint;
 use crate::render::tiny_skia::shadow::ShadowRasterizer;
 use crate::render::tiny_skia::stroke::render_stroke;
 use crate::render::tiny_skia::svg::SvgCache;
 use crate::render::tiny_skia::text::{render_text, TextRenderParams};
-use crate::scene::command::{LayerId, SceneCommand};
+use crate::scene::command::SceneCommand;
 use crate::text::TextContext;
 
 /// Shared stateful resources required during single-tile TinySkia rasterization.
@@ -22,8 +21,6 @@ pub struct CommandContext<'a> {
     pub svg_cache: &'a mut SvgCache,
     pub image_cache: &'a mut ImageCache,
     pub shadow_rasterizer: &'a mut ShadowRasterizer,
-    pub layer_compositor: &'a mut LayerCompositor,
-    pub active_layers: &'a mut Vec<(LayerId, Pixmap)>,
     pub tx_stack: &'a mut Vec<SkiaTransform>,
     pub opacity_stack: &'a mut Vec<f32>,
 }
@@ -142,50 +139,62 @@ pub fn execute_commands(
                     },
                 );
             }
-            SceneCommand::BeginLayer { id, rect } => {
-                let (lw, lh) = (
-                    (rect.width.ceil() as u32).max(1),
-                    (rect.height.ceil() as u32).max(1),
-                );
-                if let Some(c) = ctx.layer_compositor.try_get_cached(*id, lw, lh) {
-                    target.draw_pixmap(
-                        rect.x.round() as i32,
-                        rect.y.round() as i32,
-                        c.as_ref(),
-                        &PixmapPaint {
-                            opacity: cur_op,
-                            ..Default::default()
-                        },
-                        cur_tx,
-                        ctx.clip_stack.current(),
-                    );
-                } else if let Some(mut pm) = Pixmap::new(lw, lh) {
-                    pm.fill(tiny_skia::Color::TRANSPARENT);
-                    ctx.active_layers.push((*id, pm));
-                }
+            // Isolates the subtree with a rectangular clip, matching the Vello
+            // backend (push_layer/pop_layer). Previously this allocated an
+            // offscreen pixmap but never redirected draws into it, so the
+            // cache filled with empty bitmaps and isolation never happened.
+            SceneCommand::BeginLayer { rect, .. } => {
+                ctx.clip_stack
+                    .push(rect, Radius::ZERO, cur_tx, target.width(), target.height());
             }
-            SceneCommand::EndLayer { id } => {
-                if let Some((lid, pm)) = ctx.active_layers.pop() {
-                    if lid == *id {
-                        target.draw_pixmap(
-                            0,
-                            0,
-                            pm.as_ref(),
-                            &PixmapPaint {
-                                opacity: cur_op,
-                                ..Default::default()
-                            },
-                            cur_tx,
-                            ctx.clip_stack.current(),
-                        );
-                        ctx.layer_compositor.store(*id, pm);
-                    }
-                }
+            SceneCommand::EndLayer { .. } => {
+                ctx.clip_stack.pop();
             }
         }
     }
     ctx.tx_stack.truncate(base_tx);
     ctx.opacity_stack.truncate(base_op);
+}
+
+/// Tile culling honoring the full affine transform. The old test read only the
+/// translation components, so rotated/scaled rects were culled against the
+/// wrong box (missing pixels or wasted work). Axis-aligned transforms take a
+/// cheap edge test; skewed ones project all four corners.
+pub(crate) fn rect_visible_in_tile(
+    r: &crate::foundation::ResolvedRect,
+    tx: SkiaTransform,
+    tw: f32,
+    th: f32,
+) -> bool {
+    if !tx.has_skew() {
+        let (x0, x1) = if tx.sx >= 0.0 {
+            (r.x * tx.sx + tx.tx, (r.x + r.width) * tx.sx + tx.tx)
+        } else {
+            ((r.x + r.width) * tx.sx + tx.tx, r.x * tx.sx + tx.tx)
+        };
+        let (y0, y1) = if tx.sy >= 0.0 {
+            (r.y * tx.sy + tx.ty, (r.y + r.height) * tx.sy + tx.ty)
+        } else {
+            ((r.y + r.height) * tx.sy + tx.ty, r.y * tx.sy + tx.ty)
+        };
+        return x1 > 0.0 && x0 < tw && y1 > 0.0 && y0 < th;
+    }
+    let (mut min_x, mut min_y) = (f32::INFINITY, f32::INFINITY);
+    let (mut max_x, mut max_y) = (f32::NEG_INFINITY, f32::NEG_INFINITY);
+    for (px, py) in [
+        (r.x, r.y),
+        (r.x + r.width, r.y),
+        (r.x, r.y + r.height),
+        (r.x + r.width, r.y + r.height),
+    ] {
+        let x = tx.sx * px + tx.kx * py + tx.tx;
+        let y = tx.ky * px + tx.sy * py + tx.ty;
+        min_x = min_x.min(x);
+        min_y = min_y.min(y);
+        max_x = max_x.max(x);
+        max_y = max_y.max(y);
+    }
+    max_x > 0.0 && min_x < tw && max_y > 0.0 && min_y < th
 }
 
 fn render_rect(
@@ -198,11 +207,7 @@ fn render_rect(
     tw: f32,
     th: f32,
 ) {
-    if (r.x + tx.tx) >= tw
-        || (r.x + tx.tx + r.width) <= 0.0
-        || (r.y + tx.ty) >= th
-        || (r.y + tx.ty + r.height) <= 0.0
-    {
+    if !rect_visible_in_tile(r, tx, tw, th) {
         return;
     }
     if let Some(fill) = &a.fill {

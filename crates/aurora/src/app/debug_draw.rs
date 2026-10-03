@@ -3,7 +3,14 @@
 use crate::foundation::ResolvedRect;
 
 /// Blends a transparent color tint into a bounded rectangle of pixels.
-pub fn draw_tint(buffer: &mut [u32], rect: &ResolvedRect, rgb: u32, alpha: u8, stride: usize, height: usize) {
+pub fn draw_tint(
+    buffer: &mut [u32],
+    rect: &ResolvedRect,
+    rgb: u32,
+    alpha: u8,
+    stride: usize,
+    height: usize,
+) {
     let (x0, y0, x1, y1) = clamp_bounds(rect, stride, height);
     if x1 <= x0 || y1 <= y0 {
         return;
@@ -25,7 +32,14 @@ pub fn draw_tint(buffer: &mut [u32], rect: &ResolvedRect, rgb: u32, alpha: u8, s
 }
 
 /// Draws an outline border wireframe with explicit pixel thickness.
-pub fn draw_wireframe(buffer: &mut [u32], rect: &ResolvedRect, rgb: u32, thickness: usize, stride: usize, height: usize) {
+pub fn draw_wireframe(
+    buffer: &mut [u32],
+    rect: &ResolvedRect,
+    rgb: u32,
+    thickness: usize,
+    stride: usize,
+    height: usize,
+) {
     let (x0, y0, x1, y1) = clamp_bounds(rect, stride, height);
     if x1 <= x0 || y1 <= y0 {
         return;
@@ -45,7 +59,13 @@ pub fn draw_wireframe(buffer: &mut [u32], rect: &ResolvedRect, rgb: u32, thickne
 }
 
 /// Draws a nested double-line border for layout boundary isolation.
-pub fn draw_double_border(buffer: &mut [u32], rect: &ResolvedRect, rgb: u32, stride: usize, height: usize) {
+pub fn draw_double_border(
+    buffer: &mut [u32],
+    rect: &ResolvedRect,
+    rgb: u32,
+    stride: usize,
+    height: usize,
+) {
     draw_wireframe(buffer, rect, rgb, 1, stride, height);
     let inner = rect.expand(-3.0);
     if !inner.is_empty() {
@@ -54,7 +74,13 @@ pub fn draw_double_border(buffer: &mut [u32], rect: &ResolvedRect, rgb: u32, str
 }
 
 /// Draws a dashed wireframe border indicating removed or transient nodes.
-pub fn draw_dashed_wireframe(buffer: &mut [u32], rect: &ResolvedRect, rgb: u32, stride: usize, height: usize) {
+pub fn draw_dashed_wireframe(
+    buffer: &mut [u32],
+    rect: &ResolvedRect,
+    rgb: u32,
+    stride: usize,
+    height: usize,
+) {
     let (x0, y0, x1, y1) = clamp_bounds(rect, stride, height);
     if x1 <= x0 || y1 <= y0 {
         return;
@@ -74,7 +100,11 @@ pub fn draw_dashed_wireframe(buffer: &mut [u32], rect: &ResolvedRect, rgb: u32, 
 }
 
 /// Clamps floating point bounds outward into valid scanline and pixel bounds.
-pub fn clamp_bounds(rect: &ResolvedRect, stride: usize, height: usize) -> (usize, usize, usize, usize) {
+pub fn clamp_bounds(
+    rect: &ResolvedRect,
+    stride: usize,
+    height: usize,
+) -> (usize, usize, usize, usize) {
     let x0 = (rect.x.floor() as i32).max(0) as usize;
     let y0 = (rect.y.floor() as i32).max(0) as usize;
     let x1 = (rect.right().ceil() as usize).min(stride);

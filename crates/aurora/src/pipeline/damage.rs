@@ -36,21 +36,17 @@ impl DamagePlan {
             return plan;
         }
 
-        // Fast Path 2: Paint-only mutations (no layout executed, O(M) evaluation)
+        // Fast Path 2: Paint-only mutations walk only the dirty subtrees (O(M*K)), pushing
+        // each node's previous and current bounds so a moved node damages both positions.
         if !laid_out {
             for &id in dirty_nodes {
                 if !arena.is_valid(id) {
                     continue;
                 }
-                let (old_bounds, subtree_bounds) = {
-                    let n = arena.get(id);
-                    (n.state.last_painted_bounds, n.state.subtree_bounds)
-                };
-                let has_children = !arena.children(id).is_empty();
-                if let Some(old) = old_bounds {
-                    let target = if has_children { subtree_bounds } else { old };
-                    plan.region.push(target);
-                }
+                let parent_tx = arena
+                    .parent(id)
+                    .map_or(Transform::IDENTITY, |p| arena.node_absolute_transform(p));
+                resolve_spatial_and_damage(arena, id, parent_tx, None, &mut plan.region);
             }
             return plan;
         }
@@ -85,25 +81,27 @@ fn resolve_spatial_and_damage(
     active_clip: Option<ResolvedRect>,
     damage: &mut DamageRegion,
 ) -> ResolvedRect {
-    let (node_tx, is_clip, local_rect) = {
+    let (node_tx, is_clip, painted) = {
         let node = arena.get(id);
-        let mut tx = parent_tx.multiply(&Transform::from_translation(
-            node.resolved_rect.x,
-            node.resolved_rect.y,
-        ));
-        if node.transform != Transform::IDENTITY {
-            tx = tx.multiply(&node.transform);
+        // Origin comes from the render box so damage follows what is on screen.
+        let painted = node.resolved_rect;
+        let mut tx = parent_tx.multiply(&Transform::from_translation(painted.x, painted.y));
+        let local_tx = node.effective_transform();
+        if local_tx != Transform::IDENTITY {
+            tx = tx.multiply(&local_tx);
         }
-        (tx, node.style.clip, node.resolved_rect)
+        (tx, node.style.clip, painted)
     };
 
     let node_abs = node_tx.transform_point(Point::new(0.0, 0.0));
-    let visual_bounds = arena.get(id).compute_visual_bounds(node_abs, active_clip);
+    // Unclipped occupancy drives damage: a node leaving its clip must still clear its old pixels.
+    let full_bounds = arena.get(id).compute_visual_bounds(&node_tx, None);
+    // Visible extent under the active clip: bounds the subtree work a chunk has to rasterize.
+    let visual_bounds = arena.get(id).compute_visual_bounds(&node_tx, active_clip);
     let mut subtree_bounds = visual_bounds;
 
     let next_clip = if is_clip {
-        let box_rect =
-            ResolvedRect::new(node_abs.x, node_abs.y, local_rect.width, local_rect.height);
+        let box_rect = ResolvedRect::new(node_abs.x, node_abs.y, painted.width, painted.height);
         Some(active_clip.map_or(box_rect, |c| c.intersect(&box_rect)))
     } else {
         active_clip
@@ -116,26 +114,30 @@ fn resolve_spatial_and_damage(
         subtree_bounds = subtree_bounds.union(&child_subtree);
     }
 
+    let flow_bounds = arena.get(id).compute_flow_bounds(&node_tx, active_clip);
+
     let node = arena.get_mut(id);
     let old_bounds = node.state.last_painted_bounds;
+    let old_flow = node.state.last_painted_flow;
     let is_text_mutation = matches!(node.kind, NodeKind::Text(_))
         && (node.state.dirty.contains(DirtyFlags::MEASURE)
             || node.state.dirty.contains(DirtyFlags::LAYOUT));
 
     if let Some(old) = old_bounds {
-        if old != visual_bounds {
+        // Either the box moved or the interior re-flowed: both vacate pixels.
+        if old != full_bounds || old_flow != Some(flow_bounds) {
             damage.push(old);
-            damage.push(visual_bounds);
+            damage.push(full_bounds);
         } else if node.state.dirty.contains(DirtyFlags::PAINT) || is_text_mutation {
             let damage_target = if child_count > 0 {
                 subtree_bounds
             } else {
-                visual_bounds
+                full_bounds
             };
             damage.push(damage_target);
         }
     } else {
-        damage.push(visual_bounds);
+        damage.push(full_bounds);
     }
 
     node.state.subtree_bounds = subtree_bounds;

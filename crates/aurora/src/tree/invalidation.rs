@@ -49,6 +49,8 @@ fn propagate_upward(arena: &mut TreeArena, node_id: NodeId) {
             .dirty
             .insert(DirtyFlags::LAYOUT | DirtyFlags::SUBTREE_DIRTY);
         p_mut.state.cache.clear_layout();
+        // Min-content floors depend on descendants even when the ancestor has a definite size.
+        p_mut.state.cache.clear_min_sizes();
 
         if is_boundary {
             break;

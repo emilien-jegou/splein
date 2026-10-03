@@ -6,7 +6,48 @@ use crate::app::debug_font::draw_text_scaled;
 use crate::foundation::ResolvedRect;
 use crate::runtime::FrameDiagnostics;
 
+/// Short badge naming the animation clock's rate, or `None` at real time.
+///
+/// Absent rather than reading `1.0x` when nothing is unusual, so the badge appearing is itself
+/// the signal that time is no longer running normally.
+pub fn time_scale_label(scale: f32) -> Option<String> {
+    if (scale - 1.0).abs() < 1e-4 {
+        return None;
+    }
+    if scale <= 1e-4 {
+        return Some("HOLD".into());
+    }
+    Some(format!("{scale:.2}X"))
+}
+
+/// The debugger's own shortcuts, shown whenever time is not running normally.
+///
+/// A debugger that makes you remember a key is a debugger you stop reaching for. These three are
+/// the ones that cannot be guessed from what is on screen: nothing about a frozen clock says the
+/// transition can be walked a frame at a time, and that is the reason to freeze it. `None` at
+/// normal speed, so the hint appears exactly when it is relevant and stays out of the way.
+pub fn time_control_hint(scale: f32) -> Option<&'static str> {
+    if (scale - 1.0).abs() < 1e-4 {
+        return None;
+    }
+    if scale <= 1e-4 {
+        Some("F8 RUN  . STEP  [ ] SPEED")
+    } else {
+        Some("F8 FREEZE  [ ] SPEED")
+    }
+}
+
+/// Colour the time-scale badge is drawn in: amber when slowed, red when stopped.
+pub fn time_scale_color(scale: f32) -> u32 {
+    if scale <= 1e-4 {
+        0x00EF4444
+    } else {
+        0x00F59E0B
+    }
+}
+
 /// Renders HUD diagnostic telemetry panel with active backend name and metrics breakdown.
+#[allow(clippy::too_many_arguments)]
 pub fn draw_hud_panel(
     buffer: &mut [u32],
     is_idle: bool,
@@ -14,6 +55,7 @@ pub fn draw_hud_panel(
     backend_tag: &str,
     diag: &FrameDiagnostics,
     mode: InspectorMode,
+    time_scale: f32,
     stride: usize,
     height: usize,
 ) {
@@ -27,17 +69,42 @@ pub fn draw_hud_panel(
         InspectorMode::StackingAndHierarchy => (0x00A855F7, "STK"),
         InspectorMode::Off => (0x00475569, "OFF"),
     };
-    draw_tint(buffer, &ResolvedRect::new(20.0, 20.0, 12.0, 12.0), mode_color, 255, stride, height);
-    draw_wireframe(buffer, &ResolvedRect::new(20.0, 20.0, 12.0, 12.0), 0x00FFFFFF, 1, stride, height);
+    draw_tint(
+        buffer,
+        &ResolvedRect::new(20.0, 20.0, 12.0, 12.0),
+        mode_color,
+        255,
+        stride,
+        height,
+    );
+    draw_wireframe(
+        buffer,
+        &ResolvedRect::new(20.0, 20.0, 12.0, 12.0),
+        0x00FFFFFF,
+        1,
+        stride,
+        height,
+    );
 
     let total_us = diag.timings.total.as_micros();
     let ms_val = total_us as f32 / 1000.0;
-    let color = if is_idle { 0x0094A3B8 } else if ms_val < 8.33 { 0x0022C55E } else if ms_val < 16.66 { 0x00EAB308 } else { 0x00EF4444 };
+    let color = if is_idle {
+        0x0094A3B8
+    } else if ms_val < 8.33 {
+        0x0022C55E
+    } else if ms_val < 16.66 {
+        0x00EAB308
+    } else {
+        0x00EF4444
+    };
 
     let (fps_str, ms_str) = if is_idle {
         ("IDLE".into(), "0.0MS".into())
     } else {
-        (format!("{}FPS", display_fps.min(9999)), format!("{:.1}MS", ms_val))
+        (
+            format!("{}FPS", display_fps.min(9999)),
+            format!("{:.1}MS", ms_val),
+        )
     };
 
     // Row 1: Backend Badge (GPU / CPU) + Mode + FPS + Compute Time
@@ -49,8 +116,40 @@ pub fn draw_hud_panel(
     draw_text_scaled(buffer, &fps_str, 126, 20, 2, 0x0022C55E, stride, height);
     draw_text_scaled(buffer, &ms_str, 220, 20, 2, color, stride, height);
 
+    if let Some(label) = time_scale_label(time_scale) {
+        draw_text_scaled(
+            buffer,
+            &label,
+            268,
+            20,
+            2,
+            time_scale_color(time_scale),
+            stride,
+            height,
+        );
+    }
+
     // Row 2: Frame budget headroom line
-    let bar_c = if total_us < 8_333 { 0x0022C55E } else if total_us < 16_666 { 0x00EAB308 } else { 0x00EF4444 };
+    let bar_c = if total_us < 8_333 {
+        0x0022C55E
+    } else if total_us < 16_666 {
+        0x00EAB308
+    } else {
+        0x00EF4444
+    };
     let bar_w = ((total_us as f32 / 16_666.0).min(1.0) * 286.0).max(6.0);
-    draw_tint(buffer, &ResolvedRect::new(20.0, 40.0, bar_w, 3.0), bar_c, 255, stride, height);
+    draw_tint(
+        buffer,
+        &ResolvedRect::new(20.0, 40.0, bar_w, 3.0),
+        bar_c,
+        255,
+        stride,
+        height,
+    );
+
+    // The hint sits below the budget bar, at half the badge's scale so the whole line fits
+    // without pushing the HUD wider than the bar already is.
+    if let Some(hint) = time_control_hint(time_scale) {
+        draw_text_scaled(buffer, hint, 20, 48, 1, 0x0094A3B8, stride, height);
+    }
 }

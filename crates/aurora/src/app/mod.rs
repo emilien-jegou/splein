@@ -27,7 +27,7 @@ use winit::window::WindowBuilder;
 
 use crate::dsl::component::IntoElement;
 use crate::foundation::Color;
-use crate::reactive::ReactiveRuntime;
+use crate::reactive::{Cx, ReactiveRuntime};
 use crate::render::RenderBackend;
 use crate::runtime::Engine;
 #[cfg(feature = "vello")]
@@ -120,12 +120,13 @@ impl AppConfig {
             .take()
             .unwrap_or_else(|| Rc::new(RefCell::new(ReactiveRuntime::new())));
 
-        let mut engine = Engine::with_runtime(
-            Rc::clone(&runtime),
-            root_fn().into_element(),
-            self.width,
-            self.height,
-        );
+        // The root builder runs inside the hook scope, so a `#[component]` page can call the
+        // `use_*` hooks with no arguments and land its signals on the runtime the engine is
+        // about to drain.
+        let cx = Cx::new(Rc::clone(&runtime));
+        let root = cx.enter(root_fn).into_element();
+
+        let mut engine = Engine::with_runtime(Rc::clone(&runtime), root, self.width, self.height);
         engine.set_background(self.background);
         for f in &self.fonts {
             engine.load_font(f);

@@ -36,14 +36,14 @@ pub fn reconcile_children(
                 let elem = elements[new_idx].take().expect("Child already consumed");
                 let key = elem.key();
                 let child_id = reconcile(runtime, arena, router, Some(old), elem);
-                arena.get_mut(child_id).key = key;
+                arena.bind_key(key, child_id);
                 final_children.push((new_idx, child_id));
             }
             ChildOp::Create { new_idx } => {
                 let elem = elements[new_idx].take().expect("Child already consumed");
                 let key = elem.key();
                 let child_id = reconcile(runtime, arena, router, None, elem);
-                arena.get_mut(child_id).key = key;
+                arena.bind_key(key, child_id);
                 final_children.push((new_idx, child_id));
             }
             ChildOp::Remove(stale) => {

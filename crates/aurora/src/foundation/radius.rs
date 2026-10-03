@@ -38,21 +38,49 @@ impl Radius {
     pub const ZERO: Self = Self::Scalar(0.0);
 
     /// Constructs a uniform scalar corner radius.
-    pub const fn scalar(value: f32) -> Self { Self::Scalar(value) }
+    pub const fn scalar(value: f32) -> Self {
+        Self::Scalar(value)
+    }
 
     /// Constructs a full pill radius.
-    pub const fn max() -> Self { Self::Max }
+    pub const fn max() -> Self {
+        Self::Max
+    }
 
     /// Constructs an explicit 4-corner radius.
-    pub const fn corners(top_left: f32, top_right: f32, bottom_right: f32, bottom_left: f32) -> Self {
-        Self::Corners { top_left, top_right, bottom_right, bottom_left }
+    pub const fn corners(
+        top_left: f32,
+        top_right: f32,
+        bottom_right: f32,
+        bottom_left: f32,
+    ) -> Self {
+        Self::Corners {
+            top_left,
+            top_right,
+            bottom_right,
+            bottom_left,
+        }
     }
 
     /// Constructs a radius affecting only the top two corners.
-    pub const fn top(r: f32) -> Self { Self::Corners { top_left: r, top_right: r, bottom_right: 0.0, bottom_left: 0.0 } }
+    pub const fn top(r: f32) -> Self {
+        Self::Corners {
+            top_left: r,
+            top_right: r,
+            bottom_right: 0.0,
+            bottom_left: 0.0,
+        }
+    }
 
     /// Constructs a radius affecting only the bottom two corners.
-    pub const fn bottom(r: f32) -> Self { Self::Corners { top_left: 0.0, top_right: 0.0, bottom_right: r, bottom_left: r } }
+    pub const fn bottom(r: f32) -> Self {
+        Self::Corners {
+            top_left: 0.0,
+            top_right: 0.0,
+            bottom_right: r,
+            bottom_left: r,
+        }
+    }
 
     /// Resolves corners into physical pixels with W3C CSS proportional scaling if overlapping.
     pub fn resolve_corners(&self, width: f32, height: f32) -> ResolvedCorners {
@@ -63,8 +91,16 @@ impl Radius {
                 let m = (w.min(h) * 0.5).max(0.0);
                 (m, m, m, m)
             }
-            Self::Corners { top_left, top_right, bottom_right, bottom_left } => (
-                top_left.max(0.0), top_right.max(0.0), bottom_right.max(0.0), bottom_left.max(0.0)
+            Self::Corners {
+                top_left,
+                top_right,
+                bottom_right,
+                bottom_left,
+            } => (
+                top_left.max(0.0),
+                top_right.max(0.0),
+                bottom_right.max(0.0),
+                bottom_left.max(0.0),
             ),
         };
 
@@ -74,10 +110,18 @@ impl Radius {
         let right_sum = tr + br;
 
         let mut factor = 1.0f32;
-        if top_sum > w && top_sum > 0.0 { factor = factor.min(w / top_sum); }
-        if bottom_sum > w && bottom_sum > 0.0 { factor = factor.min(w / bottom_sum); }
-        if left_sum > h && left_sum > 0.0 { factor = factor.min(h / left_sum); }
-        if right_sum > h && right_sum > 0.0 { factor = factor.min(h / right_sum); }
+        if top_sum > w && top_sum > 0.0 {
+            factor = factor.min(w / top_sum);
+        }
+        if bottom_sum > w && bottom_sum > 0.0 {
+            factor = factor.min(w / bottom_sum);
+        }
+        if left_sum > h && left_sum > 0.0 {
+            factor = factor.min(h / left_sum);
+        }
+        if right_sum > h && right_sum > 0.0 {
+            factor = factor.min(h / right_sum);
+        }
 
         ResolvedCorners {
             top_left: tl * factor,
@@ -94,5 +138,13 @@ impl Radius {
     }
 }
 
-impl Default for Radius { fn default() -> Self { Self::ZERO } }
-impl From<f32> for Radius { fn from(r: f32) -> Self { Self::Scalar(r) } }
+impl Default for Radius {
+    fn default() -> Self {
+        Self::ZERO
+    }
+}
+impl From<f32> for Radius {
+    fn from(r: f32) -> Self {
+        Self::Scalar(r)
+    }
+}

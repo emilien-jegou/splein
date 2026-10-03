@@ -26,15 +26,21 @@ impl Element {
 }
 
 impl From<GroupDef> for Element {
-    fn from(def: GroupDef) -> Self { Element::Group(def) }
+    fn from(def: GroupDef) -> Self {
+        Element::Group(def)
+    }
 }
 
 impl From<TextDef> for Element {
-    fn from(def: TextDef) -> Self { Element::Text(def) }
+    fn from(def: TextDef) -> Self {
+        Element::Text(def)
+    }
 }
 
 impl From<CustomDef> for Element {
-    fn from(def: CustomDef) -> Self { Element::Custom(def) }
+    fn from(def: CustomDef) -> Self {
+        Element::Custom(def)
+    }
 }
 
 /// Trait converting collections of elements into a flat child vector.

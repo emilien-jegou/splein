@@ -1,8 +1,8 @@
 // Single responsibility: Generic dynamic property abstraction supporting values, signals, and computations.
 
-use std::rc::Rc;
 use crate::reactive::derived::Derived;
 use crate::reactive::signal::Signal;
+use std::rc::Rc;
 
 /// Dynamic property holding either a static value or a reactive computation closure.
 #[derive(Clone)]
@@ -55,6 +55,12 @@ impl<T> IntoProp<T> for DynamicProp<T> {
 
 impl IntoProp<f32> for f32 {
     fn into_prop(self) -> DynamicProp<f32> {
+        DynamicProp::Static(self)
+    }
+}
+
+impl IntoProp<i32> for i32 {
+    fn into_prop(self) -> DynamicProp<i32> {
         DynamicProp::Static(self)
     }
 }

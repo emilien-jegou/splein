@@ -1,10 +1,11 @@
 // Single responsibility: Generational arena managing node allocation, hierarchy, and invalidation.
 
-use crate::foundation::{Point, ResolvedRect, Transform};
+use crate::foundation::{Key, MeasuredElement, Point, ResolvedRect, Transform};
 use crate::tree::flags::DirtyFlags;
 use crate::tree::id::NodeId;
 use crate::tree::invalidation::mark_node_dirty;
 use crate::tree::node::LayoutNode;
+use crate::tree::registry::KeyRegistry;
 use smallvec::SmallVec;
 
 struct Slot {
@@ -21,6 +22,8 @@ pub struct TreeArena {
     free_indices: Vec<u32>,
     /// On-screen bounding boxes of nodes unmounted since the last paint pass.
     pub removed_damage: Vec<ResolvedRect>,
+    /// Stable key index used to reach retained nodes across frames.
+    keys: KeyRegistry,
 }
 
 impl TreeArena {
@@ -30,6 +33,7 @@ impl TreeArena {
             slots: Vec::new(),
             free_indices: Vec::new(),
             removed_damage: Vec::new(),
+            keys: KeyRegistry::new(),
         }
     }
 
@@ -75,11 +79,12 @@ impl TreeArena {
             self.remove_internal(child, on_remove);
         }
         on_remove(id);
+        self.keys.unbind(id);
 
-        let slot = &mut self.slots[id.index as usize];
-        if let Some(bounds) = slot.node.state.last_painted_bounds {
+        if let Some(bounds) = self.slots[id.index as usize].node.state.last_painted_bounds {
             self.removed_damage.push(bounds);
         }
+        let slot = &mut self.slots[id.index as usize];
         slot.is_active = false;
         slot.generation += 1;
         slot.parent = None;
@@ -118,6 +123,46 @@ impl TreeArena {
     /// Marks a node dirty and propagates invalidation up to containing layout boundaries.
     pub fn mark_dirty(&mut self, node_id: NodeId, flags: DirtyFlags) {
         mark_node_dirty(self, node_id, flags);
+    }
+
+    /// Records a node's reconciliation key and indexes it for stable lookup.
+    pub fn bind_key(&mut self, key: Option<Key>, node: NodeId) {
+        self.get_mut(node).key = key.clone();
+        match key {
+            Some(key) => self.keys.bind(key, node),
+            None => self.keys.unbind(node),
+        }
+    }
+
+    /// Publishes each watched node's geometry, plus its children's, into the frame's table.
+    pub fn publish_watched(&self, watched: &[NodeId], mut put: impl FnMut(u32, MeasuredElement)) {
+        for &node in watched {
+            if !self.is_valid(node) {
+                // A purged node leaves a stale handle behind. Skipping it is what lets a handle
+                // outlive the element it was bound to without ever reading a dead slot.
+                continue;
+            }
+            let children: Box<[ResolvedRect]> = self
+                .children(node)
+                .iter()
+                .filter(|&&c| self.is_valid(c))
+                .map(|&c| self.get(c).absolute_rect)
+                .collect();
+            put(
+                node.index,
+                MeasuredElement {
+                    rect: self.get(node).absolute_rect,
+                    children,
+                },
+            );
+        }
+    }
+
+    /// Resolves a stable key to a retained node that is still alive.
+    /// Resolves a stable key to a retained node that is still alive.
+    pub fn node_for_key(&self, key: &Key) -> Option<NodeId> {
+        let id = self.keys.resolve(key)?;
+        self.is_valid(id).then_some(id)
     }
 
     /// Attaches child nodes to a parent container.
@@ -168,8 +213,9 @@ impl TreeArena {
                 node.resolved_rect.x,
                 node.resolved_rect.y,
             ));
-            if node.transform != Transform::IDENTITY {
-                tx = tx.multiply(&node.transform);
+            let local_tx = node.effective_transform();
+            if local_tx != Transform::IDENTITY {
+                tx = tx.multiply(&local_tx);
             }
         }
         tx
@@ -185,18 +231,19 @@ impl TreeArena {
     }
 
     /// Computes the absolute screen-space bounding box of a node.
+    ///
+    /// The box is projected, not rebuilt from its origin and its local size. An earlier version
+    /// took the absolute origin point and paired it with the node's untransformed width and
+    /// height, which is only correct while the accumulated transform is a pure translation: under
+    /// rotation or scale it reported a box in the wrong place with the wrong extent. Sizing from
+    /// the same transform the paint pass uses keeps this the axis-aligned envelope of what is
+    /// actually drawn, which is what a caller asking for absolute bounds expects.
     pub fn node_absolute_rect(&self, id: NodeId) -> ResolvedRect {
         if !self.is_valid(id) {
             return ResolvedRect::ZERO;
         }
-        let pt = self.node_absolute_point(id);
-        let node = self.get(id);
-        ResolvedRect::new(
-            pt.x,
-            pt.y,
-            node.resolved_rect.width,
-            node.resolved_rect.height,
-        )
+        let tx = self.node_absolute_transform(id);
+        self.get(id).compute_visual_bounds(&tx, None)
     }
 }
 

@@ -18,19 +18,35 @@ pub fn measure_group_intrinsic(
         .children(group_id)
         .iter()
         .copied()
-        .filter(|&id| !arena.get(id).style.is_absolute)
+        .filter(|&id| {
+            !arena.get(id).style.is_absolute && arena.get(id).state.presence.occupies_space()
+        })
         .collect();
 
-    if children.is_empty() { return IntrinsicSize { width: 0.0, height: 0.0 }; }
+    if children.is_empty() {
+        return IntrinsicSize {
+            width: 0.0,
+            height: 0.0,
+        };
+    }
 
     let mut main_total = 0.0f32;
     let mut cross_max = 0.0f32;
 
-    let ref_w = if constraints.max_width.is_finite() { Some(constraints.max_width) } else { None };
-    let ref_h = if constraints.max_height.is_finite() { Some(constraints.max_height) } else { None };
+    let ref_w = if constraints.max_width.is_finite() {
+        Some(constraints.max_width)
+    } else {
+        None
+    };
+    let ref_h = if constraints.max_height.is_finite() {
+        Some(constraints.max_height)
+    } else {
+        None
+    };
 
     for &child in &children {
-        let child_desired = compute_child_desired(arena, child, constraints, ref_w, ref_h, text_ctx);
+        let child_desired =
+            compute_child_desired(arena, child, constraints, ref_w, ref_h, text_ctx);
         let child_node = arena.get(child);
         let (main_d, cross_d) = match dir {
             Direction::Horizontal => (
@@ -46,11 +62,20 @@ pub fn measure_group_intrinsic(
         cross_max = cross_max.max(cross_d);
     }
 
-    let gap_px = match gap { Gap::Fixed(px) => px, Gap::Full => 0.0 };
+    let gap_px = match gap {
+        Gap::Fixed(px) => px,
+        Gap::Full => 0.0,
+    };
     main_total += (children.len().saturating_sub(1) as f32) * gap_px;
 
     match dir {
-        Direction::Horizontal => IntrinsicSize { width: main_total, height: cross_max },
-        Direction::Vertical => IntrinsicSize { width: cross_max, height: main_total },
+        Direction::Horizontal => IntrinsicSize {
+            width: main_total,
+            height: cross_max,
+        },
+        Direction::Vertical => IntrinsicSize {
+            width: cross_max,
+            height: main_total,
+        },
     }
 }

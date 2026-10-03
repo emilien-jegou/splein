@@ -24,11 +24,25 @@ pub struct Shadow {
 impl Shadow {
     /// Constructs an outer drop shadow with offset and blur radius.
     pub const fn outer(offset_x: f32, offset_y: f32, blur: f32, color: Color) -> Self {
-        Self { kind: ShadowKind::Outer, offset_x, offset_y, blur, spread: 0.0, color }
+        Self {
+            kind: ShadowKind::Outer,
+            offset_x,
+            offset_y,
+            blur,
+            spread: 0.0,
+            color,
+        }
     }
 
     /// Constructs an inset inner shadow with offset and blur radius.
     pub const fn inset(offset_x: f32, offset_y: f32, blur: f32, color: Color) -> Self {
-        Self { kind: ShadowKind::Inset, offset_x, offset_y, blur, spread: 0.0, color }
+        Self {
+            kind: ShadowKind::Inset,
+            offset_x,
+            offset_y,
+            blur,
+            spread: 0.0,
+            color,
+        }
     }
 }

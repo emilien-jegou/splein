@@ -3,7 +3,9 @@
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
 use vello::kurbo::{Affine, Rect as KurboRect};
-use vello::peniko::{Blob, Brush, Fill as VelloFillRule, Format as PenikoFormat, Image as PenikoImage};
+use vello::peniko::{
+    Blob, Brush, Fill as VelloFillRule, Format as PenikoFormat, Image as PenikoImage,
+};
 use vello::Scene as VelloScene;
 
 use crate::foundation::{Radius, ResolvedRect, Shadow, ShadowKind};
@@ -36,12 +38,23 @@ pub struct VelloShadowCache {
 impl VelloShadowCache {
     /// Constructs a clean Vello shadow cache.
     pub fn new() -> Self {
-        Self { cache: FxHashMap::default() }
+        Self {
+            cache: FxHashMap::default(),
+        }
     }
 
     /// Draws analytical 9-patch blurred drop shadows transformed through the affine stack.
-    pub fn draw(&mut self, scene: &mut VelloScene, rect: &ResolvedRect, radius: Radius, shadow: &Shadow, tx: Affine) {
-        if shadow.blur <= 0.0 && shadow.offset_x == 0.0 && shadow.offset_y == 0.0 || shadow.kind == ShadowKind::Inset {
+    pub fn draw(
+        &mut self,
+        scene: &mut VelloScene,
+        rect: &ResolvedRect,
+        radius: Radius,
+        shadow: &Shadow,
+        tx: Affine,
+    ) {
+        if shadow.blur <= 0.0 && shadow.offset_x == 0.0 && shadow.offset_y == 0.0
+            || shadow.kind == ShadowKind::Inset
+        {
             return;
         }
 
@@ -58,44 +71,86 @@ impl VelloShadowCache {
             radius_bits: r_scalar.to_bits(),
             blur_bits: blur_r.to_bits(),
             spread_bits: shadow.spread.to_bits(),
-            color_bits: (shadow.color.r.to_bits() ^ shadow.color.g.to_bits() ^ shadow.color.b.to_bits() ^ shadow.color.a.to_bits()),
+            color_bits: (shadow.color.r.to_bits()
+                ^ shadow.color.g.to_bits()
+                ^ shadow.color.b.to_bits()
+                ^ shadow.color.a.to_bits()),
         };
 
         if !self.cache.contains_key(&key) {
             if self.cache.len() >= MAX_CACHED_SHADOWS {
-                if let Some(&first) = self.cache.keys().next() { self.cache.remove(&first); }
+                if let Some(&first) = self.cache.keys().next() {
+                    self.cache.remove(&first);
+                }
             }
             let patch = Self::generate_patch(r_scalar, blur_r, kernel_pad, shadow);
             self.cache.insert(key, patch);
         }
 
         let p = self.cache.get(&key).unwrap();
-        let (ox, oy) = ((rect.x + shadow.offset_x - kernel_pad) as f64, (rect.y + shadow.offset_y - kernel_pad) as f64);
-        let (total_w, total_h) = ((rect.width + 2.0 * kernel_pad) as f64, (rect.height + 2.0 * kernel_pad) as f64);
+        let (ox, oy) = (
+            (rect.x + shadow.offset_x - kernel_pad) as f64,
+            (rect.y + shadow.offset_y - kernel_pad) as f64,
+        );
+        let (total_w, total_h) = (
+            (rect.width + 2.0 * kernel_pad) as f64,
+            (rect.height + 2.0 * kernel_pad) as f64,
+        );
         let cs = p.cs;
 
         // 4 Corners
         scene.draw_image(p.corner.as_ref(), tx * Affine::translate((ox, oy)));
-        scene.draw_image(p.corner.as_ref(), tx * Affine::translate((ox + total_w, oy)) * Affine::scale_non_uniform(-1.0, 1.0));
-        scene.draw_image(p.corner.as_ref(), tx * Affine::translate((ox, oy + total_h)) * Affine::scale_non_uniform(1.0, -1.0));
-        scene.draw_image(p.corner.as_ref(), tx * Affine::translate((ox + total_w, oy + total_h)) * Affine::scale_non_uniform(-1.0, -1.0));
+        scene.draw_image(
+            p.corner.as_ref(),
+            tx * Affine::translate((ox + total_w, oy)) * Affine::scale_non_uniform(-1.0, 1.0),
+        );
+        scene.draw_image(
+            p.corner.as_ref(),
+            tx * Affine::translate((ox, oy + total_h)) * Affine::scale_non_uniform(1.0, -1.0),
+        );
+        scene.draw_image(
+            p.corner.as_ref(),
+            tx * Affine::translate((ox + total_w, oy + total_h))
+                * Affine::scale_non_uniform(-1.0, -1.0),
+        );
 
         // Stretched Edges
         let edge_w = (total_w - 2.0 * cs).max(0.0);
         let edge_h = (total_h - 2.0 * cs).max(0.0);
         if edge_w > 0.0 {
-            scene.draw_image(p.edge_h.as_ref(), tx * Affine::translate((ox + cs, oy)) * Affine::scale_non_uniform(edge_w, 1.0));
-            scene.draw_image(p.edge_h.as_ref(), tx * Affine::translate((ox + cs, oy + total_h)) * Affine::scale_non_uniform(edge_w, -1.0));
+            scene.draw_image(
+                p.edge_h.as_ref(),
+                tx * Affine::translate((ox + cs, oy)) * Affine::scale_non_uniform(edge_w, 1.0),
+            );
+            scene.draw_image(
+                p.edge_h.as_ref(),
+                tx * Affine::translate((ox + cs, oy + total_h))
+                    * Affine::scale_non_uniform(edge_w, -1.0),
+            );
         }
         if edge_h > 0.0 {
-            scene.draw_image(p.edge_v.as_ref(), tx * Affine::translate((ox, oy + cs)) * Affine::scale_non_uniform(1.0, edge_h));
-            scene.draw_image(p.edge_v.as_ref(), tx * Affine::translate((ox + total_w, oy + cs)) * Affine::scale_non_uniform(-1.0, edge_h));
+            scene.draw_image(
+                p.edge_v.as_ref(),
+                tx * Affine::translate((ox, oy + cs)) * Affine::scale_non_uniform(1.0, edge_h),
+            );
+            scene.draw_image(
+                p.edge_v.as_ref(),
+                tx * Affine::translate((ox + total_w, oy + cs))
+                    * Affine::scale_non_uniform(-1.0, edge_h),
+            );
         }
 
         // Center solid fill
         if edge_w > 0.0 && edge_h > 0.0 {
-            let center_rect = KurboRect::new(ox + cs, oy + cs, ox + total_w - cs, oy + total_h - cs);
-            scene.fill(VelloFillRule::NonZero, tx, &Brush::Solid(to_vello_color(shadow.color, 1.0)), None, &center_rect);
+            let center_rect =
+                KurboRect::new(ox + cs, oy + cs, ox + total_w - cs, oy + total_h - cs);
+            scene.fill(
+                VelloFillRule::NonZero,
+                tx,
+                &Brush::Solid(to_vello_color(shadow.color, 1.0)),
+                None,
+                &center_rect,
+            );
         }
     }
 
@@ -108,30 +163,65 @@ impl VelloShadowCache {
         for y in 0..dim {
             for x in 0..dim {
                 let (px, py) = (x as f32, y as f32);
-                if px >= pad && py >= pad { a[y * dim + x] = 255; }
+                if px >= pad && py >= pad {
+                    a[y * dim + x] = 255;
+                }
             }
         }
         box_blur_alpha(&a, &mut b, &mut temp, dim, dim, blur.round() as usize);
 
-        let (cr, cg, cb, ca) = ((shadow.color.r * 255.0).round() as u32, (shadow.color.g * 255.0).round() as u32, (shadow.color.b * 255.0).round() as u32, shadow.color.a.clamp(0.0, 1.0));
+        let (cr, cg, cb, ca) = (
+            (shadow.color.r * 255.0).round() as u32,
+            (shadow.color.g * 255.0).round() as u32,
+            (shadow.color.b * 255.0).round() as u32,
+            shadow.color.a.clamp(0.0, 1.0),
+        );
         let to_rgba = |alpha: u8| -> [u8; 4] {
             let a = ((alpha as f32 * ca).round() as u32).min(255);
-            [((cr * a + 128) >> 8) as u8, ((cg * a + 128) >> 8) as u8, ((cb * a + 128) >> 8) as u8, a as u8]
+            [
+                ((cr * a + 128) >> 8) as u8,
+                ((cg * a + 128) >> 8) as u8,
+                ((cb * a + 128) >> 8) as u8,
+                a as u8,
+            ]
         };
 
         let mut corner_bytes = Vec::with_capacity(cs * cs * 4);
-        for y in 0..cs { for x in 0..cs { corner_bytes.extend_from_slice(&to_rgba(b[y * dim + x])); } }
+        for y in 0..cs {
+            for x in 0..cs {
+                corner_bytes.extend_from_slice(&to_rgba(b[y * dim + x]));
+            }
+        }
 
         let mut edge_h_bytes = Vec::with_capacity(cs * 4);
-        for y in 0..cs { edge_h_bytes.extend_from_slice(&to_rgba(b[y * dim + cs])); }
+        for y in 0..cs {
+            edge_h_bytes.extend_from_slice(&to_rgba(b[y * dim + cs]));
+        }
 
         let mut edge_v_bytes = Vec::with_capacity(cs * 4);
-        for x in 0..cs { edge_v_bytes.extend_from_slice(&to_rgba(b[cs * dim + x])); }
+        for x in 0..cs {
+            edge_v_bytes.extend_from_slice(&to_rgba(b[cs * dim + x]));
+        }
 
         ShadowPatch {
-            corner: Arc::new(PenikoImage::new(Blob::from(corner_bytes), PenikoFormat::Rgba8, cs as u32, cs as u32)),
-            edge_h: Arc::new(PenikoImage::new(Blob::from(edge_h_bytes), PenikoFormat::Rgba8, 1, cs as u32)),
-            edge_v: Arc::new(PenikoImage::new(Blob::from(edge_v_bytes), PenikoFormat::Rgba8, cs as u32, 1)),
+            corner: Arc::new(PenikoImage::new(
+                Blob::from(corner_bytes),
+                PenikoFormat::Rgba8,
+                cs as u32,
+                cs as u32,
+            )),
+            edge_h: Arc::new(PenikoImage::new(
+                Blob::from(edge_h_bytes),
+                PenikoFormat::Rgba8,
+                1,
+                cs as u32,
+            )),
+            edge_v: Arc::new(PenikoImage::new(
+                Blob::from(edge_v_bytes),
+                PenikoFormat::Rgba8,
+                cs as u32,
+                1,
+            )),
             cs: cs as f64,
         }
     }

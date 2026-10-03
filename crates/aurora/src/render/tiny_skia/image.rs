@@ -42,11 +42,7 @@ impl ImageCache {
         if image.width == 0 || image.height == 0 {
             return;
         }
-        if (rect.x + transform.tx) >= tile_w
-            || (rect.y + transform.ty) >= tile_h
-            || (rect.x + transform.tx + rect.width) <= 0.0
-            || (rect.y + transform.ty + rect.height) <= 0.0
-        {
+        if !super::command::rect_visible_in_tile(rect, transform, tile_w, tile_h) {
             return;
         }
 

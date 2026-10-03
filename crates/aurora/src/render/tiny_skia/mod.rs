@@ -3,7 +3,6 @@
 pub mod clip;
 pub mod command;
 pub mod image;
-pub mod layer;
 pub mod path;
 pub mod renderer;
 pub mod shader;
@@ -14,7 +13,6 @@ pub mod text;
 
 pub use clip::ClipStack;
 pub use command::{execute_commands, CommandContext};
-pub use layer::LayerCompositor;
 pub use path::build_rounded_path;
 pub use renderer::TinySkiaRenderer;
 pub use shader::build_paint;

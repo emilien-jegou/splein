@@ -61,9 +61,13 @@ impl ShadowRasterizer {
         let corner_size = (r_scalar.ceil() as usize) + kernel_pad;
         let patch_dim = corner_size * 2;
 
+        // The 9-patch blit only applies the translation components of the
+        // transform, so skewed (rotated) shadows fall back to the direct path,
+        // which composites the blurred shape through the full transform.
         let is_too_small = rect.width < (patch_dim as f32)
             || rect.height < (patch_dim as f32)
-            || shadow.kind == ShadowKind::Inset;
+            || shadow.kind == ShadowKind::Inset
+            || transform.has_skew();
         if is_too_small {
             render_direct_blur(
                 &mut self.scratch_a,

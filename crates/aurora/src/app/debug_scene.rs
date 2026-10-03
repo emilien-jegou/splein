@@ -1,6 +1,7 @@
 // Single responsibility: Emits display list overlay chunks for GPU compute rasterizers.
 
 use crate::app::debug::InspectorMode;
+use crate::app::debug_hud::{time_control_hint, time_scale_label};
 use crate::app::debug_layout::hud_panel;
 use crate::foundation::{Appearance, Color, Fill, Point, ResolvedRect, Stroke};
 use crate::runtime::FrameDiagnostics;
@@ -78,6 +79,7 @@ pub fn emit_inspector_overlay(
 }
 
 /// Emits vector HUD panel telemetry card directly into a scene chunk for GPU rasterizers.
+#[allow(clippy::too_many_arguments)]
 pub fn emit_hud_overlay(
     chunk: &mut SceneChunk,
     is_idle: bool,
@@ -85,6 +87,7 @@ pub fn emit_hud_overlay(
     backend_name: &str,
     diag: &FrameDiagnostics,
     mode: InspectorMode,
+    time_scale: f32,
     text_ctx: &TextContext,
 ) {
     // 1. Panel Container
@@ -156,8 +159,34 @@ pub fn emit_hud_overlay(
         text_ctx,
     );
     emit_label(chunk, &ms_str, Point::new(220.0, 20.0), ms_color, text_ctx);
+    // Only drawn when time is not running normally, so its presence is the whole message.
+    if let Some(label) = time_scale_label(time_scale) {
+        let color = if time_scale <= 1e-4 {
+            0xEF4444
+        } else {
+            0xF59E0B
+        };
+        emit_label(
+            chunk,
+            &label,
+            Point::new(268.0, 20.0),
+            Color::hex(color),
+            text_ctx,
+        );
+    }
 
-    // 4. Frame Budget Headroom Line
+    // 4. Time-control hint, only while time is not running normally.
+    if let Some(hint) = time_control_hint(time_scale) {
+        emit_label(
+            chunk,
+            hint,
+            Point::new(20.0, 48.0),
+            Color::hex(0x94A3B8),
+            text_ctx,
+        );
+    }
+
+    // 5. Frame Budget Headroom Line
     let bar_w = ((total_us as f32 / 16_666.0).min(1.0) * 286.0).max(6.0);
     chunk.push(SceneCommand::DrawRect {
         rect: ResolvedRect::new(20.0, 40.0, bar_w, 3.0),

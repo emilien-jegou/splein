@@ -4,30 +4,51 @@ use crate::foundation::geometry::Point;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Transform {
-    pub a: f32, pub b: f32,
-    pub c: f32, pub d: f32,
-    pub tx: f32, pub ty: f32,
+    pub a: f32,
+    pub b: f32,
+    pub c: f32,
+    pub d: f32,
+    pub tx: f32,
+    pub ty: f32,
 }
 
 impl Transform {
     pub const IDENTITY: Self = Self {
-        a: 1.0, b: 0.0,
-        c: 0.0, d: 1.0,
-        tx: 0.0, ty: 0.0,
+        a: 1.0,
+        b: 0.0,
+        c: 0.0,
+        d: 1.0,
+        tx: 0.0,
+        ty: 0.0,
     };
 
     pub fn from_translation(x: f32, y: f32) -> Self {
-        Self { tx: x, ty: y, ..Self::IDENTITY }
+        Self {
+            tx: x,
+            ty: y,
+            ..Self::IDENTITY
+        }
     }
 
     pub fn from_scale(sx: f32, sy: f32) -> Self {
-        Self { a: sx, d: sy, ..Self::IDENTITY }
+        Self {
+            a: sx,
+            d: sy,
+            ..Self::IDENTITY
+        }
     }
 
     pub fn from_rotation_degrees(deg: f32) -> Self {
         let rad = deg.to_radians();
         let (sin, cos) = (rad.sin(), rad.cos());
-        Self { a: cos, b: sin, c: -sin, d: cos, tx: 0.0, ty: 0.0 }
+        Self {
+            a: cos,
+            b: sin,
+            c: -sin,
+            d: cos,
+            tx: 0.0,
+            ty: 0.0,
+        }
     }
 
     pub fn multiply(&self, rhs: &Self) -> Self {

@@ -24,7 +24,7 @@ impl PointerHandler for WaylandAppState {
                 }
                 PointerEventKind::Release { button: 0x110, .. } => {
                     self.is_pointer_down = false;
-                    Some(self.session.handle_pointer_up(self.cursor_pos))
+                    Some(self.session.handle_pointer_up())
                 }
                 PointerEventKind::Press { button: 0x111 | 0x14b, .. } => Some(self.session.begin_temporary_erase(self.cursor_pos)),
                 PointerEventKind::Release { button: 0x111 | 0x14b, .. } => Some(self.session.end_temporary_erase()),
@@ -51,7 +51,7 @@ impl wayland_client::Dispatch<wl_keyboard::WlKeyboard, ()> for WaylandAppState {
                     19 => Some(state.session.select_tool(ActiveTool::Text)),
                     21 => Some(state.session.select_tool(ActiveTool::Rect)),
                     24 => Some(state.session.select_tool(ActiveTool::Eraser)),
-                    14 | 111 => Some(state.session.clear()),
+                    14 | 111 => Some(state.session.delete_selection()),
                     44 => Some(state.session.undo()),
                     _ => None,
                 };

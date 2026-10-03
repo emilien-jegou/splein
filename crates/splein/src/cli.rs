@@ -35,7 +35,7 @@ pub struct CommonArgs {
 pub enum Commands {
     /// Start the background Wayland overlay daemon
     Daemon,
-    /// Instant 0ms toggle overlay (opens on active screen with cursor if not specified)
+    /// Instant 0ms toggle overlay (runs a standalone overlay when no daemon is listening)
     Toggle {
         /// Optional target monitor name (e.g. DP-1, eDP-1, HDMI-A-1)
         #[arg(short, long)]

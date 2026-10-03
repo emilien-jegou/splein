@@ -5,10 +5,12 @@ use smallvec::SmallVec;
 use crate::foundation::{Constraints, Direction, Distribution, Point, ResolvedRect, Size};
 use crate::layout::allocate_absolute::resolve_absolute_child;
 use crate::layout::allocate_cross::resolve_child_cross;
-use crate::layout::allocate_main::allocate_main_axis;
+use crate::layout::allocate_main::{allocate_main_axis, MainAxisItems};
 use crate::layout::measure::{
     compute_child_desired, compute_intrinsic, compute_intrinsic_with_constraints,
+    fit_text_run_to_width,
 };
+use crate::layout::min_size::compute_min_size;
 use crate::layout::report::LayoutResult;
 use crate::text::TextContext;
 use crate::tree::{DirtyFlags, NodeId, TreeArena};
@@ -36,7 +38,11 @@ pub fn layout_node_with_text(
     parent_abs: Point,
 ) {
     let dirty = arena.get(node_id).state.dirty;
-    let needs_full_pass = dirty.contains(DirtyFlags::LAYOUT) || dirty.contains(DirtyFlags::MEASURE);
+    // A dirty descendant must still be visited: the cache only describes this node's own size,
+    // and boundary resolution can land here even when this node was never marked dirty.
+    let needs_full_pass = dirty.contains(DirtyFlags::LAYOUT)
+        || dirty.contains(DirtyFlags::MEASURE)
+        || dirty.contains(DirtyFlags::SUBTREE_DIRTY);
 
     if !needs_full_pass {
         if let Some(cached) = arena.get(node_id).state.cache.get_layout(&constraints) {
@@ -50,6 +56,9 @@ pub fn layout_node_with_text(
                     cached.width,
                     cached.height,
                 );
+                // Kept on the node as well as reported: a client reading its own geometry has no
+                // other way to learn where it landed, and this is the frame's cached result.
+                arena.get_mut(node_id).absolute_rect = abs_rect;
                 result.record_cached(abs_rect);
             }
             return;
@@ -69,16 +78,21 @@ fn perform_node_layout(
     parent_abs: Point,
 ) {
     let (w, h) = resolve_node_bounds(arena, node_id, constraints, text_ctx);
+    // A run must not paint wider than the inline size its parent actually assigned to it.
+    fit_text_run_to_width(arena, node_id, w, text_ctx);
 
     let children = arena.children(node_id);
     let mut normal: SmallVec<[NodeId; 8]> = SmallVec::new();
     let mut absolute: SmallVec<[NodeId; 2]> = SmallVec::new();
+    let mut collapsed: SmallVec<[NodeId; 2]> = SmallVec::new();
 
     for &child in children {
         if arena.get(child).style.is_absolute {
             absolute.push(child);
-        } else {
+        } else if arena.get(child).state.presence.occupies_space() {
             normal.push(child);
+        } else {
+            collapsed.push(child);
         }
     }
 
@@ -105,6 +119,7 @@ fn perform_node_layout(
     let mut is_fills: SmallVec<[bool; 8]> = SmallVec::with_capacity(normal.len());
     let mut shrinks: SmallVec<[f32; 8]> = SmallVec::with_capacity(normal.len());
     let mut margins: SmallVec<[f32; 8]> = SmallVec::with_capacity(normal.len());
+    let mut min_mains: SmallVec<[f32; 8]> = SmallVec::with_capacity(normal.len());
 
     match dir {
         // Width (cross) is resolved first: it governs text wrapping and therefore height.
@@ -139,11 +154,14 @@ fn perform_node_layout(
                     Some(h),
                     text_ctx,
                 );
+                let block_floor = compute_min_size(arena, child, Direction::Vertical, text_ctx)
+                    + arena.get(child).style.margin.vertical();
                 let n = arena.get(child);
                 desired_main.push(d.height + n.style.margin.vertical());
                 is_fills.push(n.style.height.is_fill());
                 shrinks.push(n.style.shrink);
                 margins.push(n.style.margin.vertical());
+                min_mains.push(block_floor);
             }
         }
         // Width (main) is allocated first; height (cross) wraps at the assigned width.
@@ -157,11 +175,14 @@ fn perform_node_layout(
                     Some(h),
                     text_ctx,
                 );
+                let inline_floor = compute_min_size(arena, child, Direction::Horizontal, text_ctx)
+                    + arena.get(child).style.margin.horizontal();
                 let n = arena.get(child);
                 desired_main.push(d.width + n.style.margin.horizontal());
                 is_fills.push(n.style.width.is_fill());
                 shrinks.push(n.style.shrink);
                 margins.push(n.style.margin.horizontal());
+                min_mains.push(inline_floor);
                 cross_content.push(0.0);
                 cross_offset.push(0.0);
             }
@@ -170,12 +191,15 @@ fn perform_node_layout(
 
     let plan = allocate_main_axis(
         avail_main,
-        &desired_main,
-        &is_fills,
-        &shrinks,
         gap,
-        &margins,
         dist,
+        &MainAxisItems {
+            desired: &desired_main,
+            is_fill: &is_fills,
+            shrink: &shrinks,
+            margins: &margins,
+            min_sizes: &min_mains,
+        },
     );
 
     if dir == Direction::Horizontal {
@@ -253,6 +277,29 @@ fn perform_node_layout(
         );
     }
 
+    // Collapsed nodes hold a zero-sized slot at the end of the flow so they can grow back in place.
+    for &child in &collapsed {
+        let rect = match dir {
+            Direction::Vertical => ResolvedRect::new(0.0, cursor, 0.0, 0.0),
+            Direction::Horizontal => ResolvedRect::new(cursor, 0.0, 0.0, 0.0),
+        };
+        arena.get_mut(child).resolved_rect = rect;
+
+        // A collapsed node contributes no size. This used to measure the interior anyway while
+        // an animated render box was still away from zero, so that content could be clipped away
+        // rather than vanish; with no second box there is nothing to clip against, so a collapse
+        // is a real collapse.
+        let (cw, ch) = (0.0, 0.0);
+        layout_node_with_text(
+            arena,
+            child,
+            Constraints::tight(cw, ch),
+            text_ctx,
+            result,
+            node_abs,
+        );
+    }
+
     for &child in &absolute {
         let d = compute_child_desired(
             arena,
@@ -279,13 +326,15 @@ fn perform_node_layout(
     let is_boundary = arena.get(node_id).is_layout_boundary();
     let is_root = arena.parent(node_id).is_none();
 
+    let abs_rect = ResolvedRect::new(node_abs.x, node_abs.y, w, h);
+
     let root = arena.get_mut(node_id);
     root.resolved_rect = final_rect;
+    root.absolute_rect = abs_rect;
     root.state.cache.store_layout(constraints, final_rect);
     root.state.dirty.remove(DirtyFlags::LAYOUT);
     root.state.dirty.remove(DirtyFlags::MEASURE);
 
-    let abs_rect = ResolvedRect::new(node_abs.x, node_abs.y, w, h);
     result.record_recomputed(abs_rect);
     if is_boundary && !is_root {
         result.record_boundary(abs_rect);

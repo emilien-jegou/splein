@@ -15,6 +15,7 @@ use aurora::tree::*;
 // 2.3 DamageRegion & Outward Physical Rounding Math
 // =========================================================================
 #[test]
+#[ntest::timeout(30_000)]
 fn test_resolved_rect_math_and_physical_outward_rounding() {
     let r1 = ResolvedRect::new(10.25, 20.75, 100.25, 50.5);
     assert_eq!(r1.right(), 110.5);
@@ -48,6 +49,7 @@ fn test_resolved_rect_math_and_physical_outward_rounding() {
 }
 
 #[test]
+#[ntest::timeout(30_000)]
 fn test_damage_region_absorbs_overlapping_rects() {
     let mut damage = DamageRegion::new();
 
@@ -57,7 +59,8 @@ fn test_damage_region_absorbs_overlapping_rects() {
 
     // Overlapping rectangles must be automatically merged into their union
     assert_eq!(
-        damage.rects().len(), 1,
+        damage.rects().len(),
+        1,
         "Overlapping damage rects must be merged immediately"
     );
     let u = damage.rects()[0];
@@ -68,6 +71,7 @@ fn test_damage_region_absorbs_overlapping_rects() {
 }
 
 #[test]
+#[ntest::timeout(30_000)]
 fn test_damage_region_greedy_clustering_clamps_to_max_rects() {
     let mut damage = DamageRegion::new();
 
@@ -99,6 +103,7 @@ fn test_damage_region_greedy_clustering_clamps_to_max_rects() {
 // =========================================================================
 
 #[test]
+#[ntest::timeout(30_000)]
 fn test_damage_ring_history_and_age_synchronization() {
     let mut ring = DamageRing::new();
     let full_window = ResolvedRect::new(0.0, 0.0, 800.0, 600.0);
@@ -143,6 +148,7 @@ fn test_damage_ring_history_and_age_synchronization() {
 // =========================================================================
 
 #[test]
+#[ntest::timeout(30_000)]
 fn test_visual_bounds_expansion_for_strokes_and_outer_shadows() {
     let mut node = LayoutNode::new(NodeKind::Group);
     node.resolved_rect = ResolvedRect::new(0.0, 0.0, 100.0, 50.0);
@@ -151,22 +157,35 @@ fn test_visual_bounds_expansion_for_strokes_and_outer_shadows() {
     node.style.appearance.stroke = Some(Stroke::outside(4.0, Color::BLACK));
 
     // Add outer drop shadow with blur=3.0, spread=2.0 (kernel pad = 2 + 3*3 = 11px)
-    node.style.appearance.shadows = vec![
-        Shadow::outer(0.0, 5.0, 3.0, Color::rgba(0.0, 0.0, 0.0, 0.5)),
-    ];
+    node.style.appearance.shadows = vec![Shadow::outer(
+        0.0,
+        5.0,
+        3.0,
+        Color::rgba(0.0, 0.0, 0.0, 0.5),
+    )];
 
     let abs_pos = Point::new(100.0, 200.0);
-    let bounds = node.compute_visual_bounds(abs_pos, None);
+    let tx = Transform::from_translation(abs_pos.x, abs_pos.y);
+    let bounds = node.compute_visual_bounds(&tx, None);
 
     // Visual bounds must expand past the base 100x50 rect
-    assert!(bounds.x < 100.0, "Bounds must expand to the left for shadow pad");
-    assert!(bounds.y < 200.0, "Bounds must expand upwards for shadow pad");
+    assert!(
+        bounds.x < 100.0,
+        "Bounds must expand to the left for shadow pad"
+    );
+    assert!(
+        bounds.y < 200.0,
+        "Bounds must expand upwards for shadow pad"
+    );
     assert!(bounds.right() > 200.0, "Bounds must expand to the right");
-    assert!(bounds.bottom() > 255.0, "Bounds must expand downwards for shadow offset + pad");
+    assert!(
+        bounds.bottom() > 255.0,
+        "Bounds must expand downwards for shadow offset + pad"
+    );
 
     // When clamped by an ancestor clip boundary:
     let clip_box = ResolvedRect::new(100.0, 200.0, 100.0, 50.0);
-    let clamped_bounds = node.compute_visual_bounds(abs_pos, Some(clip_box));
+    let clamped_bounds = node.compute_visual_bounds(&tx, Some(clip_box));
     assert_eq!(
         clamped_bounds, clip_box,
         "Ancestor clip must strictly clamp visual bounds expansion"
@@ -178,13 +197,18 @@ fn test_visual_bounds_expansion_for_strokes_and_outer_shadows() {
 // =========================================================================
 
 #[test]
+#[ntest::timeout(30_000)]
 fn test_removal_damage_captures_unmounted_node_bounds() {
     let mut engine = Engine::headless(500, 500);
 
     // Mount initial tree with child box at (50, 50, 80, 80)
-    engine.mount(group().width(500.0).height(500.0).children([
-        group().margin(Margin::sides(50.0, 50.0, 50.0, 50.0)).width(80.0).height(80.0).fill(Color::RED),
-    ]));
+    engine.mount(
+        group().width(500.0).height(500.0).children([group()
+            .margin(Margin::sides(50.0, 50.0, 50.0, 50.0))
+            .width(80.0)
+            .height(80.0)
+            .fill(Color::RED)]),
+    );
     engine.frame();
 
     // Re-mount empty container (child is purged)
@@ -200,22 +224,35 @@ fn test_removal_damage_captures_unmounted_node_bounds() {
     // The damaged area must intersect the unmounted child's previous screen coordinates
     let unmounted_child_bounds = ResolvedRect::new(50.0, 50.0, 80.0, 80.0);
     assert!(
-        damage.rects().iter().any(|r| r.intersects(&unmounted_child_bounds)),
+        damage
+            .rects()
+            .iter()
+            .any(|r| r.intersects(&unmounted_child_bounds)),
         "Removal damage must intersect the purged child's former position"
     );
 }
 
 #[test]
+#[ntest::timeout(30_000)]
 fn test_moved_node_triggers_dual_damage() {
     let mut engine = Engine::headless(800, 600);
     let width_sig = engine.signal(100.0f32);
 
     // Row containing Box A and Box B
     // When Box A widens, Box B moves to the right
-    engine.mount(group().direction(Direction::Horizontal).width(800.0).height(600.0).children([
-        group().width(width_sig.clone()).height(50.0).fill(Color::RED),
-        group().width(80.0).height(50.0).fill(Color::BLACK), // Box B
-    ]));
+    engine.mount(
+        group()
+            .direction(Direction::Horizontal)
+            .width(800.0)
+            .height(600.0)
+            .children([
+                group()
+                    .width(width_sig.clone())
+                    .height(50.0)
+                    .fill(Color::RED),
+                group().width(80.0).height(50.0).fill(Color::BLACK), // Box B
+            ]),
+    );
     engine.frame();
 
     // Box A widens from 100 to 200, shifting Box B from x=100 to x=200
@@ -242,6 +279,7 @@ fn test_moved_node_triggers_dual_damage() {
 // =========================================================================
 
 #[test]
+#[ntest::timeout(30_000)]
 fn test_persistent_canvas_retains_untouched_pixels() {
     let mut engine = Engine::headless(400, 400);
     let color_sig = engine.signal(Color::rgba(0.0, 0.0, 1.0, 1.0)); // Blue
@@ -249,10 +287,23 @@ fn test_persistent_canvas_retains_untouched_pixels() {
     // Two distinct boxes:
     // Box A (left, stationary, RED): (0, 0, 100, 100)
     // Box B (right, dynamic, BLUE):  (200, 0, 100, 100)
-    engine.mount(group().direction(Direction::Horizontal).width(400.0).height(400.0).children([
-        group().width(100.0).height(100.0).fill(Color::rgba(1.0, 0.0, 0.0, 1.0)),
-        group().margin(Margin::left(100.0)).width(100.0).height(100.0).fill(color_sig.clone()),
-    ]));
+    engine.mount(
+        group()
+            .direction(Direction::Horizontal)
+            .width(400.0)
+            .height(400.0)
+            .children([
+                group()
+                    .width(100.0)
+                    .height(100.0)
+                    .fill(Color::rgba(1.0, 0.0, 0.0, 1.0)),
+                group()
+                    .margin(Margin::left(100.0))
+                    .width(100.0)
+                    .height(100.0)
+                    .fill(color_sig.clone()),
+            ]),
+    );
     engine.frame();
 
     // Verify Box A rendered red and Box B rendered blue on the persistent canvas
@@ -284,7 +335,11 @@ fn test_persistent_canvas_retains_untouched_pixels() {
     // 2. Box A's pixels were retained on the persistent canvas without re-drawing
     let canvas = engine.canvas();
     let pixel_a = canvas.pixel(50, 50).unwrap();
-    assert_eq!(pixel_a.red(), 255, "Box A's red pixel must be preserved untouched");
+    assert_eq!(
+        pixel_a.red(),
+        255,
+        "Box A's red pixel must be preserved untouched"
+    );
     assert_eq!(pixel_a.green(), 0);
     assert_eq!(pixel_a.blue(), 0);
 
@@ -299,6 +354,7 @@ fn test_persistent_canvas_retains_untouched_pixels() {
 // 2.5 Window Resize & Full-Damage Reset
 // =========================================================================
 #[test]
+#[ntest::timeout(30_000)]
 fn test_window_resize_forces_full_window_damage() {
     let mut engine = Engine::headless(400, 300);
     engine.mount(group().fill(Color::BLACK));
@@ -319,7 +375,6 @@ fn test_window_resize_forces_full_window_damage() {
     assert_eq!(engine.canvas().height(), 600);
 }
 
-
 // =========================================================================
 // Stress Tests: Heavy Drop Shadows & Modal Overlays
 // =========================================================================
@@ -332,27 +387,46 @@ fn test_window_resize_forces_full_window_damage() {
 // =========================================================================
 
 #[test]
+#[ntest::timeout(30_000)]
 fn test_shadow_blur_fringe_damage_expansion_and_cleanup() {
     let mut engine = Engine::headless(600, 600);
     let spacer_width = engine.signal(100.0f32);
 
     // Row containing a spacer and a box with heavy drop shadow (blur=10.0, offset_y=10.0 -> kernel pad = 30px)
-    engine.mount(group().direction(Direction::Horizontal).width(600.0).height(600.0).fill(Color::WHITE).children([
-        group().width(spacer_width.clone()).height(10.0),
+    engine.mount(
         group()
-            .margin(Margin::top(100.0))
-            .width(100.0).height(100.0)
-            .fill(Color::BLACK)
-            .shadows([Shadow::outer(0.0, 10.0, 10.0, Color::rgba(0.0, 0.0, 0.0, 0.5))]),
-    ]));
+            .direction(Direction::Horizontal)
+            .width(600.0)
+            .height(600.0)
+            .fill(Color::WHITE)
+            .children([
+                group().width(spacer_width.clone()).height(10.0),
+                group()
+                    .margin(Margin::top(100.0))
+                    .width(100.0)
+                    .height(100.0)
+                    .fill(Color::BLACK)
+                    .shadows([Shadow::outer(
+                        0.0,
+                        10.0,
+                        10.0,
+                        Color::rgba(0.0, 0.0, 0.0, 0.5),
+                    )]),
+            ]),
+    );
     engine.frame();
 
     // Verify shadow blur fell onto white background outside the 100x100 box
     // Pixel directly below the box (at y=205, inside the blur halo)
     {
         let canvas = engine.canvas();
-        let blur_pixel = canvas.pixel(150, 205).expect("Shadow fringe pixel must exist");
-        assert!(blur_pixel.red() < 255, "Shadow blur must darken the background");
+        let blur_pixel = canvas
+            .pixel(150, 205)
+            .expect("Shadow fringe pixel must exist");
+        assert!(
+            blur_pixel.red() < 255,
+            "Shadow blur must darken the background"
+        );
     }
 
     // Move the box from x=100 to x=300 by widening the preceding spacer
@@ -364,7 +438,10 @@ fn test_shadow_blur_fringe_damage_expansion_and_cleanup() {
     // 1. Damage must encompass the 30px blur fringe of the old position (x=70..230, y=70..240)
     let old_shadow_perimeter = ResolvedRect::new(70.0, 70.0, 160.0, 170.0);
     assert!(
-        damage.rects().iter().any(|r| r.intersects(&old_shadow_perimeter)),
+        damage
+            .rects()
+            .iter()
+            .any(|r| r.intersects(&old_shadow_perimeter)),
         "Damage must encompass the 3σ blur fringe of the moved shadow"
     );
 
@@ -372,7 +449,8 @@ fn test_shadow_blur_fringe_damage_expansion_and_cleanup() {
     let canvas = engine.canvas();
     let restored_pixel = canvas.pixel(150, 205).expect("Restored pixel must exist");
     assert_eq!(
-        restored_pixel.red(), 255,
+        restored_pixel.red(),
+        255,
         "Old shadow blur halo must be completely cleared and restored to white"
     );
     assert_eq!(restored_pixel.green(), 255);
@@ -380,33 +458,39 @@ fn test_shadow_blur_fringe_damage_expansion_and_cleanup() {
 }
 
 #[test]
+#[ntest::timeout(30_000)]
 fn test_screen_overlay_modal_unmount_restores_underlying_content() {
     let mut engine = Engine::headless(800, 600);
 
     let build_tree = |show_modal: bool| {
-        let mut children = vec![
-            group()
-                .margin(Margin::left(300.0))
-                .margin(Margin::top(200.0))
-                .width(200.0).height(200.0)
-                .fill(Color::GREEN)
-                .into_element(),
-        ];
+        let mut children = vec![group()
+            .margin(Margin::left(300.0))
+            .margin(Margin::top(200.0))
+            .width(200.0)
+            .height(200.0)
+            .fill(Color::GREEN)
+            .into_element()];
 
         if show_modal {
             children.push(
                 group()
                     .margin(Margin::left(350.0))
                     .margin(Margin::top(250.0))
-                    .width(100.0).height(100.0)
+                    .width(100.0)
+                    .height(100.0)
                     .fill(Color::BLUE)
                     .z_index(100)
-                    .overlay(true).z_index(100)
+                    .overlay(true)
+                    .z_index(100)
                     .into_element(),
             );
         }
 
-        group().width(800.0).height(600.0).fill(Color::WHITE).children(children)
+        group()
+            .width(800.0)
+            .height(600.0)
+            .fill(Color::WHITE)
+            .children(children)
     };
 
     // Frame 1: Mount with Modal visible
@@ -438,19 +522,24 @@ fn test_screen_overlay_modal_unmount_restores_underlying_content() {
     let canvas = engine.canvas();
     let restored_pixel = canvas.pixel(400, 300).expect("Restored pixel must exist");
     assert_eq!(
-        restored_pixel.green(), 255,
+        restored_pixel.green(),
+        255,
         "Underlying green card must be restored when modal closes"
     );
     assert_eq!(restored_pixel.blue(), 0, "No blue modal pixels must remain");
 }
 
 #[test]
+#[ntest::timeout(30_000)]
 fn test_window_resize_preserves_canvas_and_damages_exposed_strips() {
     let mut engine = Engine::headless(400, 300);
     // Draw a stationary red box in the top-left corner
-    engine.mount(group().width(400.0).height(300.0).children([
-        group().width(100.0).height(100.0).fill(Color::rgba(1.0, 0.0, 0.0, 1.0)),
-    ]));
+    engine.mount(
+        group().width(400.0).height(300.0).children([group()
+            .width(100.0)
+            .height(100.0)
+            .fill(Color::rgba(1.0, 0.0, 0.0, 1.0))]),
+    );
     engine.frame();
 
     // Verify top-left box is red
@@ -465,7 +554,10 @@ fn test_window_resize_preserves_canvas_and_damages_exposed_strips() {
     engine.frame();
 
     let damage = engine.current_damage();
-    assert!(!damage.is_empty(), "Resize must generate damage for exposed strips");
+    assert!(
+        !damage.is_empty(),
+        "Resize must generate damage for exposed strips"
+    );
 
     // 1. The stationary 100x100 box at (0, 0) MUST NOT be in the damage region
     let stationary_box = ResolvedRect::new(0.0, 0.0, 100.0, 100.0);
@@ -481,7 +573,8 @@ fn test_window_resize_preserves_canvas_and_damages_exposed_strips() {
 
     let preserved_pixel = canvas.pixel(50, 50).unwrap();
     assert_eq!(
-        preserved_pixel.red(), 255,
+        preserved_pixel.red(),
+        255,
         "Stationary pixels must be preserved across resize via scanline copy"
     );
 }

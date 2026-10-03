@@ -74,15 +74,21 @@ impl ExampleCli {
         while i < args.len() {
             match args[i].as_str() {
                 "--width" if i + 1 < args.len() => {
-                    if let Ok(w) = args[i + 1].parse::<u32>() { width = w; }
+                    if let Ok(w) = args[i + 1].parse::<u32>() {
+                        width = w;
+                    }
                     i += 1;
                 }
                 "--height" if i + 1 < args.len() => {
-                    if let Ok(h) = args[i + 1].parse::<u32>() { height = h; }
+                    if let Ok(h) = args[i + 1].parse::<u32>() {
+                        height = h;
+                    }
                     i += 1;
                 }
                 "--fps" if i + 1 < args.len() => {
-                    if let Ok(f) = args[i + 1].parse::<u32>() { fps_limit = FpsLimit::Custom(f); }
+                    if let Ok(f) = args[i + 1].parse::<u32>() {
+                        fps_limit = FpsLimit::Custom(f);
+                    }
                     i += 1;
                 }
                 "--uncapped" => {
@@ -123,7 +129,9 @@ impl ExampleCli {
 
             let _ = tracing_subscriber::registry()
                 .with(fmt_layer)
-                .with(tracing_tracy::TracyLayer::new(TracyConfig(Default::default())))
+                .with(tracing_tracy::TracyLayer::new(TracyConfig(
+                    Default::default(),
+                )))
                 .try_init();
         }
         #[cfg(not(feature = "tracy"))]

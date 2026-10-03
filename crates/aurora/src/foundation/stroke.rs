@@ -28,16 +28,28 @@ impl Stroke {
 
     /// Constructs an interior stroke with a solid color.
     pub fn inside(width: f32, color: Color) -> Self {
-        Self { width, fill: Fill::solid(color), align: StrokeAlign::Inside }
+        Self {
+            width,
+            fill: Fill::solid(color),
+            align: StrokeAlign::Inside,
+        }
     }
 
     /// Constructs a centered border stroke with a solid color.
     pub fn center(width: f32, color: Color) -> Self {
-        Self { width, fill: Fill::solid(color), align: StrokeAlign::Center }
+        Self {
+            width,
+            fill: Fill::solid(color),
+            align: StrokeAlign::Center,
+        }
     }
 
     /// Constructs an exterior stroke with a solid color.
     pub fn outside(width: f32, color: Color) -> Self {
-        Self { width, fill: Fill::solid(color), align: StrokeAlign::Outside }
+        Self {
+            width,
+            fill: Fill::solid(color),
+            align: StrokeAlign::Outside,
+        }
     }
 }

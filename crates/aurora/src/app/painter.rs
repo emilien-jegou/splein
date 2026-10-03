@@ -18,6 +18,11 @@ impl<'s> OverlayPainter<'s> {
 
     /// Records one overlay chunk bounded by `bounds`, discarding it when empty.
     #[inline]
+    /// The scene being overlaid, for a caller that needs to inspect it rather than draw.
+    pub fn scene(&self) -> &Scene {
+        self.scene
+    }
+
     pub fn record(&mut self, bounds: ResolvedRect, draw: impl FnOnce(&mut SceneChunk)) {
         let mut chunk = SceneChunk::new(bounds, Point::ZERO);
         draw(&mut chunk);

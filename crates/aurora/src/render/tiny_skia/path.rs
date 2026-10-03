@@ -1,7 +1,7 @@
 // Single responsibility: TinySkia path generation for W3C-compliant clamped rounded rectangles.
 
-use tiny_skia::{Path, PathBuilder, Rect};
 use crate::foundation::{Radius, ResolvedRect};
+use tiny_skia::{Path, PathBuilder, Rect};
 
 /// Builds rounded rectangle path with strict W3C Bézier radius clamping supporting per-corner radii.
 pub fn build_rounded_path(rect: &ResolvedRect, radius: Radius) -> Path {
@@ -12,7 +12,9 @@ pub fn build_rounded_path(rect: &ResolvedRect, radius: Radius) -> Path {
         if let Some(skia_rect) = Rect::from_xywh(rect.x, rect.y, rect.width, rect.height) {
             return PathBuilder::from_rect(skia_rect);
         }
-        return builder.finish().unwrap_or_else(|| PathBuilder::new().finish().unwrap());
+        return builder
+            .finish()
+            .unwrap_or_else(|| PathBuilder::new().finish().unwrap());
     }
 
     let kappa = 0.552_284_8;
@@ -28,7 +30,14 @@ pub fn build_rounded_path(rect: &ResolvedRect, radius: Radius) -> Path {
     builder.line_to(x + w, y + h - c.bottom_right);
     if c.bottom_right > 0.0 {
         let k = c.bottom_right * (1.0 - kappa);
-        builder.cubic_to(x + w, y + h - k, x + w - k, y + h, x + w - c.bottom_right, y + h);
+        builder.cubic_to(
+            x + w,
+            y + h - k,
+            x + w - k,
+            y + h,
+            x + w - c.bottom_right,
+            y + h,
+        );
     }
 
     builder.line_to(x + c.bottom_left, y + h);
@@ -44,5 +53,7 @@ pub fn build_rounded_path(rect: &ResolvedRect, radius: Radius) -> Path {
     }
     builder.close();
 
-    builder.finish().unwrap_or_else(|| PathBuilder::new().finish().unwrap())
+    builder
+        .finish()
+        .unwrap_or_else(|| PathBuilder::new().finish().unwrap())
 }

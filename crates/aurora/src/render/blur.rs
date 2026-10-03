@@ -1,6 +1,13 @@
 // Single responsibility: Cache-aligned O(1) integer fixed-point sliding-window box blur.
 
-pub fn box_blur_alpha(src: &[u8], dst: &mut [u8], temp: &mut [u8], w: usize, h: usize, radius: usize) {
+pub fn box_blur_alpha(
+    src: &[u8],
+    dst: &mut [u8],
+    temp: &mut [u8],
+    w: usize,
+    h: usize,
+    radius: usize,
+) {
     if radius == 0 || w == 0 || h == 0 {
         dst.copy_from_slice(src);
         return;

@@ -31,10 +31,15 @@ fn main() {
         .font("Inter", include_bytes!("../../assets/inter-var.ttf"))
         .background(Color::WHITE)
         .run(move || {
-            group().direction(Direction::Horizontal).width(Size::fill()).height(Size::fill()).fill(Color::WHITE).children((
-                render_sidebar(&icons),
-                render_canvas(&icons),
-                render_inspector(&icons),
-            ))
+            group()
+                .direction(Direction::Horizontal)
+                .width(Size::fill())
+                .height(Size::fill())
+                .fill(Color::WHITE)
+                .children((
+                    render_sidebar(&icons),
+                    render_canvas(&icons),
+                    render_inspector(&icons),
+                ))
         });
 }

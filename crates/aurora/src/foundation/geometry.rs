@@ -58,10 +58,29 @@ impl ResolvedRect {
         self.width * self.height
     }
 
-    /// Checks if rectangle is empty or degenerates into subpixel floating-point noise.
+    /// Whether this box is empty or degenerates into subpixel floating-point noise.
     #[inline(always)]
     pub fn is_empty(&self) -> bool {
         self.width < 0.1 || self.height < 0.1
+    }
+
+    /// Whether any part of this box meets `other`, testing a collapsed box as a point at its origin.
+    ///
+    /// `intersects` is exclusive, so a box squeezed to zero area never intersects anything and would
+    /// be culled from the display list even while its content still overflows visibly onto the screen.
+    /// Visibility decisions use this instead; damage accumulation keeps using `intersects`.
+    #[inline]
+    pub fn overlaps(&self, other: &Self) -> bool {
+        if self.width >= 1.0 && self.height >= 1.0 {
+            return self.intersects(other);
+        }
+        Self {
+            x: self.x,
+            y: self.y,
+            width: self.width.max(1.0),
+            height: self.height.max(1.0),
+        }
+        .intersects(other)
     }
 
     #[inline(always)]

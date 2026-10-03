@@ -1,6 +1,6 @@
 // Single responsibility: Intrinsic sizing, text measurement, and desired dimension derivation.
 
-use crate::foundation::{Constraints, DesiredSize, IntrinsicSize, Size};
+use crate::foundation::{Constraints, DesiredSize, IntrinsicSize, LayoutPresence, Size};
 use crate::layout::group_measure::measure_group_intrinsic;
 use crate::text::TextContext;
 use crate::tree::{NodeId, NodeKind, TreeArena};
@@ -56,18 +56,19 @@ pub fn compute_intrinsic(
         };
     }
 
-    // Text wraps against its inline width; groups measure unconstrained.
-    let max_width = if is_text {
-        text_inline_width(w_size, constraints)
+    // Text wraps against its inline width; a group measures its max-content inline size unless the
+    // parent has already fixed one, in which case that used width must stay binding for descendants.
+    let effective_constraints = if is_text {
+        Constraints {
+            min_width: 0.0,
+            max_width: text_inline_width(w_size, constraints),
+            min_height: 0.0,
+            max_height: f32::INFINITY,
+        }
+    } else if constraints.is_tight_width() {
+        Constraints::tight_width(constraints.max_width.max(0.0))
     } else {
-        f32::INFINITY
-    };
-
-    let effective_constraints = Constraints {
-        min_width: 0.0,
-        max_width,
-        min_height: 0.0,
-        max_height: f32::INFINITY,
+        Constraints::loose(f32::INFINITY, f32::INFINITY)
     };
 
     // 2. O(1) Cache Hit (0 tracing overhead)
@@ -99,13 +100,13 @@ pub fn compute_intrinsic_with_constraints(
 
 /// Inline wrap width for a text node from its width intent and available space.
 fn text_inline_width(width: Size, constraints: Constraints) -> f32 {
-    if matches!(width, Size::Fit) {
-        return f32::INFINITY;
-    }
-    // When the width is already resolved (tight), reuse it directly instead of
-    // re-applying the sizing intent, which would double-count Fill/Percent.
+    // When the width is already resolved (tight), reuse it directly instead of re-applying the
+    // sizing intent, which would double-count Fill/Percent and ignore a wrapped cross size.
     if constraints.is_tight_width() {
         return constraints.max_width.max(0.0);
+    }
+    if matches!(width, Size::Fit) {
+        return f32::INFINITY;
     }
     let available = constraints.max_width;
     match width {
@@ -174,6 +175,33 @@ fn measure_intrinsic_uncached(
     intrinsic
 }
 
+/// Re-shapes a text run when its cached layout is wider than the inline size it finally received.
+///
+/// Group intrinsic measurement is deliberately unbounded, so a `Fit` container can be shrunk by its
+/// siblings while its text child still holds an unwrapped run that paints past its own box. Shaping
+/// is memoized by content and width, so the common case costs one cache lookup and no shaping.
+pub fn fit_text_run_to_width(
+    arena: &mut TreeArena,
+    id: NodeId,
+    width: f32,
+    text_ctx: &TextContext,
+) {
+    let outgrows_box = match &arena.get(id).state.cached_text_layout {
+        Some(layout) => layout.total_size.width > width + 0.01,
+        None => true,
+    };
+    if !outgrows_box || !matches!(arena.get(id).kind, NodeKind::Text(_)) {
+        return;
+    }
+
+    let config = match &arena.get(id).kind {
+        NodeKind::Text(config) => config.clone(),
+        _ => return,
+    };
+    let layout = text_ctx.shape_config(&config, Constraints::tight_width(width));
+    arena.get_mut(id).state.cached_text_layout = Some(layout);
+}
+
 /// Derives desired width and height for a child in O(1) without subtree recursion when fixed.
 pub fn compute_child_desired(
     arena: &mut TreeArena,
@@ -183,6 +211,14 @@ pub fn compute_child_desired(
     parent_height: Option<f32>,
     text_ctx: &TextContext,
 ) -> DesiredSize {
+    // A node presenting no footprint measures to nothing on either axis.
+    if arena.get(child_id).state.presence == LayoutPresence::Absent {
+        return DesiredSize {
+            width: 0.0,
+            height: 0.0,
+        };
+    }
+
     let node = arena.get(child_id);
     let (w_size, h_size) = (node.style.width, node.style.height);
 

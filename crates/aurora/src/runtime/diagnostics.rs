@@ -57,3 +57,26 @@ pub struct CompileDiagnostics {
     pub commands_emitted: usize,
     pub context_bounds: Vec<ResolvedRect>,
 }
+
+/// A read-only snapshot of the engine's internal counters.
+///
+/// One struct rather than a dozen accessors, because the counters are only interpretable
+/// together: a live track count that disagrees with the number of nodes springing is the signature
+/// of a stale count, `simulated` means nothing without the time scale it was accumulated under,
+/// and "is anything animating" is the conjunction of several of them. Reading them one at a time
+/// across a frame boundary is how a mismatch gets missed.
+///
+/// Taken as a single value, so it cannot be a torn read across a frame.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct EngineDiagnostics {
+    /// Scaled delta the last frame produced.
+    pub last_delta: f32,
+    /// Total animation time simulated so far, in seconds.
+    pub simulated: f32,
+    /// Time banked toward the next animation quantum, in seconds.
+    pub accumulated: f32,
+    /// The time scale currently applied to deltas.
+    pub time_scale: f32,
+    /// Whether a forced single-quantum step is still waiting to run.
+    pub animation_step_pending: bool,
+}

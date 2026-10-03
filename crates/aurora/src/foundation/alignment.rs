@@ -2,17 +2,14 @@
 
 use crate::foundation::spacing::Gap;
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub enum Direction {
     #[default]
     Horizontal,
     Vertical,
 }
 
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub enum Alignment {
     #[default]
     Start,
@@ -21,9 +18,7 @@ pub enum Alignment {
     Stretch,
 }
 
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub enum Distribution {
     #[default]
     Start,
@@ -31,7 +26,6 @@ pub enum Distribution {
     End,
     SpaceBetween,
 }
-
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct LayoutConfig {
@@ -51,7 +45,12 @@ impl LayoutConfig {
         }
     }
 
-    pub const fn with_distribution(direction: Direction, gap: Gap, alignment: Alignment, distribution: Distribution) -> Self {
+    pub const fn with_distribution(
+        direction: Direction,
+        gap: Gap,
+        alignment: Alignment,
+        distribution: Distribution,
+    ) -> Self {
         Self {
             direction,
             gap,

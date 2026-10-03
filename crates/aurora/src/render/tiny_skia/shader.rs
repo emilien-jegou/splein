@@ -1,7 +1,10 @@
 // Construction of TinySkia shaders for solid colors and gradients.
 
-use tiny_skia::{Color as SkiaColor, GradientStop, LinearGradient, Paint, Point as SkiaPoint, RadialGradient, SpreadMode, Transform};
 use crate::foundation::{Color, Fill};
+use tiny_skia::{
+    Color as SkiaColor, GradientStop, LinearGradient, Paint, Point as SkiaPoint, RadialGradient,
+    SpreadMode, Transform,
+};
 
 pub fn build_paint<'a>(fill: &Fill, opacity: f32) -> Option<Paint<'a>> {
     let mut paint = Paint::default();
@@ -16,22 +19,34 @@ pub fn build_paint<'a>(fill: &Fill, opacity: f32) -> Option<Paint<'a>> {
             Some(paint)
         }
         Fill::LinearGradient(lg) => {
-            let stops: Vec<GradientStop> = lg.stops.iter().map(|s| {
-                GradientStop::new(s.position, to_skia_color(s.color, opacity))
-            }).collect();
+            let stops: Vec<GradientStop> = lg
+                .stops
+                .iter()
+                .map(|s| GradientStop::new(s.position, to_skia_color(s.color, opacity)))
+                .collect();
             // FIX: previously used lg.end.y for both x and y — use lg.end.x for x.
             let start = SkiaPoint::from_xy(lg.start.x, lg.start.y);
             let end = SkiaPoint::from_xy(lg.end.x, lg.end.y);
-            let shader = LinearGradient::new(start, end, stops, SpreadMode::Pad, Transform::identity())?;
+            let shader =
+                LinearGradient::new(start, end, stops, SpreadMode::Pad, Transform::identity())?;
             paint.shader = shader;
             Some(paint)
         }
         Fill::RadialGradient(rg) => {
-            let stops: Vec<GradientStop> = rg.stops.iter().map(|s| {
-                GradientStop::new(s.position, to_skia_color(s.color, opacity))
-            }).collect();
+            let stops: Vec<GradientStop> = rg
+                .stops
+                .iter()
+                .map(|s| GradientStop::new(s.position, to_skia_color(s.color, opacity)))
+                .collect();
             let center = SkiaPoint::from_xy(rg.center.x, rg.center.y);
-            let shader = RadialGradient::new(center, center, rg.radius, stops, SpreadMode::Pad, Transform::identity())?;
+            let shader = RadialGradient::new(
+                center,
+                center,
+                rg.radius,
+                stops,
+                SpreadMode::Pad,
+                Transform::identity(),
+            )?;
             paint.shader = shader;
             Some(paint)
         }

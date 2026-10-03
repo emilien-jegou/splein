@@ -46,9 +46,17 @@ impl GpuContext {
         let caps = surface.get_capabilities(&adapter);
 
         // Vello shaders perform internal sRGB conversion; select non-sRGB surface to avoid double gamma
-        let format = caps.formats.iter().copied().find(|f| !f.is_srgb()).unwrap_or(
-            caps.formats.first().copied().unwrap_or(TextureFormat::Bgra8Unorm),
-        );
+        let format = caps
+            .formats
+            .iter()
+            .copied()
+            .find(|f| !f.is_srgb())
+            .unwrap_or(
+                caps.formats
+                    .first()
+                    .copied()
+                    .unwrap_or(TextureFormat::Bgra8Unorm),
+            );
 
         // Prefer Mailbox for tear-free lowest latency; fallback to Immediate before AutoVsync for max throughput
         let present_mode = if caps.present_modes.contains(&PresentMode::Mailbox) {
@@ -71,7 +79,12 @@ impl GpuContext {
         };
         surface.configure(&device, &config);
 
-        Ok(Self { device, queue, surface, config })
+        Ok(Self {
+            device,
+            queue,
+            surface,
+            config,
+        })
     }
 
     /// Reconfigures swapchain surface dimensions, clamping to non-zero physical limits.

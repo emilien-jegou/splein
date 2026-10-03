@@ -27,7 +27,7 @@ pub fn present_one(
         engine.resize(w, h);
     }
 
-    let (_stats, _layers, mut diag) = engine.frame();
+    let mut diag = engine.frame().diagnostics;
     let text_ctx = engine.text_context();
     let (lw, lh) = engine.logical_size();
     let caps = OverlayCaps {

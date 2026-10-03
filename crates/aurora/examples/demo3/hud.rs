@@ -3,7 +3,8 @@
 use aurora::prelude::*;
 
 pub fn render_floating_hud() -> impl IntoElement {
-    group().direction(Direction::Horizontal)
+    group()
+        .direction(Direction::Horizontal)
         .width(Size::fit())
         .height(48.0)
         .radius(Radius::max())
@@ -17,12 +18,14 @@ pub fn render_floating_hud() -> impl IntoElement {
         )])
         .anchor(Anchor::Bottom)
         .margin(Margin::bottom(12.0))
-        .overlay(true).z_index(100)
+        .overlay(true)
+        .z_index(100)
         .alignment(Alignment::Center)
         .gap(10.0)
         .margin(Margin::x(6.0))
         .children((
-            group().direction(Direction::Horizontal)
+            group()
+                .direction(Direction::Horizontal)
                 .width(280.0)
                 .height(36.0)
                 .radius(Radius::max())
@@ -39,7 +42,8 @@ pub fn render_floating_hud() -> impl IntoElement {
                         .color(Color::hex(0x9B9B9B))
                         .margin(Margin::right(10.0)),
                 )),
-            group().direction(Direction::Horizontal)
+            group()
+                .direction(Direction::Horizontal)
                 .width(180.0)
                 .height(36.0)
                 .radius(Radius::max())
@@ -57,21 +61,28 @@ pub fn render_floating_hud() -> impl IntoElement {
                         .height(6.0)
                         .radius(3.0)
                         .fill(Color::white_alpha(0.20)),
-                    text("400").size(11.0).color(Color::WHITE).margin(Margin::right(8.0)),
+                    text("400")
+                        .size(11.0)
+                        .color(Color::WHITE)
+                        .margin(Margin::right(8.0)),
                 )),
             hud_stepper("A/A", "1.2"),
             hud_stepper("VA", "0px"),
-            group().width(1.0).height(16.0).fill(Color::white_alpha(0.15)),
-            group().direction(Direction::Horizontal).alignment(Alignment::Center).gap(4.0).children((
-                hud_button("I"),
-                hud_button("AA"),
-                hud_button("U"),
-            )),
+            group()
+                .width(1.0)
+                .height(16.0)
+                .fill(Color::white_alpha(0.15)),
+            group()
+                .direction(Direction::Horizontal)
+                .alignment(Alignment::Center)
+                .gap(4.0)
+                .children((hud_button("I"), hud_button("AA"), hud_button("U"))),
         ))
 }
 
 fn hud_stepper(label: &'static str, val: &'static str) -> impl IntoElement {
-    group().direction(Direction::Horizontal)
+    group()
+        .direction(Direction::Horizontal)
         .height(36.0)
         .radius(Radius::max())
         .fill(Color::white_alpha(0.10))
@@ -91,8 +102,10 @@ fn hud_stepper(label: &'static str, val: &'static str) -> impl IntoElement {
 
 fn hud_button(label: &'static str) -> impl IntoElement {
     group()
-        .width(28.0).height(28.0)
+        .width(28.0)
+        .height(28.0)
         .radius(Radius::max())
-        .alignment(Alignment::Center).distribution(Distribution::Center)
+        .alignment(Alignment::Center)
+        .distribution(Distribution::Center)
         .children([text(label).size(12.0).color(Color::white_alpha(0.70))])
 }

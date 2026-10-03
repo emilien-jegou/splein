@@ -8,4 +8,4 @@ pub mod frame;
 pub mod icons;
 
 pub use engine::{RenderEngine, TinySkiaRenderer};
-pub use frame::Frame;
+pub use frame::{CanvasDynamics, DockInputs, Frame};

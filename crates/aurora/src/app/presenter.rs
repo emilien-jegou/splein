@@ -29,7 +29,7 @@ impl SurfacePresenter {
         W: HasWindowHandle,
         F: FnOnce(&mut [u32], &DamageRegion, usize, usize),
     {
-        let _span = tracing::info_span!("Stage7::PresentDamaged").entered();
+        let _span = tracing::info_span!("Present::Damaged").entered();
         if active_w == 0 || active_h == 0 {
             return;
         }
@@ -51,7 +51,10 @@ impl SurfacePresenter {
         }
 
         let (dst_stride, src_stride) = (active_w as usize, pixmap.width() as usize);
-        let (safe_w, safe_h) = (dst_stride.min(src_stride), (active_h as usize).min(pixmap.height() as usize));
+        let (safe_w, safe_h) = (
+            dst_stride.min(src_stride),
+            (active_h as usize).min(pixmap.height() as usize),
+        );
         let dst_pixels = buffer.as_mut();
         let src_all: &[u32] = bytemuck::cast_slice(pixmap.data());
 
@@ -59,7 +62,9 @@ impl SurfacePresenter {
         {
             let _swizzle_span = tracing::info_span!("SIMD::SwizzleDamage").entered();
             for rect in damage.rects().iter().chain(extra_damage) {
-                if let Some(sb_rect) = swizzle_rect(dst_pixels, src_all, rect, dst_stride, src_stride, safe_w, safe_h) {
+                if let Some(sb_rect) = swizzle_rect(
+                    dst_pixels, src_all, rect, dst_stride, src_stride, safe_w, safe_h,
+                ) {
                     rects.push(sb_rect);
                 }
             }
@@ -99,7 +104,10 @@ impl SurfacePresenter {
         }
 
         let (dst_stride, src_stride) = (active_w as usize, pixmap.width() as usize);
-        let (safe_w, safe_h) = (dst_stride.min(src_stride), (active_h as usize).min(pixmap.height() as usize));
+        let (safe_w, safe_h) = (
+            dst_stride.min(src_stride),
+            (active_h as usize).min(pixmap.height() as usize),
+        );
         let dst_pixels = buffer.as_mut();
         let src_all: &[u32] = bytemuck::cast_slice(pixmap.data());
 
@@ -149,5 +157,10 @@ fn swizzle_rect(
 
     let w = NonZeroU32::new(rw as u32)?;
     let h = NonZeroU32::new((y1 - y0) as u32)?;
-    Some(softbuffer::Rect { x: x0 as u32, y: y0 as u32, width: w, height: h })
+    Some(softbuffer::Rect {
+        x: x0 as u32,
+        y: y0 as u32,
+        width: w,
+        height: h,
+    })
 }

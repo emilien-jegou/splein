@@ -26,7 +26,17 @@ pub struct AppContext {
     pub state: WaylandAppState,
 }
 
+/// Starts the long-lived overlay daemon with the overlay initially inactive.
 pub fn run_overlay_daemon() -> eyre::Result<()> {
+    run_overlay(false)
+}
+
+/// Runs the overlay in the foreground, active immediately, without needing a daemon.
+pub fn run_standalone_overlay() -> eyre::Result<()> {
+    run_overlay(true)
+}
+
+fn run_overlay(start_active: bool) -> eyre::Result<()> {
     let conn = Connection::connect_to_env()?;
     let (globals, event_queue) = registry_queue_init(&conn)?;
     let qh = event_queue.handle();
@@ -112,6 +122,11 @@ pub fn run_overlay_daemon() -> eyre::Result<()> {
     })?;
 
     let _ = ctx.conn.flush();
+
+    if start_active {
+        let action = ctx.state.session.activate();
+        ctx.state.process_action(action);
+    }
 
     loop {
         loop_engine.dispatch(None, &mut ctx)?;

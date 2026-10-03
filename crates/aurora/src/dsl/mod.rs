@@ -1,9 +1,11 @@
 // Single responsibility: Module boundary and re-exports for the declarative DSL.
 
-pub use component::{component, Component, IntoElement};
+pub use component::{component, component_scope, Component, IntoElement};
 pub use custom::{custom, CustomDef};
 pub use diff::ChildOp;
 pub use element::Element;
+pub use element_ref::ElementRef;
+pub use flip::{use_flip, use_follow, use_ref, Trigger};
 pub use group::{group, GroupDef};
 pub use reconciler::reconcile;
 pub use svg::svg;
@@ -14,6 +16,8 @@ pub mod component;
 pub mod custom;
 pub mod diff;
 pub mod element;
+pub mod element_ref;
+pub mod flip;
 pub mod group;
 pub mod prop;
 pub mod reconcile_children;

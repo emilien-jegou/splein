@@ -11,7 +11,6 @@ use aurora::app::AppExtension;
 use aurora::prelude::*;
 use aurora::reactive::ReactiveRuntime;
 use common::ExampleCli;
-use winit::event::WindowEvent;
 
 const DEFAULT_WIDTH: u32 = 1440;
 const DEFAULT_HEIGHT: u32 = 900;
@@ -81,7 +80,7 @@ fn build_ui(time_sig: Signal<f32>, counter_sig: Signal<u64>) -> impl IntoElement
                         ]),
                         text("AURORA CORE").size(15.0).weight(700).color(Color::WHITE),
                     )),
-                    
+
                     group().width(Size::fill()).height(1.0).fill(Color::hex(0x1A2234)).margin(Margin::y(12.0)),
 
                     // Sidebar Navigation Links
@@ -294,29 +293,44 @@ fn build_ui(time_sig: Signal<f32>, counter_sig: Signal<u64>) -> impl IntoElement
 // -----------------------------------------------------------------------------
 
 fn nav_link(label: &'static str, active: bool) -> impl IntoElement {
-    group().direction(Direction::Horizontal)
+    group()
+        .direction(Direction::Horizontal)
         .width(Size::fill())
         .height(36.0)
         .radius(Radius::scalar(8.0))
-        .fill(if active { Color::hex_alpha(0x38BDF8, 0.12) } else { Color::TRANSPARENT })
+        .fill(if active {
+            Color::hex_alpha(0x38BDF8, 0.12)
+        } else {
+            Color::TRANSPARENT
+        })
         .alignment(Alignment::Center)
         .margin(Margin::x(8.0))
         .children((
             group()
-                .width(6.0).height(6.0)
+                .width(6.0)
+                .height(6.0)
                 .radius(Radius::max())
-                .fill(if active { Color::hex(0x38BDF8) } else { Color::hex(0x334155) })
+                .fill(if active {
+                    Color::hex(0x38BDF8)
+                } else {
+                    Color::hex(0x334155)
+                })
                 .margin(Margin::left(12.0)),
             text(label)
                 .size(13.0)
                 .weight(if active { 600 } else { 400 })
-                .color(if active { Color::WHITE } else { Color::hex(0x94A3B8) })
+                .color(if active {
+                    Color::WHITE
+                } else {
+                    Color::hex(0x94A3B8)
+                })
                 .margin(Margin::left(10.0)),
         ))
 }
 
 fn status_badge(label: &'static str, val: &'static str, color: Color) -> impl IntoElement {
-    group().direction(Direction::Horizontal)
+    group()
+        .direction(Direction::Horizontal)
         .height(30.0)
         .radius(Radius::scalar(8.0))
         .fill(Color::hex(0x111726))
@@ -325,9 +339,21 @@ fn status_badge(label: &'static str, val: &'static str, color: Color) -> impl In
         .gap(6.0)
         .margin(Margin::x(8.0))
         .children((
-            group().width(6.0).height(6.0).radius(Radius::max()).fill(color).margin(Margin::left(8.0)),
-            text(label).size(11.0).weight(600).color(Color::hex(0x94A3B8)),
-            text(val).size(11.0).weight(700).color(color).margin(Margin::right(8.0)),
+            group()
+                .width(6.0)
+                .height(6.0)
+                .radius(Radius::max())
+                .fill(color)
+                .margin(Margin::left(8.0)),
+            text(label)
+                .size(11.0)
+                .weight(600)
+                .color(Color::hex(0x94A3B8)),
+            text(val)
+                .size(11.0)
+                .weight(700)
+                .color(color)
+                .margin(Margin::right(8.0)),
         ))
 }
 
@@ -349,8 +375,17 @@ fn build_equalizer_bars(t_sig: Signal<f32>) -> Vec<Element> {
                 }
             })
             .radius(Radius::scalar(6.0))
-            .fill(if i % 2 == 0 { Color::hex(0x38BDF8) } else { Color::hex(0x818CF8) })
-            .shadows([Shadow::outer(0.0, 0.0, 6.0, Color::hex_alpha(0x38BDF8, 0.30))])
+            .fill(if i % 2 == 0 {
+                Color::hex(0x38BDF8)
+            } else {
+                Color::hex(0x818CF8)
+            })
+            .shadows([Shadow::outer(
+                0.0,
+                0.0,
+                6.0,
+                Color::hex_alpha(0x38BDF8, 0.30),
+            )])
             .anchor(Anchor::Bottom);
 
         bars.push(bar.into_element());

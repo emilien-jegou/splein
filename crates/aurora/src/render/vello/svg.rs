@@ -21,15 +21,28 @@ pub struct VelloSvgCache {
 
 impl VelloSvgCache {
     /// Constructs a clean native vector SVG cache.
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
 
     /// Blits compiled vector SVG compute scenes transformed through the affine stack.
-    pub fn draw(&mut self, scene: &mut VelloScene, rect: &ResolvedRect, graphic: &VectorGraphic, tx: Affine) {
-        if rect.width <= 0.0 || rect.height <= 0.0 || graphic.width <= 0.0 || graphic.height <= 0.0 { return; }
+    pub fn draw(
+        &mut self,
+        scene: &mut VelloScene,
+        rect: &ResolvedRect,
+        graphic: &VectorGraphic,
+        tx: Affine,
+    ) {
+        if rect.width <= 0.0 || rect.height <= 0.0 || graphic.width <= 0.0 || graphic.height <= 0.0
+        {
+            return;
+        }
         let ptr_key = Arc::as_ptr(&graphic.tree) as usize;
 
         if !self.cache.contains_key(&ptr_key) && self.cache.len() >= MAX_CACHED_SVGS {
-            if let Some(&first) = self.cache.keys().next() { self.cache.remove(&first); }
+            if let Some(&first) = self.cache.keys().next() {
+                self.cache.remove(&first);
+            }
         }
 
         let compiled = self.cache.entry(ptr_key).or_insert_with(|| {
@@ -40,14 +53,24 @@ impl VelloSvgCache {
 
         let sx = rect.width as f64 / graphic.width as f64;
         let sy = rect.height as f64 / graphic.height as f64;
-        let transform = tx * Affine::translate((rect.x as f64, rect.y as f64)) * Affine::scale_non_uniform(sx, sy);
+        let transform = tx
+            * Affine::translate((rect.x as f64, rect.y as f64))
+            * Affine::scale_non_uniform(sx, sy);
         scene.append(compiled.as_ref(), Some(transform));
     }
 }
 
 fn compile_usvg_group(group: &usvg::Group, scene: &mut VelloScene, parent_tx: Affine) {
     let t = group.transform();
-    let group_tx = parent_tx * Affine::new([t.sx as f64, t.ky as f64, t.kx as f64, t.sy as f64, t.tx as f64, t.ty as f64]);
+    let group_tx = parent_tx
+        * Affine::new([
+            t.sx as f64,
+            t.ky as f64,
+            t.kx as f64,
+            t.sy as f64,
+            t.tx as f64,
+            t.ty as f64,
+        ]);
 
     for child in group.children() {
         match child {
@@ -56,14 +79,23 @@ fn compile_usvg_group(group: &usvg::Group, scene: &mut VelloScene, parent_tx: Af
                 let mut bez = BezPath::new();
                 for seg in path.data().segments() {
                     match seg {
-                        tiny_skia_path::PathSegment::MoveTo(p) => bez.push(PathEl::MoveTo(KurboPoint::new(p.x as f64, p.y as f64))),
-                        tiny_skia_path::PathSegment::LineTo(p) => bez.push(PathEl::LineTo(KurboPoint::new(p.x as f64, p.y as f64))),
+                        tiny_skia_path::PathSegment::MoveTo(p) => {
+                            bez.push(PathEl::MoveTo(KurboPoint::new(p.x as f64, p.y as f64)))
+                        }
+                        tiny_skia_path::PathSegment::LineTo(p) => {
+                            bez.push(PathEl::LineTo(KurboPoint::new(p.x as f64, p.y as f64)))
+                        }
                         tiny_skia_path::PathSegment::QuadTo(p1, p2) => {
-                            bez.push(PathEl::QuadTo(KurboPoint::new(p1.x as f64, p1.y as f64), KurboPoint::new(p2.x as f64, p2.y as f64)));
+                            bez.push(PathEl::QuadTo(
+                                KurboPoint::new(p1.x as f64, p1.y as f64),
+                                KurboPoint::new(p2.x as f64, p2.y as f64),
+                            ));
                         }
                         tiny_skia_path::PathSegment::CubicTo(p1, p2, p3) => {
                             bez.push(PathEl::CurveTo(
-                                KurboPoint::new(p1.x as f64, p1.y as f64), KurboPoint::new(p2.x as f64, p2.y as f64), KurboPoint::new(p3.x as f64, p3.y as f64),
+                                KurboPoint::new(p1.x as f64, p1.y as f64),
+                                KurboPoint::new(p2.x as f64, p2.y as f64),
+                                KurboPoint::new(p3.x as f64, p3.y as f64),
                             ));
                         }
                         tiny_skia_path::PathSegment::Close => bez.push(PathEl::ClosePath),
@@ -77,7 +109,8 @@ fn compile_usvg_group(group: &usvg::Group, scene: &mut VelloScene, parent_tx: Af
                 }
 
                 if let Some(ref stroke) = path.stroke() {
-                    if let Some(brush) = convert_usvg_paint(stroke.paint(), stroke.opacity().get()) {
+                    if let Some(brush) = convert_usvg_paint(stroke.paint(), stroke.opacity().get())
+                    {
                         let k_stroke = KurboStroke::new(stroke.width().get() as f64);
                         scene.stroke(&k_stroke, group_tx, &brush, None, &bez);
                     }

@@ -1,18 +1,21 @@
+// Paints canvas drawing elements (strokes, shapes, hover halos) onto tiny-skia pixmaps.
+
 use super::color::to_native_color;
 use crate::domain::canvas::{DrawingElement, Rgba, Stroke as DomainStroke};
-use crate::domain::geometry::{CubicBezierSegment, Vec2};
-use tiny_skia::{Color, LineCap, LineJoin, Paint, PathBuilder, PixmapMut, Rect, Stroke, Transform};
+use crate::domain::geometry::{Aabb, CubicBezierSegment, Handle, Vec2};
+use tiny_skia::{
+    Color, FillRule, LineCap, LineJoin, Paint, PathBuilder, PixmapMut, Rect, Stroke, Transform,
+};
 
 pub struct ElementRenderer;
 
 impl ElementRenderer {
-    /// Strictly O(1): Renders exactly ONE Bézier segment onto the persistent canvas pixmap (0.004 ms)
+    /// Strictly O(1): Renders exactly ONE pen segment onto the persistent canvas (0.004 ms)
     pub fn render_single_segment(
         &self,
         seg: &CubicBezierSegment,
         color: Rgba,
         base_width: f32,
-        is_highlighter: bool,
         pixmap: &mut PixmapMut,
     ) {
         let mut pb = PathBuilder::new();
@@ -26,8 +29,7 @@ impl ElementRenderer {
 
             let stroke_opts = Stroke {
                 width: base_width,
-                // Contiguous Butt cap on intermediate joints prevents alpha buildup for highlighters
-                line_cap: if is_highlighter { LineCap::Butt } else { LineCap::Round },
+                line_cap: LineCap::Round,
                 line_join: LineJoin::Round,
                 ..Default::default()
             };
@@ -145,6 +147,51 @@ impl ElementRenderer {
             };
             pixmap.stroke_path(&path, &paint, &stroke_opts, Transform::identity(), None);
         }
+    }
+
+    /// Draws the resize handles of a selection box.
+    pub fn render_handles(&self, rect: Aabb, pixmap: &mut PixmapMut) {
+        let accent = Color::from_rgba8(0x0D, 0x99, 0xFF, 255);
+        for (_, anchor) in Handle::anchors(rect) {
+            let Some(r) = Rect::from_xywh(anchor.x - 4.0, anchor.y - 4.0, 8.0, 8.0) else {
+                continue;
+            };
+            let mut pb = PathBuilder::new();
+            pb.push_rect(r);
+            let Some(path) = pb.finish() else { continue };
+            let mut fill = Paint::default();
+            fill.set_color(Color::WHITE);
+            fill.anti_alias = true;
+            pixmap.fill_path(&path, &fill, FillRule::Winding, Transform::identity(), None);
+            let mut border = Paint::default();
+            border.set_color(accent);
+            border.anti_alias = true;
+            let stroke = Stroke { width: 1.5, ..Default::default() };
+            pixmap.stroke_path(&path, &border, &stroke, Transform::identity(), None);
+        }
+    }
+
+    /// Draws the translucent region of an active rubber-band selection drag.
+    pub fn render_band(&self, rect: Aabb, pixmap: &mut PixmapMut) {
+        let w = rect.max.x - rect.min.x;
+        let h = rect.max.y - rect.min.y;
+        let Some(r) = Rect::from_xywh(rect.min.x, rect.min.y, w, h) else {
+            return;
+        };
+        let mut pb = PathBuilder::new();
+        pb.push_rect(r);
+        let Some(path) = pb.finish() else { return };
+
+        let mut fill = Paint::default();
+        fill.set_color(Color::from_rgba8(0x0D, 0x99, 0xFF, 36));
+        fill.anti_alias = true;
+        pixmap.fill_path(&path, &fill, FillRule::Winding, Transform::identity(), None);
+
+        let mut border = Paint::default();
+        border.set_color(Color::from_rgba8(0x0D, 0x99, 0xFF, 200));
+        border.anti_alias = true;
+        let stroke = Stroke { width: 1.5, ..Default::default() };
+        pixmap.stroke_path(&path, &border, &stroke, Transform::identity(), None);
     }
 
     pub fn render_hover_halo(&self, elem: &DrawingElement, is_eraser: bool, pixmap: &mut PixmapMut) {
