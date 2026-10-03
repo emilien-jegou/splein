@@ -1,7 +1,10 @@
 // Single responsibility: Configuration and layout parameters for styled typography.
 
 use crate::foundation::Color;
+use crate::text::align::TextAlign;
+use crate::text::decoration::TextDecoration;
 use crate::text::fonts::{FontId, FontStyle};
+use crate::text::overflow::TextOverflow;
 
 /// Line height policy: fixed pixels or a multiple of the font size.
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -53,6 +56,14 @@ pub struct TextConfig {
     pub line_height: LineHeight,
     /// Tracking offset added between characters.
     pub letter_spacing: f32,
+    /// Horizontal alignment of lines within the paragraph box.
+    pub align: TextAlign,
+    /// Decoration lines drawn under or over the run.
+    pub decoration: TextDecoration,
+    /// Overflow behavior past the line budget.
+    pub overflow: TextOverflow,
+    /// Maximum visible line count, or None for unbounded.
+    pub max_lines: Option<u32>,
     /// Text foreground color.
     pub color: Color,
 }
@@ -68,6 +79,10 @@ impl Default for TextConfig {
             weight: 400,
             line_height: LineHeight::Multiple(1.2),
             letter_spacing: 0.0,
+            align: TextAlign::Start,
+            decoration: TextDecoration::NONE,
+            overflow: TextOverflow::Clip,
+            max_lines: None,
             color: Color::WHITE,
         }
     }

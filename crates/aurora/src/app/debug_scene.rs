@@ -1,6 +1,7 @@
 // Single responsibility: Emits display list overlay chunks for GPU compute rasterizers.
 
 use crate::app::debug::InspectorMode;
+use crate::app::debug_layout::hud_panel;
 use crate::foundation::{Appearance, Color, Fill, Point, ResolvedRect, Stroke};
 use crate::runtime::FrameDiagnostics;
 use crate::scene::{SceneChunk, SceneCommand};
@@ -88,7 +89,7 @@ pub fn emit_hud_overlay(
 ) {
     // 1. Panel Container
     chunk.push(SceneCommand::DrawRect {
-        rect: ResolvedRect::new(12.0, 12.0, 310.0, 48.0),
+        rect: hud_panel(),
         appearance: Appearance::EMPTY
             .with_fill(Fill::solid(Color::hex_alpha(0x0F172A, 0.94)))
             .with_stroke(Stroke::inside(1.0, Color::hex(0x334155))),
@@ -180,6 +181,10 @@ fn emit_label(
         weight: 700,
         line_height: crate::text::LineHeight::Absolute(14.0),
         letter_spacing: 0.0,
+        align: crate::text::TextAlign::Start,
+        decoration: crate::text::TextDecoration::NONE,
+        overflow: crate::text::TextOverflow::Clip,
+        max_lines: None,
         color,
     };
     let layout = text_ctx.shape_config(&cfg, crate::foundation::Constraints::loose(80.0, 16.0));

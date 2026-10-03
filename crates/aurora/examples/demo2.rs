@@ -61,25 +61,25 @@ fn main() {
 }
 
 fn build_ui(icons: &Icons) -> impl IntoElement {
-    column()
-        .fill_parent()
+    group().direction(Direction::Vertical)
+        .width(Size::fill()).height(Size::fill())
         .fill(Color::hex(0x444444))
-        .center()
+        .alignment(Alignment::Center).distribution(Distribution::Center)
         .children([
-            column()
-                .size(461.0, 108.0)
+            group().direction(Direction::Vertical)
+                .width(461.0).height(108.0)
                 .children([
-                    row()
-                        .fit_width()
+                    group().direction(Direction::Horizontal)
+                        .width(Size::fit())
                         .height(48.0)
                         .fill(Color::BLACK)
                         .radius(14.0)
                         .gap(6.0)
                         .margin(Margin::all(3.0))
-                        .align_center()
+                        .alignment(Alignment::Center)
                         .children((
                             handle(&icons.handle),
-                            row().fit_width().height(42.0).gap(10.0).children((
+                            group().direction(Direction::Horizontal).width(Size::fit()).height(42.0).gap(10.0).children((
                                 btn_arrow(&icons.pen, &icons.arrow, "q"),
                                 btn_active(&icons.pencil, "w"),
                                 btn(&icons.brush, "e"),
@@ -88,20 +88,20 @@ fn build_ui(icons: &Icons) -> impl IntoElement {
                                 btn(&icons.lasso, "y"),
                             )),
                             divider(),
-                            row().fit_width().height(42.0).gap(4.0).children((
+                            group().direction(Direction::Horizontal).width(Size::fit()).height(42.0).gap(4.0).children((
                                 btn_action(&icons.trash),
                                 btn_action(&icons.more),
                             )),
                         )),
-                    row()
-                        .fit_width()
+                    group().direction(Direction::Horizontal)
+                        .width(Size::fit())
                         .height(47.0)
                         .fill(Color::BLACK)
                         .radius(14.0)
                         .gap(10.0)
-                        .margin_left(117.5)
-                        .margin_top(10.0)
-                        .align_center()
+                        .margin(Margin::left(117.5))
+                        .margin(Margin::top(10.0))
+                        .alignment(Alignment::Center)
                         .children((
                             btn(&icons.sub_line, "a"),
                             btn(&icons.sub_diag, "s"),
@@ -113,27 +113,27 @@ fn build_ui(icons: &Icons) -> impl IntoElement {
 }
 
 fn btn(icon: &Arc<VectorGraphic>, k: &'static str) -> impl IntoElement {
-    group().size(42.0, 42.0).radius(12.0).center().children((
+    group().width(42.0).height(42.0).radius(12.0).alignment(Alignment::Center).distribution(Distribution::Center).children((
         svg(icon).size(28.0, 28.0),
         text(k).size(10.0).color(Color::rgb(0.4, 0.4, 0.4)).anchor(Anchor::BottomRight),
     ))
 }
 
 fn btn_arrow(icon: &Arc<VectorGraphic>, arrow: &Arc<VectorGraphic>, k: &'static str) -> impl IntoElement {
-    group().size(46.0, 42.0).radius(12.0).center().children((
+    group().width(46.0).height(42.0).radius(12.0).alignment(Alignment::Center).distribution(Distribution::Center).children((
         svg(icon).size(28.0, 28.0),
-        svg(arrow).size(6.0, 6.0).anchor(Anchor::BottomRight).margin_xy(2.0, 2.0),
-        text(k).size(10.0).color(Color::rgb(0.4, 0.4, 0.4)).anchor(Anchor::BottomRight).margin_right(8.0),
+        svg(arrow).size(6.0, 6.0).anchor(Anchor::BottomRight).margin(Margin::sides(2.0, 2.0, 2.0, 2.0)),
+        text(k).size(10.0).color(Color::rgb(0.4, 0.4, 0.4)).anchor(Anchor::BottomRight).margin(Margin::right(8.0)),
     ))
 }
 
 fn btn_active(icon: &Arc<VectorGraphic>, k: &'static str) -> impl IntoElement {
     group()
-        .size(42.0, 42.0)
+        .width(42.0).height(42.0)
         .radius(8.0)
         .fill(Color::hex_alpha(0x57FA58, 0.13))
-        .shadow(Shadow::inset(0.0, 2.0, 3.0, Color::hex_alpha(0x54F554, 0.18)))
-        .center()
+        .shadows([Shadow::inset(0.0, 2.0, 3.0, Color::hex_alpha(0x54F554, 0.18))])
+        .alignment(Alignment::Center).distribution(Distribution::Center)
         .children((
             svg(icon).size(28.0, 28.0),
             text(k).size(10.0).color(Color::hex(0x226F22)).anchor(Anchor::BottomRight),
@@ -141,15 +141,15 @@ fn btn_active(icon: &Arc<VectorGraphic>, k: &'static str) -> impl IntoElement {
 }
 
 fn btn_action(icon: &Arc<VectorGraphic>) -> impl IntoElement {
-    group().size(42.0, 42.0).radius(12.0).center().children([svg(icon).size(28.0, 28.0)])
+    group().width(42.0).height(42.0).radius(12.0).alignment(Alignment::Center).distribution(Distribution::Center).children([svg(icon).size(28.0, 28.0)])
 }
 
 fn handle(icon: &Arc<VectorGraphic>) -> impl IntoElement {
-    group().size(36.0, 42.0).center().children([svg(icon).size(28.0, 28.0)])
+    group().width(36.0).height(42.0).alignment(Alignment::Center).distribution(Distribution::Center).children([svg(icon).size(28.0, 28.0)])
 }
 
 fn divider() -> impl IntoElement {
-    group().size(1.0, 30.0).fill(Color::white_alpha(0.15)).margin_x(4.0)
+    group().width(1.0).height(30.0).fill(Color::white_alpha(0.15)).margin(Margin::x(4.0))
 }
 
 const HANDLE_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 21 21"><path d="M13.471 16.344C13.471 16.882 13.036 17.318 12.496 17.318C11.959 17.318 11.524 16.882 11.524 16.344C11.524 15.806 11.959 15.37 12.496 15.37C13.036 15.37 13.471 15.806 13.471 16.344M8.601 10.5C8.601 11.038 8.167 11.474 7.626 11.474C7.089 11.474 6.655 11.038 6.655 10.5C6.655 9.962 7.089 9.526 7.626 9.526C8.167 9.526 8.601 9.962 8.601 10.5M13.471 4.656C13.471 5.194 13.036 5.63 12.496 5.63C11.959 5.63 11.524 5.194 11.524 4.656C11.524 4.118 11.959 3.682 12.496 3.682C13.036 3.682 13.471 4.118 13.471 4.656M13.471 10.5C13.471 11.038 13.036 11.474 12.496 11.474C11.959 11.474 11.524 11.038 11.524 10.5C11.524 9.962 11.959 9.526 12.496 9.526C13.036 9.526 13.471 9.962 13.471 10.5M8.601 4.656C8.601 5.194 8.167 5.63 7.626 5.63C7.089 5.63 6.655 5.194 6.655 4.656C6.655 4.118 7.089 3.682 7.626 3.682C8.167 3.682 8.601 4.118 8.601 4.656M8.601 16.344C8.601 16.882 8.167 17.318 7.626 17.318C7.089 17.318 6.655 16.882 6.655 16.344C6.655 15.806 7.089 15.37 7.626 15.37C8.167 15.37 8.601 15.806 8.601 16.344" fill="none" stroke="#626262" stroke-linecap="round" stroke-linejoin="round"/></svg>"##;

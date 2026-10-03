@@ -1,8 +1,8 @@
 // Single responsibility: Glyph bitmap Porter-Duff alpha compositing via TinySkia.
 
-use tiny_skia::{Mask, PixmapMut, Point as SkiaPoint, PremultipliedColorU8, Transform};
 use crate::foundation::{Color, Point};
 use crate::text::{GlyphBitmap, TextContext, TextLayout};
+use tiny_skia::{Mask, PixmapMut, Point as SkiaPoint, PremultipliedColorU8, Transform};
 
 /// Parameters for typography run rasterization.
 pub struct TextRenderParams<'a> {
@@ -21,12 +21,10 @@ pub struct TextRenderParams<'a> {
 }
 
 /// Renders shaped typography glyph runs directly into a destination pixel buffer.
-pub fn render_text(
-    pixmap: &mut PixmapMut,
-    text_ctx: &TextContext,
-    params: TextRenderParams,
-) {
-    if params.layout.lines.is_empty() { return; }
+pub fn render_text(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: TextRenderParams) {
+    if params.layout.lines.is_empty() {
+        return;
+    }
 
     let pw = pixmap.width();
     let ph = pixmap.height();
@@ -41,13 +39,28 @@ pub fn render_text(
         for g in &line.glyphs {
             text_ctx.raster_glyph(g.cache_key, |img_opt| {
                 if let Some(img) = img_opt {
-                    let mut pt = SkiaPoint::from_xy(params.origin.x + g.point.x, params.origin.y + g.point.y);
+                    let mut pt = SkiaPoint::from_xy(
+                        params.origin.x + line.align_offset + g.point.x,
+                        params.origin.y + g.point.y,
+                    );
                     params.transform.map_point(&mut pt);
 
                     let start_x = pt.x.round() as i32 + img.left;
                     let start_y = pt.y.round() as i32 - img.top;
 
-                    blit_glyph(pixels, pw, ph, &img, start_x, start_y, ink_r, ink_g, ink_b, total_opacity, params.clip);
+                    blit_glyph(
+                        pixels,
+                        pw,
+                        ph,
+                        &img,
+                        start_x,
+                        start_y,
+                        ink_r,
+                        ink_g,
+                        ink_b,
+                        total_opacity,
+                        params.clip,
+                    );
                 }
             });
         }
@@ -72,12 +85,16 @@ fn blit_glyph(
 
     for row in 0..h {
         let target_y = y + row;
-        if target_y < 0 || target_y >= ph as i32 { continue; }
+        if target_y < 0 || target_y >= ph as i32 {
+            continue;
+        }
         let src_offset = (row * w) as usize;
 
         for col in 0..w {
             let target_x = x + col;
-            if target_x < 0 || target_x >= pw as i32 { continue; }
+            if target_x < 0 || target_x >= pw as i32 {
+                continue;
+            }
 
             if let Some(mask) = clip {
                 let mw = mask.width();
@@ -90,7 +107,9 @@ fn blit_glyph(
             }
 
             let alpha = (img.data[src_offset + col as usize] as f32 * opacity) as u8;
-            if alpha == 0 { continue; }
+            if alpha == 0 {
+                continue;
+            }
 
             let idx = (target_y as usize * pw as usize) + target_x as usize;
             blend_source_over(&mut pixels[idx], r, g, b, alpha);

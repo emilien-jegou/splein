@@ -1,4 +1,4 @@
-// Single responsibility: Executes boundary-isolated flex layouts and records cache telemetry.
+// Single responsibility: Layout pass execution report recording recomputed, cached, and boundary work.
 
 use crate::foundation::ResolvedRect;
 

@@ -1,15 +1,15 @@
 // Single responsibility: Container group reconciliation and reactive binding attachment.
 
-use std::cell::RefCell;
-use std::rc::Rc;
 use crate::dsl::group::GroupDef;
 use crate::dsl::reconcile_children::reconcile_children;
 use crate::dsl::reconciler::evaluate_prop;
 use crate::foundation::Transform;
 use crate::reactive::ReactiveRuntime;
-use crate::runtime::router::SubscriberRouter;
 use crate::tree::binding::{DynamicBindings, NodeBindings};
+use crate::tree::SubscriberRouter;
 use crate::tree::{DirtyFlags, LayoutNode, NodeId, NodeKind, TreeArena};
+use std::cell::RefCell;
+use std::rc::Rc;
 
 /// Reconciles flex group container properties, styles, and children into the arena.
 pub fn reconcile_group(
@@ -21,7 +21,8 @@ pub fn reconcile_group(
 ) -> NodeId {
     let id = existing.unwrap_or_else(|| arena.insert(LayoutNode::default()));
 
-    let has_dyn_measure = def.width.as_ref().is_some_and(|p| p.is_dynamic()) || def.height.as_ref().is_some_and(|p| p.is_dynamic());
+    let has_dyn_measure = def.width.as_ref().is_some_and(|p| p.is_dynamic())
+        || def.height.as_ref().is_some_and(|p| p.is_dynamic());
     let has_dyn_layout = def.transform.as_ref().is_some_and(|p| p.is_dynamic());
     let has_dyn_paint = def.fill.as_ref().is_some_and(|p| p.is_dynamic())
         || def.opacity.as_ref().is_some_and(|p| p.is_dynamic())
@@ -37,7 +38,11 @@ pub fn reconcile_group(
         fill: def.fill.as_ref().and_then(|p| p.dynamic_closure()),
         opacity: def.opacity.as_ref().and_then(|p| p.dynamic_closure()),
         transform: def.transform.as_ref().and_then(|p| p.dynamic_closure()),
-        shadows: def.dynamic_shadow.as_ref().and_then(|p| p.dynamic_closure()).map(|s| Rc::new(move || vec![s()]) as _),
+        shadows: def
+            .dynamic_shadow
+            .as_ref()
+            .and_then(|p| p.dynamic_closure())
+            .map(|s| Rc::new(move || vec![s()]) as _),
         text: None,
     };
     arena.get_mut(id).state.bindings = NodeBindings::from_store(store);
@@ -58,11 +63,21 @@ pub fn reconcile_group(
         arena.mark_dirty(id, DirtyFlags::MEASURE | DirtyFlags::LAYOUT);
     }
 
-    let effective_z = if def.z_index != 0 { def.z_index } else if def.is_absolute { 1 } else { 0 };
+    let effective_z = if def.z_index != 0 {
+        def.z_index
+    } else if def.is_absolute {
+        1
+    } else {
+        0
+    };
     let node = arena.get_mut(id);
     node.kind = NodeKind::Group;
-    if let Some(w) = new_w { node.style.width = w; }
-    if let Some(h) = new_h { node.style.height = h; }
+    if let Some(w) = new_w {
+        node.style.width = w;
+    }
+    if let Some(h) = new_h {
+        node.style.height = h;
+    }
     node.transform = new_tx;
     node.style.layout = def.layout;
     node.style.margin = def.margin;
@@ -77,7 +92,9 @@ pub fn reconcile_group(
     let new_op = evaluate_prop(&def.opacity, p_sub, runtime);
     let new_shadow = evaluate_prop(&def.dynamic_shadow, p_sub, runtime);
     let mut resolved_shadows = def.shadows;
-    if let Some(s) = new_shadow { resolved_shadows.push(s); }
+    if let Some(s) = new_shadow {
+        resolved_shadows.push(s);
+    }
 
     let prev_app = &arena.get(id).style.appearance;
     let paint_changed = prev_app.fill != new_fill
@@ -91,8 +108,12 @@ pub fn reconcile_group(
     }
 
     let node = arena.get_mut(id);
-    if let Some(f) = new_fill { node.style.appearance.fill = Some(f); }
-    if let Some(op) = new_op { node.style.appearance.opacity = op; }
+    if let Some(f) = new_fill {
+        node.style.appearance.fill = Some(f);
+    }
+    if let Some(op) = new_op {
+        node.style.appearance.opacity = op;
+    }
     node.style.appearance.stroke = def.stroke;
     node.style.appearance.shadows = resolved_shadows;
     node.style.appearance.radius = def.radius;

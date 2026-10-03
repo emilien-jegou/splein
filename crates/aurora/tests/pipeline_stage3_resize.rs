@@ -7,7 +7,7 @@ use aurora::runtime::Engine;
 #[test]
 fn test_3_9_window_grow_damages_exposed_strip_and_reports_preserved_rect() {
     let mut engine = Engine::headless(200, 200);
-    engine.mount(group().size(200.0, 200.0).fill(Color::BLACK));
+    engine.mount(group().width(200.0).height(200.0).fill(Color::BLACK));
     engine.frame();
 
     engine.resize(300, 200);

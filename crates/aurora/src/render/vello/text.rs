@@ -56,7 +56,7 @@ impl VelloGlyphCache {
                     });
                     let glyphs = line.glyphs[start..end].iter().map(|g| Glyph {
                         id: g.glyph_id,
-                        x: g.point.x,
+                        x: g.point.x + line.align_offset,
                         y: g.point.y,
                     });
 

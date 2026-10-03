@@ -1,9 +1,8 @@
 // Single responsibility: Orchestrates multi-stage frame layout, damage culling, and scene compilation.
 
 use crate::foundation::{Constraints, DamageRegion, ResolvedRect};
-use crate::pipeline::{
-    commit_painted_bounds, CompileResult, DamagePlan, LayoutResult, OverlapPlan,
-};
+use crate::layout::LayoutResult;
+use crate::pipeline::{commit_painted_bounds, CompileResult, DamagePlan, OverlapPlan};
 use crate::runtime::scheduler::FrameScheduler;
 use crate::runtime::{
     CompileDiagnostics, FrameDiagnostics, FrameTimings, InvalidationDiagnostics, LayoutDiagnostics,

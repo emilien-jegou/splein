@@ -4,13 +4,15 @@ use std::time::Instant;
 use winit::event::WindowEvent;
 
 use crate::app::debug_hud::draw_hud_panel;
+use crate::app::debug_layout::hud_panel;
 use crate::app::debug_overlay::draw_inspector_overlay;
+use crate::app::debug_scene::{emit_hud_overlay, emit_inspector_overlay};
 use crate::app::debug_toggle::handle_debug_key;
-use crate::app::extension::AppExtension;
+use crate::app::extension::{AppExtension, OverlayCaps};
+use crate::app::painter::OverlayPainter;
 use crate::app::telemetry::TelemetryWorker;
-use crate::foundation::{DamageRegion, Point, ResolvedRect};
+use crate::foundation::{DamageRegion, ResolvedRect};
 use crate::runtime::FrameDiagnostics;
-use crate::scene::{Scene, SceneChunk};
 use crate::text::TextContext;
 
 /// Visual inspection modes mapping to pipeline stages.
@@ -35,6 +37,7 @@ pub struct VisualDebugger {
     /// Human-readable backend name displayed in telemetry badge.
     pub backend_name: String,
     last_diag: FrameDiagnostics,
+    viewport: ResolvedRect,
     last_frame_instant: Option<Instant>,
     smoothed_fps: f32,
     is_idle: bool,
@@ -50,6 +53,7 @@ impl Default for VisualDebugger {
             show_hud: true,
             backend_name: "CPU".into(),
             last_diag: FrameDiagnostics::default(),
+            viewport: ResolvedRect::ZERO,
             last_frame_instant: None,
             smoothed_fps: 60.0,
             is_idle: true,
@@ -100,9 +104,9 @@ impl AppExtension for VisualDebugger {
 
     fn overlay_damage(&self) -> Option<ResolvedRect> {
         if self.mode != self.prev_mode {
-            Some(ResolvedRect::new(0.0, 0.0, 50000.0, 50000.0))
+            Some(self.viewport)
         } else if self.show_hud || self.show_hud != self.prev_show_hud {
-            Some(ResolvedRect::new(12.0, 12.0, 310.0, 48.0))
+            Some(hud_panel())
         } else {
             None
         }
@@ -110,41 +114,33 @@ impl AppExtension for VisualDebugger {
 
     fn render_overlay(
         &mut self,
-        scene: &mut Scene,
+        paint: &mut OverlayPainter<'_>,
         text_ctx: &TextContext,
-        backend: &str,
+        caps: &OverlayCaps,
         _d: &FrameDiagnostics,
     ) {
-        self.backend_name = backend.into();
-        if backend.contains("GPU") {
-            if self.mode != InspectorMode::Off {
-                let mut chunk =
-                    SceneChunk::new(ResolvedRect::new(0.0, 0.0, 4000.0, 4000.0), Point::ZERO);
-                crate::app::debug_scene::emit_inspector_overlay(
-                    &mut chunk,
-                    self.mode,
-                    &self.last_diag,
-                );
-                if !chunk.is_empty() {
-                    scene.push_chunk(chunk);
-                }
-            }
-            if self.show_hud {
-                let mut hud_chunk =
-                    SceneChunk::new(ResolvedRect::new(12.0, 12.0, 310.0, 48.0), Point::ZERO);
-                crate::app::debug_scene::emit_hud_overlay(
-                    &mut hud_chunk,
+        self.backend_name = caps.backend.into();
+        self.viewport = caps.viewport;
+        if caps.scanline_overlays {
+            return;
+        }
+        if self.mode != InspectorMode::Off {
+            paint.record(caps.viewport, |chunk| {
+                emit_inspector_overlay(chunk, self.mode, &self.last_diag);
+            });
+        }
+        if self.show_hud {
+            paint.record(hud_panel(), |chunk| {
+                emit_hud_overlay(
+                    chunk,
                     self.is_idle,
                     self.smoothed_fps.round() as u32,
-                    backend,
+                    caps.backend,
                     &self.last_diag,
                     self.mode,
                     text_ctx,
                 );
-                if !hud_chunk.is_empty() {
-                    scene.push_chunk(hud_chunk);
-                }
-            }
+            });
         }
     }
 

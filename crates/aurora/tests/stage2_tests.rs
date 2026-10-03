@@ -182,13 +182,13 @@ fn test_removal_damage_captures_unmounted_node_bounds() {
     let mut engine = Engine::headless(500, 500);
 
     // Mount initial tree with child box at (50, 50, 80, 80)
-    engine.mount(group().size(500.0, 500.0).children([
-        group().margin_xy(50.0, 50.0).size(80.0, 80.0).fill(Color::RED),
+    engine.mount(group().width(500.0).height(500.0).children([
+        group().margin(Margin::sides(50.0, 50.0, 50.0, 50.0)).width(80.0).height(80.0).fill(Color::RED),
     ]));
     engine.frame();
 
     // Re-mount empty container (child is purged)
-    engine.mount(group().size(500.0, 500.0));
+    engine.mount(group().width(500.0).height(500.0));
     engine.frame();
 
     let damage = engine.current_damage();
@@ -212,9 +212,9 @@ fn test_moved_node_triggers_dual_damage() {
 
     // Row containing Box A and Box B
     // When Box A widens, Box B moves to the right
-    engine.mount(row().size(800.0, 600.0).children([
+    engine.mount(group().direction(Direction::Horizontal).width(800.0).height(600.0).children([
         group().width(width_sig.clone()).height(50.0).fill(Color::RED),
-        group().size(80.0, 50.0).fill(Color::BLACK), // Box B
+        group().width(80.0).height(50.0).fill(Color::BLACK), // Box B
     ]));
     engine.frame();
 
@@ -249,9 +249,9 @@ fn test_persistent_canvas_retains_untouched_pixels() {
     // Two distinct boxes:
     // Box A (left, stationary, RED): (0, 0, 100, 100)
     // Box B (right, dynamic, BLUE):  (200, 0, 100, 100)
-    engine.mount(row().size(400.0, 400.0).children([
-        group().size(100.0, 100.0).fill(Color::rgba(1.0, 0.0, 0.0, 1.0)),
-        group().margin_left(100.0).size(100.0, 100.0).fill(color_sig.clone()),
+    engine.mount(group().direction(Direction::Horizontal).width(400.0).height(400.0).children([
+        group().width(100.0).height(100.0).fill(Color::rgba(1.0, 0.0, 0.0, 1.0)),
+        group().margin(Margin::left(100.0)).width(100.0).height(100.0).fill(color_sig.clone()),
     ]));
     engine.frame();
 
@@ -337,13 +337,13 @@ fn test_shadow_blur_fringe_damage_expansion_and_cleanup() {
     let spacer_width = engine.signal(100.0f32);
 
     // Row containing a spacer and a box with heavy drop shadow (blur=10.0, offset_y=10.0 -> kernel pad = 30px)
-    engine.mount(row().size(600.0, 600.0).fill(Color::WHITE).children([
+    engine.mount(group().direction(Direction::Horizontal).width(600.0).height(600.0).fill(Color::WHITE).children([
         group().width(spacer_width.clone()).height(10.0),
         group()
-            .margin_top(100.0)
-            .size(100.0, 100.0)
+            .margin(Margin::top(100.0))
+            .width(100.0).height(100.0)
             .fill(Color::BLACK)
-            .shadow(Shadow::outer(0.0, 10.0, 10.0, Color::rgba(0.0, 0.0, 0.0, 0.5))),
+            .shadows([Shadow::outer(0.0, 10.0, 10.0, Color::rgba(0.0, 0.0, 0.0, 0.5))]),
     ]));
     engine.frame();
 
@@ -386,9 +386,9 @@ fn test_screen_overlay_modal_unmount_restores_underlying_content() {
     let build_tree = |show_modal: bool| {
         let mut children = vec![
             group()
-                .margin_left(300.0)
-                .margin_top(200.0)
-                .size(200.0, 200.0)
+                .margin(Margin::left(300.0))
+                .margin(Margin::top(200.0))
+                .width(200.0).height(200.0)
                 .fill(Color::GREEN)
                 .into_element(),
         ];
@@ -396,17 +396,17 @@ fn test_screen_overlay_modal_unmount_restores_underlying_content() {
         if show_modal {
             children.push(
                 group()
-                    .margin_left(350.0)
-                    .margin_top(250.0)
-                    .size(100.0, 100.0)
+                    .margin(Margin::left(350.0))
+                    .margin(Margin::top(250.0))
+                    .width(100.0).height(100.0)
                     .fill(Color::BLUE)
                     .z_index(100)
-                    .overlay()
+                    .overlay(true).z_index(100)
                     .into_element(),
             );
         }
 
-        group().size(800.0, 600.0).fill(Color::WHITE).children(children)
+        group().width(800.0).height(600.0).fill(Color::WHITE).children(children)
     };
 
     // Frame 1: Mount with Modal visible
@@ -448,8 +448,8 @@ fn test_screen_overlay_modal_unmount_restores_underlying_content() {
 fn test_window_resize_preserves_canvas_and_damages_exposed_strips() {
     let mut engine = Engine::headless(400, 300);
     // Draw a stationary red box in the top-left corner
-    engine.mount(group().size(400.0, 300.0).children([
-        group().size(100.0, 100.0).fill(Color::rgba(1.0, 0.0, 0.0, 1.0)),
+    engine.mount(group().width(400.0).height(300.0).children([
+        group().width(100.0).height(100.0).fill(Color::rgba(1.0, 0.0, 0.0, 1.0)),
     ]));
     engine.frame();
 

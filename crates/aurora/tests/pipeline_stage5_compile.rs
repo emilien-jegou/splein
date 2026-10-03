@@ -7,8 +7,8 @@ use aurora::runtime::Engine;
 #[test]
 fn test_5_1_idle_frame_emits_zero_new_commands() {
     let mut engine = Engine::headless(400, 400);
-    engine.mount(group().size(400.0, 400.0).children([
-        group().size(100.0, 100.0).fill(Color::RED),
+    engine.mount(group().width(400.0).height(400.0).children([
+        group().width(100.0).height(100.0).fill(Color::RED),
     ]));
     engine.frame(); // Warmup frame
 
@@ -28,9 +28,9 @@ fn test_5_2_offscreen_nodes_emit_zero_commands_when_culled() {
     let mut engine = Engine::headless(400, 200);
 
     // Box 1 is visible (0..100); Box 2 is way offscreen (y=1000)
-    engine.mount(column().size(400.0, 200.0).children([
-        group().size(100.0, 100.0).fill(Color::RED),
-        group().margin_top(900.0).size(100.0, 100.0).fill(Color::BLUE),
+    engine.mount(group().direction(Direction::Vertical).width(400.0).height(200.0).children([
+        group().width(100.0).height(100.0).fill(Color::RED),
+        group().margin(Margin::top(900.0)).width(100.0).height(100.0).fill(Color::BLUE),
     ]));
     let (_, _, _, diag) = engine.frame();
 
@@ -43,12 +43,12 @@ fn test_5_4_offscreen_node_with_shadow_reaching_onscreen_is_compiled() {
     let mut engine = Engine::headless(400, 200);
 
     // Box starts at y=210 (technically offscreen), but its shadow has offset_y = -30, reaching into view
-    engine.mount(group().size(400.0, 200.0).children([
+    engine.mount(group().width(400.0).height(200.0).children([
         group()
-            .margin_top(210.0)
-            .size(100.0, 50.0)
+            .margin(Margin::top(210.0))
+            .width(100.0).height(50.0)
             .fill(Color::BLACK)
-            .shadow(Shadow::outer(0.0, -30.0, 10.0, Color::BLACK)),
+            .shadows([Shadow::outer(0.0, -30.0, 10.0, Color::BLACK)]),
     ]));
     let (_, _, _, diag) = engine.frame();
 

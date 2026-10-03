@@ -1,10 +1,10 @@
 // Single responsibility: Vello GPU backend presenting frames through a WGPU surface.
 
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use winit::window::Window;
 
-use crate::app::runner::backend::{Backend, PresentFrame};
+use crate::app::runner::backend::{Backend, Present, PresentReport};
 use crate::render::{BackendError, VelloRenderer};
 use crate::text::TextContext;
 
@@ -36,10 +36,13 @@ impl Backend for GpuBackend {
         "GPU"
     }
 
-    fn present(&mut self, frame: PresentFrame<'_>) -> Result<(), BackendError> {
+    fn present(&mut self, frame: Present<'_>) -> Result<PresentReport, BackendError> {
         let t_raster = Instant::now();
-        self.renderer.render_frame(frame.scene, frame.background)?;
-        frame.diagnostics.timings.raster = t_raster.elapsed();
-        Ok(())
+        self.renderer
+            .render_frame(frame.scene, frame.surface.background)?;
+        Ok(PresentReport {
+            raster: t_raster.elapsed(),
+            present: Duration::ZERO,
+        })
     }
 }

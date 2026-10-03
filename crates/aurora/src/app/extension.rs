@@ -1,10 +1,21 @@
 // Single responsibility: Pluggable application extension trait contracts.
 
+use crate::app::painter::OverlayPainter;
 use crate::foundation::{DamageRegion, ResolvedRect};
 use crate::runtime::FrameDiagnostics;
-use crate::scene::Scene;
 use crate::text::TextContext;
 use winit::event::WindowEvent;
+
+/// Presentation capabilities an overlay must adapt itself to.
+#[derive(Copy, Clone, Debug)]
+pub struct OverlayCaps {
+    /// Human-readable backend tag, e.g. `"CPU"` or `"GPU"`.
+    pub backend: &'static str,
+    /// Whether `on_present` will run, so scene-chunk overlays must cover the gap.
+    pub scanline_overlays: bool,
+    /// Full window bounds in scene coordinates, for overlay framing and damage.
+    pub viewport: ResolvedRect,
+}
 
 /// Extension hooks for events, telemetry, scene overlays, and presentation.
 pub trait AppExtension {
@@ -21,12 +32,12 @@ pub trait AppExtension {
         false
     }
 
-    /// Injects declarative overlay scene chunks directly into the display list.
+    /// Injects declarative overlay drawing into the frame display list.
     fn render_overlay(
         &mut self,
-        _scene: &mut Scene,
+        _paint: &mut OverlayPainter<'_>,
         _text_ctx: &TextContext,
-        _backend_name: &str,
+        _caps: &OverlayCaps,
         _diagnostics: &FrameDiagnostics,
     ) {
     }
@@ -36,7 +47,7 @@ pub trait AppExtension {
         None
     }
 
-    /// Software scanline post-processing hook for CPU framebuffers.
+    /// Software scanline post-processing hook, run only on backends supporting it.
     fn on_present(
         &mut self,
         _buffer: &mut [u32],

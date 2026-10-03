@@ -4,16 +4,17 @@ use crate::foundation::{Appearance, Color, Point, Radius, ResolvedRect, Shadow, 
 use crate::scene::image::ImageSource;
 use crate::scene::vector::VectorGraphic;
 use crate::text::layout::TextLayout;
-use crate::tree::NodeId;
+use std::sync::Arc;
 
 /// Stable identifier for cached layer-backed display list subtrees.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct LayerId(pub u64);
 
-impl From<NodeId> for LayerId {
+impl LayerId {
+    /// Wraps a packed generational node identity as a layer cache key.
     #[inline(always)]
-    fn from(id: NodeId) -> Self {
-        Self(((id.generation as u64) << 32) | (id.index as u64))
+    pub const fn from_packed(packed: u64) -> Self {
+        Self(packed)
     }
 }
 
@@ -24,15 +25,40 @@ pub enum SceneCommand {
     PopTransform,
     PushOffset(Point),
     PopOffset,
-    PushClip { rect: ResolvedRect, radius: Radius },
+    PushClip {
+        rect: ResolvedRect,
+        radius: Radius,
+    },
     PopClip,
     PushOpacity(f32),
     PopOpacity,
-    BeginLayer { id: LayerId, rect: ResolvedRect },
-    EndLayer { id: LayerId },
-    DrawRect { rect: ResolvedRect, appearance: Appearance },
-    DrawImage { rect: ResolvedRect, image: ImageSource },
-    DrawSvg { rect: ResolvedRect, graphic: VectorGraphic },
-    DrawShadow { rect: ResolvedRect, radius: Radius, shadow: Shadow },
-    DrawText { origin: Point, layout: TextLayout, color: Color },
+    BeginLayer {
+        id: LayerId,
+        rect: ResolvedRect,
+    },
+    EndLayer {
+        id: LayerId,
+    },
+    DrawRect {
+        rect: ResolvedRect,
+        appearance: Appearance,
+    },
+    DrawImage {
+        rect: ResolvedRect,
+        image: ImageSource,
+    },
+    DrawSvg {
+        rect: ResolvedRect,
+        graphic: VectorGraphic,
+    },
+    DrawShadow {
+        rect: ResolvedRect,
+        radius: Radius,
+        shadow: Shadow,
+    },
+    DrawText {
+        origin: Point,
+        layout: Arc<TextLayout>,
+        color: Color,
+    },
 }

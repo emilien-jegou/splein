@@ -5,13 +5,11 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::foundation::{Constraints, Point};
-use crate::layout::layout_node_with_text;
-use crate::pipeline::stage2_layout::LayoutResult;
+use crate::layout::{layout_node_with_text, LayoutResult};
 use crate::reactive::{Observer, ReactiveRuntime, SubscriberId};
 use crate::runtime::boundary::{collect_layout_boundaries, prune_nested_boundaries};
-use crate::runtime::router::SubscriberRouter;
 use crate::text::TextContext;
-use crate::tree::{DirtyFlags, NodeId, NodeKind, TreeArena};
+use crate::tree::{DirtyFlags, NodeId, NodeKind, SubscriberRouter, TreeArena};
 
 /// Execution summary of reactive updates and layout recalculations.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]

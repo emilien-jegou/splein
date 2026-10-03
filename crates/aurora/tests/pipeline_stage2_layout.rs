@@ -7,9 +7,9 @@ use aurora::runtime::Engine;
 #[test]
 fn test_2_1_fixed_child_hits_cache_while_fill_child_recomputes() {
     let mut engine = Engine::headless(100, 100);
-    engine.mount(row().size(100.0, 100.0).children([
-        group().size(50.0, 100.0),
-        group().fill_width().height(100.0),
+    engine.mount(group().direction(Direction::Horizontal).width(100.0).height(100.0).children([
+        group().width(50.0).height(100.0),
+        group().width(Size::fill()).height(100.0),
     ]));
     engine.frame();
 
@@ -24,10 +24,10 @@ fn test_2_1_fixed_child_hits_cache_while_fill_child_recomputes() {
 #[test]
 fn test_2_2_moved_sibling_does_not_remeasure() {
     let mut engine = Engine::headless(200, 100);
-    engine.mount(row().size(200.0, 100.0).children([
-        group().size(50.0, 100.0),
-        group().fill_width().height(100.0),
-        group().size(30.0, 100.0),
+    engine.mount(group().direction(Direction::Horizontal).width(200.0).height(100.0).children([
+        group().width(50.0).height(100.0),
+        group().width(Size::fill()).height(100.0),
+        group().width(30.0).height(100.0),
     ]));
     engine.frame();
 
@@ -46,9 +46,9 @@ fn test_2_2_moved_sibling_does_not_remeasure() {
 #[test]
 fn test_2_3_text_in_fixed_container_skips_reshaping_on_window_resize() {
     let mut engine = Engine::headless(200, 100);
-    engine.mount(row().size(200.0, 100.0).children([
-        group().size(50.0, 50.0).children([text("Fixed")]),
-        group().fill_width().height(50.0),
+    engine.mount(group().direction(Direction::Horizontal).width(200.0).height(100.0).children([
+        group().width(50.0).height(50.0).children([text("Fixed")]),
+        group().width(Size::fill()).height(50.0),
     ]));
     engine.frame();
 
@@ -61,7 +61,7 @@ fn test_2_3_text_in_fixed_container_skips_reshaping_on_window_resize() {
 #[test]
 fn test_2_4_height_only_resize_never_reshapes_single_line_text() {
     let mut engine = Engine::headless(200, 100);
-    engine.mount(column().size(200.0, 100.0).children([text("Label")]));
+    engine.mount(group().direction(Direction::Vertical).width(200.0).height(100.0).children([text("Label")]));
     engine.frame();
 
     engine.resize(200, 200);
@@ -75,11 +75,11 @@ fn test_2_5_clipped_fixed_boundary_isolates_layout_to_boundary_only() {
     let mut engine = Engine::headless(800, 600);
     let count = engine.signal("0".to_string());
 
-    engine.mount(group().size(800.0, 600.0).children([
-        group().size(100.0, 100.0).clip(true).children([
+    engine.mount(group().width(800.0).height(600.0).children([
+        group().width(100.0).height(100.0).clip(true).children([
             text(count.clone()),
         ]),
-        group().size(200.0, 200.0),
+        group().width(200.0).height(200.0),
     ]));
     engine.frame();
 
@@ -96,9 +96,9 @@ fn test_2_6_disjoint_boundaries_both_dirty_execute_independently() {
     let w1 = engine.signal(20.0f32);
     let w2 = engine.signal(20.0f32);
 
-    engine.mount(group().size(600.0, 600.0).children([
-        group().size(100.0, 100.0).children([group().width(w1.clone()).height(20.0)]),
-        group().size(100.0, 100.0).children([group().width(w2.clone()).height(20.0)]),
+    engine.mount(group().width(600.0).height(600.0).children([
+        group().width(100.0).height(100.0).children([group().width(w1.clone()).height(20.0)]),
+        group().width(100.0).height(100.0).children([group().width(w2.clone()).height(20.0)]),
     ]));
     engine.frame();
 
@@ -115,10 +115,10 @@ fn test_2_7_nested_dirty_boundaries_deduplicate_to_outer_boundary() {
     let sig_outer = engine.signal(80.0f32);
     let sig_inner = engine.signal(40.0f32);
 
-    engine.mount(group().size(800.0, 800.0).children([
-        group().size(300.0, 300.0).children([
+    engine.mount(group().width(800.0).height(800.0).children([
+        group().width(300.0).height(300.0).children([
             group().width(sig_outer.clone()).height(100.0),
-            group().size(150.0, 150.0).children([
+            group().width(150.0).height(150.0).children([
                 group().width(sig_inner.clone()).height(50.0),
             ]),
         ]),
@@ -139,7 +139,7 @@ fn test_2_8_boundary_escalates_to_parent_when_fixed_changes_to_fit() {
     let mut engine = Engine::headless(500, 500);
     let size_intent = engine.signal(Size::Fixed(100.0));
 
-    engine.mount(group().size(500.0, 500.0).children([
+    engine.mount(group().width(500.0).height(500.0).children([
         group().width(size_intent.clone()).height(100.0),
     ]));
     engine.frame();
@@ -155,8 +155,8 @@ fn test_2_9_boundary_relayout_uses_exact_parent_constraints() {
     let mut engine = Engine::headless(600, 600);
     let inner_w = engine.signal(50.0f32);
 
-    engine.mount(group().size(600.0, 600.0).children([
-        group().size(250.0, 250.0).children([
+    engine.mount(group().width(600.0).height(600.0).children([
+        group().width(250.0).height(250.0).children([
             group().width(inner_w.clone()).height(50.0),
         ]),
     ]));

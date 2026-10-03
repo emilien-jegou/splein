@@ -4,17 +4,19 @@ pub mod debug;
 pub mod debug_draw;
 pub mod debug_font;
 pub mod debug_hud;
+pub mod debug_layout;
 pub mod debug_overlay;
 pub mod debug_scene;
 pub mod debug_toggle;
 pub mod extension;
-pub mod presenter;
+pub(crate) mod painter;
+pub(crate) mod presenter;
 pub mod runner;
 pub mod telemetry;
 
 pub use debug::{InspectorMode, VisualDebugger};
-pub use extension::AppExtension;
-pub use presenter::SurfacePresenter;
+pub use extension::{AppExtension, OverlayCaps};
+pub use painter::OverlayPainter;
 pub use runner::FpsLimit;
 
 use std::cell::RefCell;

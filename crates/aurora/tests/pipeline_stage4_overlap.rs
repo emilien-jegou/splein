@@ -9,9 +9,9 @@ fn test_4_1_underlying_mutation_forces_repaint_of_overlapping_clean_sibling() {
     let mut engine = Engine::headless(400, 400);
     let fill_a = engine.signal(Color::RED);
 
-    engine.mount(row().size(400.0, 400.0).children([
-        group().size(100.0, 100.0).fill(fill_a.clone()),
-        group().margin_left(-50.0).size(100.0, 100.0).fill(Color::BLUE),
+    engine.mount(group().direction(Direction::Horizontal).width(400.0).height(400.0).children([
+        group().width(100.0).height(100.0).fill(fill_a.clone()),
+        group().margin(Margin::left(-50.0)).width(100.0).height(100.0).fill(Color::BLUE),
     ]));
     engine.frame();
 
@@ -28,11 +28,11 @@ fn test_4_3_repetitive_damage_repaints_do_not_progressively_darken() {
     let mut engine = Engine::headless(400, 400);
     let fill_a = engine.signal(Color::WHITE);
 
-    engine.mount(group().size(400.0, 400.0).children([
-        group().size(200.0, 200.0).fill(fill_a.clone()),
+    engine.mount(group().width(400.0).height(400.0).children([
+        group().width(200.0).height(200.0).fill(fill_a.clone()),
         group()
-            .size(100.0, 100.0)
-            .shadow(Shadow::outer(0.0, 10.0, 5.0, Color::rgba(0.0, 0.0, 0.0, 0.5))),
+            .width(100.0).height(100.0)
+            .shadows([Shadow::outer(0.0, 10.0, 5.0, Color::rgba(0.0, 0.0, 0.0, 0.5))]),
     ]));
     engine.frame();
 
@@ -53,9 +53,9 @@ fn test_4_5_distant_clean_node_is_excluded_from_repaint() {
     let mut engine = Engine::headless(800, 400);
     let color_a = engine.signal(Color::RED);
 
-    engine.mount(row().size(800.0, 400.0).children([
-        group().size(100.0, 100.0).fill(color_a.clone()),
-        group().margin_left(400.0).size(100.0, 100.0).fill(Color::BLUE),
+    engine.mount(group().direction(Direction::Horizontal).width(800.0).height(400.0).children([
+        group().width(100.0).height(100.0).fill(color_a.clone()),
+        group().margin(Margin::left(400.0)).width(100.0).height(100.0).fill(Color::BLUE),
     ]));
     engine.frame();
 
@@ -73,9 +73,9 @@ fn test_4_5_distant_clean_node_is_excluded_from_repaint() {
 fn test_4_6_equal_z_index_resolved_by_tree_order() {
     let mut engine = Engine::headless(200, 200);
 
-    engine.mount(group().size(200.0, 200.0).children([
-        group().size(100.0, 100.0).fill(Color::RED).z_index(10),
-        group().size(100.0, 100.0).fill(Color::BLUE).z_index(10),
+    engine.mount(group().width(200.0).height(200.0).children([
+        group().width(100.0).height(100.0).fill(Color::RED).z_index(10),
+        group().width(100.0).height(100.0).fill(Color::BLUE).z_index(10),
     ]));
     engine.frame();
 
@@ -89,9 +89,9 @@ fn test_4_6_equal_z_index_resolved_by_tree_order() {
 fn test_4_7_overlay_is_drawn_above_base_tree_regardless_of_dom_order() {
     let mut engine = Engine::headless(400, 400);
 
-    engine.mount(group().size(400.0, 400.0).children([
-        group().size(100.0, 100.0).fill(Color::BLUE).overlay(),
-        group().size(200.0, 200.0).fill(Color::RED),
+    engine.mount(group().width(400.0).height(400.0).children([
+        group().width(100.0).height(100.0).fill(Color::BLUE).overlay(true).z_index(100),
+        group().width(200.0).height(200.0).fill(Color::RED),
     ]));
     engine.frame();
 
@@ -104,11 +104,11 @@ fn test_4_7_overlay_is_drawn_above_base_tree_regardless_of_dom_order() {
 fn test_4_8_absolute_overlay_over_nested_boxes() {
     let mut engine = Engine::headless(500, 500);
 
-    engine.mount(group().size(500.0, 500.0).children([
-        group().size(300.0, 300.0).fill(Color::RED).children([
-            group().margin_xy(50.0, 50.0).size(100.0, 100.0).fill(Color::GREEN),
+    engine.mount(group().width(500.0).height(500.0).children([
+        group().width(300.0).height(300.0).fill(Color::RED).children([
+            group().margin(Margin::sides(50.0, 50.0, 50.0, 50.0)).width(100.0).height(100.0).fill(Color::GREEN),
         ]),
-        group().absolute().anchor(Anchor::TopLeft).size(200.0, 200.0).fill(Color::BLUE).overlay(),
+        group().absolute().anchor(Anchor::TopLeft).width(200.0).height(200.0).fill(Color::BLUE).overlay(true).z_index(100),
     ]));
     engine.frame();
 

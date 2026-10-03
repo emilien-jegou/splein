@@ -10,7 +10,7 @@ use aurora::tree::DirtyFlags;
 fn test_1_1_fill_change_sets_paint_only_and_bypasses_layout() {
     let mut engine = Engine::headless(400, 400);
     let fill = engine.signal(Color::RED);
-    engine.mount(group().size(200.0, 200.0).fill(fill.clone()));
+    engine.mount(group().width(200.0).height(200.0).fill(fill.clone()));
     engine.frame();
 
     fill.set(Color::BLUE);
@@ -34,7 +34,7 @@ fn test_1_2_opacity_and_shadow_color_are_paint_only() {
 
     engine.mount(
         group()
-            .size(100.0, 100.0)
+            .width(100.0).height(100.0)
             .opacity(opacity.clone())
             .dynamic_shadow(dyn_shadow),
     );
@@ -68,8 +68,8 @@ fn test_1_3_transform_sets_layout_only_and_skips_measure() {
 
     engine.mount(
         group()
-            .size(200.0, 200.0)
-            .children([group().size(50.0, 50.0).transform(tx)]),
+            .width(200.0).height(200.0)
+            .children([group().width(50.0).height(50.0).transform(tx)]),
     );
     engine.frame();
 
@@ -87,7 +87,7 @@ fn test_1_3_transform_sets_layout_only_and_skips_measure() {
 fn test_1_4_text_content_change_triggers_measure_without_reconcile() {
     let mut engine = Engine::headless(400, 400);
     let content = engine.signal("5".to_string());
-    engine.mount(group().size(200.0, 200.0).children([text(content.clone())]));
+    engine.mount(group().width(200.0).height(200.0).children([text(content.clone())]));
     engine.frame();
 
     content.set("50".to_string());
@@ -105,15 +105,15 @@ fn test_1_5_child_structural_mutation_forces_reconciliation() {
     let mut engine = Engine::headless(400, 400);
     engine.mount(
         group()
-            .size(200.0, 200.0)
-            .children([group().size(50.0, 50.0)]),
+            .width(200.0).height(200.0)
+            .children([group().width(50.0).height(50.0)]),
     );
     engine.frame();
 
     engine.mount(
         group()
-            .size(200.0, 200.0)
-            .children([group().size(50.0, 50.0), group().size(50.0, 50.0)]),
+            .width(200.0).height(200.0)
+            .children([group().width(50.0).height(50.0), group().width(50.0).height(50.0)]),
     );
     let (stats, _, _, _) = engine.frame();
 
@@ -129,7 +129,7 @@ fn test_1_6_identical_property_mutation_suppresses_invalidation() {
     let width = engine.signal(100.0f32);
     engine.mount(
         group()
-            .size(400.0, 400.0)
+            .width(400.0).height(400.0)
             .children([group().width(width.clone()).height(50.0)]),
     );
     engine.frame();

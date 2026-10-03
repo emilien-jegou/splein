@@ -58,7 +58,7 @@ pub fn compute_intrinsic(
 
     // Text wraps against its inline width; groups measure unconstrained.
     let max_width = if is_text {
-        text_inline_width(w_size, constraints.max_width)
+        text_inline_width(w_size, constraints)
     } else {
         f32::INFINITY
     };
@@ -84,8 +84,30 @@ pub fn compute_intrinsic(
     measure_intrinsic_uncached(arena, node_id, effective_constraints, text_ctx)
 }
 
+/// Computes intrinsic size under explicit constraints, reusing the memoized measurement.
+pub fn compute_intrinsic_with_constraints(
+    arena: &mut TreeArena,
+    node_id: NodeId,
+    constraints: Constraints,
+    text_ctx: &TextContext,
+) -> IntrinsicSize {
+    if let Some(cached) = arena.get(node_id).state.cache.get_intrinsic(&constraints) {
+        return cached;
+    }
+    measure_intrinsic_uncached(arena, node_id, constraints, text_ctx)
+}
+
 /// Inline wrap width for a text node from its width intent and available space.
-fn text_inline_width(width: Size, available: f32) -> f32 {
+fn text_inline_width(width: Size, constraints: Constraints) -> f32 {
+    if matches!(width, Size::Fit) {
+        return f32::INFINITY;
+    }
+    // When the width is already resolved (tight), reuse it directly instead of
+    // re-applying the sizing intent, which would double-count Fill/Percent.
+    if constraints.is_tight_width() {
+        return constraints.max_width.max(0.0);
+    }
+    let available = constraints.max_width;
     match width {
         Size::Fit => f32::INFINITY,
         Size::Fill => {

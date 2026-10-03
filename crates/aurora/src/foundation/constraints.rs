@@ -26,17 +26,53 @@ impl Constraints {
     pub fn loose(max_width: f32, max_height: f32) -> Self {
         Self {
             min_width: 0.0,
-            max_width: if max_width.is_finite() { max_width.max(0.0) } else { f32::INFINITY },
+            max_width: if max_width.is_finite() {
+                max_width.max(0.0)
+            } else {
+                f32::INFINITY
+            },
             min_height: 0.0,
-            max_height: if max_height.is_finite() { max_height.max(0.0) } else { f32::INFINITY },
+            max_height: if max_height.is_finite() {
+                max_height.max(0.0)
+            } else {
+                f32::INFINITY
+            },
         }
     }
 
     /// Tight constraints enforcing exact width and height dimensions.
     pub fn tight(width: f32, height: f32) -> Self {
-        let w = if width.is_finite() { width.max(0.0) } else { 0.0 };
-        let h = if height.is_finite() { height.max(0.0) } else { 0.0 };
-        Self { min_width: w, max_width: w, min_height: h, max_height: h }
+        let w = if width.is_finite() {
+            width.max(0.0)
+        } else {
+            0.0
+        };
+        let h = if height.is_finite() {
+            height.max(0.0)
+        } else {
+            0.0
+        };
+        Self {
+            min_width: w,
+            max_width: w,
+            min_height: h,
+            max_height: h,
+        }
+    }
+
+    /// Exact width with unbounded height, for measuring main size at a known cross size.
+    pub fn tight_width(width: f32) -> Self {
+        let w = if width.is_finite() {
+            width.max(0.0)
+        } else {
+            f32::INFINITY
+        };
+        Self {
+            min_width: w,
+            max_width: w,
+            min_height: 0.0,
+            max_height: f32::INFINITY,
+        }
     }
 
     /// Whether width is constrained to a single exact dimension.
@@ -51,16 +87,32 @@ impl Constraints {
 
     /// Clamps horizontal dimension within bounds without panic on inverted bounds or NaN.
     pub fn clamp_width(&self, w: f32) -> f32 {
-        let min = if self.min_width.is_finite() { self.min_width.max(0.0) } else { 0.0 };
-        let max = if self.max_width.is_finite() { self.max_width.max(min) } else { f32::INFINITY };
+        let min = if self.min_width.is_finite() {
+            self.min_width.max(0.0)
+        } else {
+            0.0
+        };
+        let max = if self.max_width.is_finite() {
+            self.max_width.max(min)
+        } else {
+            f32::INFINITY
+        };
         let val = if w.is_finite() { w } else { min };
         val.clamp(min, max)
     }
 
     /// Clamps vertical dimension within bounds without panic on inverted bounds or NaN.
     pub fn clamp_height(&self, h: f32) -> f32 {
-        let min = if self.min_height.is_finite() { self.min_height.max(0.0) } else { 0.0 };
-        let max = if self.max_height.is_finite() { self.max_height.max(min) } else { f32::INFINITY };
+        let min = if self.min_height.is_finite() {
+            self.min_height.max(0.0)
+        } else {
+            0.0
+        };
+        let max = if self.max_height.is_finite() {
+            self.max_height.max(min)
+        } else {
+            f32::INFINITY
+        };
         let val = if h.is_finite() { h } else { min };
         val.clamp(min, max)
     }

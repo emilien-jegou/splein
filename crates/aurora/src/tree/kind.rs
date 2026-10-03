@@ -2,7 +2,7 @@
 
 use crate::foundation::{Constraints, IntrinsicSize, ResolvedRect};
 use crate::scene::context::PaintContext;
-pub use crate::text::TextConfig;
+use crate::text::TextConfig;
 
 /// Trait implemented by user-defined custom layout primitives.
 pub trait Primitive {
@@ -23,4 +23,3 @@ pub enum NodeKind {
     /// User-defined layout and drawing primitive.
     Custom(Box<dyn Primitive>),
 }
-

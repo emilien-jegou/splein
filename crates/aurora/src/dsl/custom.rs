@@ -49,35 +49,6 @@ impl CustomDef {
         self.margin = m;
         self
     }
-    pub fn margin_x(mut self, x: f32) -> Self {
-        self.margin.left = x;
-        self.margin.right = x;
-        self
-    }
-    pub fn margin_y(mut self, y: f32) -> Self {
-        self.margin.top = y;
-        self.margin.bottom = y;
-        self
-    }
-    pub fn margin_xy(self, x: f32, y: f32) -> Self {
-        self.margin_x(x).margin_y(y)
-    }
-    pub fn margin_left(mut self, l: f32) -> Self {
-        self.margin.left = l;
-        self
-    }
-    pub fn margin_top(mut self, t: f32) -> Self {
-        self.margin.top = t;
-        self
-    }
-    pub fn margin_right(mut self, r: f32) -> Self {
-        self.margin.right = r;
-        self
-    }
-    pub fn margin_bottom(mut self, b: f32) -> Self {
-        self.margin.bottom = b;
-        self
-    }
     pub fn anchor(mut self, a: Anchor) -> Self {
         self.anchor = Some(a);
         self.is_absolute = true;
@@ -87,9 +58,8 @@ impl CustomDef {
         self.z_index = z;
         self
     }
-    pub fn overlay(mut self) -> Self {
-        self.is_overlay = true;
-        self.z_index = 100;
+    pub fn overlay(mut self, on: bool) -> Self {
+        self.is_overlay = on;
         self
     }
 }

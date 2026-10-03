@@ -15,8 +15,8 @@ fn test_paint_mutation_fast_path_skips_layout() {
     let mut engine = Engine::headless(400, 400);
     let color = engine.signal(Color::BLACK);
 
-    engine.mount(group().size(400.0, 400.0).children([
-        group().size(100.0, 100.0).fill(color.clone()),
+    engine.mount(group().width(400.0).height(400.0).children([
+        group().width(100.0).height(100.0).fill(color.clone()),
     ]));
 
     engine.frame();
@@ -36,7 +36,7 @@ fn test_no_op_signal_writes_generate_zero_dirty_flags() {
     let mut engine = Engine::headless(400, 400);
     let width = engine.signal(100.0f32);
 
-    engine.mount(group().size(400.0, 400.0).children([
+    engine.mount(group().width(400.0).height(400.0).children([
         group().width(width.clone()).height(50.0),
     ]));
 
@@ -55,9 +55,9 @@ fn test_no_op_signal_writes_generate_zero_dirty_flags() {
 fn test_static_elements_allocate_zero_subscribers() {
     let mut engine = Engine::headless(300, 200);
 
-    engine.mount(group().size(300.0, 200.0).children((
-        group().size(60.0, 30.0),
-        group().size(60.0, 30.0),
+    engine.mount(group().width(300.0).height(200.0).children((
+        group().width(60.0).height(30.0),
+        group().width(60.0).height(30.0),
     )));
 
     engine.frame();
@@ -85,7 +85,7 @@ fn test_dynamic_branching_resubscription_with_observer_guard() {
         }
     });
 
-    engine.mount(group().size(400.0, 200.0).children([
+    engine.mount(group().width(400.0).height(200.0).children([
         group().width(dynamic_width).height(50.0),
     ]));
 
@@ -118,8 +118,8 @@ fn test_paint_mutation_preserves_layout_caches() {
     let mut engine = Engine::headless(300, 200);
     let opacity = engine.signal(1.0f32);
 
-    engine.mount(group().size(300.0, 200.0).opacity(opacity.clone()).children([
-        group().size(100.0, 50.0),
+    engine.mount(group().width(300.0).height(200.0).opacity(opacity.clone()).children([
+        group().width(100.0).height(50.0),
     ]));
 
     engine.frame();
@@ -157,11 +157,11 @@ fn test_strict_2d_containment_isolates_subtree_layout() {
     let mut engine = Engine::headless(800, 600);
     let child_width = engine.signal(50.0f32);
 
-    engine.mount(group().size(800.0, 600.0).children([
-        group().size(200.0, 100.0).children([
+    engine.mount(group().width(800.0).height(600.0).children([
+        group().width(200.0).height(100.0).children([
             group().width(child_width.clone()).height(30.0),
         ]),
-        group().size(200.0, 100.0),
+        group().width(200.0).height(100.0),
     ]));
 
     engine.frame();
@@ -179,10 +179,10 @@ fn test_dimension_mutation_escalates_to_parent_boundary() {
     let mut engine = Engine::headless(500, 500);
     let width = engine.signal(80.0f32);
 
-    engine.mount(group().size(500.0, 500.0).children([
-        group().size(300.0, 200.0).children([
+    engine.mount(group().width(500.0).height(500.0).children([
+        group().width(300.0).height(200.0).children([
             group().width(width.clone()).height(40.0),
-            group().size(50.0, 40.0),
+            group().width(50.0).height(40.0),
         ]),
     ]));
 
@@ -205,9 +205,9 @@ fn test_multiple_independent_boundaries_execute_without_root() {
     let w1 = engine.signal(40.0f32);
     let w2 = engine.signal(40.0f32);
 
-    engine.mount(group().size(1000.0, 1000.0).children([
-        group().size(200.0, 100.0).children([group().width(w1.clone()).height(20.0)]),
-        group().size(200.0, 100.0).children([group().width(w2.clone()).height(20.0)]),
+    engine.mount(group().width(1000.0).height(1000.0).children([
+        group().width(200.0).height(100.0).children([group().width(w1.clone()).height(20.0)]),
+        group().width(200.0).height(100.0).children([group().width(w2.clone()).height(20.0)]),
     ]));
 
     engine.frame();
@@ -230,10 +230,10 @@ fn test_bulk_update_coalesces_to_root_pass() {
 
     let cards: Vec<_> = signals
         .iter()
-        .map(|s| group().size(100.0, 40.0).children([group().width(s.clone()).height(20.0)]))
+        .map(|s| group().width(100.0).height(40.0).children([group().width(s.clone()).height(20.0)]))
         .collect();
 
-    engine.mount(group().size(800.0, 800.0).children(cards));
+    engine.mount(group().width(800.0).height(800.0).children(cards));
     engine.frame();
 
     for (i, s) in signals.iter().enumerate() {

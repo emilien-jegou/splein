@@ -1,7 +1,5 @@
 // Single responsibility: Font database storage, lifetime management, and shaping dispatcher.
 
-use std::sync::{Arc, Mutex};
-use cosmic_text::SwashCache;
 use crate::foundation::Constraints;
 use crate::text::cache::ShapedTextCache;
 use crate::text::config::TextConfig;
@@ -9,6 +7,8 @@ use crate::text::cosmic::CosmicTextEngine;
 use crate::text::glyph::GlyphKey;
 use crate::text::layout::TextLayout;
 use crate::text::shaper::{TextShapeParams, TextShaper};
+use cosmic_text::SwashCache;
+use std::sync::{Arc, Mutex};
 
 /// Rasterized pixel buffer and metrics for an individual glyph.
 pub struct GlyphBitmap<'a> {
@@ -63,15 +63,17 @@ impl TextContext {
     }
 
     /// Shapes a text string into multi-line glyph runs under given constraints.
-    pub fn shape(&self, params: TextShapeParams) -> TextLayout {
-        if let Some(cached) = self.cache.get(&params) { return cached; }
-        let layout = self.engine.shape(params);
-        self.cache.store(&params, layout.clone());
+    pub fn shape(&self, params: TextShapeParams) -> Arc<TextLayout> {
+        if let Some(cached) = self.cache.get(&params) {
+            return cached;
+        }
+        let layout = Arc::new(self.engine.shape(params));
+        self.cache.store(&params, Arc::clone(&layout));
         layout
     }
 
     /// Shapes text directly from configuration specification under layout constraints.
-    pub fn shape_config(&self, config: &TextConfig, constraints: Constraints) -> TextLayout {
+    pub fn shape_config(&self, config: &TextConfig, constraints: Constraints) -> Arc<TextLayout> {
         self.shape(TextShapeParams {
             text: &config.content,
             font: config.font_id,
@@ -80,6 +82,9 @@ impl TextContext {
             size: config.size,
             line_height: config.line_height.resolve(config.size),
             letter_spacing: config.letter_spacing,
+            align: config.align,
+            overflow: config.overflow,
+            max_lines: config.max_lines,
             weight: config.weight,
             constraints,
         })
@@ -88,7 +93,9 @@ impl TextContext {
     /// Rasterizes a glyph by opaque key and invokes consumer closure with bitmap data.
     pub fn raster_glyph<R>(&self, key: GlyphKey, f: impl FnOnce(Option<GlyphBitmap>) -> R) -> R {
         let ck = self.engine.key_map.lock().unwrap().get(&key).copied();
-        let Some(cache_key) = ck else { return f(None); };
+        let Some(cache_key) = ck else {
+            return f(None);
+        };
 
         let mut fs = self.engine.font_system.lock().unwrap();
         let mut sc = self.swash_cache.lock().unwrap();
@@ -107,4 +114,8 @@ impl TextContext {
     }
 }
 
-impl Default for TextContext { fn default() -> Self { Self::new() } }
+impl Default for TextContext {
+    fn default() -> Self {
+        Self::new()
+    }
+}

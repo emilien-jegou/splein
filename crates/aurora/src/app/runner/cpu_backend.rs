@@ -7,8 +7,7 @@ use std::time::Instant;
 use winit::window::Window;
 
 use crate::app::presenter::SurfacePresenter;
-use crate::app::runner::backend::{Backend, PresentFrame};
-use crate::foundation::ResolvedRect;
+use crate::app::runner::backend::{Backend, Present, PresentReport};
 use crate::render::{BackendError, TinySkiaRenderer};
 use crate::text::TextContext;
 
@@ -57,37 +56,41 @@ impl Backend for CpuBackend {
         "CPU"
     }
 
-    fn present(&mut self, frame: PresentFrame<'_>) -> Result<(), BackendError> {
+    fn supports_scanline(&self) -> bool {
+        true
+    }
+
+    fn present(&mut self, frame: Present<'_>) -> Result<PresentReport, BackendError> {
         let t_raster = Instant::now();
         self.renderer.render_damage(frame.scene, frame.damage)?;
-        frame.diagnostics.timings.raster = t_raster.elapsed();
+        let raster = t_raster.elapsed();
 
         let t_present = Instant::now();
         let buffer = self
             .surface
             .buffer_mut()
             .map_err(|e| BackendError::surface(format!("buffer acquire: {e:?}")))?;
-        let accumulated = (frame.damage_for_age)(buffer.age());
-        let extra: Vec<ResolvedRect> = frame
-            .extensions
-            .iter()
-            .filter_map(|e| e.overlay_damage())
-            .collect();
+        let accumulated = frame.damage_resolver.for_age(buffer.age());
+        let (width, height) = (frame.surface.width, frame.surface.height);
+        let mut post = frame.post_process;
 
         SurfacePresenter::present_damaged()
             .pixmap(self.renderer.canvas())
             .buffer(buffer)
             .damage(&accumulated)
-            .extra_damage(&extra)
-            .active_w(frame.width)
-            .active_h(frame.height)
-            .post_process(|dst, dmg, stride, h| {
-                for ext in frame.extensions.iter_mut() {
-                    ext.on_present(dst, dmg, stride, h);
+            .extra_damage(frame.extra_damage)
+            .active_w(width)
+            .active_h(height)
+            .post_process(move |dst, dmg, stride, h| {
+                if let Some(pass) = post.as_mut() {
+                    pass.apply(dst, dmg, stride, h);
                 }
             })
             .call();
-        frame.diagnostics.timings.present = t_present.elapsed();
-        Ok(())
+
+        Ok(PresentReport {
+            raster,
+            present: t_present.elapsed(),
+        })
     }
 }

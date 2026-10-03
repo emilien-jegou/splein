@@ -9,12 +9,11 @@ use crate::dsl::IntoElement;
 use crate::foundation::{Color, DamageRegion, DamageRing, ResolvedRect};
 use crate::reactive::{ReactiveRuntime, Signal};
 use crate::runtime::frame::execute_frame_stages;
-use crate::runtime::router::SubscriberRouter;
 use crate::runtime::scheduler::{FrameScheduler, FrameStats};
 use crate::runtime::FrameDiagnostics;
 use crate::scene::{LayerId, Scene};
 use crate::text::TextContext;
-use crate::tree::{DirtyFlags, NodeId, TreeArena};
+use crate::tree::{DirtyFlags, NodeId, SubscriberRouter, TreeArena};
 
 /// Single-point facade managing the UI tree, reactive runtime, and scene compilation.
 pub struct Engine {
@@ -215,11 +214,11 @@ impl Engine {
     fn collect_dirtied_layers(&self) -> Vec<LayerId> {
         let mut layers = Vec::new();
         for &node in &self.scheduler.dirty_nodes_this_frame {
-            layers.push(LayerId::from(node));
+            layers.push(LayerId::from_packed(node.packed()));
             let mut curr = node;
             while let Some(parent) = self.scheduler.arena.parent(curr) {
                 if self.scheduler.arena.get(parent).style.has_layer {
-                    layers.push(LayerId::from(parent));
+                    layers.push(LayerId::from_packed(parent.packed()));
                 }
                 curr = parent;
             }

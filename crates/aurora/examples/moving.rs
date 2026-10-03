@@ -144,22 +144,22 @@ fn main() {
 fn build_ui(pos_sig: Signal<(f32, f32)>, color_sig: Signal<Color>) -> impl IntoElement {
     let logo_graphic = VectorGraphic::from_str(DVD_SVG_RAW).expect("Valid SVG");
 
-    column()
-        .fill_parent()
+    group().direction(Direction::Vertical)
+        .width(Size::fill()).height(Size::fill())
         .fill(Color::hex(0x090D16))
         .children((
-            column()
-                .fill_parent()
+            group().direction(Direction::Vertical)
+                .width(Size::fill()).height(Size::fill())
                 .gap(20.0)
                 .margin(Margin::all(24.0))
                 .children([
-                    row()
-                        .fill_width()
-                        .fit_height()
-                        .justify_between()
-                        .align_center()
+                    group().direction(Direction::Horizontal)
+                        .width(Size::fill())
+                        .height(Size::fit())
+                        .distribution(Distribution::SpaceBetween)
+                        .alignment(Alignment::Center)
                         .children((
-                            column().gap(4.0).children([
+                            group().direction(Direction::Vertical).gap(4.0).children([
                                 text("Aurora Rendering Showcase")
                                     .size(20.0)
                                     .weight(700)
@@ -169,36 +169,36 @@ fn build_ui(pos_sig: Signal<(f32, f32)>, color_sig: Signal<Color>) -> impl IntoE
                                     .color(Color::hex(0x64748B)),
                             ]),
                             group()
-                                .fit_content()
+                                .width(Size::fit()).height(Size::fit())
                                 .radius(Radius::scalar(999.0))
                                 .fill(Color::hex(0x1E293B))
                                 .stroke(Stroke::inside(1.0, Color::hex(0x334155)))
-                                .margin_xy(12.0, 6.0)
+                                .margin(Margin::sides(6.0, 12.0, 6.0, 12.0))
                                 .children([
                                     text("Press [F12] Damage | [F11] Boundaries")
                                         .size(12.0)
                                         .color(Color::hex(0x38BDF8)),
                                 ]),
                         )),
-                    row()
-                        .fill_width()
-                        .fill_height()
+                    group().direction(Direction::Horizontal)
+                        .width(Size::fill())
+                        .height(Size::fill())
                         .gap(16.0)
                         .children((
-                            column()
+                            group().direction(Direction::Vertical)
                                 .width(Size::Percent(0.6))
-                                .fill_height()
+                                .height(Size::fill())
                                 .gap(16.0)
                                 .children([
                                     group()
-                                        .fill_width()
+                                        .width(Size::fill())
                                         .height(180.0)
                                         .radius(Radius::scalar(16.0))
                                         .fill(Color::hex(0x131C2E))
                                         .stroke(Stroke::inside(1.0, Color::hex(0x1E293B)))
                                         .margin(Margin::all(16.0))
                                         .children([
-                                            column().gap(12.0).children([
+                                            group().direction(Direction::Vertical).gap(12.0).children([
                                                 text("Subtree Isolation Matrix")
                                                     .size(15.0)
                                                     .weight(600)
@@ -210,38 +210,38 @@ fn build_ui(pos_sig: Signal<(f32, f32)>, color_sig: Signal<Color>) -> impl IntoE
                                             ]),
                                         ]),
                                     group()
-                                        .fill_parent()
+                                        .width(Size::fill()).height(Size::fill())
                                         .radius(Radius::scalar(16.0))
                                         .fill(Color::hex(0x131C2E))
                                         .stroke(Stroke::inside(1.0, Color::hex(0x1E293B)))
                                         .margin(Margin::all(16.0))
                                         .children([
-                                            column().gap(12.0).children((
+                                            group().direction(Direction::Vertical).gap(12.0).children((
                                                 text("Nested Geometry Containers")
                                                     .size(15.0)
                                                     .weight(600)
                                                     .color(Color::WHITE),
-                                                row().gap(8.0).children([
-                                                    group().size(80.0, 60.0).radius(Radius::scalar(8.0)).fill(Color::hex(0x1E293B)),
-                                                    group().size(80.0, 60.0).radius(Radius::scalar(8.0)).fill(Color::hex(0x1E293B)),
-                                                    group().size(80.0, 60.0).radius(Radius::scalar(8.0)).fill(Color::hex(0x1E293B)),
+                                                group().direction(Direction::Horizontal).gap(8.0).children([
+                                                    group().width(80.0).height(60.0).radius(Radius::scalar(8.0)).fill(Color::hex(0x1E293B)),
+                                                    group().width(80.0).height(60.0).radius(Radius::scalar(8.0)).fill(Color::hex(0x1E293B)),
+                                                    group().width(80.0).height(60.0).radius(Radius::scalar(8.0)).fill(Color::hex(0x1E293B)),
                                                 ]),
                                             )),
                                         ]),
                                 ]),
-                            column()
+                            group().direction(Direction::Vertical)
                                 .width(Size::Percent(0.4))
-                                .fill_height()
+                                .height(Size::fill())
                                 .gap(16.0)
                                 .children([
                                     group()
-                                        .fill_parent()
+                                        .width(Size::fill()).height(Size::fill())
                                         .radius(Radius::scalar(16.0))
                                         .fill(Color::hex(0x0F172A))
                                         .stroke(Stroke::inside(1.0, Color::hex(0x1E293B)))
                                         .margin(Margin::all(16.0))
                                         .children([
-                                            column().gap(10.0).children([
+                                            group().direction(Direction::Vertical).gap(10.0).children([
                                                 text("Live Vector Telemetry")
                                                     .size(15.0)
                                                     .weight(600)
@@ -258,8 +258,8 @@ fn build_ui(pos_sig: Signal<(f32, f32)>, color_sig: Signal<Color>) -> impl IntoE
                         )),
                 ]),
             group()
-                .size(LOGO_W, LOGO_H)
-                .overlay()
+                .width(LOGO_W).height(LOGO_H)
+                .overlay(true).z_index(100)
                 .anchor(Anchor::TopLeft)
                 .fill(color_sig)
                 .transform(move || {

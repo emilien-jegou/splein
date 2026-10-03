@@ -5,7 +5,7 @@ use crate::dsl::diff::{diff_children, ChildOp};
 use crate::dsl::element::Element;
 use crate::dsl::reconciler::reconcile;
 use crate::reactive::ReactiveRuntime;
-use crate::runtime::SubscriberRouter;
+use crate::tree::SubscriberRouter;
 use crate::tree::{NodeId, TreeArena};
 use std::cell::RefCell;
 use std::rc::Rc;

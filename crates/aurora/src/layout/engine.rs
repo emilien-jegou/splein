@@ -2,14 +2,14 @@
 
 use smallvec::SmallVec;
 
-use crate::foundation::{
-    Constraints, DesiredSize, Direction, Distribution, Point, ResolvedRect, Size,
-};
+use crate::foundation::{Constraints, Direction, Distribution, Point, ResolvedRect, Size};
 use crate::layout::allocate_absolute::resolve_absolute_child;
-use crate::layout::allocate_cross::resolve_cross_axis;
+use crate::layout::allocate_cross::resolve_child_cross;
 use crate::layout::allocate_main::allocate_main_axis;
-use crate::layout::measure::{compute_child_desired, compute_intrinsic};
-use crate::pipeline::stage2_layout::LayoutResult;
+use crate::layout::measure::{
+    compute_child_desired, compute_intrinsic, compute_intrinsic_with_constraints,
+};
+use crate::layout::report::LayoutResult;
 use crate::text::TextContext;
 use crate::tree::{DirtyFlags, NodeId, TreeArena};
 
@@ -87,46 +87,86 @@ fn perform_node_layout(
         (l.direction, l.gap, l.alignment, l.distribution)
     };
 
-    let mut desired_sizes: SmallVec<[DesiredSize; 8]> = SmallVec::with_capacity(normal.len());
+    let avail_main = match dir {
+        Direction::Horizontal => w,
+        Direction::Vertical => h,
+    };
+
+    let node_abs = Point::new(
+        parent_abs.x + arena.get(node_id).resolved_rect.x,
+        parent_abs.y + arena.get(node_id).resolved_rect.y,
+    );
+
+    // Per-child resolved cross content box, index-aligned with `normal`. Both axes are
+    // resolved before main allocation so wrapping width is final when text is measured.
+    let mut cross_content: SmallVec<[f32; 8]> = SmallVec::with_capacity(normal.len());
+    let mut cross_offset: SmallVec<[f32; 8]> = SmallVec::with_capacity(normal.len());
     let mut desired_main: SmallVec<[f32; 8]> = SmallVec::with_capacity(normal.len());
     let mut is_fills: SmallVec<[bool; 8]> = SmallVec::with_capacity(normal.len());
     let mut shrinks: SmallVec<[f32; 8]> = SmallVec::with_capacity(normal.len());
     let mut margins: SmallVec<[f32; 8]> = SmallVec::with_capacity(normal.len());
 
-    for &child in &normal {
-        let d = compute_child_desired(
-            arena,
-            child,
-            Constraints::loose(w, h),
-            Some(w),
-            Some(h),
-            text_ctx,
-        );
-        let node = arena.get(child);
-        let (main_d, is_fill, m) = match dir {
-            Direction::Horizontal => (
-                d.width + node.style.margin.horizontal(),
-                node.style.width.is_fill(),
-                node.style.margin.horizontal(),
-            ),
-            Direction::Vertical => (
-                d.height + node.style.margin.vertical(),
-                node.style.height.is_fill(),
-                node.style.margin.vertical(),
-            ),
-        };
+    match dir {
+        // Width (cross) is resolved first: it governs text wrapping and therefore height.
+        Direction::Vertical => {
+            for &child in &normal {
+                let (m, width_intent) = {
+                    let n = arena.get(child);
+                    (n.style.margin, n.style.width)
+                };
+                let intrinsic_cross = if width_intent.is_fit() {
+                    compute_intrinsic_with_constraints(
+                        arena,
+                        child,
+                        Constraints::UNCONSTRAINED,
+                        text_ctx,
+                    )
+                    .width
+                } else {
+                    0.0
+                };
+                let (content, offset) =
+                    resolve_child_cross(align, w, width_intent, intrinsic_cross, m.left, m.right);
+                cross_content.push(content);
+                cross_offset.push(offset);
 
-        desired_main.push(main_d);
-        is_fills.push(is_fill);
-        shrinks.push(node.style.shrink);
-        margins.push(m);
-        desired_sizes.push(d);
+                // Height is measured against the final width, never the parent width.
+                let d = compute_child_desired(
+                    arena,
+                    child,
+                    Constraints::tight_width(content),
+                    Some(w),
+                    Some(h),
+                    text_ctx,
+                );
+                let n = arena.get(child);
+                desired_main.push(d.height + n.style.margin.vertical());
+                is_fills.push(n.style.height.is_fill());
+                shrinks.push(n.style.shrink);
+                margins.push(n.style.margin.vertical());
+            }
+        }
+        // Width (main) is allocated first; height (cross) wraps at the assigned width.
+        Direction::Horizontal => {
+            for &child in &normal {
+                let d = compute_child_desired(
+                    arena,
+                    child,
+                    Constraints::loose(w, h),
+                    Some(w),
+                    Some(h),
+                    text_ctx,
+                );
+                let n = arena.get(child);
+                desired_main.push(d.width + n.style.margin.horizontal());
+                is_fills.push(n.style.width.is_fill());
+                shrinks.push(n.style.shrink);
+                margins.push(n.style.margin.horizontal());
+                cross_content.push(0.0);
+                cross_offset.push(0.0);
+            }
+        }
     }
-
-    let (avail_main, avail_cross) = match dir {
-        Direction::Horizontal => (w, h),
-        Direction::Vertical => (h, w),
-    };
 
     let plan = allocate_main_axis(
         avail_main,
@@ -137,6 +177,33 @@ fn perform_node_layout(
         &margins,
         dist,
     );
+
+    if dir == Direction::Horizontal {
+        for (i, &child) in normal.iter().enumerate() {
+            let assigned_w = (plan.sizes[i] - margins[i]).max(0.0);
+            let (m, height_intent) = {
+                let n = arena.get(child);
+                (n.style.margin, n.style.height)
+            };
+            let intrinsic_cross = if height_intent.is_fit() {
+                compute_child_desired(
+                    arena,
+                    child,
+                    Constraints::tight_width(assigned_w),
+                    None,
+                    None,
+                    text_ctx,
+                )
+                .height
+            } else {
+                0.0
+            };
+            let (content, offset) =
+                resolve_child_cross(align, h, height_intent, intrinsic_cross, m.top, m.bottom);
+            cross_content[i] = content;
+            cross_offset[i] = offset;
+        }
+    }
 
     let total_used = if !plan.sizes.is_empty() {
         plan.sizes.iter().sum::<f32>() + (plan.sizes.len() - 1) as f32 * plan.gap_px
@@ -152,78 +219,26 @@ fn perform_node_layout(
         _ => 0.0,
     };
 
-    let node_abs = Point::new(
-        parent_abs.x + arena.get(node_id).resolved_rect.x,
-        parent_abs.y + arena.get(node_id).resolved_rect.y,
-    );
-
     for (i, &child) in normal.iter().enumerate() {
         let main_alloc = plan.sizes[i];
-        let child_desired = desired_sizes[i];
-
-        let (child_m, is_cross_fixed, is_cross_fill) = {
+        let main_m_start = {
             let n = arena.get(child);
-            (
-                n.style.margin,
-                match dir {
-                    Direction::Horizontal => {
-                        matches!(n.style.height, Size::Fixed(_) | Size::Percent(_))
-                    }
-                    Direction::Vertical => {
-                        matches!(n.style.width, Size::Fixed(_) | Size::Percent(_))
-                    }
-                },
-                match dir {
-                    Direction::Horizontal => n.style.height.is_fill(),
-                    Direction::Vertical => n.style.width.is_fill(),
-                },
-            )
+            match dir {
+                Direction::Horizontal => n.style.margin.left,
+                Direction::Vertical => n.style.margin.top,
+            }
         };
-
-        let (cross_m_start, cross_m_end, cross_m_total, main_m_start) = match dir {
-            Direction::Horizontal => (
-                child_m.top,
-                child_m.bottom,
-                child_m.vertical(),
-                child_m.left,
-            ),
-            Direction::Vertical => (
-                child_m.left,
-                child_m.right,
-                child_m.horizontal(),
-                child_m.top,
-            ),
-        };
-
-        let base_cross = match dir {
-            Direction::Horizontal => child_desired.height + cross_m_total,
-            Direction::Vertical => child_desired.width + cross_m_total,
-        };
-
-        let (cross_alloc, cross_offset) = resolve_cross_axis(
-            align,
-            avail_cross,
-            base_cross,
-            cross_m_start,
-            cross_m_end,
-            is_cross_fixed,
-            is_cross_fill,
-        );
-        let main_offset = cursor + main_m_start;
+        let content_cross = cross_content[i].max(0.0);
+        let offset_cross = cross_offset[i];
+        let main_len = (main_alloc - margins[i]).max(0.0);
 
         let rect = match dir {
-            Direction::Horizontal => ResolvedRect::new(
-                main_offset,
-                cross_offset,
-                (main_alloc - child_m.horizontal()).max(0.0),
-                (cross_alloc - cross_m_total).max(0.0),
-            ),
-            Direction::Vertical => ResolvedRect::new(
-                cross_offset,
-                main_offset,
-                (cross_alloc - cross_m_total).max(0.0),
-                (main_alloc - child_m.vertical()).max(0.0),
-            ),
+            Direction::Horizontal => {
+                ResolvedRect::new(cursor + main_m_start, offset_cross, main_len, content_cross)
+            }
+            Direction::Vertical => {
+                ResolvedRect::new(offset_cross, cursor + main_m_start, content_cross, main_len)
+            }
         };
 
         cursor += main_alloc + plan.gap_px;
@@ -287,20 +302,12 @@ fn resolve_node_bounds(
     let (w_size, h_size) = (node.style.width, node.style.height);
 
     let (mut w, mut h) = (
-        match w_size {
-            Size::Fixed(v) => v.min(constraints.max_width),
-            Size::Percent(p) if constraints.is_tight_width() => {
-                (constraints.max_width * p).min(constraints.max_width)
-            }
-            _ => constraints.max_width,
-        },
-        match h_size {
-            Size::Fixed(v) => v.min(constraints.max_height),
-            Size::Percent(p) if constraints.is_tight_height() => {
-                (constraints.max_height * p).min(constraints.max_height)
-            }
-            _ => constraints.max_height,
-        },
+        resolve_axis(w_size, constraints.max_width, constraints.is_tight_width()),
+        resolve_axis(
+            h_size,
+            constraints.max_height,
+            constraints.is_tight_height(),
+        ),
     );
 
     if w_size.is_fit() || h_size.is_fit() {
@@ -314,4 +321,32 @@ fn resolve_node_bounds(
     }
 
     (w.max(0.0), h.max(0.0))
+}
+
+/// Resolves one axis: a tight bound is already final, so intent must not be re-applied.
+fn resolve_axis(size: Size, bound: f32, is_tight: bool) -> f32 {
+    if is_tight {
+        return if bound.is_finite() {
+            bound.max(0.0)
+        } else {
+            0.0
+        };
+    }
+    match size {
+        Size::Fixed(value) => {
+            if value.is_finite() {
+                value.max(0.0).min(bound.max(0.0))
+            } else {
+                bound
+            }
+        }
+        Size::Percent(ratio) => {
+            if bound.is_finite() {
+                (bound * ratio).max(0.0)
+            } else {
+                bound
+            }
+        }
+        Size::Fill | Size::Fit => bound,
+    }
 }

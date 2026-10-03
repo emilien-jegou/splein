@@ -26,6 +26,8 @@ pub struct ShapedLine {
     pub height: f32,
     pub baseline: f32,
     pub font_size: f32,
+    /// Horizontal paragraph-alignment offset applied when rendering the line.
+    pub align_offset: f32,
 }
 
 impl ShapedLine {
@@ -43,6 +45,7 @@ impl ShapedLine {
             height,
             baseline,
             font_size,
+            align_offset: 0.0,
         }
     }
 }

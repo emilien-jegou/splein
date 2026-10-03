@@ -7,7 +7,7 @@ use aurora::runtime::Engine;
 #[test]
 fn test_e2e_idle_frame_invariant() {
     let mut engine = Engine::headless(500, 500);
-    engine.mount(group().size(500.0, 500.0).fill(Color::WHITE));
+    engine.mount(group().width(500.0).height(500.0).fill(Color::WHITE));
     engine.frame();
 
     // Always true: two frames in a row with no change -> laid_out == false, no damage, commands == 0
@@ -23,11 +23,11 @@ fn test_e2e_hover_box_with_shadow_recomputes_zero_layout() {
     let mut engine = Engine::headless(400, 400);
     let fill = engine.signal(Color::RED);
 
-    engine.mount(group().size(400.0, 400.0).children([
+    engine.mount(group().width(400.0).height(400.0).children([
         group()
-            .size(100.0, 100.0)
+            .width(100.0).height(100.0)
             .fill(fill.clone())
-            .shadow(Shadow::outer(0.0, 4.0, 6.0, Color::BLACK)),
+            .shadows([Shadow::outer(0.0, 4.0, 6.0, Color::BLACK)]),
     ]));
     engine.frame();
 
@@ -48,11 +48,11 @@ fn test_e2e_counter_tick_inside_boundary_isolates_layout_and_damage() {
     let mut engine = Engine::headless(600, 600);
     let count = engine.signal("1".to_string());
 
-    engine.mount(group().size(600.0, 600.0).children([
-        group().size(100.0, 100.0).clip(true).children([
+    engine.mount(group().width(600.0).height(600.0).children([
+        group().width(100.0).height(100.0).clip(true).children([
             text(count.clone()),
         ]),
-        group().size(200.0, 200.0).fill(Color::BLACK),
+        group().width(200.0).height(200.0).fill(Color::BLACK),
     ]));
     engine.frame();
 
@@ -73,10 +73,10 @@ fn test_e2e_box_in_boxed_re_render_with_absolute_badge() {
     let badge_count = engine.signal("3".to_string());
 
     // Outer card -> inner container -> absolute badge on the corner
-    engine.mount(group().size(600.0, 600.0).children([
-        group().size(300.0, 300.0).children([
-            group().size(200.0, 200.0).children([
-                group().absolute().anchor(Anchor::TopRight).size(30.0, 30.0).children([
+    engine.mount(group().width(600.0).height(600.0).children([
+        group().width(300.0).height(300.0).children([
+            group().width(200.0).height(200.0).children([
+                group().absolute().anchor(Anchor::TopRight).width(30.0).height(30.0).children([
                     text(badge_count.clone()),
                 ]),
             ]),

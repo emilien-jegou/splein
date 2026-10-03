@@ -6,6 +6,7 @@ use crate::scene::command::SceneCommand;
 use crate::scene::image::ImageSource;
 use crate::scene::vector::VectorGraphic;
 use crate::text::layout::TextLayout;
+use std::sync::Arc;
 
 /// Context provided to custom primitives to record display list commands directly into a chunk.
 pub struct PaintContext<'a> {
@@ -35,8 +36,12 @@ impl<'a> PaintContext<'a> {
     }
 
     /// Appends a shaped typography run command.
-    pub fn draw_text(&mut self, origin: Point, layout: TextLayout, color: Color) {
-        self.chunk.push(SceneCommand::DrawText { origin, layout, color });
+    pub fn draw_text(&mut self, origin: Point, layout: Arc<TextLayout>, color: Color) {
+        self.chunk.push(SceneCommand::DrawText {
+            origin,
+            layout,
+            color,
+        });
     }
 
     /// Scopes commands within a 2D affine transformation matrix.

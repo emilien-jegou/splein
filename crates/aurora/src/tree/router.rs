@@ -1,9 +1,11 @@
-// Single responsibility: Manages subscriber allocation and invalidation routing for arena nodes.
+// Single responsibility: Join table binding reactive subscribers to arena nodes and dirty categories.
 
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
+
 use crate::reactive::{ReactiveRuntime, SubscriberId};
-use crate::tree::{DirtyFlags, NodeId};
+use crate::tree::flags::DirtyFlags;
+use crate::tree::id::NodeId;
 
 /// Manages subscriber allocation and invalidation routing for arena nodes.
 #[derive(Default)]

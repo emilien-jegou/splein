@@ -1,7 +1,8 @@
 // Single responsibility: Node coordinate framing, transformation, and display list command emission.
 
-use crate::foundation::{Constraints, Point, ResolvedRect, Transform};
+use crate::foundation::{Appearance, Constraints, Fill, Point, ResolvedRect, Transform};
 use crate::scene::{LayerId, PaintContext, SceneChunk, SceneCommand};
+use crate::text::decoration::decoration_rules;
 use crate::text::TextContext;
 use crate::tree::{LayoutNode, NodeKind};
 
@@ -85,7 +86,7 @@ pub fn emit_node_content(node: &LayoutNode, chunk: &mut SceneChunk, text_ctx: &T
 
     match &node.kind {
         NodeKind::Text(t) => {
-            // Reuse the measurement layout so wrapping and box height stay consistent.
+            // Alignment is baked into the shaped layout, so it is shared without mutation.
             let layout = node.state.cached_text_layout.clone().unwrap_or_else(|| {
                 let max_w = if node.style.width.is_fit() {
                     f32::INFINITY
@@ -94,11 +95,26 @@ pub fn emit_node_content(node: &LayoutNode, chunk: &mut SceneChunk, text_ctx: &T
                 };
                 text_ctx.shape_config(t, Constraints::loose(max_w, f32::INFINITY))
             });
+            let decorations: Vec<ResolvedRect> = if t.decoration.is_empty() {
+                Vec::new()
+            } else {
+                layout
+                    .lines
+                    .iter()
+                    .flat_map(|line| decoration_rules(line, t.size, t.decoration))
+                    .collect()
+            };
             chunk.push(SceneCommand::DrawText {
                 origin: Point::ZERO,
                 layout,
                 color: t.color,
             });
+            for rect in decorations {
+                chunk.push(SceneCommand::DrawRect {
+                    rect,
+                    appearance: Appearance::EMPTY.with_fill(Fill::Solid(t.color)),
+                });
+            }
         }
         NodeKind::Custom(p) => {
             p.paint(&mut PaintContext::new(chunk), local_rect);

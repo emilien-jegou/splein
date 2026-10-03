@@ -10,14 +10,14 @@ fn test_2_10_absolute_element_does_not_affect_sibling_flow() {
     let abs_top = engine.signal(10.0f32);
 
     engine.mount(
-        row().size(600.0, 400.0).children([
-            group().size(100.0, 50.0).fill(Color::RED),
+        group().direction(Direction::Horizontal).width(600.0).height(400.0).children([
+            group().width(100.0).height(50.0).fill(Color::RED),
             group()
                 .absolute()
-                .margin_top(10.0)
-                .size(50.0, 50.0)
+                .margin(Margin::top(10.0))
+                .width(50.0).height(50.0)
                 .fill(Color::BLUE),
-            group().size(100.0, 50.0).fill(Color::GREEN),
+            group().width(100.0).height(50.0).fill(Color::GREEN),
         ]),
     );
     engine.frame();
@@ -37,9 +37,9 @@ fn test_2_11_box_in_boxed_re_render_keeps_outer_box_cached() {
 
     engine.mount(
         group()
-            .size(800.0, 800.0)
-            .children([group().size(400.0, 400.0).children([group()
-                .size(200.0, 200.0)
+            .width(800.0).height(800.0)
+            .children([group().width(400.0).height(400.0).children([group()
+                .width(200.0).height(200.0)
                 .children([group().width(inner_sig.clone()).height(40.0)])])]),
     );
     engine.frame();

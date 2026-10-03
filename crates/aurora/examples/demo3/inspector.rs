@@ -4,60 +4,60 @@ use super::icons::AppIcons;
 use aurora::prelude::*;
 
 pub fn render_inspector(icons: &AppIcons) -> impl IntoElement {
-    row().width(361.0).fill_height().children((
+    group().direction(Direction::Horizontal).width(361.0).height(Size::fill()).children((
         group()
             .width(1.0)
-            .fill_height()
+            .height(Size::fill())
             .fill(Color::hex_alpha(0x08090C, 0.06)),
-        column()
+        group().direction(Direction::Vertical)
             .width(360.0)
-            .fill_height()
+            .height(Size::fill())
             .fill(Color::hex(0xFCFCFC))
             .children((
-                row()
-                    .fill_width()
-                    .align_center()
-                    .margin_x(16.0)
-                    .margin_top(16.0)
+                group().direction(Direction::Horizontal)
+                    .width(Size::fill())
+                    .alignment(Alignment::Center)
+                    .margin(Margin::x(16.0))
+                    .margin(Margin::top(16.0))
                     .children((
                         text("Universal Sans")
                             .size(16.0)
                             .weight(500)
                             .color(Color::hex(0x0A0A0A)),
                         group().width(Size::fill()),
-                        row()
+                        group().direction(Direction::Horizontal)
                             .height(24.0)
                             .radius(6.0)
                             .fill(Color::hex(0xE9FFEB))
-                            .align_center()
+                            .alignment(Alignment::Center)
                             .gap(6.0)
                             .children((
                                 group()
-                                    .size(6.0, 6.0)
+                                    .width(6.0).height(6.0)
                                     .radius(Radius::max())
                                     .fill(Color::hex(0x008E2D))
-                                    .margin_left(8.0),
+                                    .margin(Margin::left(8.0)),
                                 text("Active")
                                     .size(12.0)
                                     .weight(500)
                                     .color(Color::hex(0x025719))
-                                    .margin_right(8.0),
+                                    .margin(Margin::right(8.0)),
                             )),
                     )),
-                row().fill_width().height(32.0).margin_top(8.0).children((
+                group().direction(Direction::Horizontal).width(Size::fill()).height(32.0).margin(Margin::top(8.0)).children((
                     tab("General", true),
                     tab("Variants", false),
                     tab("Instances", false),
                     tab("Alternatives", false),
                 )),
                 group()
-                    .fill_width()
+                    .width(Size::fill())
                     .height(1.0)
                     .fill(Color::hex_alpha(0x08090C, 0.06)),
-                column()
-                    .fill_width()
-                    .margin_x(16.0)
-                    .margin_top(16.0)
+                group().direction(Direction::Vertical)
+                    .width(Size::fill())
+                    .margin(Margin::x(16.0))
+                    .margin(Margin::top(16.0))
                     .gap(14.0)
                     .children((
                         text("Details").size(13.0).weight(500).color(Color::BLACK),
@@ -66,28 +66,28 @@ pub fn render_inspector(icons: &AppIcons) -> impl IntoElement {
                         key_value("Publisher", "BatistaCorp", Some(&icons.link)),
                     )),
                 group()
-                    .fill_width()
+                    .width(Size::fill())
                     .height(1.0)
                     .fill(Color::hex_alpha(0x08090C, 0.06))
-                    .margin_y(16.0),
-                column().fill_width().margin_x(16.0).gap(10.0).children((
+                    .margin(Margin::y(16.0)),
+                group().direction(Direction::Vertical).width(Size::fill()).margin(Margin::x(16.0)).gap(10.0).children((
                     text("Metrics").size(13.0).weight(500).color(Color::BLACK),
-                    row().fill_width().gap(8.0).children((
+                    group().direction(Direction::Horizontal).width(Size::fill()).gap(8.0).children((
                         metric_tile("Ascender", "910"),
                         metric_tile("Cap Height", "690"),
                     )),
-                    row().fill_width().gap(8.0).children((
+                    group().direction(Direction::Horizontal).width(Size::fill()).gap(8.0).children((
                         metric_tile("x-Height", "540"),
                         metric_tile("Descender", "-210"),
                     )),
                 )),
                 group()
-                    .fill_width()
+                    .width(Size::fill())
                     .height(1.0)
                     .fill(Color::hex_alpha(0x08090C, 0.06))
-                    .margin_y(16.0),
-                column().fill_width().margin_x(16.0).gap(12.0).children((
-                    row().fill_width().children((
+                    .margin(Margin::y(16.0)),
+                group().direction(Direction::Vertical).width(Size::fill()).margin(Margin::x(16.0)).gap(12.0).children((
+                    group().direction(Direction::Horizontal).width(Size::fill()).children((
                         text("Axes").size(13.0).weight(500).color(Color::BLACK),
                         group().width(Size::fill()),
                         text("Reset").size(10.0).color(Color::hex(0x525252)),
@@ -103,8 +103,8 @@ pub fn render_inspector(icons: &AppIcons) -> impl IntoElement {
 fn tab(label: &'static str, active: bool) -> impl IntoElement {
     group()
         .width(Size::fill())
-        .fill_height()
-        .center()
+        .height(Size::fill())
+        .alignment(Alignment::Center).distribution(Distribution::Center)
         .children([text(label)
             .size(13.0)
             .weight(if active { 500 } else { 400 })
@@ -120,7 +120,7 @@ fn key_value(
     val: &'static str,
     icon: Option<&std::sync::Arc<VectorGraphic>>,
 ) -> impl IntoElement {
-    row().fill_width().align_center().children((
+    group().direction(Direction::Horizontal).width(Size::fill()).alignment(Alignment::Center).children((
         group()
             .width(74.0)
             .children([text(key).size(13.0).color(Color::BLACK)]),
@@ -135,13 +135,13 @@ fn key_value(
 }
 
 fn metric_tile(label: &'static str, val: &'static str) -> impl IntoElement {
-    row()
+    group().direction(Direction::Horizontal)
         .width(Size::fill())
         .height(32.0)
         .radius(8.0)
         .fill(Color::hex_alpha(0x08090C, 0.03))
-        .align_center()
-        .margin_x(8.0)
+        .alignment(Alignment::Center)
+        .margin(Margin::x(8.0))
         .children((
             text(label).size(12.0).color(Color::hex(0x525252)),
             group().width(Size::fill()),
@@ -150,20 +150,20 @@ fn metric_tile(label: &'static str, val: &'static str) -> impl IntoElement {
 }
 
 fn axis_slider(label: &'static str, val: &'static str) -> impl IntoElement {
-    column().fill_width().gap(6.0).children((
-        row().fill_width().children((
+    group().direction(Direction::Vertical).width(Size::fill()).gap(6.0).children((
+        group().direction(Direction::Horizontal).width(Size::fill()).children((
             text(label).size(11.0).color(Color::hex(0x525252)),
             group().width(Size::fill()),
             text(val).size(11.0).weight(700).color(Color::hex(0x0A0A0A)),
         )),
         group()
-            .fill_width()
+            .width(Size::fill())
             .height(6.0)
             .radius(3.0)
             .fill(Color::hex_alpha(0x08090C, 0.04))
             .children([group()
                 .width(Size::percent(0.50))
-                .fill_height()
+                .height(Size::fill())
                 .radius(3.0)
                 .fill(Color::hex(0x1019EC))]),
     ))

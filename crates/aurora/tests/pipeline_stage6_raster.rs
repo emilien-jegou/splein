@@ -11,8 +11,8 @@ fn test_6_1_hover_color_diff_strictly_isolated_to_damage_bounds() {
     let mut engine = Engine::headless(400, 400);
     let color = engine.signal(Color::RED);
 
-    engine.mount(group().size(400.0, 400.0).children([
-        group().margin_xy(10.0, 10.0).size(50.0, 50.0).fill(color.clone()),
+    engine.mount(group().width(400.0).height(400.0).children([
+        group().margin(Margin::sides(10.0, 10.0, 10.0, 10.0)).width(50.0).height(50.0).fill(color.clone()),
     ]));
     engine.frame();
 
@@ -45,8 +45,8 @@ fn test_6_2_shadow_color_mutation_reuses_cached_blur_mask() {
     let sc = shadow_color.clone();
     let dyn_shadow = computed(move || Shadow::outer(0.0, 4.0, 8.0, sc.get()));
 
-    engine.mount(group().size(400.0, 400.0).children([
-        group().size(100.0, 100.0).dynamic_shadow(dyn_shadow),
+    engine.mount(group().width(400.0).height(400.0).children([
+        group().width(100.0).height(100.0).dynamic_shadow(dyn_shadow),
     ]));
     engine.frame();
 
@@ -61,10 +61,10 @@ fn test_6_2_shadow_color_mutation_reuses_cached_blur_mask() {
 fn test_6_3_box_smaller_than_corner_patch_falls_back_to_direct_blur_without_crash() {
     let mut engine = Engine::headless(200, 200);
 
-    engine.mount(group().size(200.0, 200.0).children([
+    engine.mount(group().width(200.0).height(200.0).children([
         group()
-            .size(10.0, 10.0)
-            .shadow(Shadow::outer(0.0, 0.0, 20.0, Color::BLACK)),
+            .width(10.0).height(10.0)
+            .shadows([Shadow::outer(0.0, 0.0, 20.0, Color::BLACK)]),
     ]));
 
     let (stats, _, _, _) = engine.frame();

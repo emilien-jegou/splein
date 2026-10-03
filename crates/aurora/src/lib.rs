@@ -1,17 +1,4 @@
-// Single responsibility: Library root exporting geometry, layout, tree, text, reactive, scene, render, and DSL domains.
-
-pub use app::{App, AppConfig, FpsLimit, SurfacePresenter};
-pub use dsl::*;
-pub use foundation::*;
-pub use layout::layout_node;
-pub use pipeline::*;
-pub use reactive::{batch, Derived, Effect, ReactiveRuntime, Signal};
-pub use render::{RenderBackend, TinySkiaRenderer};
-#[cfg(feature = "vello")]
-pub use render::VelloRenderer;
-pub use runtime::{Engine, FrameScheduler, FrameStats};
-pub use scene::*;
-pub use tree::*;
+// Single responsibility: Crate root declaring the public domain module boundaries.
 
 pub mod app;
 pub mod dsl;
