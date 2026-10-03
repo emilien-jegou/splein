@@ -22,14 +22,14 @@ pub fn reconcile_group(
     let id = existing.unwrap_or_else(|| arena.insert(LayoutNode::default()));
 
     let has_dyn_measure = def.width.as_ref().is_some_and(|p| p.is_dynamic())
-        || def.height.as_ref().is_some_and(|p| p.is_dynamic());
-    let has_dyn_layout = def.transform.as_ref().is_some_and(|p| p.is_dynamic());
+        || def.height.as_ref().is_some_and(|p| p.is_dynamic())
+        || def.presence.as_ref().is_some_and(|p| p.is_dynamic());
     let has_dyn_paint = def.fill.as_ref().is_some_and(|p| p.is_dynamic())
         || def.opacity.as_ref().is_some_and(|p| p.is_dynamic())
-        || def.dynamic_shadow.as_ref().is_some_and(|p| p.is_dynamic());
+        || def.dynamic_shadow.as_ref().is_some_and(|p| p.is_dynamic())
+        || def.transform.as_ref().is_some_and(|p| p.is_dynamic());
 
     let m_sub = has_dyn_measure.then(|| router.measure_sub(id, &mut runtime.borrow_mut()));
-    let l_sub = has_dyn_layout.then(|| router.layout_sub(id, &mut runtime.borrow_mut()));
     let p_sub = has_dyn_paint.then(|| router.paint_sub(id, &mut runtime.borrow_mut()));
 
     let store = DynamicBindings {
@@ -44,23 +44,30 @@ pub fn reconcile_group(
             .and_then(|p| p.dynamic_closure())
             .map(|s| Rc::new(move || vec![s()]) as _),
         text: None,
+        presence: def.presence.as_ref().and_then(|p| p.dynamic_closure()),
     };
     arena.get_mut(id).state.bindings = NodeBindings::from_store(store);
 
     let new_w = evaluate_prop(&def.width, m_sub, runtime);
     let new_h = evaluate_prop(&def.height, m_sub, runtime);
-    let new_tx = evaluate_prop(&def.transform, l_sub, runtime).unwrap_or(Transform::IDENTITY);
+    let new_presence = evaluate_prop(&def.presence, m_sub, runtime);
+    let new_tx = evaluate_prop(&def.transform, p_sub, runtime).unwrap_or(Transform::IDENTITY);
     let prev = arena.get(id);
+    let transform_changed = prev.transform != new_tx;
+    let presence_changed = new_presence.is_some() && new_presence != Some(prev.state.presence);
 
     let layout_changed = (new_w.is_some() && new_w != Some(prev.style.width))
         || (new_h.is_some() && new_h != Some(prev.style.height))
-        || prev.transform != new_tx
         || prev.style.layout != def.layout
         || prev.style.margin != def.margin
-        || prev.style.clip != def.clip;
+        || prev.style.clip != def.clip
+        || presence_changed;
 
     if layout_changed {
         arena.mark_dirty(id, DirtyFlags::MEASURE | DirtyFlags::LAYOUT);
+    }
+    if transform_changed {
+        arena.mark_dirty(id, DirtyFlags::PAINT);
     }
 
     let effective_z = if def.z_index != 0 {
@@ -70,8 +77,19 @@ pub fn reconcile_group(
     } else {
         0
     };
+    if def.layout_transition.is_some() {
+        arena.note_layout_transition(id);
+    } else {
+        arena.forget_layout_transition(id);
+    }
+
     let node = arena.get_mut(id);
     node.kind = NodeKind::Group;
+    node.state.transition = def.transition;
+    node.state.layout_transition = def.layout_transition;
+    if let Some(presence) = new_presence {
+        node.state.presence = presence;
+    }
     if let Some(w) = new_w {
         node.style.width = w;
     }

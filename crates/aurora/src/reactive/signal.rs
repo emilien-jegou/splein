@@ -3,6 +3,7 @@
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::rc::Rc;
+use crate::reactive::derived::Derived;
 use crate::reactive::id::SignalId;
 use crate::reactive::observer::Observer;
 use crate::reactive::runtime::ReactiveRuntime;
@@ -26,6 +27,12 @@ impl<T: Clone + 'static> Signal<T> {
     pub fn get(&self) -> T {
         self.runtime.borrow_mut().track_read(self.id);
         self.runtime.borrow().read_signal::<T>(self.id).clone()
+    }
+
+    /// Derives a signal recomputing `f` whenever this signal changes.
+    pub fn map<U: Clone + 'static>(&self, f: impl Fn(T) -> U + 'static) -> Derived<U> {
+        let source = self.clone();
+        Derived::new(Rc::clone(&self.runtime), move || f(source.get()))
     }
 
     /// Updates signal value and dispatches two-phase invalidation notifications.

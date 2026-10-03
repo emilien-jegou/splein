@@ -2,15 +2,18 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use tiny_skia::Pixmap;
 
 use crate::dsl::element::Element;
 use crate::dsl::reconciler::reconcile;
 use crate::dsl::IntoElement;
-use crate::foundation::{Color, DamageRegion, DamageRing, ResolvedRect};
+use crate::foundation::{Color, DamageRegion, DamageRing, Key, ResolvedRect};
+use crate::motion::{self, AnimationBuilder, Controller, MotionState, Spring};
 use crate::reactive::{ReactiveRuntime, Signal};
-use crate::runtime::frame::execute_frame_stages;
-use crate::runtime::scheduler::{FrameScheduler, FrameStats};
-use crate::runtime::FrameDiagnostics;
+use crate::runtime::frame::run_frame_passes;
+use crate::runtime::raster::{HeadlessFrame, HeadlessRaster};
+use crate::runtime::scheduler::FrameScheduler;
+use crate::runtime::FrameReport;
 use crate::scene::{LayerId, Scene};
 use crate::text::TextContext;
 use crate::tree::{DirtyFlags, NodeId, SubscriberRouter, TreeArena};
@@ -26,6 +29,7 @@ pub struct Engine {
     pending_damage: DamageRegion,
     frame_counter: u64,
     pending_preserved_canvas_rect: Option<ResolvedRect>,
+    raster: HeadlessRaster,
 }
 
 impl Engine {
@@ -48,6 +52,7 @@ impl Engine {
             pending_damage: DamageRegion::new(),
             frame_counter: 0,
             pending_preserved_canvas_rect: None,
+            raster: HeadlessRaster::new(),
         }
     }
 
@@ -152,6 +157,7 @@ impl Engine {
 
     /// Replaces the declarative root node and marks layout dirty.
     pub fn set_root(&mut self, element: Element) {
+        let key = element.key();
         self.root = reconcile(
             &self.scheduler.runtime,
             &mut self.scheduler.arena,
@@ -159,6 +165,7 @@ impl Engine {
             Some(self.root),
             element,
         );
+        self.scheduler.arena.bind_key(key, self.root);
         self.scheduler.root = self.root;
         self.scheduler
             .arena
@@ -166,9 +173,9 @@ impl Engine {
         self.scheduler.dirty_nodes_this_frame.push(self.root);
     }
 
-    /// Executes stages 1-5, committing bounds and compiling display list scene.
+    /// Runs the frame passes, committing bounds and compiling the display list scene.
     #[tracing::instrument(skip_all, fields(w = self.logical_size.0, h = self.logical_size.1))]
-    pub fn frame(&mut self) -> (FrameStats, Vec<LayerId>, FrameDiagnostics) {
+    pub fn frame(&mut self) -> FrameReport {
         let (w, h) = self.logical_size;
         self.frame_counter = self.frame_counter.wrapping_add(1);
 
@@ -178,7 +185,7 @@ impl Engine {
         }
         self.pending_damage.clear();
 
-        let (stats, diag) = execute_frame_stages(
+        let (stats, diag) = run_frame_passes(
             &mut self.scheduler,
             self.root,
             &mut self.scene,
@@ -189,7 +196,89 @@ impl Engine {
             self.pending_preserved_canvas_rect.take(),
         );
 
-        (stats, self.collect_dirtied_layers(), diag)
+        FrameReport {
+            stats,
+            layers: self.collect_dirtied_layers(),
+            diagnostics: diag,
+        }
+    }
+
+    /// Rasterizes the compiled scene's damaged region into a persistent CPU canvas.
+    pub fn canvas(&mut self) -> &Pixmap {
+        let size = self.logical_size();
+        let text_ctx = self.text_context();
+        let damage = self.current_damage().clone();
+        self.raster.draw(HeadlessFrame {
+            scene: &self.scene,
+            damage: &damage,
+            size,
+            text_ctx: &text_ctx,
+        })
+    }
+
+    /// Applies a motion override to a keyed view, invalidating paint only.
+    pub fn update_motion(
+        &mut self,
+        key: impl Into<Key>,
+        update: impl FnOnce(&mut MotionState),
+    ) -> bool {
+        motion::apply::apply_motion(&mut self.scheduler, &key.into(), update)
+    }
+
+    /// Starts an animation against a keyed view, retargeting any motion already running.
+    pub fn animate(&mut self, key: impl Into<Key>) -> AnimationBuilder<'_> {
+        AnimationBuilder::new(&mut self.scheduler, key.into())
+    }
+
+    /// Starts a timeline scheduling several keyed animations against one clock.
+    pub fn timeline(&mut self) -> motion::Timeline<'_> {
+        motion::Timeline::new(&mut self.scheduler)
+    }
+
+    /// Reads the current motion overrides of a keyed view.
+    pub fn motion_state(&self, key: impl Into<Key>) -> Option<MotionState> {
+        let key = key.into();
+        let id = self.scheduler.arena.node_for_key(&key)?;
+        Some(self.scheduler.arena.get(id).state.motion)
+    }
+
+    /// Reads the laid-out rect of a keyed view in its parent's coordinate space.
+    pub fn rect(&self, key: impl Into<Key>) -> Option<ResolvedRect> {
+        let id = self.scheduler.arena.node_for_key(&key.into())?;
+        Some(self.scheduler.arena.get(id).resolved_rect)
+    }
+
+    /// Mutably reaches the controller currently animating a keyed view.
+    pub fn controller(&mut self, key: impl Into<Key>) -> Option<&mut Controller> {
+        self.scheduler.motion.controller_mut(&key.into())
+    }
+
+    /// Forces the next frame delta so headless tests can step time deterministically.
+    pub fn advance(&mut self, dt: f32) {
+        self.scheduler.motion.force_delta(dt);
+    }
+
+    /// Whether any controller still wants frames.
+    pub fn has_active_motion(&self) -> bool {
+        self.scheduler.motion.is_active()
+    }
+
+    /// Resolves a window point to the topmost keyed view under it.
+    pub fn hit_test(&self, x: f32, y: f32) -> Option<Key> {
+        crate::tree::hit_test::hit_test(
+            &self.scheduler.arena,
+            self.scheduler.root,
+            crate::foundation::Point::new(x, y),
+        )
+    }
+
+    /// Publishes a spring's position as a signal settling from `from` toward `to`.
+    pub fn spring_signal(&mut self, spring: Spring, from: f32, to: f32) -> Signal<f32> {
+        let signal = Signal::new(Rc::clone(&self.scheduler.runtime), from);
+        self.scheduler
+            .motion
+            .publish_spring(signal.clone(), spring, from, to);
+        signal
     }
 
     /// Accesses the active damaged boundary regions for the current frame.

@@ -3,7 +3,7 @@
 use aurora::dsl::*;
 use aurora::foundation::*;
 use aurora::reactive::*;
-use aurora::runtime::Engine;
+use aurora::runtime::{Engine, FrameReport};
 use aurora::tree::DirtyFlags;
 
 #[test]
@@ -19,7 +19,7 @@ fn test_6_1_hover_color_diff_strictly_isolated_to_damage_bounds() {
     let canvas_before = engine.canvas().clone();
 
     color.set(Color::BLUE);
-    let (_, _, _, diag) = engine.frame();
+    let FrameReport { diagnostics: diag, .. } = engine.frame();
 
     let canvas_after = engine.canvas();
     let damage_box = diag.spatial.damaged_rects[0];
@@ -51,7 +51,7 @@ fn test_6_2_shadow_color_mutation_reuses_cached_blur_mask() {
     engine.frame();
 
     shadow_color.set(Color::rgba(1.0, 0.0, 0.0, 0.5));
-    let (stats, _, _, _) = engine.frame();
+    let FrameReport { stats, .. } = engine.frame();
 
     assert_eq!(stats.flags, DirtyFlags::PAINT);
     assert!(!stats.laid_out);
@@ -67,6 +67,6 @@ fn test_6_3_box_smaller_than_corner_patch_falls_back_to_direct_blur_without_cras
             .shadows([Shadow::outer(0.0, 0.0, 20.0, Color::BLACK)]),
     ]));
 
-    let (stats, _, _, _) = engine.frame();
+    let FrameReport { stats, .. } = engine.frame();
     assert!(stats.laid_out);
 }

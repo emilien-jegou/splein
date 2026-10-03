@@ -28,11 +28,13 @@ pub fn enter_node_frame(
             rect: local_rect,
         });
     }
-    if node.transform != Transform::IDENTITY {
-        chunk.push(SceneCommand::PushTransform(node.transform));
+    let transform = node.effective_transform();
+    if transform != Transform::IDENTITY {
+        chunk.push(SceneCommand::PushTransform(transform));
     }
-    if node.style.appearance.opacity < 1.0 {
-        chunk.push(SceneCommand::PushOpacity(node.style.appearance.opacity));
+    let opacity = node.effective_opacity();
+    if opacity < 1.0 {
+        chunk.push(SceneCommand::PushOpacity(opacity));
     }
     if node.style.clip {
         chunk.push(SceneCommand::PushClip {
@@ -48,10 +50,10 @@ pub fn exit_node_frame(node: &LayoutNode, chunk: &mut SceneChunk, layer_id: Laye
     if node.style.clip {
         chunk.push(SceneCommand::PopClip);
     }
-    if node.style.appearance.opacity < 1.0 {
+    if node.effective_opacity() < 1.0 {
         chunk.push(SceneCommand::PopOpacity);
     }
-    if node.transform != Transform::IDENTITY {
+    if node.effective_transform() != Transform::IDENTITY {
         chunk.push(SceneCommand::PopTransform);
     }
     if node.style.has_layer {
@@ -78,9 +80,14 @@ pub fn emit_node_content(node: &LayoutNode, chunk: &mut SceneChunk, text_ctx: &T
     }
 
     if node.style.appearance.fill.is_some() || node.style.appearance.stroke.is_some() {
+        // The enclosing PushOpacity already carries opacity, so the brush must not apply it twice.
+        let mut appearance = node.style.appearance.clone();
+        if node.effective_opacity() < 1.0 {
+            appearance.opacity = 1.0;
+        }
         chunk.push(SceneCommand::DrawRect {
             rect: local_rect,
-            appearance: node.style.appearance.clone(),
+            appearance,
         });
     }
 

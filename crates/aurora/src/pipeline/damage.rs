@@ -36,21 +36,17 @@ impl DamagePlan {
             return plan;
         }
 
-        // Fast Path 2: Paint-only mutations (no layout executed, O(M) evaluation)
+        // Fast Path 2: Paint-only mutations walk only the dirty subtrees (O(M*K)), pushing
+        // each node's previous and current bounds so a moved node damages both positions.
         if !laid_out {
             for &id in dirty_nodes {
                 if !arena.is_valid(id) {
                     continue;
                 }
-                let (old_bounds, subtree_bounds) = {
-                    let n = arena.get(id);
-                    (n.state.last_painted_bounds, n.state.subtree_bounds)
-                };
-                let has_children = !arena.children(id).is_empty();
-                if let Some(old) = old_bounds {
-                    let target = if has_children { subtree_bounds } else { old };
-                    plan.region.push(target);
-                }
+                let parent_tx = arena
+                    .parent(id)
+                    .map_or(Transform::IDENTITY, |p| arena.node_absolute_transform(p));
+                resolve_spatial_and_damage(arena, id, parent_tx, None, &mut plan.region);
             }
             return plan;
         }
@@ -91,14 +87,18 @@ fn resolve_spatial_and_damage(
             node.resolved_rect.x,
             node.resolved_rect.y,
         ));
-        if node.transform != Transform::IDENTITY {
-            tx = tx.multiply(&node.transform);
+        let local_tx = node.effective_transform();
+        if local_tx != Transform::IDENTITY {
+            tx = tx.multiply(&local_tx);
         }
         (tx, node.style.clip, node.resolved_rect)
     };
 
     let node_abs = node_tx.transform_point(Point::new(0.0, 0.0));
-    let visual_bounds = arena.get(id).compute_visual_bounds(node_abs, active_clip);
+    // Unclipped occupancy drives damage: a node leaving its clip must still clear its old pixels.
+    let full_bounds = arena.get(id).compute_visual_bounds(&node_tx, None);
+    // Visible extent under the active clip: bounds the subtree work a chunk has to rasterize.
+    let visual_bounds = arena.get(id).compute_visual_bounds(&node_tx, active_clip);
     let mut subtree_bounds = visual_bounds;
 
     let next_clip = if is_clip {
@@ -123,19 +123,19 @@ fn resolve_spatial_and_damage(
             || node.state.dirty.contains(DirtyFlags::LAYOUT));
 
     if let Some(old) = old_bounds {
-        if old != visual_bounds {
+        if old != full_bounds {
             damage.push(old);
-            damage.push(visual_bounds);
+            damage.push(full_bounds);
         } else if node.state.dirty.contains(DirtyFlags::PAINT) || is_text_mutation {
             let damage_target = if child_count > 0 {
                 subtree_bounds
             } else {
-                visual_bounds
+                full_bounds
             };
             damage.push(damage_target);
         }
     } else {
-        damage.push(visual_bounds);
+        damage.push(full_bounds);
     }
 
     node.state.subtree_bounds = subtree_bounds;

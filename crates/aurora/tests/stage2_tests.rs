@@ -156,7 +156,8 @@ fn test_visual_bounds_expansion_for_strokes_and_outer_shadows() {
     ];
 
     let abs_pos = Point::new(100.0, 200.0);
-    let bounds = node.compute_visual_bounds(abs_pos, None);
+    let tx = Transform::from_translation(abs_pos.x, abs_pos.y);
+    let bounds = node.compute_visual_bounds(&tx, None);
 
     // Visual bounds must expand past the base 100x50 rect
     assert!(bounds.x < 100.0, "Bounds must expand to the left for shadow pad");
@@ -166,7 +167,7 @@ fn test_visual_bounds_expansion_for_strokes_and_outer_shadows() {
 
     // When clamped by an ancestor clip boundary:
     let clip_box = ResolvedRect::new(100.0, 200.0, 100.0, 50.0);
-    let clamped_bounds = node.compute_visual_bounds(abs_pos, Some(clip_box));
+    let clamped_bounds = node.compute_visual_bounds(&tx, Some(clip_box));
     assert_eq!(
         clamped_bounds, clip_box,
         "Ancestor clip must strictly clamp visual bounds expansion"

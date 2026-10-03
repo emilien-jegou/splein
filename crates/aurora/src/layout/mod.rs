@@ -6,6 +6,7 @@ pub mod allocate_main;
 pub mod engine;
 pub mod group_measure;
 pub mod measure;
+pub mod min_size;
 pub mod report;
 
 pub use engine::{layout_node, layout_node_with_text};

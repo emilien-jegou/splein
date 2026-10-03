@@ -33,28 +33,24 @@ pub fn build_stacking_tree(
     arena: &TreeArena,
     parent_id: NodeId,
     current_ctx: &mut StackingContext,
-    parent_abs: Point,
+    parent_tx: Transform,
     count: &mut usize,
     context_bounds: &mut Vec<ResolvedRect>,
 ) {
     for &child_id in arena.children(parent_id) {
         let child = arena.get(child_id);
-        let child_abs = Point::new(
-            parent_abs.x + child.resolved_rect.x,
-            parent_abs.y + child.resolved_rect.y,
-        );
+        let child_tx = parent_tx.multiply(&Transform::from_translation(
+            child.resolved_rect.x,
+            child.resolved_rect.y,
+        ));
 
-        let creates_context = child.style.z_index != 0
-            || child.style.is_overlay
-            || child.style.appearance.opacity < 1.0
-            || child.transform != Transform::IDENTITY;
-
-        if creates_context {
+        if child.creates_stacking_context() {
             *count += 1;
-            // O(1) Zero-cost absolute bounds calculation using child_abs
+            // The chunk origin is the child's rendered box origin, before its own transform.
+            let child_origin = child_tx.transform_point(Point::ZERO);
             let abs_rect = ResolvedRect::new(
-                child_abs.x,
-                child_abs.y,
+                child_origin.x,
+                child_origin.y,
                 child.resolved_rect.width,
                 child.resolved_rect.height,
             );
@@ -65,12 +61,12 @@ pub fn build_stacking_tree(
             } else {
                 child.style.z_index
             };
-            let mut child_ctx = StackingContext::new(child_id, effective_z, child_abs);
+            let mut child_ctx = StackingContext::new(child_id, effective_z, child_origin);
             build_stacking_tree(
                 arena,
                 child_id,
                 &mut child_ctx,
-                child_abs,
+                child_tx.multiply(&child.effective_transform()),
                 count,
                 context_bounds,
             );
@@ -86,7 +82,7 @@ pub fn build_stacking_tree(
                 arena,
                 child_id,
                 current_ctx,
-                child_abs,
+                child_tx,
                 count,
                 context_bounds,
             );

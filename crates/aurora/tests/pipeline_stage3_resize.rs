@@ -2,7 +2,7 @@
 
 use aurora::dsl::*;
 use aurora::foundation::*;
-use aurora::runtime::Engine;
+use aurora::runtime::{Engine, FrameReport};
 
 #[test]
 fn test_3_9_window_grow_damages_exposed_strip_and_reports_preserved_rect() {
@@ -11,7 +11,7 @@ fn test_3_9_window_grow_damages_exposed_strip_and_reports_preserved_rect() {
     engine.frame();
 
     engine.resize(300, 200);
-    let (_, _, _, diag) = engine.frame();
+    let FrameReport { diagnostics: diag, .. } = engine.frame();
 
     assert_eq!(
         diag.spatial.preserved_canvas_rect,

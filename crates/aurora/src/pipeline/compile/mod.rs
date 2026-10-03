@@ -6,7 +6,7 @@ pub mod hierarchy;
 pub mod stacking;
 
 use crate::foundation::{DamageRegion, Point, ResolvedRect};
-use crate::pipeline::stage4_overlap::OverlapPlan;
+use crate::pipeline::overlap::OverlapPlan;
 use crate::scene::Scene;
 use crate::text::TextContext;
 use crate::tree::{NodeId, TreeArena};
@@ -66,9 +66,32 @@ pub fn compile_scene_instrumented(
     let mut stacking_contexts: usize = 1;
     let mut context_bounds: Vec<ResolvedRect> = Vec::new();
 
-    build_stacking_tree(arena, root, &mut root_stack, Point::ZERO, &mut stacking_contexts, &mut context_bounds);
+    let root_tx = arena.get(root).effective_transform();
+    build_stacking_tree(
+        arena,
+        root,
+        &mut root_stack,
+        root_tx,
+        &mut stacking_contexts,
+        &mut context_bounds,
+    );
     let (mut new_commands, mut cached_chunks) = (0, 0);
 
-    compile_stacking_context(arena, &root_stack, scene, text_ctx, damage, viewport, overlap, &mut new_commands, &mut cached_chunks);
-    (stacking_contexts, new_commands, cached_chunks, context_bounds)
+    compile_stacking_context(
+        arena,
+        &root_stack,
+        scene,
+        text_ctx,
+        damage,
+        viewport,
+        overlap,
+        &mut new_commands,
+        &mut cached_chunks,
+    );
+    (
+        stacking_contexts,
+        new_commands,
+        cached_chunks,
+        context_bounds,
+    )
 }

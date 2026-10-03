@@ -1,6 +1,8 @@
 // Single responsibility: Retained invalidation bitflags, layout caches, and dynamic bindings.
 
-use crate::foundation::ResolvedRect;
+use crate::foundation::{LayoutPresence, ResolvedRect};
+use crate::motion::transition::Transition;
+use crate::motion::MotionState;
 use crate::scene::SceneChunk;
 use crate::text::TextLayout;
 use crate::tree::binding::NodeBindings;
@@ -25,4 +27,12 @@ pub struct NodeState {
     pub cached_text_layout: Option<Arc<TextLayout>>,
     /// Retained Display List chunk for this node's stacking context (O(1) compile bypass).
     pub retained_chunk: Option<SceneChunk>,
+    /// Compositor overrides layered above declarative style.
+    pub motion: MotionState,
+    /// Interpolation applied when a bound property of this node changes.
+    pub transition: Option<Transition>,
+    /// Interpolation applied to this node's children when their layout rects change.
+    pub layout_transition: Option<Transition>,
+    /// Layout footprint this node presents to its parent.
+    pub presence: LayoutPresence,
 }

@@ -1,4 +1,4 @@
-// Single responsibility: Commits painted visual bounds after rasterization.
+// Single responsibility: Commits each node's compiled screen-space visual bounds back into the arena.
 
 use crate::foundation::{Point, ResolvedRect, Transform};
 use crate::tree::{NodeId, TreeArena};
@@ -34,12 +34,14 @@ fn commit_node_painted_bounds(
         node.resolved_rect.x,
         node.resolved_rect.y,
     ));
-    if node.transform != Transform::IDENTITY {
-        tx = tx.multiply(&node.transform);
+    let local_tx = node.effective_transform();
+    if local_tx != Transform::IDENTITY {
+        tx = tx.multiply(&local_tx);
     }
 
     let node_abs = tx.transform_point(Point::new(0.0, 0.0));
-    let visual_bounds = node.compute_visual_bounds(node_abs, active_clip);
+    // Stored unclipped: a node that leaves its clip must still remember where it last painted.
+    let visual_bounds = node.compute_visual_bounds(&tx, None);
 
     let next_clip = if node.style.clip {
         let box_rect = ResolvedRect::new(

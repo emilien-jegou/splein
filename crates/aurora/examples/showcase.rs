@@ -11,7 +11,6 @@ use aurora::app::AppExtension;
 use aurora::prelude::*;
 use aurora::reactive::ReactiveRuntime;
 use common::ExampleCli;
-use winit::event::WindowEvent;
 
 const DEFAULT_WIDTH: u32 = 1440;
 const DEFAULT_HEIGHT: u32 = 900;
@@ -81,7 +80,7 @@ fn build_ui(time_sig: Signal<f32>, counter_sig: Signal<u64>) -> impl IntoElement
                         ]),
                         text("AURORA CORE").size(15.0).weight(700).color(Color::WHITE),
                     )),
-                    
+
                     group().width(Size::fill()).height(1.0).fill(Color::hex(0x1A2234)).margin(Margin::y(12.0)),
 
                     // Sidebar Navigation Links

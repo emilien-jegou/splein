@@ -4,6 +4,7 @@ pub mod app;
 pub mod dsl;
 pub mod foundation;
 pub mod layout;
+pub mod motion;
 pub mod pipeline;
 pub mod prelude;
 pub mod reactive;

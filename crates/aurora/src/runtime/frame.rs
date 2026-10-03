@@ -1,4 +1,4 @@
-// Single responsibility: Orchestrates multi-stage frame layout, damage culling, and scene compilation.
+// Single responsibility: Orchestrates the per-frame pass sequence: layout, damage, overlap, compile, and bounds commit.
 
 use crate::foundation::{Constraints, DamageRegion, ResolvedRect};
 use crate::layout::LayoutResult;
@@ -11,9 +11,9 @@ use crate::runtime::{
 use crate::scene::Scene;
 use crate::tree::NodeId;
 
-/// Runs stages 1-5 across arena state, emitting compiled scene and telemetry.
+/// Runs the frame passes over arena state, emitting the compiled scene and telemetry.
 #[tracing::instrument(name = "Engine::frame", skip_all)]
-pub fn execute_frame_stages(
+pub fn run_frame_passes(
     scheduler: &mut FrameScheduler,
     root: NodeId,
     scene: &mut Scene,
@@ -25,18 +25,23 @@ pub fn execute_frame_stages(
 ) -> (crate::runtime::FrameStats, FrameDiagnostics) {
     let t_start = std::time::Instant::now();
 
+    scheduler.capture_flip(root, (w, h));
+    scheduler.step_motion();
+
     let t0 = std::time::Instant::now();
     let mut layout_res = LayoutResult::default();
     let stats = {
-        let _span = tracing::info_span!("Stage1_2::LayoutPass").entered();
+        let _span = tracing::info_span!("Pass::Layout").entered();
         scheduler.commit_frame(Constraints::tight(w as f32, h as f32), &mut layout_res)
     };
     let t_layout = t0.elapsed();
 
+    scheduler.apply_flip();
+
     let t1 = std::time::Instant::now();
     let removed = scheduler.arena.drain_removed_damage();
     let _plan = {
-        let _span = tracing::info_span!("Stage3::DamageAnalysis").entered();
+        let _span = tracing::info_span!("Pass::Damage").entered();
         let plan = DamagePlan::compute(
             &mut scheduler.arena,
             root,
@@ -52,14 +57,14 @@ pub fn execute_frame_stages(
     let t_spatial = t1.elapsed();
 
     let overlap = {
-        let _span = tracing::info_span!("Stage4::OverlapCulling").entered();
+        let _span = tracing::info_span!("Pass::Overlap").entered();
         OverlapPlan::compute(&scheduler.arena, root, frame_damage)
     };
 
     let viewport = ResolvedRect::new(0.0, 0.0, w as f32, h as f32);
     let t2 = std::time::Instant::now();
     let comp = {
-        let _span = tracing::info_span!("Stage5::DisplayListCompile").entered();
+        let _span = tracing::info_span!("Pass::Compile").entered();
         CompileResult::compile(
             &mut scheduler.arena,
             root,

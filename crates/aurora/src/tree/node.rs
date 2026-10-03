@@ -1,7 +1,7 @@
 // Single responsibility: Retained arena node aggregating style, geometry, and runtime state.
 
 use std::ops::{Deref, DerefMut};
-use crate::foundation::{Key, ResolvedRect, Size, Transform};
+use crate::foundation::{Key, Point, ResolvedRect, Size, Transform};
 use crate::tree::kind::NodeKind;
 use crate::tree::state::NodeState;
 use crate::tree::style::NodeStyle;
@@ -38,33 +38,95 @@ impl LayoutNode {
             && matches!(self.style.height, Size::Fixed(_))
     }
 
-    /// Computes the visual screen-space bounds including outer strokes, shadows, and ancestor clipping.
+    /// Effective transform composing declarative style with motion overrides, pivoted about the
+    /// node's centre so scale and rotation do not drift toward the top-left origin.
+    #[inline(always)]
+    pub fn effective_transform(&self) -> Transform {
+        let combined = self.state.motion.compose_transform(self.transform);
+        // Pure translation needs no pivot; skipping it also keeps it free of float drift.
+        let linear = Transform { tx: 0.0, ty: 0.0, ..combined };
+        if linear == Transform::IDENTITY {
+            return combined;
+        }
+        let (cx, cy) = (self.resolved_rect.width * 0.5, self.resolved_rect.height * 0.5);
+        Transform {
+            tx: combined.tx + cx - (combined.a * cx + combined.c * cy),
+            ty: combined.ty + cy - (combined.b * cx + combined.d * cy),
+            ..combined
+        }
+    }
+
+    /// Effective opacity composing declarative appearance with motion overrides.
+    #[inline(always)]
+    pub fn effective_opacity(&self) -> f32 {
+        self.state.motion.compose_opacity(self.style.appearance.opacity)
+    }
+
+    /// Whether the node must be isolated into its own stacking context.
+    #[inline]
+    pub fn creates_stacking_context(&self) -> bool {
+        self.style.z_index != 0
+            || self.style.is_overlay
+            || self.effective_opacity() < 1.0
+            || self.effective_transform() != Transform::IDENTITY
+    }
+
+    /// Axis-aligned box of a local rect projected through `tx`, used for screen-space bounds.
+    fn project(tx: &Transform, x: f32, y: f32, w: f32, h: f32) -> ResolvedRect {
+        let corners = [
+            Point::new(x, y),
+            Point::new(x + w, y),
+            Point::new(x, y + h),
+            Point::new(x + w, y + h),
+        ];
+        let (mut min_x, mut min_y) = (f32::MAX, f32::MAX);
+        let (mut max_x, mut max_y) = (f32::MIN, f32::MIN);
+        for corner in corners {
+            let p = tx.transform_point(corner);
+            min_x = min_x.min(p.x);
+            min_y = min_y.min(p.y);
+            max_x = max_x.max(p.x);
+            max_y = max_y.max(p.y);
+        }
+        ResolvedRect::new(min_x, min_y, max_x - min_x, max_y - min_y)
+    }
+
+    /// Computes the visual screen-space bounds projected through `tx`, with strokes,
+    /// shadows and ancestor clipping folded in.
     pub fn compute_visual_bounds(
         &self,
-        abs_pos: crate::foundation::Point,
+        tx: &Transform,
         active_clip: Option<ResolvedRect>,
     ) -> ResolvedRect {
         use crate::foundation::{ShadowKind, StrokeAlign};
 
-        let mut bounds = ResolvedRect::new(abs_pos.x, abs_pos.y, self.resolved_rect.width, self.resolved_rect.height);
-
-        if let Some(stroke) = &self.style.appearance.stroke {
-            let expand_px = match stroke.align {
+        let (w, h) = (self.resolved_rect.width, self.resolved_rect.height);
+        let stroke_pad = match &self.style.appearance.stroke {
+            Some(stroke) => match stroke.align {
                 StrokeAlign::Outside => stroke.width,
                 StrokeAlign::Center => stroke.width * 0.5,
                 StrokeAlign::Inside => 0.0,
-            };
-            bounds = bounds.expand(expand_px);
-        }
+            },
+            None => 0.0,
+        };
+
+        let mut bounds = Self::project(
+            tx,
+            -stroke_pad,
+            -stroke_pad,
+            w + 2.0 * stroke_pad,
+            h + 2.0 * stroke_pad,
+        );
 
         for shadow in &self.style.appearance.shadows {
             if shadow.kind == ShadowKind::Outer {
                 let pad = shadow.spread + 3.0 * shadow.blur;
-                let shadow_rect = ResolvedRect::new(
-                    abs_pos.x + shadow.offset_x - pad,
-                    abs_pos.y + shadow.offset_y - pad,
-                    self.resolved_rect.width + 2.0 * pad,
-                    self.resolved_rect.height + 2.0 * pad,
+                let shadow_rect = Self::project(
+                    tx,
+                    shadow.offset_x - pad,
+                    shadow.offset_y - pad,
+                    w + 2.0 * pad,
+                    h + 2.0 * pad,
                 );
                 bounds = bounds.union(&shadow_rect);
             }

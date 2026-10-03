@@ -1,10 +1,11 @@
 // Single responsibility: Generational arena managing node allocation, hierarchy, and invalidation.
 
-use crate::foundation::{Point, ResolvedRect, Transform};
+use crate::foundation::{Key, Point, ResolvedRect, Transform};
 use crate::tree::flags::DirtyFlags;
 use crate::tree::id::NodeId;
 use crate::tree::invalidation::mark_node_dirty;
 use crate::tree::node::LayoutNode;
+use crate::tree::registry::KeyRegistry;
 use smallvec::SmallVec;
 
 struct Slot {
@@ -21,6 +22,10 @@ pub struct TreeArena {
     free_indices: Vec<u32>,
     /// On-screen bounding boxes of nodes unmounted since the last paint pass.
     pub removed_damage: Vec<ResolvedRect>,
+    /// Stable key index used to reach retained nodes across frames.
+    keys: KeyRegistry,
+    /// Nodes whose children animate toward new layout rects.
+    layout_transitions: Vec<NodeId>,
 }
 
 impl TreeArena {
@@ -30,6 +35,8 @@ impl TreeArena {
             slots: Vec::new(),
             free_indices: Vec::new(),
             removed_damage: Vec::new(),
+            keys: KeyRegistry::new(),
+            layout_transitions: Vec::new(),
         }
     }
 
@@ -75,6 +82,8 @@ impl TreeArena {
             self.remove_internal(child, on_remove);
         }
         on_remove(id);
+        self.keys.unbind(id);
+        self.layout_transitions.retain(|&other| other != id);
 
         let slot = &mut self.slots[id.index as usize];
         if let Some(bounds) = slot.node.state.last_painted_bounds {
@@ -118,6 +127,45 @@ impl TreeArena {
     /// Marks a node dirty and propagates invalidation up to containing layout boundaries.
     pub fn mark_dirty(&mut self, node_id: NodeId, flags: DirtyFlags) {
         mark_node_dirty(self, node_id, flags);
+    }
+
+    /// Records a node's reconciliation key and indexes it for stable lookup.
+    pub fn bind_key(&mut self, key: Option<Key>, node: NodeId) {
+        self.get_mut(node).key = key.clone();
+        match key {
+            Some(key) => self.keys.bind(key, node),
+            None => self.keys.unbind(node),
+        }
+    }
+
+    /// Resolves a stable key to a retained node that is still alive.
+    pub fn node_for_key(&self, key: &Key) -> Option<NodeId> {
+        let id = self.keys.resolve(key)?;
+        self.is_valid(id).then_some(id)
+    }
+
+    /// Records a node whose children animate toward new layout rects.
+    pub fn note_layout_transition(&mut self, node: NodeId) {
+        if !self.layout_transitions.contains(&node) {
+            self.layout_transitions.push(node);
+        }
+    }
+
+    /// Drops a node's layout transition record.
+    pub fn forget_layout_transition(&mut self, node: NodeId) {
+        self.layout_transitions.retain(|&other| other != node);
+    }
+
+    /// Live nodes whose children animate toward new layout rects.
+    pub fn layout_transitions(&self) -> Vec<NodeId> {
+        if self.layout_transitions.is_empty() {
+            return Vec::new();
+        }
+        self.layout_transitions
+            .iter()
+            .copied()
+            .filter(|id| self.is_valid(*id))
+            .collect()
     }
 
     /// Attaches child nodes to a parent container.
@@ -168,8 +216,9 @@ impl TreeArena {
                 node.resolved_rect.x,
                 node.resolved_rect.y,
             ));
-            if node.transform != Transform::IDENTITY {
-                tx = tx.multiply(&node.transform);
+            let local_tx = node.effective_transform();
+            if local_tx != Transform::IDENTITY {
+                tx = tx.multiply(&local_tx);
             }
         }
         tx

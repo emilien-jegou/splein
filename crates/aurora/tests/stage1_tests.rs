@@ -24,7 +24,7 @@ fn test_paint_mutation_fast_path_skips_layout() {
     // Mutate paint property: layout must be bypassed
     color.set(Color::WHITE);
 
-    let (stats, _, _, _) = engine.frame();
+    let FrameReport { stats, .. } = engine.frame();
     assert_eq!(stats.nodes_dirtied, 1);
     assert!(!stats.laid_out, "Paint-only changes must skip layout");
     assert!(stats.flags.contains(DirtyFlags::PAINT));
@@ -45,7 +45,7 @@ fn test_no_op_signal_writes_generate_zero_dirty_flags() {
     // Setting identical value must be suppressed
     width.set(100.0);
 
-    let (stats, _, _, _) = engine.frame();
+    let FrameReport { stats, .. } = engine.frame();
     assert_eq!(stats.nodes_dirtied, 0);
     assert!(!stats.laid_out);
     assert_eq!(stats.flags, DirtyFlags::NONE);
@@ -93,18 +93,18 @@ fn test_dynamic_branching_resubscription_with_observer_guard() {
 
     // Flip to branch B
     condition.set(true);
-    let (stats_flip, _, _, _) = engine.frame();
+    let FrameReport { stats: stats_flip, .. } = engine.frame();
     assert!(stats_flip.laid_out);
 
     // Branch B is now active: must trigger layout
     branch_b.set(180.0);
-    let (stats_b, _, _, _) = engine.frame();
+    let FrameReport { stats: stats_b, .. } = engine.frame();
     assert_eq!(stats_b.nodes_dirtied, 1);
     assert!(stats_b.laid_out);
 
     // Branch A is now dormant: must be ignored
     branch_a.set(999.0);
-    let (stats_a, _, _, _) = engine.frame();
+    let FrameReport { stats: stats_a, .. } = engine.frame();
     assert_eq!(stats_a.nodes_dirtied, 0);
     assert!(!stats_a.laid_out);
 }
@@ -125,7 +125,7 @@ fn test_paint_mutation_preserves_layout_caches() {
     engine.frame();
 
     opacity.set(0.5);
-    let (stats, _, _, _) = engine.frame();
+    let FrameReport { stats, .. } = engine.frame();
     assert!(!stats.laid_out);
     assert!(stats.flags.contains(DirtyFlags::PAINT));
 }
@@ -168,7 +168,7 @@ fn test_strict_2d_containment_isolates_subtree_layout() {
 
     child_width.set(80.0);
 
-    let (stats, _, _, _) = engine.frame();
+    let FrameReport { stats, .. } = engine.frame();
     assert!(stats.laid_out);
     assert_eq!(stats.nodes_dirtied, 1);
     assert!(stats.flags.contains(DirtyFlags::LAYOUT));
@@ -190,7 +190,7 @@ fn test_dimension_mutation_escalates_to_parent_boundary() {
 
     width.set(120.0);
 
-    let (stats, _, _, _) = engine.frame();
+    let FrameReport { stats, .. } = engine.frame();
     assert!(stats.laid_out);
     assert!(stats.flags.contains(DirtyFlags::LAYOUT));
 }
@@ -215,7 +215,7 @@ fn test_multiple_independent_boundaries_execute_without_root() {
     w1.set(60.0);
     w2.set(70.0);
 
-    let (stats, _, _, _) = engine.frame();
+    let FrameReport { stats, .. } = engine.frame();
     assert!(stats.laid_out);
     assert_eq!(stats.nodes_dirtied, 2);
 }
@@ -240,7 +240,7 @@ fn test_bulk_update_coalesces_to_root_pass() {
         s.set(50.0 + i as f32);
     }
 
-    let (stats, _, _, _) = engine.frame();
+    let FrameReport { stats, .. } = engine.frame();
     assert!(stats.laid_out);
     assert_eq!(stats.nodes_dirtied, 20);
 }

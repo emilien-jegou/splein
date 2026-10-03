@@ -1,7 +1,7 @@
 // Single responsibility: Dynamic property evaluation closures on a layout node.
 
 use std::rc::Rc;
-use crate::foundation::{Fill, Shadow, Size, Transform};
+use crate::foundation::{Fill, LayoutPresence, Shadow, Size, Transform};
 
 /// Inner storage for dynamic property evaluators.
 #[derive(Default, Clone)]
@@ -13,6 +13,7 @@ pub struct DynamicBindings {
     pub text: Option<Rc<dyn Fn() -> String>>,
     pub transform: Option<Rc<dyn Fn() -> Transform>>,
     pub shadows: Option<Rc<dyn Fn() -> Vec<Shadow>>>,
+    pub presence: Option<Rc<dyn Fn() -> LayoutPresence>>,
 }
 
 impl DynamicBindings {
@@ -91,6 +92,16 @@ impl NodeBindings {
         if let Some(t) = &b.text {
             let fresh = t();
             if *content != fresh { *content = fresh; return true; }
+        }
+        false
+    }
+
+    /// Re-evaluates the bound layout footprint, returning true if changed.
+    pub fn update_presence(&self, presence: &mut LayoutPresence) -> bool {
+        let b = match &self.inner { Some(b) => b, None => return false };
+        if let Some(p) = &b.presence {
+            let fresh = p();
+            if *presence != fresh { *presence = fresh; return true; }
         }
         false
     }

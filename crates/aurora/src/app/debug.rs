@@ -1,4 +1,4 @@
-// Single responsibility: Multi-stage visual inspector and telemetry extension state manager.
+// Single responsibility: Visual inspector state and telemetry store for the debugger extension.
 
 use std::time::Instant;
 use winit::event::WindowEvent;
@@ -15,7 +15,7 @@ use crate::foundation::{DamageRegion, ResolvedRect};
 use crate::runtime::FrameDiagnostics;
 use crate::text::TextContext;
 
-/// Visual inspection modes mapping to pipeline stages.
+/// Visual inspection modes, one per frame pass whose output they visualize.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum InspectorMode {
     /// No visual inspector overlays.

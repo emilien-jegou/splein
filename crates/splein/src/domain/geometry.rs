@@ -42,6 +42,20 @@ impl Aabb {
         Self { min: p, max: p }
     }
 
+    /// Normalized rect spanned by two corner points.
+    pub fn span(a: Vec2, b: Vec2) -> Self {
+        Self::new(
+            Vec2::new(a.x.min(b.x), a.y.min(b.y)),
+            Vec2::new(a.x.max(b.x), a.y.max(b.y)),
+        )
+    }
+
+    /// Expands self to include `other`.
+    pub fn union(&mut self, other: Aabb) {
+        self.expand_with_point(other.min);
+        self.expand_with_point(other.max);
+    }
+
     pub fn expand_with_point(&mut self, p: Vec2) {
         self.min.x = self.min.x.min(p.x);
         self.min.y = self.min.y.min(p.y);
@@ -62,6 +76,48 @@ impl Aabb {
         self.min.y += delta.y;
         self.max.x += delta.x;
         self.max.y += delta.y;
+    }
+}
+
+/// Hit radius around a selection handle anchor.
+pub const HANDLE_HIT_RADIUS: f32 = 6.0;
+
+/// One of the eight resize handles around a selection rect.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Handle {
+    Nw,
+    Ne,
+    Sw,
+    Se,
+    N,
+    S,
+    E,
+    W,
+}
+
+impl Handle {
+    /// Anchor point of every handle on a rect, corners first.
+    pub fn anchors(rect: Aabb) -> [(Handle, Vec2); 8] {
+        let cx = (rect.min.x + rect.max.x) * 0.5;
+        let cy = (rect.min.y + rect.max.y) * 0.5;
+        [
+            (Handle::Nw, Vec2::new(rect.min.x, rect.min.y)),
+            (Handle::Ne, Vec2::new(rect.max.x, rect.min.y)),
+            (Handle::Sw, Vec2::new(rect.min.x, rect.max.y)),
+            (Handle::Se, Vec2::new(rect.max.x, rect.max.y)),
+            (Handle::N, Vec2::new(cx, rect.min.y)),
+            (Handle::S, Vec2::new(cx, rect.max.y)),
+            (Handle::W, Vec2::new(rect.min.x, cy)),
+            (Handle::E, Vec2::new(rect.max.x, cy)),
+        ]
+    }
+
+    /// The handle whose anchor lies within `HANDLE_HIT_RADIUS` of `pos`, if any.
+    pub fn hit(pos: Vec2, rect: Aabb) -> Option<Handle> {
+        Self::anchors(rect)
+            .into_iter()
+            .find(|(_, anchor)| anchor.distance(pos) <= HANDLE_HIT_RADIUS)
+            .map(|(handle, _)| handle)
     }
 }
 
@@ -194,10 +250,6 @@ impl MidpointSpline {
         }
 
         final_segments
-    }
-
-    pub fn samples(&self) -> &[InputSample] {
-        &self.history
     }
 }
 

@@ -2,7 +2,7 @@
 
 use crate::app::painter::OverlayPainter;
 use crate::foundation::{DamageRegion, ResolvedRect};
-use crate::runtime::FrameDiagnostics;
+use crate::runtime::{Engine, FrameDiagnostics};
 use crate::text::TextContext;
 use winit::event::WindowEvent;
 
@@ -21,6 +21,11 @@ pub struct OverlayCaps {
 pub trait AppExtension {
     /// Handles native window input events; returns true if redraw requested.
     fn on_event(&mut self, _event: &WindowEvent) -> bool {
+        false
+    }
+
+    /// Runs before each frame with engine access; returns true if redraw requested.
+    fn on_update(&mut self, _engine: &mut Engine) -> bool {
         false
     }
 

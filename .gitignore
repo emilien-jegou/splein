@@ -28,6 +28,7 @@
 !crates/aurora/tests/**/*
 !crates/aurora/examples/
 !crates/aurora/examples/**/*
+!crates/aurora/*md
 
 !docs/
 !docs/**/*

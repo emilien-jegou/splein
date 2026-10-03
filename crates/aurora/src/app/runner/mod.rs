@@ -62,7 +62,10 @@ pub fn run_event_loop(
                         redraw_pending = true;
                     }
                     WindowEvent::RedrawRequested => {
-                        redraw_pending = false;
+                        let mut wants_redraw = false;
+                        for ext in extensions.iter_mut() {
+                            wants_redraw |= ext.on_update(&mut engine);
+                        }
                         let compute_dur = present_one(
                             &mut engine,
                             &mut *backend,
@@ -71,6 +74,7 @@ pub fn run_event_loop(
                         );
                         avg_compute = avg_compute.mul_f32(0.8) + compute_dur.mul_f32(0.2);
                         last_present = Instant::now();
+                        redraw_pending = wants_redraw || engine.has_active_motion();
                     }
                     _ => {}
                 }

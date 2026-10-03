@@ -2,7 +2,7 @@
 
 use aurora::dsl::*;
 use aurora::foundation::*;
-use aurora::runtime::Engine;
+use aurora::runtime::{Engine, FrameReport};
 
 #[test]
 fn test_5_1_idle_frame_emits_zero_new_commands() {
@@ -13,7 +13,7 @@ fn test_5_1_idle_frame_emits_zero_new_commands() {
     engine.frame(); // Warmup frame
 
     // Second consecutive frame with zero changes
-    let (stats, _, _, diag) = engine.frame();
+    let FrameReport { stats, diagnostics: diag, .. } = engine.frame();
 
     assert!(!stats.laid_out, "Scenario 5.1: Idle frame does not lay out");
     assert_eq!(
@@ -32,7 +32,7 @@ fn test_5_2_offscreen_nodes_emit_zero_commands_when_culled() {
         group().width(100.0).height(100.0).fill(Color::RED),
         group().margin(Margin::top(900.0)).width(100.0).height(100.0).fill(Color::BLUE),
     ]));
-    let (_, _, _, diag) = engine.frame();
+    let FrameReport { diagnostics: diag, .. } = engine.frame();
 
     // Only the visible box should emit drawing commands
     assert!(diag.compile.commands_emitted <= 2, "Scenario 5.2: Offscreen node commands are culled");
@@ -50,7 +50,7 @@ fn test_5_4_offscreen_node_with_shadow_reaching_onscreen_is_compiled() {
             .fill(Color::BLACK)
             .shadows([Shadow::outer(0.0, -30.0, 10.0, Color::BLACK)]),
     ]));
-    let (_, _, _, diag) = engine.frame();
+    let FrameReport { diagnostics: diag, .. } = engine.frame();
 
     assert!(
         diag.compile.commands_emitted > 0,

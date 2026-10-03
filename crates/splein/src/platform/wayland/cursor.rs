@@ -138,7 +138,7 @@ impl CursorManager {
 
         let radius = match tool {
             ActiveTool::Highlighter => 10.0,
-            ActiveTool::Eraser => 9.0,
+            ActiveTool::Eraser => 18.0,
             _ => 3.5,
         };
 

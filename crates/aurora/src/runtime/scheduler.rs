@@ -4,8 +4,11 @@ use smallvec::SmallVec;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::foundation::{Constraints, Point};
+use crate::foundation::{Constraints, Point, ResolvedRect};
 use crate::layout::{layout_node_with_text, LayoutResult};
+use crate::motion::vector::MotionVector;
+use crate::motion::MotionRuntime;
+use crate::motion::MotionState;
 use crate::reactive::{Observer, ReactiveRuntime, SubscriberId};
 use crate::runtime::boundary::{collect_layout_boundaries, prune_nested_boundaries};
 use crate::text::TextContext;
@@ -46,6 +49,12 @@ pub struct FrameScheduler {
     pub text_ctx: TextContext,
     pub root: NodeId,
     pub dirty_nodes_this_frame: SmallVec<[NodeId; 16]>,
+    /// Node updates applied outside reactive drainage, awaiting the next frame pass.
+    pub pending_updates: SmallVec<[(NodeId, DirtyFlags); 4]>,
+    /// Clock and controllers driving compositor motion.
+    pub motion: MotionRuntime,
+    /// Child rects captured before the current layout pass, for FLIP deltas.
+    pub flip_snapshot: SmallVec<[(NodeId, NodeId, ResolvedRect); 16]>,
     prev_constraints: Option<Constraints>,
 }
 
@@ -63,6 +72,9 @@ impl FrameScheduler {
             text_ctx: TextContext::new(),
             root,
             dirty_nodes_this_frame: SmallVec::new(),
+            pending_updates: SmallVec::new(),
+            motion: MotionRuntime::new(),
+            flip_snapshot: SmallVec::new(),
             prev_constraints: None,
         }
     }
@@ -74,9 +86,15 @@ impl FrameScheduler {
         layout_result: &mut LayoutResult,
     ) -> FrameStats {
         self.dirty_nodes_this_frame.clear();
+        let mut external_flags = DirtyFlags::NONE;
+        for (node, flags) in std::mem::take(&mut self.pending_updates) {
+            self.dirty_nodes_this_frame.push(node);
+            external_flags |= flags;
+        }
 
         let mut frame_flags = self.check_constraint_change(window_constraints);
         frame_flags |= self.drain_reactive_mutations();
+        frame_flags |= external_flags;
 
         self.dirty_nodes_this_frame
             .sort_unstable_by_key(|n| n.index);
@@ -152,31 +170,54 @@ impl FrameScheduler {
     ) -> Option<DirtyFlags> {
         let bindings = self.arena.get(node).state.bindings.clone();
         let mut effective = DirtyFlags::NONE;
-        let _guard = ObserverGuard::new(&self.runtime, Observer::Subscriber(sub));
+        let redirected = {
+            // The guard covers only binding evaluation, so motion can retarget afterwards.
+            let _guard = ObserverGuard::new(&self.runtime, Observer::Subscriber(sub));
 
-        if flags.contains(DirtyFlags::MEASURE) || flags.contains(DirtyFlags::LAYOUT) {
-            let n = self.arena.get_mut(node);
-            let layout_changed = bindings.update_layout(&mut n.style.width, &mut n.style.height);
-            let text_changed = match n.kind {
-                NodeKind::Text(ref mut t) => bindings.update_text(&mut t.content),
-                _ => false,
-            };
-            let tx_changed = bindings.update_transform(&mut n.transform);
+            if flags.contains(DirtyFlags::MEASURE) || flags.contains(DirtyFlags::LAYOUT) {
+                let n = self.arena.get_mut(node);
+                let layout_changed = bindings.update_layout(&mut n.style.width, &mut n.style.height);
+                let text_changed = match n.kind {
+                    NodeKind::Text(ref mut t) => bindings.update_text(&mut t.content),
+                    _ => false,
+                };
+                let presence_changed = bindings.update_presence(&mut n.state.presence);
 
-            if layout_changed || text_changed || tx_changed {
-                effective.insert(flags & (DirtyFlags::MEASURE | DirtyFlags::LAYOUT));
+                if layout_changed || text_changed || presence_changed {
+                    effective.insert(flags & (DirtyFlags::MEASURE | DirtyFlags::LAYOUT));
+                }
             }
-        }
 
-        if flags.contains(DirtyFlags::PAINT) {
-            let n = self.arena.get_mut(node);
-            if bindings.update_paint(
-                &mut n.style.appearance.fill,
-                &mut n.style.appearance.opacity,
-                &mut n.style.appearance.shadows,
-            ) {
-                effective.insert(DirtyFlags::PAINT);
+            let mut redirect = None;
+            if flags.contains(DirtyFlags::PAINT) {
+                let snapshot = {
+                    let n = self.arena.get(node);
+                    MotionVector::from_state(&MotionState {
+                        transform: n.transform,
+                        opacity: n.style.appearance.opacity,
+                    })
+                };
+                let n = self.arena.get_mut(node);
+                let tx_changed = bindings.update_transform(&mut n.transform);
+                let paint_changed = bindings.update_paint(
+                    &mut n.style.appearance.fill,
+                    &mut n.style.appearance.opacity,
+                    &mut n.style.appearance.shadows,
+                );
+                let opacity_changed = n.style.appearance.opacity != snapshot.opacity;
+
+                if tx_changed || opacity_changed {
+                    redirect = Some((snapshot, tx_changed, opacity_changed));
+                }
+                if tx_changed || paint_changed {
+                    effective.insert(DirtyFlags::PAINT);
+                }
             }
+            redirect
+        };
+
+        if let Some((snapshot, tx_changed, opacity_changed)) = redirected {
+            self.redirect_change(node, snapshot, tx_changed, opacity_changed);
         }
 
         if effective.is_empty() {

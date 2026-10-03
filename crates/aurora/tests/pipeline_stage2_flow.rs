@@ -2,7 +2,7 @@
 
 use aurora::dsl::*;
 use aurora::foundation::*;
-use aurora::runtime::Engine;
+use aurora::runtime::{Engine, FrameReport};
 
 #[test]
 fn test_2_10_absolute_element_does_not_affect_sibling_flow() {
@@ -22,11 +22,11 @@ fn test_2_10_absolute_element_does_not_affect_sibling_flow() {
     );
     engine.frame();
 
-    let (stats, _, _, diag) = engine.frame();
+    let FrameReport { diagnostics: diag, .. } = engine.frame();
     assert_eq!(diag.compile.commands_emitted, 0);
 
     abs_top.set(50.0);
-    let (stats, _, _, diag) = engine.frame();
+    let FrameReport { stats, diagnostics: diag, .. } = engine.frame();
     assert!(!stats.laid_out || diag.layout.cached_nodes.iter().any(|r| r.width == 100.0));
 }
 
@@ -45,7 +45,7 @@ fn test_2_11_box_in_boxed_re_render_keeps_outer_box_cached() {
     engine.frame();
 
     inner_sig.set(80.0);
-    let (stats, _, _, diag) = engine.frame();
+    let FrameReport { stats, diagnostics: diag, .. } = engine.frame();
 
     assert!(stats.laid_out);
     assert!(!diag

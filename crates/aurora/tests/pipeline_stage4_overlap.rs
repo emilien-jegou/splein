@@ -2,7 +2,7 @@
 
 use aurora::dsl::*;
 use aurora::foundation::*;
-use aurora::runtime::Engine;
+use aurora::runtime::{Engine, FrameReport};
 
 #[test]
 fn test_4_1_underlying_mutation_forces_repaint_of_overlapping_clean_sibling() {
@@ -60,7 +60,7 @@ fn test_4_5_distant_clean_node_is_excluded_from_repaint() {
     engine.frame();
 
     color_a.set(Color::GREEN);
-    let (_, _, _, diag) = engine.frame();
+    let FrameReport { diagnostics: diag, .. } = engine.frame();
 
     let box_c_rect = ResolvedRect::new(500.0, 0.0, 100.0, 100.0);
     assert!(

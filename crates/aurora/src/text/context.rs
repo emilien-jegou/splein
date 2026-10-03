@@ -6,6 +6,7 @@ use crate::text::config::TextConfig;
 use crate::text::cosmic::CosmicTextEngine;
 use crate::text::glyph::GlyphKey;
 use crate::text::layout::TextLayout;
+use crate::text::min_content;
 use crate::text::shaper::{TextShapeParams, TextShaper};
 use cosmic_text::SwashCache;
 use std::sync::{Arc, Mutex};
@@ -88,6 +89,15 @@ impl TextContext {
             weight: config.weight,
             constraints,
         })
+    }
+
+    /// Widest unbreakable segment of a run: its min-content inline size, i.e. CSS `min-width: auto`.
+    ///
+    /// Derived from the unbounded layout, which `Size::Fit` text already shapes and caches, so
+    /// measuring the floor costs no extra shaping pass.
+    pub fn min_inline_width(&self, config: &TextConfig) -> f32 {
+        let layout = self.shape_config(config, Constraints::UNCONSTRAINED);
+        min_content::min_inline_width(&config.content, &layout.lines)
     }
 
     /// Rasterizes a glyph by opaque key and invokes consumer closure with bitmap data.

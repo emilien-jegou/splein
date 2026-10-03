@@ -2,7 +2,7 @@
 
 use aurora::dsl::*;
 use aurora::foundation::*;
-use aurora::runtime::Engine;
+use aurora::runtime::{Engine, FrameReport};
 
 #[test]
 fn test_2_1_fixed_child_hits_cache_while_fill_child_recomputes() {
@@ -14,7 +14,7 @@ fn test_2_1_fixed_child_hits_cache_while_fill_child_recomputes() {
     engine.frame();
 
     engine.resize(150, 100);
-    let (_, _, _, diag) = engine.frame();
+    let FrameReport { diagnostics: diag, .. } = engine.frame();
 
     assert!(diag.layout.laid_out);
     assert_eq!(diag.layout.recomputed_nodes.len(), 1, "Scenario 2.1: Only B is recomputed");
@@ -32,7 +32,7 @@ fn test_2_2_moved_sibling_does_not_remeasure() {
     engine.frame();
 
     engine.resize(300, 100);
-    let (_, _, _, diag) = engine.frame();
+    let FrameReport { diagnostics: diag, .. } = engine.frame();
 
     let cached_c = diag
         .layout
@@ -53,7 +53,7 @@ fn test_2_3_text_in_fixed_container_skips_reshaping_on_window_resize() {
     engine.frame();
 
     engine.resize(300, 100);
-    let (_, _, _, diag) = engine.frame();
+    let FrameReport { diagnostics: diag, .. } = engine.frame();
 
     assert!(diag.layout.cached_nodes.iter().any(|r| r.width == 50.0));
 }
@@ -65,7 +65,7 @@ fn test_2_4_height_only_resize_never_reshapes_single_line_text() {
     engine.frame();
 
     engine.resize(200, 200);
-    let (_, _, _, diag) = engine.frame();
+    let FrameReport { diagnostics: diag, .. } = engine.frame();
 
     assert!(diag.layout.cached_nodes.len() >= 1);
 }
@@ -84,7 +84,7 @@ fn test_2_5_clipped_fixed_boundary_isolates_layout_to_boundary_only() {
     engine.frame();
 
     count.set("1".to_string());
-    let (_, _, _, diag) = engine.frame();
+    let FrameReport { diagnostics: diag, .. } = engine.frame();
 
     assert!(diag.layout.laid_out);
     assert_eq!(diag.layout.recomputed_nodes.len(), 1, "Scenario 2.5: Only boundary node laid out");
@@ -104,7 +104,7 @@ fn test_2_6_disjoint_boundaries_both_dirty_execute_independently() {
 
     w1.set(40.0);
     w2.set(40.0);
-    let (_, _, _, diag) = engine.frame();
+    let FrameReport { diagnostics: diag, .. } = engine.frame();
 
     assert_eq!(diag.layout.recomputed_nodes.len(), 2, "Scenario 2.6: Both boundaries recomputed");
 }
@@ -127,7 +127,7 @@ fn test_2_7_nested_dirty_boundaries_deduplicate_to_outer_boundary() {
 
     sig_outer.set(90.0);
     sig_inner.set(50.0);
-    let (_, _, _, diag) = engine.frame();
+    let FrameReport { diagnostics: diag, .. } = engine.frame();
 
     assert!(diag.layout.laid_out);
     assert_eq!(diag.layout.recomputed_nodes.len(), 1, "Scenario 2.7: Pruned to 1 outer boundary");
@@ -145,7 +145,7 @@ fn test_2_8_boundary_escalates_to_parent_when_fixed_changes_to_fit() {
     engine.frame();
 
     size_intent.set(Size::Fit);
-    let (stats, _, _, _) = engine.frame();
+    let FrameReport { stats, .. } = engine.frame();
 
     assert!(stats.laid_out, "Scenario 2.8: Loss of fixed constraint escalates layout");
 }
@@ -163,7 +163,7 @@ fn test_2_9_boundary_relayout_uses_exact_parent_constraints() {
     engine.frame();
 
     inner_w.set(80.0);
-    let (_, _, _, diag) = engine.frame();
+    let FrameReport { diagnostics: diag, .. } = engine.frame();
 
     assert_eq!(diag.layout.recomputed_nodes.len(), 1);
     assert_eq!(diag.layout.recomputed_nodes[0], ResolvedRect::new(0.0, 0.0, 250.0, 250.0));

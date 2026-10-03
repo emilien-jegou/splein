@@ -3,7 +3,7 @@
 use aurora::dsl::*;
 use aurora::foundation::*;
 use aurora::reactive::*;
-use aurora::runtime::Engine;
+use aurora::runtime::{Engine, FrameReport};
 use aurora::tree::DirtyFlags;
 
 #[test]
@@ -14,7 +14,7 @@ fn test_1_1_fill_change_sets_paint_only_and_bypasses_layout() {
     engine.frame();
 
     fill.set(Color::BLUE);
-    let (stats, _, _, diag) = engine.frame();
+    let FrameReport { stats, diagnostics: diag, .. } = engine.frame();
 
     assert_eq!(stats.flags, DirtyFlags::PAINT);
     assert!(
@@ -42,7 +42,7 @@ fn test_1_2_opacity_and_shadow_color_are_paint_only() {
 
     // 1. Opacity mutation
     opacity.set(0.5);
-    let (stats_opacity, _, _, _) = engine.frame();
+    let FrameReport { stats: stats_opacity, .. } = engine.frame();
     assert_eq!(stats_opacity.flags, DirtyFlags::PAINT);
     assert!(
         !stats_opacity.laid_out,
@@ -51,7 +51,7 @@ fn test_1_2_opacity_and_shadow_color_are_paint_only() {
 
     // 2. Shadow color mutation
     shadow_color.set(Color::rgba(1.0, 0.0, 0.0, 0.5));
-    let (stats_shadow, _, _, _) = engine.frame();
+    let FrameReport { stats: stats_shadow, .. } = engine.frame();
     assert_eq!(stats_shadow.flags, DirtyFlags::PAINT);
     assert!(
         !stats_shadow.laid_out,
@@ -60,7 +60,7 @@ fn test_1_2_opacity_and_shadow_color_are_paint_only() {
 }
 
 #[test]
-fn test_1_3_transform_sets_layout_only_and_skips_measure() {
+fn test_1_3_transform_sets_paint_only_and_skips_layout() {
     let mut engine = Engine::headless(400, 400);
     let offset_x = engine.signal(0.0f32);
     let ox = offset_x.clone();
@@ -74,12 +74,17 @@ fn test_1_3_transform_sets_layout_only_and_skips_measure() {
     engine.frame();
 
     offset_x.set(10.0);
-    let (stats, _, _, _) = engine.frame();
+    let FrameReport { stats, diagnostics: diag, .. } = engine.frame();
 
-    assert!(stats.flags.contains(DirtyFlags::LAYOUT));
+    assert_eq!(
+        stats.flags,
+        DirtyFlags::PAINT,
+        "Scenario 1.3: Transform invalidates paint only"
+    );
+    assert!(!stats.laid_out, "Scenario 1.3: Transform never reflows");
     assert!(
-        !stats.flags.contains(DirtyFlags::MEASURE),
-        "Scenario 1.3: Transform skips measure"
+        diag.layout.recomputed_nodes.is_empty(),
+        "Scenario 1.3: Transform recomputes no layout nodes"
     );
 }
 
@@ -91,7 +96,7 @@ fn test_1_4_text_content_change_triggers_measure_without_reconcile() {
     engine.frame();
 
     content.set("50".to_string());
-    let (stats, _, _, _) = engine.frame();
+    let FrameReport { stats, .. } = engine.frame();
 
     assert!(
         stats.flags.contains(DirtyFlags::MEASURE),
@@ -115,7 +120,7 @@ fn test_1_5_child_structural_mutation_forces_reconciliation() {
             .width(200.0).height(200.0)
             .children([group().width(50.0).height(50.0), group().width(50.0).height(50.0)]),
     );
-    let (stats, _, _, _) = engine.frame();
+    let FrameReport { stats, .. } = engine.frame();
 
     assert!(
         stats.laid_out,
@@ -135,7 +140,7 @@ fn test_1_6_identical_property_mutation_suppresses_invalidation() {
     engine.frame();
 
     width.set(100.0);
-    let (stats, _, _, diag) = engine.frame();
+    let FrameReport { stats, diagnostics: diag, .. } = engine.frame();
 
     assert_eq!(
         stats.flags,

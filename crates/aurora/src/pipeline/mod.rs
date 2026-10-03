@@ -1,11 +1,15 @@
-// Single responsibility: Module boundary and re-exports for the layout-to-scene pipeline stages.
+// Single responsibility: Module boundary and re-exports for the frame passes between layout and rasterization.
+//
+// A frame runs as four ordered domains: `layout` places nodes, `pipeline` turns retained state into a
+// display list (damage, then overlap, then compile, then bounds), `render` rasterizes that list, and
+// `app` presents the pixels to the OS surface. Passes below are declared in execution order.
 
-pub mod stage3_damage;
-pub mod stage4_overlap;
-pub mod stage5_compile;
-pub mod stage6_bounds;
+pub mod bounds;
+pub mod compile;
+pub mod damage;
+pub mod overlap;
 
-pub use stage3_damage::DamagePlan;
-pub use stage4_overlap::OverlapPlan;
-pub use stage5_compile::{compile_scene_instrumented, CompileResult};
-pub use stage6_bounds::commit_painted_bounds;
+pub use bounds::commit_painted_bounds;
+pub use compile::{compile_scene_instrumented, CompileResult};
+pub use damage::DamagePlan;
+pub use overlap::OverlapPlan;

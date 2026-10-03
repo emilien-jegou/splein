@@ -3,6 +3,7 @@
 use crate::dsl::component::IntoElement;
 use crate::dsl::element::{Element, IntoChildList};
 use crate::foundation::*;
+use crate::motion::{Spring, Transition, Tween};
 use crate::reactive::prop::{DynamicProp, IntoProp};
 
 /// Declarative flex container builder with reactive properties and styling modifiers.
@@ -25,6 +26,9 @@ pub struct GroupDef {
     pub z_index: i32,
     pub is_overlay: bool,
     pub has_layer: bool,
+    pub transition: Option<Transition>,
+    pub layout_transition: Option<Transition>,
+    pub presence: Option<DynamicProp<LayoutPresence>>,
     pub children: Vec<Element>,
 }
 
@@ -48,6 +52,9 @@ pub fn group() -> GroupDef {
         z_index: 0,
         is_overlay: false,
         has_layer: false,
+        transition: None,
+        layout_transition: None,
+        presence: None,
         children: Vec::new(),
     }
 }
@@ -140,6 +147,26 @@ impl GroupDef {
     }
     pub fn overlay(mut self, on: bool) -> Self {
         self.is_overlay = on;
+        self
+    }
+    /// Interpolates bound property changes over a fixed duration.
+    pub fn animate(mut self, tween: Tween) -> Self {
+        self.transition = Some(Transition::Timed(tween));
+        self
+    }
+    /// Settles bound property changes with physics instead of a fixed duration.
+    pub fn spring(mut self, spring: Spring) -> Self {
+        self.transition = Some(Transition::Spring(spring));
+        self
+    }
+    /// Sets the layout footprint this view presents to its parent.
+    pub fn layout_presence<P: IntoProp<LayoutPresence>>(mut self, p: P) -> Self {
+        self.presence = Some(p.into_prop());
+        self
+    }
+    /// Springs children toward their new layout rects whenever their boxes change.
+    pub fn layout_transition(mut self, transition: Transition) -> Self {
+        self.layout_transition = Some(transition);
         self
     }
     pub fn children<C: IntoChildList>(mut self, c: C) -> Self {

@@ -1,3 +1,5 @@
+// Models canvas drawing elements and collection operations (hit-test, erase, undo).
+
 use super::geometry::{
     point_to_segment_distance, Aabb, CubicBezierSegment, InputSample, MidpointSpline, Vec2,
 };
@@ -71,16 +73,34 @@ impl Stroke {
             return false;
         }
 
-        let samples = self.spline.samples();
-        if samples.len() < 2 {
-            return false;
+        // Test the rendered geometry itself: a chord polyline through each cubic's controls.
+        self.segments.iter().any(|seg| {
+            point_to_segment_distance(pos, seg.start, seg.ctrl1) <= radius
+                || point_to_segment_distance(pos, seg.ctrl1, seg.ctrl2) <= radius
+                || point_to_segment_distance(pos, seg.ctrl2, seg.end) <= radius
+        })
+    }
+
+    /// Affinely maps segments, tip, and bounds; used by the resize gesture.
+    pub fn map_points<F: Fn(Vec2) -> Vec2>(&mut self, map: F) {
+        for seg in &mut self.segments {
+            seg.start = map(seg.start);
+            seg.ctrl1 = map(seg.ctrl1);
+            seg.ctrl2 = map(seg.ctrl2);
+            seg.end = map(seg.end);
         }
-        for window in samples.windows(2) {
-            if point_to_segment_distance(pos, window[0].position, window[1].position) <= radius {
-                return true;
-            }
+        if let Some(seg) = &mut self.pending_segment {
+            seg.start = map(seg.start);
+            seg.ctrl1 = map(seg.ctrl1);
+            seg.ctrl2 = map(seg.ctrl2);
+            seg.end = map(seg.end);
         }
-        false
+        if let Some((ref mut from, ref mut to)) = self.live_tip {
+            *from = map(*from);
+            *to = map(*to);
+        }
+        self.aabb.min = map(self.aabb.min);
+        self.aabb.max = map(self.aabb.max);
     }
 
     pub fn translate(&mut self, delta: Vec2) {
@@ -153,6 +173,52 @@ impl DrawingElement {
         }
     }
 
+    /// Half the stroke width: how far the visual edge extends past the path bounds.
+    pub fn stroke_padding(&self) -> f32 {
+        match self {
+            Self::Stroke(s) | Self::Highlighter(s) => s.base_width * 0.5,
+            Self::Line { width, .. } | Self::Rect { width, .. } | Self::Ellipse { width, .. } => {
+                width * 0.5
+            }
+        }
+    }
+
+    /// Affinely maps this element's geometry from one selection rect to another.
+    pub fn map_bounds(&mut self, from: Aabb, to: Aabb) {
+        let sx = (to.max.x - to.min.x) / (from.max.x - from.min.x).max(0.01);
+        let sy = (to.max.y - to.min.y) / (from.max.y - from.min.y).max(0.01);
+        let map = |p: Vec2| {
+            Vec2::new(
+                to.min.x + (p.x - from.min.x) * sx,
+                to.min.y + (p.y - from.min.y) * sy,
+            )
+        };
+        match self {
+            Self::Stroke(s) | Self::Highlighter(s) => s.map_points(map),
+            Self::Line { start, end, aabb, .. } => {
+                *start = map(*start);
+                *end = map(*end);
+                aabb.min = map(aabb.min);
+                aabb.max = map(aabb.max);
+            }
+            Self::Rect { min, max, aabb, .. } => {
+                *min = map(*min);
+                *max = map(*max);
+                aabb.min = map(aabb.min);
+                aabb.max = map(aabb.max);
+            }
+            Self::Ellipse { center, rx, ry, aabb, .. } => {
+                let c = *center;
+                let new_c = map(c);
+                *rx = (map(Vec2::new(c.x + *rx, c.y)).x - new_c.x).abs();
+                *ry = (map(Vec2::new(c.x, c.y + *ry)).y - new_c.y).abs();
+                *center = new_c;
+                aabb.min = map(aabb.min);
+                aabb.max = map(aabb.max);
+            }
+        }
+    }
+
     pub fn translate(&mut self, delta: Vec2) {
         match self {
             Self::Stroke(s) | Self::Highlighter(s) => s.translate(delta),
@@ -206,14 +272,13 @@ impl Canvas {
         }
     }
 
-    pub fn take_pending_segment(&mut self) -> Option<(CubicBezierSegment, Rgba, f32, bool)> {
+    /// Returns the latest baked segment for incremental pen rendering.
+    pub fn take_pending_segment(&mut self) -> Option<(CubicBezierSegment, Rgba, f32)> {
         match self.active_element.as_mut() {
             Some(DrawingElement::Stroke(s)) => {
-                s.pending_segment.take().map(|seg| (seg, s.color, s.base_width, false))
+                s.pending_segment.take().map(|seg| (seg, s.color, s.base_width))
             }
-            Some(DrawingElement::Highlighter(s)) => {
-                s.pending_segment.take().map(|seg| (seg, s.color, s.base_width, true))
-            }
+            // The highlighter renders as one whole path, never segment by segment.
             _ => None,
         }
     }
@@ -222,21 +287,21 @@ impl Canvas {
         self.active_element = Some(elem);
     }
 
-    pub fn commit_active(&mut self) -> Vec<(CubicBezierSegment, Rgba, f32, bool)> {
+    /// Commits the active element, returning pen segments still to bake incrementally.
+    pub fn commit_active(&mut self) -> Vec<(CubicBezierSegment, Rgba, f32)> {
         let mut final_segments = Vec::new();
         if let Some(mut elem) = self.active_element.take() {
             match &mut elem {
                 DrawingElement::Stroke(s) => {
                     let segs = s.finalize();
                     for seg in segs {
-                        final_segments.push((seg, s.color, s.base_width, false));
+                        final_segments.push((seg, s.color, s.base_width));
                     }
                 }
                 DrawingElement::Highlighter(s) => {
-                    let segs = s.finalize();
-                    for seg in segs {
-                        final_segments.push((seg, s.color, s.base_width, true));
-                    }
+                    s.finalize();
+                    // Never baked incrementally: rebuild once so it lands as a single path.
+                    self.needs_full_rebuild = true;
                 }
                 _ => {
                     self.needs_full_rebuild = true;
@@ -264,6 +329,52 @@ impl Canvas {
             }
         }
         None
+    }
+
+    /// Returns the committed element at `idx`, if present.
+    pub fn element(&self, idx: usize) -> Option<&DrawingElement> {
+        self.elements.get(idx)
+    }
+
+    /// Maps the element at `idx` from one selection rect to another.
+    pub fn map_element(&mut self, idx: usize, from: Aabb, to: Aabb) {
+        if let Some(elem) = self.elements.get_mut(idx) {
+            elem.map_bounds(from, to);
+            self.needs_full_rebuild = true;
+        }
+    }
+
+    /// Indices of elements whose padded bounds intersect `region`.
+    pub fn elements_in(&self, region: Aabb) -> Vec<usize> {
+        self.elements
+            .iter()
+            .enumerate()
+            .filter(|(_, elem)| {
+                let b = elem.aabb();
+                let pad = elem.stroke_padding();
+                b.min.x - pad <= region.max.x
+                    && b.max.x + pad >= region.min.x
+                    && b.min.y - pad <= region.max.y
+                    && b.max.y + pad >= region.min.y
+            })
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    /// Removes the elements at `idxs`, preserving the order of the rest.
+    pub fn remove_indices(&mut self, idxs: &[usize]) {
+        let mut sorted = idxs.to_vec();
+        sorted.sort_unstable();
+        sorted.dedup();
+        if sorted.is_empty() {
+            return;
+        }
+        for &i in sorted.iter().rev() {
+            if i < self.elements.len() {
+                self.elements.remove(i);
+            }
+        }
+        self.needs_full_rebuild = true;
     }
 
     pub fn translate_element(&mut self, idx: usize, delta: Vec2) {

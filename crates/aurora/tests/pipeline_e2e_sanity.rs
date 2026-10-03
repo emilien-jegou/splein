@@ -2,7 +2,7 @@
 
 use aurora::dsl::*;
 use aurora::foundation::*;
-use aurora::runtime::Engine;
+use aurora::runtime::{Engine, FrameReport};
 
 #[test]
 fn test_e2e_idle_frame_invariant() {
@@ -11,7 +11,7 @@ fn test_e2e_idle_frame_invariant() {
     engine.frame();
 
     // Always true: two frames in a row with no change -> laid_out == false, no damage, commands == 0
-    let (stats, _, _, diag) = engine.frame();
+    let FrameReport { stats, diagnostics: diag, .. } = engine.frame();
 
     assert!(!stats.laid_out, "E2E: laid_out must be false on idle");
     assert!(diag.spatial.damaged_rects.is_empty(), "E2E: No damage on idle");
@@ -32,7 +32,7 @@ fn test_e2e_hover_box_with_shadow_recomputes_zero_layout() {
     engine.frame();
 
     fill.set(Color::BLUE);
-    let (stats, _, _, diag) = engine.frame();
+    let FrameReport { stats, diagnostics: diag, .. } = engine.frame();
 
     assert!(!stats.laid_out, "E2E Hover: Layout must not recompute");
     assert_eq!(diag.layout.recomputed_nodes.len(), 0);
@@ -57,7 +57,7 @@ fn test_e2e_counter_tick_inside_boundary_isolates_layout_and_damage() {
     engine.frame();
 
     count.set("2".to_string());
-    let (stats, _, _, diag) = engine.frame();
+    let FrameReport { stats, diagnostics: diag, .. } = engine.frame();
 
     assert!(stats.laid_out);
     assert_eq!(diag.layout.recomputed_nodes.len(), 1, "E2E Counter: Boundary only");
@@ -85,7 +85,7 @@ fn test_e2e_box_in_boxed_re_render_with_absolute_badge() {
     engine.frame();
 
     badge_count.set("4".to_string());
-    let (stats, _, _, diag) = engine.frame();
+    let FrameReport { stats, diagnostics: diag, .. } = engine.frame();
 
     assert!(stats.laid_out);
     assert!(!diag.spatial.damaged_rects.is_empty());

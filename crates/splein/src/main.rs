@@ -35,7 +35,10 @@ async fn main() -> Result<ExitCode, Box<dyn Error>> {
         }
         Commands::Toggle { screen } => {
             let cmd = screen.map_or("toggle".to_string(), |s| format!("toggle {}", s));
-            IpcClient::send_command(&cmd)?;
+            if !IpcClient::try_send_command(&cmd)? {
+                tracing::info!("No daemon found; starting a standalone overlay");
+                platform::wayland::daemon::run_standalone_overlay()?;
+            }
         }
         Commands::Clear => {
             IpcClient::send_command("clear")?;

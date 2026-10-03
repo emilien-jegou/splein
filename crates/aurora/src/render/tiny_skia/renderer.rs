@@ -100,7 +100,7 @@ impl TinySkiaRenderer {
         if damage.is_empty() {
             return Ok(());
         }
-        let _span = tracing::info_span!("Stage6::TinySkiaRaster").entered();
+        let _span = tracing::info_span!("Raster::TinySkia").entered();
         self.layer_compositor.advance_frame();
         let (cw, ch) = (
             self.persistent_canvas.width(),
@@ -147,7 +147,7 @@ impl TinySkiaRenderer {
                 opacity_stack: &mut self.opacity_stack,
             };
 
-            for chunk in scene.chunks.iter().filter(|c| c.bounds.intersects(rect)) {
+            for chunk in scene.chunks.iter().filter(|c| c.bounds.overlaps(rect)) {
                 execute_commands(
                     &chunk.commands,
                     &mut scratch.as_mut(),

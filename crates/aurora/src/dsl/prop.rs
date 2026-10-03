@@ -1,6 +1,6 @@
 // Single responsibility: Declarative UI conversions from foundation types into dynamic properties.
 
-use crate::foundation::{Color, Fill, Radius, Shadow, Size, Transform};
+use crate::foundation::{Color, Fill, LayoutPresence, Radius, Shadow, Size, Transform};
 use crate::reactive::derived::Derived;
 use crate::reactive::prop::{DynamicProp, IntoProp};
 use crate::reactive::signal::Signal;
@@ -27,6 +27,10 @@ impl IntoProp<Radius> for Radius {
 
 impl IntoProp<Transform> for Transform {
     fn into_prop(self) -> DynamicProp<Transform> { DynamicProp::Static(self) }
+}
+
+impl IntoProp<LayoutPresence> for LayoutPresence {
+    fn into_prop(self) -> DynamicProp<LayoutPresence> { DynamicProp::Static(self) }
 }
 
 impl IntoProp<Shadow> for Shadow {

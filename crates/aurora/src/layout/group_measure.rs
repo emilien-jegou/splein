@@ -18,7 +18,9 @@ pub fn measure_group_intrinsic(
         .children(group_id)
         .iter()
         .copied()
-        .filter(|&id| !arena.get(id).style.is_absolute)
+        .filter(|&id| {
+            !arena.get(id).style.is_absolute && arena.get(id).state.presence.occupies_space()
+        })
         .collect();
 
     if children.is_empty() { return IntrinsicSize { width: 0.0, height: 0.0 }; }

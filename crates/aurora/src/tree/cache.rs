@@ -6,6 +6,10 @@ use crate::foundation::{Constraints, IntrinsicSize, ResolvedRect};
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct LayoutCache {
     pub intrinsic: Option<(Constraints, IntrinsicSize)>,
+    /// Memoized min-content inline size, the `min-width: auto` shrink floor.
+    pub min_inline: Option<f32>,
+    /// Memoized min-content block size, the `min-height: auto` shrink floor.
+    pub min_block: Option<f32>,
     layout_slots: [Option<(Constraints, ResolvedRect)>; 2],
     /// Retained constraints provided by parent during the most recent layout pass.
     pub last_constraints: Option<Constraints>,
@@ -51,9 +55,16 @@ impl LayoutCache {
         self.layout_slots = [None, None];
     }
 
-    /// Clears intrinsic measurements.
+    /// Clears intrinsic measurements, including the min-content shrink floors.
     pub fn clear_intrinsic(&mut self) {
         self.intrinsic = None;
+        self.clear_min_sizes();
+    }
+
+    /// Drops memoized min-content floors so the next layout pass re-measures them.
+    pub fn clear_min_sizes(&mut self) {
+        self.min_inline = None;
+        self.min_block = None;
     }
 
     /// Clears both intrinsic measurements and layout calculations.
