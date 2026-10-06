@@ -130,24 +130,38 @@ impl VisualDebugger {
             }
         }
         self.captures += 1;
-        let path = std::env::var("AURORA_CAPTURE_DIR").unwrap_or_else(|_| "/tmp".into());
-        let path = format!(
-            "{}/aurora-frame-{}.png",
-            path.trim_end_matches('/'),
-            self.captures
-        );
-        match pm.save_png(&path) {
+        let path = capture_path(self.captures, "png");        match pm.save_png(&path) {
             Ok(()) => tracing::info!(%path, "wrote frame capture"),
             Err(e) => tracing::error!(%path, error = %e, "could not write frame capture"),
         }
+        self.write_scene_dump(&path);
+    }
+
+    /// Writes a pending scene dump next to a capture path, if one was taken.
+    ///
+    /// Split out of [`Self::write_capture`] because the GPU backend has no presented
+    /// pixels to save: pressing `s` there must still produce the scene dump, which is
+    /// the part that explains a wrong frame.
+    fn write_scene_dump(&mut self, capture_path: &str) {
         if let Some(dump) = self.scene_dump.take() {
-            let list = format!("{}.txt", path.trim_end_matches(".png"));
+            let list = format!("{}.txt", capture_path.trim_end_matches(".png"));
             match std::fs::write(&list, dump) {
                 Ok(()) => tracing::info!(path = %list, "wrote scene dump"),
                 Err(e) => tracing::error!(path = %list, error = %e, "could not write scene dump"),
             }
         }
     }
+}
+
+/// Numbered capture path under `$AURORA_CAPTURE_DIR` (default `/tmp`).
+fn capture_path(captures: u32, ext: &str) -> String {
+    let dir = std::env::var("AURORA_CAPTURE_DIR").unwrap_or_else(|_| "/tmp".into());
+    format!(
+        "{}/aurora-frame-{}.{}",
+        dir.trim_end_matches('/'),
+        captures,
+        ext
+    )
 }
 
 impl AppExtension for VisualDebugger {
@@ -245,6 +259,15 @@ impl AppExtension for VisualDebugger {
             // Recorded before any overlay chunk is added, so the dump is the engine's own
             // display list. A frame that looks wrong needs the list that produced it.
             self.scene_dump = Some(dump_scene(paint.scene()));
+            if !caps.scanline_overlays {
+                // No on_present pass will run on this backend, so consume the
+                // capture here: the PNG half has no pixels to save, but the
+                // scene dump — the part that explains a wrong frame — is written.
+                self.capture_pending = false;
+                self.captures += 1;
+                let path = capture_path(self.captures, "png");
+                self.write_scene_dump(&path);
+            }
         }
         if caps.scanline_overlays {
             return;

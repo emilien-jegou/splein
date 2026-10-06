@@ -15,7 +15,7 @@ use aurora::dsl::*;
 use aurora::foundation::*;
 use aurora::runtime::Engine;
 use aurora_tiny_skia::testing::Harness;
-use aurora_tiny_skia::HeadlessRaster;
+use aurora_tiny_skia::{HeadlessFrame, HeadlessRaster};
 use vello::kurbo::Rect as KurboRect;
 use vello::{AaConfig, AaSupport, RenderParams, Renderer as VelloEngine, RendererOptions};
 
@@ -196,8 +196,7 @@ impl Gpu {
     }
 }
 
-fn hist(px: &[u8]) -> (usize, usize, usize) {
-    // (blue-ish accent, near-white text, near-black arena)
+fn hist(px: &[u8]) -> (usize, usize, usize) {    // (blue-ish accent, near-white text, near-black arena)
     let mut blue = 0;
     let mut white = 0;
     let mut dark = 0;
@@ -238,6 +237,131 @@ fn gpu_matches_cpu_on_translated_rows() {
             "{name}: gpu lost the blue rows (cpu {cb} vs gpu {gb})"
         );
     }
+}
+
+fn full_damage(w: u32, h: u32) -> aurora::foundation::DamageRegion {
+    let mut region = aurora::foundation::DamageRegion::new();
+    region.push(aurora::foundation::ResolvedRect::new(
+        0.0,
+        0.0,
+        w as f32,
+        h as f32,
+    ));
+    region
+}
+
+#[test]
+#[ignore]
+#[ntest::timeout(300_000)]
+fn gpu_matches_cpu_with_live_hud() {
+    use aurora::app::{AppExtension, OverlayCaps, VisualDebugger};
+    use aurora::app::painter::OverlayPainter;
+    use aurora::foundation::ResolvedRect;
+
+    let mut gpu = Gpu::init();
+    let mut h = Harness::page(reorder::Page, reorder::WIDTH, reorder::HEIGHT);
+    assert!(h.settle(900), "page must settle");
+    let mut worst = 1.0f32;
+    // Sixty frames of evolving HUD telemetry (FPS/ms strings change constantly,
+    // so glyph runs, shaping cache keys, and overlay damage are all live).
+    for i in 0..60u32 {
+        let engine = h.engine();
+        let (w, hh) = engine.logical_size();
+        let mut diag = engine.frame().diagnostics;
+        // Simulate the telemetry the debugger derives from wall time.
+        diag.timings.total = std::time::Duration::from_micros(8000 + (i * 137 % 9000) as u64);
+        let text_ctx = engine.text_context();
+        let caps = OverlayCaps {
+            backend: "GPU",
+            scanline_overlays: false,
+            viewport: ResolvedRect::new(0.0, 0.0, w as f32, hh as f32),
+        };
+        let mut debugger = VisualDebugger::new();
+        debugger.show_hud = true;
+        debugger.render_overlay(
+            &mut OverlayPainter::new(engine.scene_mut()),
+            &text_ctx,
+            &caps,
+            &diag,
+        );
+
+        let mut raster = HeadlessRaster::new();
+        let full = full_damage(w, hh);
+        let cpu = raster
+            .draw(HeadlessFrame {
+                scene: engine.scene(),
+                damage: &full,
+                size: (w, hh),
+                text_ctx: &text_ctx,
+            })
+            .data()
+            .to_vec();
+        let gpu_px = gpu.render(engine, w, hh);
+        let (cb, _, _) = hist(&cpu);
+        let (gb, _, _) = hist(&gpu_px);
+        if cb > 1000 {
+            worst = worst.min(gb as f32 / cb as f32);
+        }
+        eprintln!("hud{i:02}: cpu blue={cb} gpu blue={gb}");
+    }
+    assert!(
+        worst > 0.5,
+        "gpu lost rows on some live-HUD frame (worst ratio {worst})"
+    );
+}
+fn compare_frame(
+    gpu: &mut Gpu,
+    h: &mut Harness,
+    tag: &str,
+) -> (usize, usize, usize, usize, usize, usize) {
+    let shot = h.snapshot();
+    let cpu = shot.pixmap().data().to_vec();
+    let engine = h.engine();
+    let (w, hh) = engine.logical_size();
+    let gpu_px = gpu.render(engine, w, hh);
+    let (cb, cw, cd) = hist(&cpu);
+    let (gb, gw, gd) = hist(&gpu_px);
+    eprintln!("{tag}: cpu blue={cb} white={cw} dark={cd} | gpu blue={gb} white={gw} dark={gd}");
+    (cb, cw, cd, gb, gw, gd)
+}
+
+#[test]
+#[ignore]
+#[ntest::timeout(300_000)]
+fn gpu_matches_cpu_through_full_drag() {
+    let mut gpu = Gpu::init();
+    let mut h = Harness::page(reorder::Page, reorder::WIDTH, reorder::HEIGHT);
+    assert!(h.settle(900), "page must settle");
+
+    // Full gesture: press Baseline, drag down across three rows in small
+    // increments (each step can trigger a reorder + FLIP set), hold, release,
+    // then let every spring settle. Every frame is compared.
+    h.press("row-Baseline");
+    let start = h.located("row-Baseline").center();
+    let mut worst_ratio = 1.0f32;
+    for i in 1..=24 {
+        h.pointer(
+            aurora::foundation::Point::new(start.x, start.y + i as f32 * 15.0),
+            aurora::input::PointerPhase::Drag,
+        );
+        h.step();
+        let (cb, _, _, gb, _, _) = compare_frame(&mut gpu, &mut h, &format!("drag{i:02}"));
+        if cb > 1000 {
+            worst_ratio = worst_ratio.min(gb as f32 / cb as f32);
+        }
+    }
+    h.release_at();
+    for i in 0..30 {
+        h.step();
+        let (cb, _, _, gb, _, _) = compare_frame(&mut gpu, &mut h, &format!("settle{i:02}"));
+        if cb > 1000 {
+            worst_ratio = worst_ratio.min(gb as f32 / cb as f32);
+        }
+    }
+    assert!(
+        worst_ratio > 0.5,
+        "gpu lost rows on some drag frame (worst blue ratio {worst_ratio})"
+    );
 }
 
 #[test]

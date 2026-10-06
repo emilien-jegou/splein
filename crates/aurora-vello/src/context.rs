@@ -53,18 +53,23 @@ impl GpuContext {
         let queue = Arc::new(queue);
         let caps = surface.get_capabilities(&adapter);
 
-        // Vello shaders perform internal sRGB conversion; select non-sRGB surface to avoid double gamma
-        let format = caps
-            .formats
-            .iter()
-            .copied()
-            .find(|f| !f.is_srgb())
-            .unwrap_or(
-                caps.formats
-                    .first()
-                    .copied()
-                    .unwrap_or(TextureFormat::Bgra8Unorm),
-            );
+        // Vello 0.2 is gamma-agnostic: scene bytes are composited as-is and the
+        // blit to the surface is a raw copy with no conversion. The surface must
+        // therefore be sRGB-encoded, or the compositor shows shifted colors
+        // (a linear float surface was previously picked here, washing colors out).
+        let format = [
+            TextureFormat::Bgra8UnormSrgb,
+            TextureFormat::Rgba8UnormSrgb,
+        ]
+        .into_iter()
+        .find(|f| caps.formats.contains(f))
+        .or_else(|| caps.formats.iter().copied().find(|f| f.is_srgb()))
+        .unwrap_or(
+            caps.formats
+                .first()
+                .copied()
+                .unwrap_or(TextureFormat::Bgra8Unorm),
+        );
 
         // Mailbox first for tear-free lowest latency, then strict vsync. Immediate
         // tears, which reads as flicker on anything that moves — a UI toolkit must

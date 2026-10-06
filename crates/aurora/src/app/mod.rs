@@ -9,7 +9,7 @@ pub mod debug_overlay;
 pub mod debug_scene;
 pub mod debug_toggle;
 pub mod extension;
-pub(crate) mod painter;
+pub mod painter;
 pub mod runner;
 pub mod telemetry;
 
