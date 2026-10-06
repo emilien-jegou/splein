@@ -7,7 +7,8 @@ pub use crate::app::{App, AppConfig, AppExtension, FpsLimit, OverlayCaps, Overla
 // `component` is the #[component] attribute macro re-exported below, so the hand-written
 // `dsl::component` function is deliberately left out of the prelude: one name cannot be both.
 pub use crate::dsl::{
-    custom, group, svg, text, Component, CustomDef, Element, GroupDef, IntoElement, TextDef,
+    custom, group, image, svg, text, Component, CustomDef, Element, GroupDef, IntoElement,
+    TextDef,
 };
 pub use crate::foundation::{
     Alignment, Anchor, Color, Direction, Distribution, Fill, Gap, LayoutPresence, Margin, Radius,

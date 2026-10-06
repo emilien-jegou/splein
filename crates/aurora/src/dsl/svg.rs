@@ -27,15 +27,18 @@ impl Primitive for SvgPrimitive {
 }
 
 /// Constructs a first-class declarative SVG element.
+///
+/// Sized by content: the intrinsic vector size is the `Fit` measure, so the graphic
+/// draws at natural size in an unbounded parent and shrinks with its min-content floor
+/// under pressure. Pin an exact box with `.size(w, h)` when the layout, not the
+/// artwork, owns the dimensions.
 pub fn svg(graphic: impl Into<VectorGraphic>) -> CustomDef {
     let g = graphic.into();
-    let (w, h) = (g.width, g.height);
     custom(SvgPrimitive {
+        width: g.width,
+        height: g.height,
         graphic: g,
-        width: w,
-        height: h,
     })
-    .size(w, h)
 }
 
 impl From<Arc<VectorGraphic>> for VectorGraphic {
