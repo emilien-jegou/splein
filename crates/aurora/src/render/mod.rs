@@ -5,20 +5,16 @@ pub mod error;
 pub mod stroke_geometry;
 pub mod swizzle;
 
-#[cfg(feature = "vello")]
-pub mod vello;
-
 pub use error::BackendError;
 pub use swizzle::swizzle_rgba_to_bgra;
 
-#[cfg(feature = "vello")]
-pub use vello::VelloRenderer;
-
 /// Selects the active rasterization and presentation engine.
+///
+/// A pure selection key: rasterizers live in `aurora-tiny-skia` and `aurora-vello` and are
+/// supplied to [`AppConfig::backend_factory`](crate::app::AppConfig::backend_factory).
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub enum RenderBackend {
     #[default]
     TinySkia,
-    #[cfg(feature = "vello")]
     Vello,
 }

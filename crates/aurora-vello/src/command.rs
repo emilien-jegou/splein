@@ -9,14 +9,14 @@ use vello::peniko::{
 };
 use vello::Scene as VelloScene;
 
-use crate::render::stroke_geometry::adjust_stroke_geometry;
-use crate::render::vello::path::{build_kurbo_rect, build_kurbo_rounded_rect};
-use crate::render::vello::shader::build_vello_brush;
-use crate::render::vello::shadow::VelloShadowCache;
-use crate::render::vello::svg::VelloSvgCache;
-use crate::render::vello::text::VelloGlyphCache;
-use crate::scene::command::SceneCommand;
-use crate::text::TextContext;
+use aurora::render::stroke_geometry::adjust_stroke_geometry;
+use crate::path::{build_kurbo_rect, build_kurbo_rounded_rect};
+use crate::shader::build_vello_brush;
+use crate::shadow::VelloShadowCache;
+use crate::svg::VelloSvgCache;
+use crate::text::VelloGlyphCache;
+use aurora::scene::command::SceneCommand;
+use aurora::text::TextContext;
 
 /// Retained GPU raster image cache preventing per-frame pixel buffer allocations.
 #[derive(Default)]
@@ -31,7 +31,7 @@ impl VelloImageCache {
     }
 
     /// Obtains a retained Peniko image handle without cloning raw pixel memory.
-    pub fn get_or_insert(&mut self, image: &crate::scene::image::ImageSource) -> Arc<PenikoImage> {
+    pub fn get_or_insert(&mut self, image: &aurora::scene::image::ImageSource) -> Arc<PenikoImage> {
         let ptr_key = Arc::as_ptr(&image.data) as usize;
         self.cache
             .entry(ptr_key)

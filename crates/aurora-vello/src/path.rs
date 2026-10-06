@@ -1,6 +1,6 @@
 // Single responsibility: Kurbo path and rounded-rectangle geometry conversions for Vello.
 
-use crate::foundation::{Radius, ResolvedRect};
+use aurora::foundation::{Radius, ResolvedRect};
 use vello::kurbo::{Rect as KurboRect, RoundedRect as KurboRoundedRect, RoundedRectRadii};
 
 /// Converts an Aurora ResolvedRect and Radius into a Kurbo RoundedRect with W3C 4-corner clamping.

@@ -157,22 +157,17 @@ dependencies = [
  "aurora-tiny-skia",
  "aurora-vello",
  "bon",
- "bytemuck",
  "cosmic-text",
  "ntest",
- "pollster",
  "resvg",
  "rustc-hash 2.1.3",
  "smallvec",
- "softbuffer",
  "sys-locale",
  "tiny-skia",
  "tracing",
  "tracing-subscriber",
  "tracing-tracy",
  "tracy-client",
- "vello",
- "wgpu",
  "winit",
 ]
 
@@ -208,8 +203,10 @@ name = "aurora-vello"
 version = "0.0.1-rc.1"
 dependencies = [
  "aurora",
+ "bon",
  "pollster",
  "resvg",
+ "rustc-hash 2.1.3",
  "tracing",
  "vello",
  "wgpu",

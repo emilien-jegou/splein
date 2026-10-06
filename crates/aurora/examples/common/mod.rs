@@ -61,7 +61,6 @@ impl ExampleCli {
         }
 
         let mut backend = RenderBackend::TinySkia;
-        #[cfg(feature = "vello")]
         if args.iter().any(|a| a == "--gpu" || a == "--vello") {
             backend = RenderBackend::Vello;
         }
@@ -158,8 +157,7 @@ impl ExampleCli {
             RenderBackend::TinySkia => {
                 config.backend_factory(aurora_tiny_skia::create_backend)
             }
-            #[cfg(feature = "vello")]
-            RenderBackend::Vello => config,
+            RenderBackend::Vello => config.backend_factory(aurora_vello::create_backend),
         }
     }
 }

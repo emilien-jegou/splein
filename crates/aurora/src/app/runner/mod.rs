@@ -3,8 +3,6 @@
 mod adapters;
 pub mod backend;
 mod frame_flow;
-#[cfg(feature = "vello")]
-pub mod gpu_backend;
 pub mod pacing;
 pub mod pointer;
 
@@ -12,8 +10,6 @@ pub use backend::{
     Backend, BackendFactory, DamageResolver, FramePostProcess, Present, PresentReport,
     SurfaceRequest,
 };
-#[cfg(feature = "vello")]
-pub use gpu_backend::GpuBackend;
 pub use pacing::FpsLimit;
 
 use std::sync::Arc;

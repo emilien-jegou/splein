@@ -8,9 +8,9 @@ use vello::peniko::{
 };
 use vello::Scene as VelloScene;
 
-use crate::foundation::{Radius, ResolvedRect, Shadow, ShadowKind};
-use crate::render::blur::box_blur_alpha;
-use crate::render::vello::shader::to_vello_color;
+use aurora::foundation::{Radius, ResolvedRect, Shadow, ShadowKind};
+use aurora::render::blur::box_blur_alpha;
+use crate::shader::to_vello_color;
 
 const MAX_CACHED_SHADOWS: usize = 64;
 

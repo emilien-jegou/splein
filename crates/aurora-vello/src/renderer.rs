@@ -8,16 +8,16 @@ use vello::{
 };
 use winit::window::Window;
 
-use crate::foundation::Color;
-use crate::render::error::BackendError;
-use crate::render::vello::command::{compile_vello_chunk, VelloImageCache};
-use crate::render::vello::context::GpuContext;
-use crate::render::vello::shader::to_vello_color;
-use crate::render::vello::shadow::VelloShadowCache;
-use crate::render::vello::svg::VelloSvgCache;
-use crate::render::vello::text::VelloGlyphCache;
-use crate::scene::scene::Scene;
-use crate::text::TextContext;
+use aurora::foundation::Color;
+use aurora::render::error::BackendError;
+use crate::command::{compile_vello_chunk, VelloImageCache};
+use crate::context::GpuContext;
+use crate::shader::to_vello_color;
+use crate::shadow::VelloShadowCache;
+use crate::svg::VelloSvgCache;
+use crate::text::VelloGlyphCache;
+use aurora::scene::scene::Scene;
+use aurora::text::TextContext;
 
 /// High-throughput GPU rasterizer executing compute shaders over display lists.
 pub struct VelloRenderer {

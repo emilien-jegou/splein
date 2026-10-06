@@ -4,9 +4,11 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use winit::window::Window;
 
-use crate::app::runner::backend::{Backend, Present, PresentReport};
-use crate::render::{BackendError, VelloRenderer};
-use crate::text::TextContext;
+use aurora::app::runner::backend::{Backend, Present, PresentReport};
+use aurora::render::BackendError;
+use aurora::text::TextContext;
+
+use crate::renderer::VelloRenderer;
 
 /// Direct GPU compute rasterizer powered by Vello and WGPU.
 pub struct GpuBackend {

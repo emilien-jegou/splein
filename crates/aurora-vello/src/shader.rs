@@ -1,6 +1,6 @@
 // Single responsibility: Peniko Brush and Gradient conversions from Aurora Fills.
 
-use crate::foundation::{Color, Fill};
+use aurora::foundation::{Color, Fill};
 use vello::kurbo::Point as KurboPoint;
 use vello::peniko::{Brush, Color as VelloColor, ColorStop, ColorStops, Gradient};
 

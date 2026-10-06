@@ -29,8 +29,6 @@ use crate::foundation::Color;
 use crate::reactive::{Cx, ReactiveRuntime};
 use crate::render::RenderBackend;
 use crate::runtime::Engine;
-#[cfg(feature = "vello")]
-use runner::GpuBackend;
 use runner::{run_event_loop, Backend, BackendFactory};
 
 /// Declarative builder for application window initialization and lifecycle execution.
@@ -145,16 +143,19 @@ impl AppConfig {
         });
 
         let backend: Box<dyn Backend> = match self.backend {
-            #[cfg(feature = "vello")]
-            RenderBackend::Vello => Box::new(
-                GpuBackend::new(
+            RenderBackend::Vello => {
+                let factory = self.backend_factory.expect(
+                    "no GPU backend factory: pass `aurora_vello::create_backend` \
+                     via `AppConfig::backend_factory`",
+                );
+                factory(
                     Arc::clone(&window),
                     self.width,
                     self.height,
                     engine.text_context(),
                 )
-                .expect("Vello backend init failed"),
-            ),
+                .expect("Vello backend init failed")
+            }
             RenderBackend::TinySkia => {
                 let factory = self.backend_factory.expect(
                     "no CPU backend factory: pass `aurora_tiny_skia::create_backend` \
