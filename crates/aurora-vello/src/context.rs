@@ -2,8 +2,9 @@
 
 use std::sync::Arc;
 use wgpu::{
-    CompositeAlphaMode, Device, DeviceDescriptor, Instance, PresentMode, Queue,
-    RequestAdapterOptions, Surface, SurfaceConfiguration, TextureFormat, TextureUsages,
+    Backends, CompositeAlphaMode, Device, DeviceDescriptor, Instance, InstanceDescriptor,
+    PresentMode, Queue, RequestAdapterOptions, Surface, SurfaceConfiguration, TextureFormat,
+    TextureUsages,
 };
 use winit::window::Window;
 
@@ -22,7 +23,14 @@ pub struct GpuContext {
 impl GpuContext {
     /// Initializes GPU adapter, device, and swapchain surface with optimal present mode.
     pub async fn init(window: Arc<Window>, width: u32, height: u32) -> Result<Self, String> {
-        let instance = Instance::default();
+        // Primary APIs only: the GLES backend initializes EGL eagerly inside
+        // `Instance::new`, and a broken EGL vendor setup panics there (khronos-egl
+        // unwraps a missing error) instead of yielding no adapter. Vello targets
+        // Vulkan/Metal/DX12 anyway, so GL is excluded rather than survived.
+        let instance = Instance::new(InstanceDescriptor {
+            backends: Backends::PRIMARY,
+            ..Default::default()
+        });
         let surface = instance
             .create_surface(Arc::clone(&window))
             .map_err(|e| format!("Failed to create WGPU surface: {:?}", e))?;
@@ -58,14 +66,24 @@ impl GpuContext {
                     .unwrap_or(TextureFormat::Bgra8Unorm),
             );
 
-        // Prefer Mailbox for tear-free lowest latency; fallback to Immediate before AutoVsync for max throughput
+        // Mailbox first for tear-free lowest latency, then strict vsync. Immediate
+        // tears, which reads as flicker on anything that moves — a UI toolkit must
+        // never prefer it over a synchronized mode, so it is the last resort only.
         let present_mode = if caps.present_modes.contains(&PresentMode::Mailbox) {
             PresentMode::Mailbox
-        } else if caps.present_modes.contains(&PresentMode::Immediate) {
-            PresentMode::Immediate
-        } else {
+        } else if caps.present_modes.contains(&PresentMode::Fifo) {
+            PresentMode::Fifo
+        } else if caps.present_modes.contains(&PresentMode::AutoVsync) {
             PresentMode::AutoVsync
+        } else {
+            PresentMode::Immediate
         };
+        tracing::info!(
+            mode = ?present_mode,
+            available = ?caps.present_modes,
+            format = ?format,
+            "swapchain configured",
+        );
 
         let config = SurfaceConfiguration {
             usage: TextureUsages::RENDER_ATTACHMENT,

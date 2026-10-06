@@ -15,6 +15,7 @@ in {
     pkgs.wayland
     pkgs.libxkbcommon
     pkgs.libGL
+    pkgs.vulkan-loader
   #  tracy
   ];
 
@@ -22,6 +23,7 @@ in {
     pkgs.wayland
     pkgs.libxkbcommon
     pkgs.libGL
+    pkgs.vulkan-loader
     pkgs.xorg.libX11
     pkgs.xorg.libXcursor
     pkgs.xorg.libXrandr
