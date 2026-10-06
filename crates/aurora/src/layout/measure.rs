@@ -61,7 +61,7 @@ pub fn compute_intrinsic(
     let effective_constraints = if is_text {
         Constraints {
             min_width: 0.0,
-            max_width: text_inline_width(w_size, constraints),
+            max_width: crate::text::TextConfig::wrap_width(w_size, constraints),
             min_height: 0.0,
             max_height: f32::INFINITY,
         }
@@ -98,43 +98,6 @@ pub fn compute_intrinsic_with_constraints(
     measure_intrinsic_uncached(arena, node_id, constraints, text_ctx)
 }
 
-/// Inline wrap width for a text node from its width intent and available space.
-fn text_inline_width(width: Size, constraints: Constraints) -> f32 {
-    // When the width is already resolved (tight), reuse it directly instead of re-applying the
-    // sizing intent, which would double-count Fill/Percent and ignore a wrapped cross size.
-    if constraints.is_tight_width() {
-        return constraints.max_width.max(0.0);
-    }
-    if matches!(width, Size::Fit) {
-        return f32::INFINITY;
-    }
-    let available = constraints.max_width;
-    match width {
-        Size::Fit => f32::INFINITY,
-        Size::Fill => {
-            if available.is_finite() {
-                available.max(0.0)
-            } else {
-                f32::INFINITY
-            }
-        }
-        Size::Fixed(value) => {
-            if available.is_finite() {
-                value.min(available).max(0.0)
-            } else {
-                value.max(0.0)
-            }
-        }
-        Size::Percent(ratio) => {
-            if available.is_finite() {
-                (available * ratio).max(0.0)
-            } else {
-                f32::INFINITY
-            }
-        }
-    }
-}
-
 #[tracing::instrument(level = "trace", skip(arena, text_ctx), fields(node = node_id.index))]
 fn measure_intrinsic_uncached(
     arena: &mut TreeArena,
@@ -155,8 +118,7 @@ fn measure_intrinsic_uncached(
     let node = arena.get(node_id);
     let (intrinsic, shaped_layout) = match &node.kind {
         NodeKind::Text(t) => {
-            let layout = text_ctx.shape_config(t, constraints);
-            let size = layout.total_size;
+            let (size, layout) = t.measure(text_ctx, constraints);
             (size, Some(layout))
         }
         NodeKind::Custom(p) => (p.measure(constraints), None),
@@ -186,19 +148,17 @@ pub fn fit_text_run_to_width(
     width: f32,
     text_ctx: &TextContext,
 ) {
-    let outgrows_box = match &arena.get(id).state.cached_text_layout {
-        Some(layout) => layout.total_size.width > width + 0.01,
-        None => true,
-    };
-    if !outgrows_box || !matches!(arena.get(id).kind, NodeKind::Text(_)) {
-        return;
-    }
-
     let config = match &arena.get(id).kind {
-        NodeKind::Text(config) => config.clone(),
+        NodeKind::Text(config) => {
+            let cached = arena.get(id).state.cached_text_layout.as_deref();
+            if !crate::text::TextConfig::needs_refit(cached, width) {
+                return;
+            }
+            config.clone()
+        }
         _ => return,
     };
-    let layout = text_ctx.shape_config(&config, Constraints::tight_width(width));
+    let layout = config.refit(text_ctx, width);
     arena.get_mut(id).state.cached_text_layout = Some(layout);
 }
 

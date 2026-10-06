@@ -1,8 +1,7 @@
 // Single responsibility: Node coordinate framing, transformation, and display list command emission.
 
-use crate::foundation::{Appearance, Constraints, Fill, Point, Radius, ResolvedRect, Transform};
+use crate::foundation::{Point, Radius, ResolvedRect, Transform};
 use crate::scene::{LayerId, PaintContext, SceneChunk, SceneCommand};
-use crate::text::decoration::decoration_rules;
 use crate::text::TextContext;
 use crate::tree::{LayoutNode, NodeKind};
 
@@ -140,35 +139,13 @@ pub fn emit_node_content(node: &LayoutNode, chunk: &mut SceneChunk, text_ctx: &T
 
     match &node.kind {
         NodeKind::Text(t) => {
-            // Alignment is baked into the shaped layout, so it is shared without mutation.
-            let layout = node.state.cached_text_layout.clone().unwrap_or_else(|| {
-                let max_w = if node.style.width.is_fit() {
-                    f32::INFINITY
-                } else {
-                    node.resolved_rect.width.max(1.0)
-                };
-                text_ctx.shape_config(t, Constraints::loose(max_w, f32::INFINITY))
-            });
-            let decorations: Vec<ResolvedRect> = if t.decoration.is_empty() {
-                Vec::new()
-            } else {
-                layout
-                    .lines
-                    .iter()
-                    .flat_map(|line| decoration_rules(line, t.size, t.decoration))
-                    .collect()
-            };
-            chunk.push(SceneCommand::DrawText {
-                origin: Point::ZERO,
-                layout,
-                color: t.color,
-            });
-            for rect in decorations {
-                chunk.push(SceneCommand::DrawRect {
-                    rect,
-                    appearance: Appearance::EMPTY.with_fill(Fill::Solid(t.color)),
-                });
-            }
+            let layout = t.resolve_paint_layout(
+                text_ctx,
+                node.state.cached_text_layout.clone(),
+                node.style.width.is_fit(),
+                node.resolved_rect.width,
+            );
+            t.emit(&layout, chunk);
         }
         NodeKind::Custom(p) => {
             p.paint(&mut PaintContext::new(chunk), flow_rect);

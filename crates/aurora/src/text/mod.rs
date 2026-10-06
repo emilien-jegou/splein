@@ -10,6 +10,7 @@ pub mod decoration;
 pub mod fonts;
 pub mod glyph;
 pub mod layout;
+pub mod leaf;
 pub(crate) mod min_content;
 pub mod overflow;
 pub mod runs;

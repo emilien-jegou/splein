@@ -2,7 +2,7 @@
 
 use smallvec::SmallVec;
 
-use crate::foundation::{Constraints, Direction, Gap, IntrinsicSize};
+use crate::foundation::{Direction, Gap};
 use crate::text::TextContext;
 use crate::tree::cache::LayoutCache;
 use crate::tree::{NodeId, NodeKind, TreeArena};
@@ -50,26 +50,14 @@ fn measure_min_size(
     if arena.get(id).style.clip {
         return 0.0;
     }
-    let text = match &arena.get(id).kind {
-        NodeKind::Text(config) => Some(config.clone()),
-        NodeKind::Custom(primitive) => {
-            // A primitive reports its own intrinsic size; that is the smallest it can be drawn.
-            let IntrinsicSize { width, height } = primitive.measure(Constraints::UNCONSTRAINED);
-            return if axis == Direction::Horizontal {
-                width
-            } else {
-                height
-            };
-        }
+    let leaf = match &arena.get(id).kind {
+        NodeKind::Text(config) => Some(config.min_content(text_ctx, axis)),
+        NodeKind::Custom(primitive) => Some(primitive.min_content(axis)),
         NodeKind::Group => None,
     };
 
-    if let Some(config) = text {
-        return match axis {
-            Direction::Horizontal => text_ctx.min_inline_width(&config),
-            // A run always needs one line box, never zero, so it cannot be crushed out of existence.
-            Direction::Vertical => config.line_height.resolve(config.size),
-        };
+    if let Some(floor) = leaf {
+        return floor;
     }
 
     min_group_size(arena, id, axis, text_ctx)
