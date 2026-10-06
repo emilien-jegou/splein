@@ -30,6 +30,12 @@
 !crates/aurora/examples/**/*
 !crates/aurora/*md
 
+!crates/aurora-tiny-skia/
+!crates/aurora-tiny-skia/**/*
+
+!crates/aurora-vello/
+!crates/aurora-vello/**/*
+
 !docs/
 !docs/**/*
 

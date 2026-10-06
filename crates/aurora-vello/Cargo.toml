@@ -1,0 +1,16 @@
+[package]
+name = "aurora-vello"
+version = "0.0.1-rc.1"
+edition = "2021"
+publish = true
+description = "Vello GPU rasterization backend for the Aurora UI engine"
+license = "GPL-3.0"
+
+[dependencies]
+aurora = { path = "../aurora", version = "0.0.1-rc.1" }
+vello = "0.2"
+wgpu = "0.20"
+pollster = "0.3"
+resvg = "0.42"
+winit = { version = "0.29", default-features = false, features = ["rwh_06"] }
+tracing = "0.1"
