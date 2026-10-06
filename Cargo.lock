@@ -203,11 +203,14 @@ name = "aurora-vello"
 version = "0.0.1-rc.1"
 dependencies = [
  "aurora",
+ "aurora-tiny-skia",
  "bon",
+ "ntest",
  "pollster",
  "resvg",
  "rustc-hash 2.1.3",
  "tracing",
+ "tracing-subscriber",
  "vello",
  "wgpu",
  "winit",
