@@ -27,6 +27,7 @@ pub fn run_frame_passes(
 
     // One clock feeds everything time-driven this frame: the reactive tickers that drive
     // userland animation.
+    let t_react0 = std::time::Instant::now();
     scheduler.clock.tick();
     // Animation integrates on a fixed grid rather than on whatever the frame measured, so a
     // transition lands in the same place at 30fps as at 144fps. The measured delta still
@@ -80,11 +81,13 @@ pub fn run_frame_passes(
     // which the reactive layer resolves below — so the region computed here is the one this
     // frame's compile will actually use.
     crate::reactive::run_post_layout(&scheduler.runtime, ticked);
+    let t_react = t_react0.elapsed();
 
     // Whatever those callbacks wrote into a bound signal is applied here, in the same frame.
     // Without this the value would be picked up next frame, and a FLIP would show the row at its
     // destination for one frame before jumping back to animate.
-    scheduler.drain_paint_after_layout();
+    let (paint_flags, paint_passes) = scheduler.drain_paint_after_layout();
+    let _ = paint_flags;
 
     let t1 = std::time::Instant::now();
     let removed = scheduler.arena.drain_removed_damage();
@@ -127,7 +130,7 @@ pub fn run_frame_passes(
         frame_index: frame_counter,
         timings: FrameTimings {
             total: t_start.elapsed(),
-            reactivity: std::time::Duration::ZERO,
+            reactivity: t_react,
             layout: t_layout,
             spatial: t_spatial,
             compile: t_compile,
@@ -137,6 +140,8 @@ pub fn run_frame_passes(
         invalidation: InvalidationDiagnostics {
             flags: stats.flags,
             nodes_dirtied: stats.nodes_dirtied,
+            drain_passes: stats.drain_passes,
+            paint_passes,
         },
         layout: LayoutDiagnostics {
             recomputed_nodes: layout_res.recomputed_nodes,

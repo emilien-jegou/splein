@@ -31,6 +31,8 @@ pub struct FrameTimings {
 pub struct InvalidationDiagnostics {
     pub flags: DirtyFlags,
     pub nodes_dirtied: usize,
+    pub drain_passes: usize,
+    pub paint_passes: usize,
 }
 
 #[derive(Clone, Debug, Default)]

@@ -18,6 +18,8 @@ pub struct FrameStats {
     pub flags: DirtyFlags,
     pub nodes_dirtied: usize,
     pub laid_out: bool,
+    pub drain_passes: usize,
+    pub paint_passes: usize,
 }
 
 struct ObserverGuard<'a> {
@@ -88,7 +90,8 @@ impl FrameScheduler {
         }
 
         let mut frame_flags = self.check_constraint_change(window_constraints);
-        frame_flags |= self.drain_reactive_mutations();
+        let (react_flags, drain_passes) = self.drain_reactive_mutations();
+        frame_flags |= react_flags;
         frame_flags |= external_flags;
 
         self.dirty_nodes_this_frame
@@ -112,6 +115,8 @@ impl FrameScheduler {
             flags: report_flags,
             nodes_dirtied: self.dirty_nodes_this_frame.len(),
             laid_out,
+            drain_passes,
+            paint_passes: 0,
         }
     }
 
@@ -127,7 +132,7 @@ impl FrameScheduler {
         }
     }
 
-    fn drain_reactive_mutations(&mut self) -> DirtyFlags {
+    fn drain_reactive_mutations(&mut self) -> (DirtyFlags, usize) {
         const MAX_DRAIN_PASSES: usize = 16;
         let mut frame_flags = DirtyFlags::NONE;
         let mut passes = 0;
@@ -158,7 +163,7 @@ impl FrameScheduler {
                 }
             }
         }
-        frame_flags
+        (frame_flags, passes)
     }
 
     fn apply_node_binding(
@@ -272,7 +277,7 @@ impl FrameScheduler {
     ///
     /// Bounded like the main drain, for the same reason: a client that writes a bound signal from
     /// a post-layout callback would otherwise be able to spin here.
-    pub fn drain_paint_after_layout(&mut self) -> DirtyFlags {
+    pub fn drain_paint_after_layout(&mut self) -> (DirtyFlags, usize) {
         const MAX_DRAIN_PASSES: usize = 8;
         let mut frame_flags = DirtyFlags::NONE;
         let mut passes = 0;
@@ -323,7 +328,7 @@ impl FrameScheduler {
                     .requeue_dirty_subscribers(deferred);
             }
         }
-        frame_flags
+        (frame_flags, passes)
     }
 
     fn execute_layout(

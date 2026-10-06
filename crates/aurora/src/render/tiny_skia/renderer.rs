@@ -111,8 +111,19 @@ impl TinySkiaRenderer {
 
             let mut scratch = match self.scratch_pixmap.take() {
                 Some(mut p) if p.width() >= rw && p.height() >= rh => {
-                    p.fill(tiny_skia::Color::TRANSPARENT);
-                    p
+                    // Avoid pinning a once-huge tile forever: if the retained pixmap is
+                    // more than 4x the needed area, shrink it back to the tile size.
+                    let (pw, ph) = (p.width() as u64, p.height() as u64);
+                    if pw * ph > (rw as u64) * (rh as u64) * 4 {
+                        Pixmap::new(
+                            rw.next_power_of_two().max(64),
+                            rh.next_power_of_two().max(64),
+                        )
+                        .unwrap()
+                    } else {
+                        p.fill(tiny_skia::Color::TRANSPARENT);
+                        p
+                    }
                 }
                 _ => Pixmap::new(
                     rw.next_power_of_two().max(64),

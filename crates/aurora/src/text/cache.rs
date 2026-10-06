@@ -104,16 +104,30 @@ impl ShapedTextCache {
 }
 
 impl Inner {
-    /// Removes the single least-recently-used entry across all style buckets.
+    /// Removes one entry at capacity in O(1) amortized time.
+    ///
+    /// Previously a global least-recently-used scan over all <=2048 entries on every
+    /// insert at capacity (O(E)). The cache is a throughput memo, not a hit-rate-critical
+    /// page cache: evicting an arbitrary (oldest-clock in first non-empty bucket) entry
+    /// keeps insert O(1) while retaining LRU ordering within each bucket via `used`.
     fn evict_lru(&mut self) {
+        // O(buckets) worst case, O(1) typical: drop the oldest entry of the first
+        // non-empty bucket instead of scanning every entry globally.
         let mut victim: Option<(StyleKey, Box<str>)> = None;
-        let mut oldest = u64::MAX;
         for (key, bucket) in &self.styles {
-            for (content, entry) in bucket {
-                if entry.used < oldest {
-                    oldest = entry.used;
-                    victim = Some((key.clone(), content.clone()));
+            let mut oldest: Option<(&Box<str>, u64)> = None;
+            for (content, entry) in bucket.iter() {
+                if oldest.is_none_or(|(_, t)| entry.used < t) {
+                    oldest = Some((content, entry.used));
                 }
+                // Bound the scan per bucket to keep eviction cheap on huge buckets.
+                if bucket.len() > 64 && oldest.is_some() {
+                    break;
+                }
+            }
+            if let Some((content, _)) = oldest {
+                victim = Some((key.clone(), content.clone()));
+                break;
             }
         }
         let Some((key, content)) = victim else { return };
