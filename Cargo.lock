@@ -214,6 +214,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "aurora-wayland"
+version = "0.0.1-rc.1"
+dependencies = [
+ "aurora",
+ "aurora-tiny-skia",
+ "bytemuck",
+ "ntest",
+ "smithay-client-toolkit 0.19.2",
+ "tracing",
+ "wayland-client",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

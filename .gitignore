@@ -36,6 +36,9 @@
 !crates/aurora-vello/
 !crates/aurora-vello/**/*
 
+!crates/aurora-wayland/
+!crates/aurora-wayland/**/*
+
 !docs/
 !docs/**/*
 
