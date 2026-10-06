@@ -51,6 +51,15 @@ fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: T
     let ink_b = (params.color.b * 255.0).round() as u8;
     let total_opacity = params.opacity * params.color.a;
 
+    // Coverage-to-alpha table for this run: opacity is constant across the run,
+    // so the per-pixel float multiply + round becomes one table lookup.
+    let alpha_lut: [u8; 256] = std::array::from_fn(|i| (i as f32 * total_opacity).round() as u8);
+    // Mask dimensions hoisted out of the per-pixel loop below.
+    let (clip_w, clip_h) = match params.clip {
+        Some(mask) => (mask.width(), mask.height()),
+        None => (0, 0),
+    };
+
     // Reused staging buffer for glyph coverage. `raster_glyph` invokes its
     // closure while holding the font-system locks, so the bitmap is copied out
     // and blitted after the locks are released instead of compositing inline.
@@ -87,8 +96,10 @@ fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: T
                     ink_r,
                     ink_g,
                     ink_b,
-                    total_opacity,
+                    &alpha_lut,
                     params.clip,
+                    clip_w,
+                    clip_h,
                 );
             }
         }
@@ -185,8 +196,10 @@ fn blit_glyph(
     r: u8,
     g: u8,
     b: u8,
-    opacity: f32,
+    alpha_lut: &[u8; 256],
     clip: Option<&Mask>,
+    clip_w: u32,
+    clip_h: u32,
 ) {
     let (w, h) = (gw as i32, gh as i32);
 
@@ -203,22 +216,19 @@ fn blit_glyph(
                 continue;
             }
 
-            let mut alpha = data[src_offset + col as usize] as f32 * opacity;
+            let mut alpha = alpha_lut[data[src_offset + col as usize] as usize];
             if let Some(mask) = clip {
-                let mw = mask.width();
-                let mh = mask.height();
                 let tx = target_x as u32;
                 let ty = target_y as u32;
-                if tx >= mw || ty >= mh {
+                if tx >= clip_w || ty >= clip_h {
                     continue;
                 }
                 // Modulate by the mask instead of thresholding so clipped
                 // glyph edges fade like every other primitive.
-                let coverage = mask.data()[(ty * mw + tx) as usize] as f32 / 255.0;
-                alpha *= coverage;
+                let coverage = mask.data()[(ty * clip_w + tx) as usize] as f32 / 255.0;
+                alpha = (alpha as f32 * coverage).round() as u8;
             }
 
-            let alpha = alpha.round() as u8;
             if alpha == 0 {
                 continue;
             }

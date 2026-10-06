@@ -6,7 +6,10 @@ use tiny_skia::{FillRule, Mask, Transform};
 
 /// Manages stacked clipping masks projected through coordinate transformations.
 pub struct ClipStack {
-    masks: Vec<Mask>,
+    /// `None` entries are full-coverage clips: a square clip under a translation-only
+    /// transform that already contains the whole damage tile needs no mask. Skipping
+    /// the alloc + fill + intersect for those is the common case for page-level clips.
+    masks: Vec<Option<Mask>>,
 }
 
 impl ClipStack {
@@ -16,25 +19,36 @@ impl ClipStack {
     }
 
     /// Pushes a rectangular rounded mask into the stack with alpha intersection.
+    ///
+    /// `tile_w`/`tile_h` are the damage tile the coverage test runs against;
+    /// `mask_w`/`mask_h` size the mask itself and MUST match the scratch pixmap:
+    /// tiny-skia silently skips draws whose mask dimensions differ from the target.
     pub fn push(
         &mut self,
         rect: &ResolvedRect,
         radius: Radius,
         transform: Transform,
-        w: u32,
-        h: u32,
+        tile_w: u32,
+        tile_h: u32,
+        mask_w: u32,
+        mask_h: u32,
     ) {
-        let mut mask = Mask::new(w, h).expect("Mask allocation failed");
+        if clip_covers_tile(rect, radius, transform, tile_w, tile_h) {
+            self.masks.push(None);
+            return;
+        }
+
+        let mut mask = Mask::new(mask_w.max(1), mask_h.max(1)).expect("Mask allocation failed");
         let path = build_rounded_path(rect, radius);
         mask.fill_path(&path, FillRule::Winding, false, transform);
 
-        if let Some(prev) = self.masks.last() {
+        if let Some(prev) = self.masks.iter().rev().find_map(|m| m.as_ref()) {
             let prev_data = prev.data();
             for (dst, &src) in mask.data_mut().iter_mut().zip(prev_data.iter()) {
                 *dst = ((*dst as u16 * src as u16) / 255) as u8;
             }
         }
-        self.masks.push(mask);
+        self.masks.push(Some(mask));
     }
 
     /// Pops the active clipping mask from the stack.
@@ -62,9 +76,35 @@ impl ClipStack {
     }
 
     /// Returns a reference to the active clipping mask, if present.
+    ///
+    /// Skipped full-coverage entries contribute nothing: an ancestor that covers the
+    /// tile clips nothing away, so the nearest real mask below them is authoritative.
     pub fn current(&self) -> Option<&Mask> {
-        self.masks.last()
+        self.masks.iter().rev().find_map(|m| m.as_ref())
     }
+}
+
+/// Whether a clip provably covers the whole `w`x`h` tile, making a mask pointless.
+///
+/// Conservative by design: square corners under a translation-only transform, with the
+/// translated rect containing the tile. Anything else (rounded corners, scale, skew)
+/// takes the mask path. A nested clip inside a skipped one stays correct: intersecting
+/// with full coverage is the inner mask alone.
+fn clip_covers_tile(
+    rect: &ResolvedRect,
+    radius: Radius,
+    transform: Transform,
+    w: u32,
+    h: u32,
+) -> bool {
+    if !matches!(radius, Radius::Scalar(r) if r <= 0.0) {
+        return false;
+    }
+    if transform.has_skew() || transform.has_scale() {
+        return false;
+    }
+    let (x, y) = (rect.x + transform.tx, rect.y + transform.ty);
+    x <= 0.0 && y <= 0.0 && x + rect.width >= w as f32 && y + rect.height >= h as f32
 }
 
 impl Default for ClipStack {

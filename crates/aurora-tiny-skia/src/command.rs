@@ -67,8 +67,15 @@ pub fn execute_commands(
                 ctx.opacity_stack.pop();
             }
             SceneCommand::PushClip { rect, radius } => {
-                ctx.clip_stack
-                    .push(rect, *radius, cur_tx, target.width(), target.height());
+                ctx.clip_stack.push(
+                    rect,
+                    *radius,
+                    cur_tx,
+                    tile_w as u32,
+                    tile_h as u32,
+                    target.width(),
+                    target.height(),
+                );
             }
             SceneCommand::PopClip => ctx.clip_stack.pop(),
             SceneCommand::DrawShadow {
@@ -144,8 +151,15 @@ pub fn execute_commands(
             // offscreen pixmap but never redirected draws into it, so the
             // cache filled with empty bitmaps and isolation never happened.
             SceneCommand::BeginLayer { rect, .. } => {
-                ctx.clip_stack
-                    .push(rect, Radius::ZERO, cur_tx, target.width(), target.height());
+                ctx.clip_stack.push(
+                    rect,
+                    Radius::ZERO,
+                    cur_tx,
+                    tile_w as u32,
+                    tile_h as u32,
+                    target.width(),
+                    target.height(),
+                );
             }
             SceneCommand::EndLayer { .. } => {
                 ctx.clip_stack.pop();

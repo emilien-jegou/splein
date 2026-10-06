@@ -230,6 +230,21 @@ fn reorder_ready() -> Harness {
 
 #[test]
 #[ntest::timeout(30_000)]
+fn reorder_rows_actually_paint() {
+    // Non-vacuous by construction: damage-parity tests compare two canvases and pass
+    // when both are blank, so only an absolute pixel count catches a backend that
+    // silently drops draws (e.g. tiny-skia skips draws whose mask dimensions differ
+    // from the target — a blank canvas then "matches" a blank truth).
+    let mut h = reorder_ready();
+    let painted = accent_area(&mut h);
+    assert!(
+        painted > 200,
+        "the settled rows must actually be painted, found {painted} accent samples"
+    );
+}
+
+#[test]
+#[ntest::timeout(30_000)]
 fn reorder_lifts_a_row_and_swaps_the_list() {
     let mut h = reorder_ready();
 
