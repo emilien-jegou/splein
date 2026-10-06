@@ -8,7 +8,7 @@ use aurora::foundation::{Color, Direction, Margin};
 use aurora::input::PointerPhase;
 use aurora::prelude::*;
 use aurora::reactive::ReactiveRuntime;
-use aurora::testing::{report, Escape, Filmstrip, Harness, Located, Rgba, Snapshot};
+use aurora_tiny_skia::testing::{report, Escape, Filmstrip, Harness, Located, Rgba, Snapshot};
 
 /// A card that slides between two positions on a spring, so there is always motion to freeze.
 #[component]

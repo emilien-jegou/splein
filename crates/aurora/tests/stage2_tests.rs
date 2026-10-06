@@ -9,6 +9,7 @@
 use aurora::dsl::*;
 use aurora::foundation::*;
 use aurora::runtime::*;
+use aurora_tiny_skia::HeadlessRaster;
 use aurora::tree::*;
 
 // =========================================================================
@@ -281,6 +282,7 @@ fn test_moved_node_triggers_dual_damage() {
 #[test]
 #[ntest::timeout(30_000)]
 fn test_persistent_canvas_retains_untouched_pixels() {
+    let mut raster = HeadlessRaster::new();
     let mut engine = Engine::headless(400, 400);
     let color_sig = engine.signal(Color::rgba(0.0, 0.0, 1.0, 1.0)); // Blue
 
@@ -308,7 +310,7 @@ fn test_persistent_canvas_retains_untouched_pixels() {
 
     // Verify Box A rendered red and Box B rendered blue on the persistent canvas
     {
-        let canvas = engine.canvas();
+        let canvas = raster.draw_engine(&mut engine);
         let pixel_a = canvas.pixel(50, 50).expect("Pixel A must exist");
         assert_eq!(pixel_a.red(), 255);
         assert_eq!(pixel_a.green(), 0);
@@ -333,7 +335,7 @@ fn test_persistent_canvas_retains_untouched_pixels() {
     );
 
     // 2. Box A's pixels were retained on the persistent canvas without re-drawing
-    let canvas = engine.canvas();
+    let canvas = raster.draw_engine(&mut engine);
     let pixel_a = canvas.pixel(50, 50).unwrap();
     assert_eq!(
         pixel_a.red(),
@@ -356,6 +358,7 @@ fn test_persistent_canvas_retains_untouched_pixels() {
 #[test]
 #[ntest::timeout(30_000)]
 fn test_window_resize_forces_full_window_damage() {
+    let mut raster = HeadlessRaster::new();
     let mut engine = Engine::headless(400, 300);
     engine.mount(group().fill(Color::BLACK));
     engine.frame();
@@ -371,8 +374,8 @@ fn test_window_resize_forces_full_window_damage() {
         ResolvedRect::new(0.0, 0.0, 800.0, 600.0),
         "Resize must immediately force full window damage"
     );
-    assert_eq!(engine.canvas().width(), 800);
-    assert_eq!(engine.canvas().height(), 600);
+    assert_eq!(raster.draw_engine(&mut engine).width(), 800);
+    assert_eq!(raster.draw_engine(&mut engine).height(), 600);
 }
 
 // =========================================================================
@@ -389,6 +392,7 @@ fn test_window_resize_forces_full_window_damage() {
 #[test]
 #[ntest::timeout(30_000)]
 fn test_shadow_blur_fringe_damage_expansion_and_cleanup() {
+    let mut raster = HeadlessRaster::new();
     let mut engine = Engine::headless(600, 600);
     let spacer_width = engine.signal(100.0f32);
 
@@ -419,7 +423,7 @@ fn test_shadow_blur_fringe_damage_expansion_and_cleanup() {
     // Verify shadow blur fell onto white background outside the 100x100 box
     // Pixel directly below the box (at y=205, inside the blur halo)
     {
-        let canvas = engine.canvas();
+        let canvas = raster.draw_engine(&mut engine);
         let blur_pixel = canvas
             .pixel(150, 205)
             .expect("Shadow fringe pixel must exist");
@@ -446,7 +450,7 @@ fn test_shadow_blur_fringe_damage_expansion_and_cleanup() {
     );
 
     // 2. The old shadow location (y=205) must now be cleanly restored to pure White
-    let canvas = engine.canvas();
+    let canvas = raster.draw_engine(&mut engine);
     let restored_pixel = canvas.pixel(150, 205).expect("Restored pixel must exist");
     assert_eq!(
         restored_pixel.red(),
@@ -460,6 +464,7 @@ fn test_shadow_blur_fringe_damage_expansion_and_cleanup() {
 #[test]
 #[ntest::timeout(30_000)]
 fn test_screen_overlay_modal_unmount_restores_underlying_content() {
+    let mut raster = HeadlessRaster::new();
     let mut engine = Engine::headless(800, 600);
 
     let build_tree = |show_modal: bool| {
@@ -499,7 +504,7 @@ fn test_screen_overlay_modal_unmount_restores_underlying_content() {
 
     // Center pixel (400, 300) must be BLUE (modal on top of green card)
     {
-        let canvas = engine.canvas();
+        let canvas = raster.draw_engine(&mut engine);
         let center_pixel = canvas.pixel(400, 300).expect("Center pixel must exist");
         assert_eq!(center_pixel.blue(), 255, "Modal must render on top in blue");
         assert_eq!(center_pixel.green(), 0);
@@ -519,7 +524,7 @@ fn test_screen_overlay_modal_unmount_restores_underlying_content() {
     );
 
     // 2. Underlying green card must be cleanly restored where the modal was
-    let canvas = engine.canvas();
+    let canvas = raster.draw_engine(&mut engine);
     let restored_pixel = canvas.pixel(400, 300).expect("Restored pixel must exist");
     assert_eq!(
         restored_pixel.green(),
@@ -532,6 +537,7 @@ fn test_screen_overlay_modal_unmount_restores_underlying_content() {
 #[test]
 #[ntest::timeout(30_000)]
 fn test_window_resize_preserves_canvas_and_damages_exposed_strips() {
+    let mut raster = HeadlessRaster::new();
     let mut engine = Engine::headless(400, 300);
     // Draw a stationary red box in the top-left corner
     engine.mount(
@@ -544,7 +550,7 @@ fn test_window_resize_preserves_canvas_and_damages_exposed_strips() {
 
     // Verify top-left box is red
     {
-        let canvas = engine.canvas();
+        let canvas = raster.draw_engine(&mut engine);
         let pixel = canvas.pixel(50, 50).unwrap();
         assert_eq!(pixel.red(), 255);
     }
@@ -567,7 +573,7 @@ fn test_window_resize_preserves_canvas_and_damages_exposed_strips() {
     );
 
     // 2. The stationary box's red pixels must be preserved in the new canvas
-    let canvas = engine.canvas();
+    let canvas = raster.draw_engine(&mut engine);
     assert_eq!(canvas.width(), 800);
     assert_eq!(canvas.height(), 600);
 

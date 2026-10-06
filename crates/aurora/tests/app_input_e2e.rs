@@ -24,7 +24,7 @@ use winit::event::{DeviceId, ElementState, MouseButton, WindowEvent};
 
 use aurora::app::runner::pointer::PointerBridge;
 use aurora::reactive::{Cx, ReactiveRuntime, Signal};
-use aurora::testing::Harness;
+use aurora_tiny_skia::testing::Harness;
 
 fn moved(x: f64, y: f64) -> WindowEvent {
     WindowEvent::CursorMoved {

@@ -6,7 +6,7 @@ use std::rc::Rc;
 use aurora::foundation::Color;
 use aurora::prelude::*;
 use aurora::reactive::ReactiveRuntime;
-use aurora::testing::{assert_disjoint, report, Filmstrip, Harness};
+use aurora_tiny_skia::testing::{assert_disjoint, report, Filmstrip, Harness};
 
 #[allow(dead_code)]
 #[path = "../examples/motion_accordion/main.rs"]

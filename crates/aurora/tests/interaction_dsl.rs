@@ -8,19 +8,20 @@ use aurora::foundation::{Color, Direction, Key, Size};
 use aurora::input::{PointerPhase, DRAG_THRESHOLD};
 use aurora::reactive::{ReactiveRuntime, Signal};
 use aurora::runtime::Engine;
+use aurora_tiny_skia::HeadlessRaster;
 
 const W: f32 = 400.0;
 const H: f32 = 400.0;
 
 /// Steps one frame at 60Hz, rasterizing like the app loop.
-fn frame(engine: &mut Engine) {
+fn frame(engine: &mut Engine, raster: &mut HeadlessRaster) {
     engine.advance(1.0 / 60.0);
     engine.frame();
-    engine.canvas();
+    raster.draw_engine(&mut *engine);
 }
 
 /// Sends one pointer sample and frames.
-fn send(engine: &mut Engine, x: f32, y: f32, phase: PointerPhase) {
+fn send(engine: &mut Engine, raster: &mut HeadlessRaster, x: f32, y: f32, phase: PointerPhase) {
     engine.queue_pointer_event(aurora::input::PointerEvent {
         position: aurora::foundation::Point::new(x, y),
         button: aurora::input::PointerButton::Primary,
@@ -31,13 +32,13 @@ fn send(engine: &mut Engine, x: f32, y: f32, phase: PointerPhase) {
         ctrl: false,
         meta: false,
     });
-    frame(engine);
+    frame(&mut *engine, &mut *raster);
 }
 
 /// A full press-move-release at one point, which the router reads as a click.
-fn click(engine: &mut Engine, x: f32, y: f32) {
-    send(engine, x, y, PointerPhase::Down);
-    send(engine, x, y, PointerPhase::Up);
+fn click(engine: &mut Engine, raster: &mut HeadlessRaster, x: f32, y: f32) {
+    send(&mut *engine, &mut *raster, x, y, PointerPhase::Down);
+    send(&mut *engine, &mut *raster, x, y, PointerPhase::Up);
 }
 
 #[test]
@@ -47,6 +48,7 @@ fn a_click_reaches_the_node_under_the_pointer() {
     let clicks = Signal::new(Rc::clone(&runtime), 0u32);
     let tapped = clicks.clone();
 
+    let mut raster = HeadlessRaster::new();
     let mut engine = Engine::with_runtime(
         Rc::clone(&runtime),
         group()
@@ -64,16 +66,16 @@ fn a_click_reaches_the_node_under_the_pointer() {
         400,
         400,
     );
-    frame(&mut engine);
+    frame(&mut engine, &mut raster);
 
-    click(&mut engine, 50.0, 50.0);
+    click(&mut engine, &mut raster, 50.0, 50.0);
     assert_eq!(
         clicks.get(),
         1,
         "a press and release on the node must click it"
     );
 
-    click(&mut engine, 300.0, 300.0);
+    click(&mut engine, &mut raster, 300.0, 300.0);
     assert_eq!(
         clicks.get(),
         1,
@@ -89,6 +91,7 @@ fn a_press_bubbles_to_ancestors_above_the_target() {
     let outer_hits = Signal::new(Rc::clone(&runtime), 0u32);
     let (i, o) = (inner_hits.clone(), outer_hits.clone());
 
+    let mut raster = HeadlessRaster::new();
     let mut engine = Engine::with_runtime(
         Rc::clone(&runtime),
         group()
@@ -106,9 +109,9 @@ fn a_press_bubbles_to_ancestors_above_the_target() {
         400,
         400,
     );
-    frame(&mut engine);
+    frame(&mut engine, &mut raster);
 
-    click(&mut engine, 50.0, 50.0);
+    click(&mut engine, &mut raster, 50.0, 50.0);
     assert_eq!(
         inner_hits.get(),
         1,
@@ -128,6 +131,7 @@ fn a_decorative_wrapper_does_not_swallow_the_click_inside_it() {
     let hits = Signal::new(Rc::clone(&runtime), 0u32);
     let h = hits.clone();
 
+    let mut raster = HeadlessRaster::new();
     let mut engine = Engine::with_runtime(
         Rc::clone(&runtime),
         group()
@@ -151,14 +155,14 @@ fn a_decorative_wrapper_does_not_swallow_the_click_inside_it() {
         400,
         400,
     );
-    frame(&mut engine);
+    frame(&mut engine, &mut raster);
 
     // Click the wrapper itself: nothing is declared on it, so nothing should happen.
-    click(&mut engine, 250.0, 250.0);
+    click(&mut engine, &mut raster, 250.0, 250.0);
     assert_eq!(hits.get(), 0, "an undecorated wrapper owns no clicks");
 
     // Click the inner control: it must receive the press despite the wrapper on top of it.
-    click(&mut engine, 50.0, 50.0);
+    click(&mut engine, &mut raster, 50.0, 50.0);
     assert_eq!(hits.get(), 1, "the inner control must still be reachable");
 }
 
@@ -170,6 +174,7 @@ fn hover_enters_once_and_leaves_when_the_pointer_goes_away() {
     let left = Signal::new(Rc::clone(&runtime), 0u32);
     let (en, lv) = (entered.clone(), left.clone());
 
+    let mut raster = HeadlessRaster::new();
     let mut engine = Engine::with_runtime(
         Rc::clone(&runtime),
         group()
@@ -188,14 +193,14 @@ fn hover_enters_once_and_leaves_when_the_pointer_goes_away() {
         400,
         400,
     );
-    frame(&mut engine);
+    frame(&mut engine, &mut raster);
 
-    send(&mut engine, 50.0, 50.0, PointerPhase::Move);
+    send(&mut engine, &mut raster, 50.0, 50.0, PointerPhase::Move);
     assert_eq!(entered.get(), 1, "arriving fires enter");
-    send(&mut engine, 60.0, 60.0, PointerPhase::Move);
+    send(&mut engine, &mut raster, 60.0, 60.0, PointerPhase::Move);
     assert_eq!(entered.get(), 1, "staying inside must not re-fire enter");
     assert_eq!(left.get(), 0);
-    send(&mut engine, 300.0, 300.0, PointerPhase::Move);
+    send(&mut engine, &mut raster, 300.0, 300.0, PointerPhase::Move);
     assert_eq!(left.get(), 1, "leaving fires leave");
 }
 
@@ -207,6 +212,7 @@ fn a_press_that_moves_past_the_threshold_is_a_drag_not_a_click() {
     let steps = Signal::new(Rc::clone(&runtime), 0u32);
     let (c, s) = (clicks.clone(), steps.clone());
 
+    let mut raster = HeadlessRaster::new();
     let mut engine = Engine::with_runtime(
         Rc::clone(&runtime),
         group()
@@ -225,17 +231,18 @@ fn a_press_that_moves_past_the_threshold_is_a_drag_not_a_click() {
         400,
         400,
     );
-    frame(&mut engine);
+    frame(&mut engine, &mut raster);
 
-    send(&mut engine, 50.0, 50.0, PointerPhase::Down);
+    send(&mut engine, &mut raster, 50.0, 50.0, PointerPhase::Down);
     send(
         &mut engine,
+        &mut raster,
         50.0 + DRAG_THRESHOLD * 3.0,
         50.0,
         PointerPhase::Move,
     );
-    send(&mut engine, 90.0, 50.0, PointerPhase::Drag);
-    send(&mut engine, 90.0, 50.0, PointerPhase::Up);
+    send(&mut engine, &mut raster, 90.0, 50.0, PointerPhase::Drag);
+    send(&mut engine, &mut raster, 90.0, 50.0, PointerPhase::Up);
 
     assert!(steps.get() > 0, "the gesture must deliver drag steps");
     assert_eq!(
@@ -253,6 +260,7 @@ fn a_drag_keeps_its_capture_after_the_pointer_leaves_the_node() {
     let ended = Signal::new(Rc::clone(&runtime), 0u32);
     let (s, e) = (steps.clone(), ended.clone());
 
+    let mut raster = HeadlessRaster::new();
     let mut engine = Engine::with_runtime(
         Rc::clone(&runtime),
         group()
@@ -271,22 +279,22 @@ fn a_drag_keeps_its_capture_after_the_pointer_leaves_the_node() {
         400,
         400,
     );
-    frame(&mut engine);
+    frame(&mut engine, &mut raster);
 
-    send(&mut engine, 50.0, 50.0, PointerPhase::Down);
-    send(&mut engine, 60.0, 50.0, PointerPhase::Move);
-    send(&mut engine, 60.0, 50.0, PointerPhase::Drag);
+    send(&mut engine, &mut raster, 50.0, 50.0, PointerPhase::Down);
+    send(&mut engine, &mut raster, 60.0, 50.0, PointerPhase::Move);
+    send(&mut engine, &mut raster, 60.0, 50.0, PointerPhase::Drag);
     let before = steps.get();
     assert!(before > 0, "the drag must have started");
 
     // Move far outside the node: capture must keep delivering.
-    send(&mut engine, 380.0, 380.0, PointerPhase::Drag);
+    send(&mut engine, &mut raster, 380.0, 380.0, PointerPhase::Drag);
     assert!(
         steps.get() > before,
         "a captured gesture must follow the pointer off the node"
     );
 
-    send(&mut engine, 380.0, 380.0, PointerPhase::Up);
+    send(&mut engine, &mut raster, 380.0, 380.0, PointerPhase::Up);
     assert_eq!(ended.get(), 1, "release must end the gesture once");
 }
 
@@ -297,6 +305,7 @@ fn release_velocity_reflects_the_flick_that_was_actually_made() {
     let released = Rc::new(RefCell::new(None));
     let sink = Rc::clone(&released);
 
+    let mut raster = HeadlessRaster::new();
     let mut engine = Engine::with_runtime(
         Rc::clone(&runtime),
         group()
@@ -314,13 +323,13 @@ fn release_velocity_reflects_the_flick_that_was_actually_made() {
         400,
         400,
     );
-    frame(&mut engine);
+    frame(&mut engine, &mut raster);
 
     // One frame is 1/60s; a steady 30px/frame flick is therefore 1800 px/s.
-    send(&mut engine, 50.0, 50.0, PointerPhase::Down);
-    send(&mut engine, 80.0, 50.0, PointerPhase::Move);
-    send(&mut engine, 110.0, 50.0, PointerPhase::Drag);
-    send(&mut engine, 140.0, 50.0, PointerPhase::Up);
+    send(&mut engine, &mut raster, 50.0, 50.0, PointerPhase::Down);
+    send(&mut engine, &mut raster, 80.0, 50.0, PointerPhase::Move);
+    send(&mut engine, &mut raster, 110.0, 50.0, PointerPhase::Drag);
+    send(&mut engine, &mut raster, 140.0, 50.0, PointerPhase::Up);
 
     let velocity = released.borrow().expect("drag end must fire");
     assert!(
@@ -340,6 +349,7 @@ fn a_double_click_is_reported_as_a_second_click() {
     let max_count = Signal::new(Rc::clone(&runtime), 0u32);
     let m = max_count.clone();
 
+    let mut raster = HeadlessRaster::new();
     let mut engine = Engine::with_runtime(
         Rc::clone(&runtime),
         group()
@@ -357,11 +367,11 @@ fn a_double_click_is_reported_as_a_second_click() {
         400,
         400,
     );
-    frame(&mut engine);
+    frame(&mut engine, &mut raster);
 
-    click(&mut engine, 50.0, 50.0);
+    click(&mut engine, &mut raster, 50.0, 50.0);
     assert_eq!(max_count.get(), 1, "the first click reports count one");
-    click(&mut engine, 50.0, 50.0);
+    click(&mut engine, &mut raster, 50.0, 50.0);
     assert_eq!(
         max_count.get(),
         2,
@@ -388,6 +398,7 @@ fn hit_order_follows_paint_order() {
 
     // Absolute positioning so the two genuinely overlap: stacked siblings would
     // never share a point and could not say anything about hit order.
+    let mut raster = HeadlessRaster::new();
     let mut engine = Engine::with_runtime(
         Rc::clone(&runtime),
         group()
@@ -416,10 +427,10 @@ fn hit_order_follows_paint_order() {
         400,
         400,
     );
-    frame(&mut engine);
+    frame(&mut engine, &mut raster);
 
     // Point inside the overlap: the topmost painted node must receive the click.
-    click(&mut engine, 50.0, 50.0);
+    click(&mut engine, &mut raster, 50.0, 50.0);
     assert_eq!(
         hits.get(),
         vec!["over"],
@@ -428,7 +439,7 @@ fn hit_order_follows_paint_order() {
     );
 
     // Point inside only the lower sibling.
-    click(&mut engine, 150.0, 150.0);
+    click(&mut engine, &mut raster, 150.0, 150.0);
     assert_eq!(hits.get(), vec!["over", "under"]);
 }
 
@@ -447,6 +458,7 @@ fn a_higher_z_index_is_hit_before_a_later_sibling() {
         }
     };
 
+    let mut raster = HeadlessRaster::new();
     let mut engine = Engine::with_runtime(
         Rc::clone(&runtime),
         group()
@@ -475,9 +487,9 @@ fn a_higher_z_index_is_hit_before_a_later_sibling() {
         400,
         400,
     );
-    frame(&mut engine);
+    frame(&mut engine, &mut raster);
 
-    click(&mut engine, 100.0, 100.0);
+    click(&mut engine, &mut raster, 100.0, 100.0);
     assert_eq!(
         hits.get(),
         vec!["top"],
@@ -494,6 +506,7 @@ fn a_view_clipped_out_of_its_parent_does_not_swallow_clicks() {
     let inner_hits = Signal::new(Rc::clone(&runtime), 0u32);
     let (o, i) = (outer_hits.clone(), inner_hits.clone());
 
+    let mut raster = HeadlessRaster::new();
     let mut engine = Engine::with_runtime(
         Rc::clone(&runtime),
         group()
@@ -518,14 +531,14 @@ fn a_view_clipped_out_of_its_parent_does_not_swallow_clicks() {
         400,
         400,
     );
-    frame(&mut engine);
+    frame(&mut engine, &mut raster);
 
     // Inside the clip: the child is visible and receives the press.
-    click(&mut engine, 50.0, 50.0);
+    click(&mut engine, &mut raster, 50.0, 50.0);
     assert_eq!(inner_hits.get(), 1, "the visible child is hittable");
 
     // Below the clip: the child is not painted there, so it must not take the press.
-    click(&mut engine, 50.0, 200.0);
+    click(&mut engine, &mut raster, 50.0, 200.0);
     assert_eq!(
         inner_hits.get(),
         1,
@@ -537,6 +550,7 @@ fn a_view_clipped_out_of_its_parent_does_not_swallow_clicks() {
 #[ntest::timeout(30_000)]
 fn a_keyed_node_reports_its_hover_target() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
+    let mut raster = HeadlessRaster::new();
     let mut engine = Engine::with_runtime(
         Rc::clone(&runtime),
         group()
@@ -554,9 +568,9 @@ fn a_keyed_node_reports_its_hover_target() {
         400,
         400,
     );
-    frame(&mut engine);
+    frame(&mut engine, &mut raster);
 
-    send(&mut engine, 50.0, 50.0, PointerPhase::Move);
+    send(&mut engine, &mut raster, 50.0, 50.0, PointerPhase::Move);
     assert_eq!(
         engine.pointer_position(),
         Some(aurora::foundation::Point::new(50.0, 50.0)),
@@ -594,15 +608,16 @@ fn handlers_survive_a_remount() {
             .into_element()
     };
 
+    let mut raster = HeadlessRaster::new();
     let mut engine = Engine::with_runtime(Rc::clone(&runtime), view(), 400, 400);
-    frame(&mut engine);
-    click(&mut engine, 50.0, 50.0);
+    frame(&mut engine, &mut raster);
+    click(&mut engine, &mut raster, 50.0, 50.0);
     assert_eq!(clicks.get(), 1);
 
     // Remounting the same keyed structure must reattach handlers to the reused node.
     engine.mount(view());
-    frame(&mut engine);
-    click(&mut engine, 50.0, 50.0);
+    frame(&mut engine, &mut raster);
+    click(&mut engine, &mut raster, 50.0, 50.0);
     assert_eq!(
         clicks.get(),
         2,
@@ -617,6 +632,7 @@ fn a_handler_write_reaches_layout_in_the_same_frame() {
     let open = Signal::new(Rc::clone(&runtime), false);
     let toggle = open.clone();
 
+    let mut raster = HeadlessRaster::new();
     let mut engine = Engine::with_runtime(
         Rc::clone(&runtime),
         group()
@@ -642,7 +658,7 @@ fn a_handler_write_reaches_layout_in_the_same_frame() {
         400,
         400,
     );
-    frame(&mut engine);
+    frame(&mut engine, &mut raster);
 
     assert_eq!(
         engine.rect("panelless").map(|r| r.height),
@@ -650,7 +666,7 @@ fn a_handler_write_reaches_layout_in_the_same_frame() {
         "sanity: no such key yet"
     );
 
-    click(&mut engine, 50.0, 50.0);
+    click(&mut engine, &mut raster, 50.0, 50.0);
     // The height is driven by the same signal the click wrote, so it must already be
     // applied by the frame that dispatched the event.
     let grown = engine

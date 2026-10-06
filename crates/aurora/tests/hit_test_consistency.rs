@@ -14,7 +14,7 @@ use aurora::dsl::*;
 use aurora::foundation::{Color, Key, Point};
 use aurora::input::hit::hit_chain;
 use aurora::runtime::Engine;
-use aurora::testing::Harness;
+use aurora_tiny_skia::testing::Harness;
 
 /// The key the router's chain resolves at a point, i.e. what a real click would reach first.
 fn chain_key(engine: &Engine, x: f32, y: f32) -> Option<Key> {

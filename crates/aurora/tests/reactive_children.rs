@@ -8,6 +8,7 @@ use aurora::foundation::Color;
 use aurora::prelude::*;
 use aurora::reactive::{ReactiveRuntime, Signal};
 use aurora::runtime::Engine;
+use aurora_tiny_skia::HeadlessRaster;
 
 /// Row height plus gap, so a slot index maps to a known y offset.
 const STRIDE: f32 = 60.0;
@@ -42,7 +43,6 @@ fn engine_with(order: Signal<Vec<&'static str>>) -> Engine {
         Engine::with_runtime(runtime, cx.enter(|| Reorderable(order.clone())), 400, 400);
     engine.load_font(include_bytes!("../assets/inter-var.ttf"));
     engine.frame();
-    engine.canvas();
     engine
 }
 
@@ -77,6 +77,7 @@ fn a_static_list_lays_out_in_order() {
 fn reordering_moves_the_rows_and_leaves_the_tree_intact() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let order = Signal::new(Rc::clone(&runtime), vec!["a", "b", "c"]);
+    let mut raster = HeadlessRaster::new();
     let mut engine = engine_with(order.clone());
 
     let before = row_y(&engine, "c");
@@ -91,7 +92,7 @@ fn reordering_moves_the_rows_and_leaves_the_tree_intact() {
     next.insert(0, moved);
     order.set(next);
     engine.frame();
-    engine.canvas();
+    raster.draw_engine(&mut engine);
 
     let after = row_y(&engine, "c");
     assert!(
@@ -139,6 +140,7 @@ fn an_unchanged_order_costs_nothing() {
 fn a_reorder_leaves_the_render_boxes_settling() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let order = Signal::new(Rc::clone(&runtime), vec!["a", "b", "c"]);
+    let mut raster = HeadlessRaster::new();
     let mut engine = engine_with(order.clone());
 
     let mut next = order.get();
@@ -146,7 +148,7 @@ fn a_reorder_leaves_the_render_boxes_settling() {
     next.push(moved);
     order.set(next);
     engine.frame();
-    engine.canvas();
+    raster.draw_engine(&mut engine);
 
     // No spring assertion here any more. The engine no longer animates a box, so "did anything
     // move" is not a question it can answer; the animation lives in whichever signal the client
@@ -155,7 +157,7 @@ fn a_reorder_leaves_the_render_boxes_settling() {
     for _ in 0..180 {
         engine.advance(1.0 / 60.0);
         engine.frame();
-        engine.canvas();
+        raster.draw_engine(&mut engine);
     }
     assert!(
         (row_y(&engine, "a") - 2.0 * STRIDE).abs() < 1.0,
@@ -169,17 +171,18 @@ fn a_reorder_leaves_the_render_boxes_settling() {
 fn growing_and_shrinking_a_list_reconciles_the_difference() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let order = Signal::new(Rc::clone(&runtime), vec!["a", "b", "c"]);
+    let mut raster = HeadlessRaster::new();
     let mut engine = engine_with(order.clone());
 
     order.set(vec!["a", "c"]);
     engine.frame();
-    engine.canvas();
+    raster.draw_engine(&mut engine);
     assert!(engine.rect("row-b").is_none(), "b must be unmounted");
     assert!(engine.rect("row-c").is_some(), "c must survive");
 
     order.set(vec!["a", "b", "c", "d"]);
     engine.frame();
-    engine.canvas();
+    raster.draw_engine(&mut engine);
     for label in ["a", "b", "c", "d"] {
         assert!(
             engine.rect(format!("row-{label}")).is_some(),

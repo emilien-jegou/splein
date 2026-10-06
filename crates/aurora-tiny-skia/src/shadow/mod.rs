@@ -6,7 +6,7 @@ pub mod patch;
 use rustc_hash::FxHashMap;
 use tiny_skia::{Mask, PixmapMut, Transform};
 
-use crate::foundation::{Radius, ResolvedRect, Shadow, ShadowKind};
+use aurora::foundation::{Radius, ResolvedRect, Shadow, ShadowKind};
 use direct::render_direct_blur;
 use patch::{blit_9patch, generate_patch, ShadowPatch, ShadowPatchKey};
 

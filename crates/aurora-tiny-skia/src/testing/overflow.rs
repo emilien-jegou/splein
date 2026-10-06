@@ -1,9 +1,9 @@
 // Single responsibility: Finding painted content that escapes where it should not stay.
 
-use crate::foundation::{Point, ResolvedRect};
-use crate::runtime::Engine;
+use aurora::foundation::{Point, ResolvedRect};
+use aurora::runtime::Engine;
 use crate::testing::snapshot::{Rgba, Snapshot};
-use crate::tree::{NodeId, TreeArena};
+use aurora::tree::{NodeId, TreeArena};
 
 /// A geometric observation worth reading. None of these are automatically a bug: a clipping
 /// parent is *supposed* to contain content that reaches past it, which is how a reveal works.
@@ -110,7 +110,7 @@ fn walk(arena: &TreeArena, id: NodeId, viewport: ResolvedRect, is_root: bool) ->
 
     let (mut content, mut worst) = (ResolvedRect::ZERO, (0.0f32, None::<String>));
     for child_id in &children {
-        if matches!(arena.get(*child_id).kind, crate::tree::NodeKind::Text(_)) {
+        if matches!(arena.get(*child_id).kind, aurora::tree::NodeKind::Text(_)) {
             // A text box includes ascent and descent, so its bounds legitimately exceed the
             // ink. Including it here would report every label as an overflow.
             continue;

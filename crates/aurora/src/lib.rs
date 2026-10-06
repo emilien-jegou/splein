@@ -19,6 +19,5 @@ pub mod reactive;
 pub mod render;
 pub mod runtime;
 pub mod scene;
-pub mod testing;
 pub mod text;
 pub mod tree;

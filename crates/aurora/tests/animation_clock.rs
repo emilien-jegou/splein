@@ -6,7 +6,7 @@
 
 use aurora::foundation::Color;
 use aurora::prelude::*;
-use aurora::testing::Harness;
+use aurora_tiny_skia::testing::Harness;
 
 /// A card whose x springs to 120, driven by a plain linear tween so any difference in the
 /// result comes from the clock rather than from an integrator.

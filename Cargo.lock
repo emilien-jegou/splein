@@ -154,6 +154,8 @@ name = "aurora"
 version = "0.0.1-rc.1"
 dependencies = [
  "aurora-macros",
+ "aurora-tiny-skia",
+ "aurora-vello",
  "bon",
  "bytemuck",
  "cosmic-text",
@@ -181,6 +183,37 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "aurora-tiny-skia"
+version = "0.0.1-rc.1"
+dependencies = [
+ "aurora",
+ "bon",
+ "bytemuck",
+ "ntest",
+ "resvg",
+ "rustc-hash 2.1.3",
+ "smallvec",
+ "softbuffer",
+ "tiny-skia",
+ "tracing",
+ "tracy-client",
+ "winit",
+]
+
+[[package]]
+name = "aurora-vello"
+version = "0.0.1-rc.1"
+dependencies = [
+ "aurora",
+ "pollster",
+ "resvg",
+ "tracing",
+ "vello",
+ "wgpu",
+ "winit",
 ]
 
 [[package]]

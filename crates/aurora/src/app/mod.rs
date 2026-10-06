@@ -10,7 +10,6 @@ pub mod debug_scene;
 pub mod debug_toggle;
 pub mod extension;
 pub(crate) mod painter;
-pub(crate) mod presenter;
 pub mod runner;
 pub mod telemetry;
 
@@ -32,7 +31,7 @@ use crate::render::RenderBackend;
 use crate::runtime::Engine;
 #[cfg(feature = "vello")]
 use runner::GpuBackend;
-use runner::{run_event_loop, Backend, CpuBackend};
+use runner::{run_event_loop, Backend, BackendFactory};
 
 /// Declarative builder for application window initialization and lifecycle execution.
 pub struct AppConfig {
@@ -42,6 +41,7 @@ pub struct AppConfig {
     fonts: Vec<Vec<u8>>,
     background: Color,
     backend: RenderBackend,
+    backend_factory: Option<BackendFactory>,
     extensions: Vec<Box<dyn AppExtension>>,
     runtime: Option<Rc<RefCell<ReactiveRuntime>>>,
     fps_limit: FpsLimit,
@@ -60,6 +60,7 @@ impl App {
             fonts: Vec::new(),
             background: Color::WHITE,
             backend: RenderBackend::default(),
+            backend_factory: None,
             extensions: Vec::new(),
             runtime: None,
             fps_limit: FpsLimit::Auto,
@@ -87,6 +88,14 @@ impl AppConfig {
     }
     pub fn backend(mut self, backend: RenderBackend) -> Self {
         self.backend = backend;
+        self
+    }
+    /// Supplies the constructor for the selected backend.
+    ///
+    /// The engine crate implements no rasterizer, so the factory comes from a backend
+    /// crate: `aurora_tiny_skia::create_backend` or `aurora_vello::create_backend`.
+    pub fn backend_factory(mut self, factory: BackendFactory) -> Self {
+        self.backend_factory = Some(factory);
         self
     }
     pub fn extension(mut self, ext: impl AppExtension + 'static) -> Self {
@@ -146,15 +155,19 @@ impl AppConfig {
                 )
                 .expect("Vello backend init failed"),
             ),
-            RenderBackend::TinySkia => Box::new(
-                CpuBackend::new(
+            RenderBackend::TinySkia => {
+                let factory = self.backend_factory.expect(
+                    "no CPU backend factory: pass `aurora_tiny_skia::create_backend` \
+                     via `AppConfig::backend_factory`",
+                );
+                factory(
                     window.clone(),
                     self.width,
                     self.height,
                     engine.text_context(),
                 )
-                .expect("CPU backend init failed"),
-            ),
+                .expect("CPU backend init failed")
+            }
         };
 
         run_event_loop(

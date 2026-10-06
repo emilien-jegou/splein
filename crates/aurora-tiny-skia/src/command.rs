@@ -2,17 +2,17 @@
 
 use tiny_skia::{FillRule, Mask, PixmapMut, Transform as SkiaTransform};
 
-use crate::foundation::Radius;
-use crate::render::tiny_skia::clip::ClipStack;
-use crate::render::tiny_skia::image::ImageCache;
-use crate::render::tiny_skia::path::build_rounded_path;
-use crate::render::tiny_skia::shader::build_paint;
-use crate::render::tiny_skia::shadow::ShadowRasterizer;
-use crate::render::tiny_skia::stroke::render_stroke;
-use crate::render::tiny_skia::svg::SvgCache;
-use crate::render::tiny_skia::text::{render_text, TextRenderParams};
-use crate::scene::command::SceneCommand;
-use crate::text::TextContext;
+use aurora::foundation::Radius;
+use crate::clip::ClipStack;
+use crate::image::ImageCache;
+use crate::path::build_rounded_path;
+use crate::shader::build_paint;
+use crate::shadow::ShadowRasterizer;
+use crate::stroke::render_stroke;
+use crate::svg::SvgCache;
+use crate::text::{render_text, TextRenderParams};
+use aurora::scene::command::SceneCommand;
+use aurora::text::TextContext;
 
 /// Shared stateful resources required during single-tile TinySkia rasterization.
 pub struct CommandContext<'a> {
@@ -161,7 +161,7 @@ pub fn execute_commands(
 /// wrong box (missing pixels or wasted work). Axis-aligned transforms take a
 /// cheap edge test; skewed ones project all four corners.
 pub(crate) fn rect_visible_in_tile(
-    r: &crate::foundation::ResolvedRect,
+    r: &aurora::foundation::ResolvedRect,
     tx: SkiaTransform,
     tw: f32,
     th: f32,
@@ -199,8 +199,8 @@ pub(crate) fn rect_visible_in_tile(
 
 fn render_rect(
     t: &mut PixmapMut,
-    r: &crate::foundation::ResolvedRect,
-    a: &crate::foundation::Appearance,
+    r: &aurora::foundation::ResolvedRect,
+    a: &aurora::foundation::Appearance,
     op: f32,
     tx: SkiaTransform,
     clip: Option<&Mask>,

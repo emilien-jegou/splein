@@ -1,7 +1,7 @@
 // Single responsibility: Direct Gaussian blur rasterizer for small or inset soft shadows.
 
-use crate::foundation::{Radius, ResolvedRect, Shadow};
-use crate::render::blur::box_blur_alpha;
+use aurora::foundation::{Radius, ResolvedRect, Shadow};
+use aurora::render::blur::box_blur_alpha;
 use tiny_skia::{Mask, Pixmap, PixmapMut, PixmapPaint, Transform};
 
 /// Renders fallback direct blur without 9-patch subdivision for small or inset shadows.
@@ -39,7 +39,7 @@ pub fn render_direct_blur(
 
     let blur_r = ((shadow.blur * scale).round() as usize).max(1);
     let scaled_rect = ResolvedRect::new(0.0, 0.0, rect.width * scale, rect.height * scale);
-    let shape_path = crate::render::tiny_skia::path::build_rounded_path(
+    let shape_path = crate::path::build_rounded_path(
         &scaled_rect,
         Radius::Scalar(radius * scale),
     );

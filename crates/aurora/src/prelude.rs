@@ -21,7 +21,7 @@ pub use crate::reactive::{
 
 #[cfg(feature = "vello")]
 pub use crate::render::VelloRenderer;
-pub use crate::render::{RenderBackend, TinySkiaRenderer};
+pub use crate::render::RenderBackend;
 pub use crate::runtime::{Engine, FrameDiagnostics, FrameReport};
 pub use crate::scene::vector::VectorGraphic;
 pub use crate::text::{FontStyle, LineHeight, TextAlign, TextDecoration, TextOverflow};

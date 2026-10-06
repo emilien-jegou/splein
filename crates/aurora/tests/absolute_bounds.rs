@@ -10,7 +10,7 @@
 
 use aurora::dsl::*;
 use aurora::foundation::{Color, ResolvedRect, Transform};
-use aurora::testing::Harness;
+use aurora_tiny_skia::testing::Harness;
 
 fn harness(child: impl IntoElement) -> Harness {
     let mut h = Harness::root(

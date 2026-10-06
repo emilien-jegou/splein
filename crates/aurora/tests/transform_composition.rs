@@ -14,7 +14,7 @@ use aurora::dsl::*;
 use aurora::foundation::Transform;
 use aurora::prelude::*;
 use aurora::reactive::{Cx, ReactiveRuntime, Signal};
-use aurora::testing::Harness;
+use aurora_tiny_skia::testing::Harness;
 use std::cell::RefCell;
 use std::rc::Rc;
 

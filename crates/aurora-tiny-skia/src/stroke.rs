@@ -1,9 +1,9 @@
 // Single responsibility: Analytical border outline alignment and rasterization.
 
-use crate::foundation::{Radius, ResolvedRect, Stroke};
-use crate::render::stroke_geometry::adjust_stroke_geometry;
-use crate::render::tiny_skia::path::build_rounded_path;
-use crate::render::tiny_skia::shader::build_paint;
+use aurora::foundation::{Radius, ResolvedRect, Stroke};
+use aurora::render::stroke_geometry::adjust_stroke_geometry;
+use crate::path::build_rounded_path;
+use crate::shader::build_paint;
 use tiny_skia::{Mask, PixmapMut, Stroke as SkiaStroke, Transform};
 
 /// Renders analytical inside, outside, or centered borders without anti-aliasing seams.

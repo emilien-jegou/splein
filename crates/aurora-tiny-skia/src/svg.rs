@@ -1,6 +1,6 @@
 // Single responsibility: Bounded raster cache for vector graphics.
 
-use crate::scene::vector::VectorGraphic;
+use aurora::scene::vector::VectorGraphic;
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
 use tiny_skia::{Pixmap, PixmapPaint, Transform as SkiaTransform};

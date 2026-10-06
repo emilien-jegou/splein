@@ -2,7 +2,6 @@
 
 mod adapters;
 pub mod backend;
-pub mod cpu_backend;
 mod frame_flow;
 #[cfg(feature = "vello")]
 pub mod gpu_backend;
@@ -10,9 +9,9 @@ pub mod pacing;
 pub mod pointer;
 
 pub use backend::{
-    Backend, DamageResolver, FramePostProcess, Present, PresentReport, SurfaceRequest,
+    Backend, BackendFactory, DamageResolver, FramePostProcess, Present, PresentReport,
+    SurfaceRequest,
 };
-pub use cpu_backend::CpuBackend;
 #[cfg(feature = "vello")]
 pub use gpu_backend::GpuBackend;
 pub use pacing::FpsLimit;

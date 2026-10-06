@@ -4,8 +4,8 @@ use rustc_hash::FxHashMap;
 use std::sync::Arc;
 use tiny_skia::{IntSize, Mask, Pixmap, PixmapMut, PixmapPaint, Transform};
 
-use crate::foundation::ResolvedRect;
-use crate::scene::image::ImageSource;
+use aurora::foundation::ResolvedRect;
+use aurora::scene::image::ImageSource;
 
 const MAX_CACHED_IMAGES: usize = 64;
 

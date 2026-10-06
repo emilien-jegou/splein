@@ -8,7 +8,7 @@ use std::rc::Rc;
 
 use aurora::prelude::*;
 use aurora::reactive::{Cx, ReactiveRuntime};
-use aurora::testing::Harness;
+use aurora_tiny_skia::testing::Harness;
 
 fn moved(x: f32, y: f32) -> winit::event::WindowEvent {
     winit::event::WindowEvent::CursorMoved {

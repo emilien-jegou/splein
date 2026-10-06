@@ -148,11 +148,18 @@ impl ExampleCli {
         let mut debugger = VisualDebugger::new();
         debugger.show_hud = self.show_hud;
 
-        App::config()
+        let config = App::config()
             .title(title)
             .size(self.width, self.height)
             .backend(self.backend)
             .fps_limit(self.fps_limit)
-            .extension(debugger)
+            .extension(debugger);
+        match self.backend {
+            RenderBackend::TinySkia => {
+                config.backend_factory(aurora_tiny_skia::create_backend)
+            }
+            #[cfg(feature = "vello")]
+            RenderBackend::Vello => config,
+        }
     }
 }

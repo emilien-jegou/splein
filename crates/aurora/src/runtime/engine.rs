@@ -2,7 +2,6 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use tiny_skia::Pixmap;
 
 use crate::dsl::element::Element;
 use crate::dsl::reconciler::reconcile;
@@ -14,7 +13,6 @@ use crate::runtime::diagnostics::EngineDiagnostics;
 use crate::runtime::frame::run_frame_passes;
 use crate::runtime::node_query::NodeQuery;
 use crate::runtime::pointer_input::PointerInput;
-use crate::runtime::raster::{HeadlessFrame, HeadlessRaster};
 use crate::runtime::scheduler::FrameScheduler;
 use crate::runtime::FrameReport;
 use crate::scene::{LayerId, Scene};
@@ -31,7 +29,6 @@ pub struct Engine {
     pending_damage: DamageRegion,
     frame_counter: u64,
     pending_preserved_canvas_rect: Option<ResolvedRect>,
-    raster: HeadlessRaster,
     /// Pointer routing: hit resolution, press capture, gesture recognition, and the queue
     /// of events waiting for the next frame.
     pointer: PointerInput,
@@ -60,7 +57,6 @@ impl Engine {
             pending_damage: DamageRegion::new(),
             frame_counter: 0,
             pending_preserved_canvas_rect: None,
-            raster: HeadlessRaster::new(),
             pointer: PointerInput::new(),
         }
     }
@@ -262,19 +258,6 @@ impl Engine {
     fn dispatch_queued_events(&mut self) -> Option<PointerOutcome> {
         let last_delta = self.scheduler.clock.last_delta();
         self.pointer.dispatch(&self.scheduler, last_delta)
-    }
-
-    /// Rasterizes the compiled scene's damaged region into a persistent CPU canvas.
-    pub fn canvas(&mut self) -> &Pixmap {
-        let size = self.logical_size();
-        let text_ctx = self.text_context();
-        let damage = self.current_damage().clone();
-        self.raster.draw(HeadlessFrame {
-            scene: &self.scene,
-            damage: &damage,
-            size,
-            text_ctx: &text_ctx,
-        })
     }
 
     /// Key-based reads of node geometry, in explicit coordinate spaces.

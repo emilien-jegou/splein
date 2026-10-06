@@ -10,7 +10,7 @@
 use aurora::dsl::{use_flip, use_follow, use_ref, ElementRef, Trigger};
 use aurora::prelude::*;
 use aurora::reactive::hooks::use_transition;
-use aurora::testing::Harness;
+use aurora_tiny_skia::testing::Harness;
 
 // ---------------------------------------------------------------- section 1
 

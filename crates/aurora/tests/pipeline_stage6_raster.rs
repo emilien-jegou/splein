@@ -4,12 +4,14 @@ use aurora::dsl::*;
 use aurora::foundation::*;
 use aurora::reactive::*;
 use aurora::runtime::{Engine, FrameReport};
+use aurora_tiny_skia::HeadlessRaster;
 use aurora::tree::DirtyFlags;
 
 #[test]
 #[ntest::timeout(30_000)]
 fn test_6_1_hover_color_diff_strictly_isolated_to_damage_bounds() {
     let mut engine = Engine::headless(400, 400);
+    let mut raster = HeadlessRaster::new();
     let color = engine.signal(Color::RED);
 
     engine.mount(
@@ -21,14 +23,14 @@ fn test_6_1_hover_color_diff_strictly_isolated_to_damage_bounds() {
     );
     engine.frame();
 
-    let canvas_before = engine.canvas().clone();
+    let canvas_before = raster.draw_engine(&mut engine).clone();
 
     color.set(Color::BLUE);
     let FrameReport {
         diagnostics: diag, ..
     } = engine.frame();
 
-    let canvas_after = engine.canvas();
+    let canvas_after = raster.draw_engine(&mut engine);
     let damage_box = diag.spatial.damaged_rects[0];
 
     for y in 0..400 {
@@ -71,7 +73,7 @@ fn test_6_2_shadow_color_mutation_reuses_cached_blur_mask() {
 #[test]
 #[ntest::timeout(30_000)]
 fn test_6_4_layer_wraps_subtree_in_clip_isolation() {
-    use aurora::render::TinySkiaRenderer;
+    use aurora_tiny_skia::TinySkiaRenderer;
     use aurora::scene::{LayerId, Scene, SceneChunk, SceneCommand};
 
     let mut renderer = TinySkiaRenderer::new();
@@ -112,7 +114,7 @@ fn test_6_4_layer_wraps_subtree_in_clip_isolation() {
 #[test]
 #[ntest::timeout(30_000)]
 fn test_6_5_rotated_rect_outside_translation_box_still_rasterizes() {
-    use aurora::render::TinySkiaRenderer;
+    use aurora_tiny_skia::TinySkiaRenderer;
     use aurora::scene::{Scene, SceneChunk, SceneCommand};
 
     let mut renderer = TinySkiaRenderer::new();
@@ -147,7 +149,7 @@ fn test_6_5_rotated_rect_outside_translation_box_still_rasterizes() {
 #[test]
 #[ntest::timeout(30_000)]
 fn test_6_6_rotated_text_rotates_glyph_shapes_not_just_positions() {
-    use aurora::render::tiny_skia::{render_text, TextRenderParams};
+    use aurora_tiny_skia::{render_text, TextRenderParams};
     use aurora::text::{TextConfig, TextContext};
 
     let ctx = TextContext::new();

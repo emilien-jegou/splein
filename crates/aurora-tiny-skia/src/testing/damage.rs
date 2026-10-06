@@ -18,9 +18,10 @@
 //! means the tile was never redrawn when it should have been, which is a damage bug. A single
 //! undifferentiated pixel count cannot tell you which one you have.
 
-use crate::foundation::{DamageRegion, ResolvedRect};
-use crate::render::TinySkiaRenderer;
-use crate::runtime::Engine;
+use aurora::foundation::{DamageRegion, ResolvedRect};
+use aurora::runtime::Engine;
+
+use crate::renderer::TinySkiaRenderer;
 
 /// A pixel-by-pixel comparison of the retained canvas against a full repaint.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -68,10 +69,19 @@ pub fn redrawn_at(x: u32, y: u32, damage: &DamageRegion) -> bool {
 ///
 /// Does not disturb the engine: the reference is rendered into a throwaway renderer, so the
 /// next `frame()` behaves exactly as it would have.
-pub fn parity(engine: &mut Engine) -> DamageParity {
-    let retained = engine.canvas().clone();
-    let (w, h) = engine.logical_size();
+pub fn parity(engine: &mut Engine, raster: &mut crate::raster::HeadlessRaster) -> DamageParity {
+    let size = engine.logical_size();
+    let text_ctx = engine.text_context();
     let damage = engine.current_damage().clone();
+    let retained = raster
+        .draw(crate::raster::HeadlessFrame {
+            scene: engine.scene(),
+            damage: &damage,
+            size,
+            text_ctx: &text_ctx,
+        })
+        .clone();
+    let (w, h) = size;
 
     let mut truth = TinySkiaRenderer::new();
     truth.set_text_context(engine.text_context());

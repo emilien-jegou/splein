@@ -11,6 +11,7 @@ use aurora::dsl::*;
 use aurora::foundation::*;
 use aurora::reactive::{ReactiveRuntime, Signal};
 use aurora::runtime::{Engine, FrameReport};
+use aurora_tiny_skia::HeadlessRaster;
 
 const RED: u32 = 0xEF4444;
 const BLUE: u32 = 0x3B82F6;
@@ -22,19 +23,19 @@ const OPEN: f32 = accordion::panels::OPEN;
 const CLOSED: f32 = accordion::panels::HEADER;
 
 /// Runs one frame and rasterizes its damage into the retained canvas.
-fn step(engine: &mut Engine) -> FrameReport {
+fn step(engine: &mut Engine, raster: &mut HeadlessRaster) -> FrameReport {
     let report = engine.frame();
-    engine.canvas();
+    raster.draw_engine(&mut *engine);
     report
 }
 
 /// Applies `change` plus one frame, returning how many canvas pixels the repaint moved.
-fn repaint_delta<F: FnOnce()>(engine: &mut Engine, change: F) -> (u32, FrameReport) {
+fn repaint_delta<F: FnOnce()>(engine: &mut Engine, raster: &mut HeadlessRaster, change: F) -> (u32, FrameReport) {
     let (w, h) = engine.logical_size();
-    let before = engine.canvas().clone();
+    let before = raster.draw_engine(&mut *engine).clone();
     change();
     let report = engine.frame();
-    let after = engine.canvas();
+    let after = raster.draw_engine(&mut *engine);
     let mut changed = 0u32;
     for y in 0..h {
         for x in 0..w {
@@ -87,12 +88,13 @@ fn accordion_engine(open_index: usize) -> (Engine, Signal<Option<usize>>) {
 #[test]
 #[ntest::timeout(30_000)]
 fn a_height_change_below_a_fill_root_repaints_without_a_resize() {
+    let mut raster = HeadlessRaster::new();
     let mut engine = Engine::headless(400, 400);
     let height = engine.signal(40.0f32);
     engine.mount(page(height.clone()));
-    step(&mut engine);
+    step(&mut engine, &mut raster);
 
-    let (changed, report) = repaint_delta(&mut engine, || height.set(120.0));
+    let (changed, report) = repaint_delta(&mut engine, &mut raster, || height.set(120.0));
 
     assert!(
         !report.diagnostics.layout.recomputed_nodes.is_empty(),
@@ -119,7 +121,8 @@ fn a_height_change_below_a_fill_root_repaints_without_a_resize() {
 fn accordion_items_keep_their_declared_heights() {
     for open_index in 0..4usize {
         let (mut engine, _open) = accordion_engine(open_index);
-        step(&mut engine);
+        let mut raster = HeadlessRaster::new();
+        step(&mut engine, &mut raster);
 
         for index in 0..4usize {
             let expected = if index == open_index { OPEN } else { CLOSED };

@@ -1,6 +1,6 @@
 // Single responsibility: Retained damage-only canvas must equal a from-scratch repaint.
 //
-// The comparison itself lives in `aurora::testing::damage`, because it is the only reliable
+// The comparison itself lives in `aurora_tiny_skia::testing::damage`, because it is the only reliable
 // way to observe damage tracking and it was previously re-derivable only by reading this
 // file. These tests are the two cases that motivated it.
 
@@ -18,7 +18,7 @@ use std::rc::Rc;
 use aurora::dsl::*;
 use aurora::foundation::{Color, Direction};
 use aurora::reactive::{Cx, ReactiveRuntime, Signal};
-use aurora::testing::Harness;
+use aurora_tiny_skia::testing::Harness;
 
 fn page() -> Color {
     Color::hex(0xF4F5F7)

@@ -2,10 +2,11 @@
 
 use tiny_skia::Pixmap;
 
-use crate::foundation::DamageRegion;
-use crate::render::TinySkiaRenderer;
-use crate::scene::Scene;
-use crate::text::TextContext;
+use aurora::foundation::DamageRegion;
+use aurora::scene::Scene;
+use aurora::text::TextContext;
+
+use crate::renderer::TinySkiaRenderer;
 
 /// Scene inputs required to rasterize one headless frame.
 pub struct HeadlessFrame<'a> {
@@ -39,6 +40,19 @@ impl HeadlessRaster {
             .render_damage(frame.scene, frame.damage)
             .expect("headless rasterization failed");
         renderer.canvas()
+    }
+
+    /// Rasterizes the engine's current scene damage into the retained canvas.
+    pub fn draw_engine(&mut self, engine: &mut aurora::runtime::Engine) -> &Pixmap {
+        let size = engine.logical_size();
+        let text_ctx = engine.text_context();
+        let damage = engine.current_damage().clone();
+        self.draw(HeadlessFrame {
+            scene: engine.scene(),
+            damage: &damage,
+            size,
+            text_ctx: &text_ctx,
+        })
     }
 }
 

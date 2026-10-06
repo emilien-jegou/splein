@@ -5,10 +5,11 @@ use std::rc::Rc;
 
 use tiny_skia::Pixmap;
 
-use crate::foundation::{Key, Point, ResolvedRect, Transform};
-use crate::input::{PointerButton, PointerEvent, PointerPhase};
-use crate::reactive::{Cx, ReactiveRuntime};
-use crate::runtime::Engine;
+use aurora::foundation::{Key, Point, ResolvedRect, Transform};
+use aurora::input::{PointerButton, PointerEvent, PointerPhase};
+use aurora::reactive::{Cx, ReactiveRuntime};
+use aurora::runtime::Engine;
+use crate::raster::{HeadlessFrame, HeadlessRaster};
 use crate::testing::snapshot::{Rgba, Snapshot};
 
 /// The three boxes of a keyed view, named so they cannot be confused.
@@ -60,11 +61,12 @@ impl Located {
 /// Owns an engine plus the runtime and context its page was built against.
 pub struct Harness {
     engine: Engine,
+    raster: HeadlessRaster,
     /// Frames advanced since the harness was built, excluding the first.
     frame: u64,
     paused: bool,
     dt: f32,
-    background: crate::foundation::Color,
+    background: aurora::foundation::Color,
     /// Where a held drag stopped, so it can be released where it stopped.
     last_drag_end: Option<Point>,
 }
@@ -72,14 +74,14 @@ pub struct Harness {
 impl Harness {
     /// Builds a harness over a page component, standing up the hook scope the way
     /// `App::run` does before calling it.
-    pub fn page(page: fn() -> crate::dsl::Element, width: u32, height: u32) -> Harness {
+    pub fn page(page: fn() -> aurora::dsl::Element, width: u32, height: u32) -> Harness {
         let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
         let cx = Cx::new(Rc::clone(&runtime));
         Harness::from_runtime(Rc::clone(&runtime), cx.enter(page), width, height)
     }
 
     /// Builds a harness over an already-built tree.
-    pub fn root(root: impl crate::dsl::IntoElement, width: u32, height: u32) -> Harness {
+    pub fn root(root: impl aurora::dsl::IntoElement, width: u32, height: u32) -> Harness {
         let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
         Harness::from_runtime(Rc::clone(&runtime), root, width, height)
     }
@@ -90,16 +92,17 @@ impl Harness {
     /// signals must be the ones the tree is bound to.
     pub fn from_runtime(
         runtime: Rc<RefCell<ReactiveRuntime>>,
-        root: impl crate::dsl::IntoElement,
+        root: impl aurora::dsl::IntoElement,
         width: u32,
         height: u32,
     ) -> Harness {
         let mut harness = Harness {
             engine: Engine::with_runtime(runtime, root.into_element(), width, height),
+            raster: HeadlessRaster::new(),
             frame: 0,
             paused: false,
             dt: 1.0 / 60.0,
-            background: crate::foundation::Color::WHITE,
+            background: aurora::foundation::Color::WHITE,
             last_drag_end: None,
         };
         harness.load_test_font();
@@ -112,21 +115,21 @@ impl Harness {
     /// Loads the bundled test font, so text pages render instead of panicking.
     pub fn load_test_font(&mut self) {
         self.engine
-            .load_font(include_bytes!("../../assets/inter-var.ttf"));
+            .load_font(include_bytes!("../../../aurora/assets/inter-var.ttf"));
     }
 
     /// Sets the page colour captures are composited against.
     ///
     /// Mirrors what an app configures, so a screenshot shows the page rather than
     /// transparency wherever nothing was painted.
-    pub fn with_background(mut self, color: crate::foundation::Color) -> Self {
+    pub fn with_background(mut self, color: aurora::foundation::Color) -> Self {
         self.engine.set_background(color);
         self.background = color;
         self
     }
 
     /// The page colour captures are composited against.
-    pub fn background(&self) -> crate::foundation::Color {
+    pub fn background(&self) -> aurora::foundation::Color {
         self.background
     }
 
@@ -163,7 +166,22 @@ impl Harness {
     /// Compares this frame's retained canvas against a full repaint, split by damage
     /// coverage. See [`crate::testing::damage`] for why the split matters.
     pub fn damage_parity(&mut self) -> crate::testing::damage::DamageParity {
-        crate::testing::damage::parity(&mut self.engine)
+        let engine = &mut self.engine;
+        let raster = &mut self.raster;
+        crate::testing::damage::parity(engine, raster)
+    }
+
+    /// Rasterizes the current scene's damage into the retained canvas.
+    fn paint(&mut self) -> &Pixmap {
+        let size = self.engine.logical_size();
+        let text_ctx = self.engine.text_context();
+        let damage = self.engine.current_damage().clone();
+        self.raster.draw(HeadlessFrame {
+            scene: self.engine.scene(),
+            damage: &damage,
+            size,
+            text_ctx: &text_ctx,
+        })
     }
 
     /// The reactive runtime the page's signals live on.
@@ -188,7 +206,7 @@ impl Harness {
         let dt = if self.paused { 0.0 } else { self.dt };
         self.engine.advance(dt);
         self.engine.frame();
-        self.engine.canvas();
+        self.paint();
         self.frame += 1;
         self.frame
     }
@@ -266,12 +284,12 @@ impl Harness {
 
     /// The current frame, copied once so pixel probes do not re-rasterize.
     pub fn snapshot(&mut self) -> Snapshot {
-        Snapshot::capture(self.engine.canvas())
+        Snapshot::capture(self.paint())
     }
 
     /// The current canvas, for saving.
     pub fn canvas(&mut self) -> &Pixmap {
-        self.engine.canvas()
+        self.paint()
     }
 
     /// Where a keyed view is, in all three coordinate spaces at once.

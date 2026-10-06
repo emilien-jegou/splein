@@ -1,7 +1,7 @@
 // Single responsibility: 9-patch soft shadow kernel generation and clipped raster blitting.
 
-use crate::foundation::{ResolvedRect, Shadow};
-use crate::render::blur::box_blur_alpha;
+use aurora::foundation::{ResolvedRect, Shadow};
+use aurora::render::blur::box_blur_alpha;
 use tiny_skia::{Mask, PixmapMut, Transform};
 
 #[derive(Copy, Clone, Hash, PartialEq, Eq)]

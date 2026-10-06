@@ -1,10 +1,13 @@
 // Single responsibility: Backend presentation contract and shared per-frame parameters.
 
+use std::sync::Arc;
 use std::time::Duration;
+use winit::window::Window;
 
 use crate::foundation::{Color, DamageRegion, ResolvedRect};
 use crate::render::BackendError;
 use crate::scene::Scene;
+use crate::text::TextContext;
 
 /// Resolves the accumulated damage a swapchain buffer age requires.
 pub trait DamageResolver {
@@ -68,3 +71,13 @@ pub trait Backend {
     /// Rasterizes and presents exactly one frame.
     fn present(&mut self, frame: Present<'_>) -> Result<PresentReport, BackendError>;
 }
+
+/// Constructs a presentation backend for a window, implemented by backend crates.
+///
+/// `aurora` owns this contract but never implements it: `aurora-tiny-skia` provides
+/// `create_backend` for [`RenderBackend::TinySkia`](crate::render::RenderBackend) and
+/// `aurora-vello` for `Vello`. The factory is handed to
+/// [`AppConfig::backend_factory`](crate::app::AppConfig::backend_factory) so the engine
+/// crate never names a concrete rasterizer.
+pub type BackendFactory =
+    fn(Arc<Window>, u32, u32, TextContext) -> Result<Box<dyn Backend>, BackendError>;

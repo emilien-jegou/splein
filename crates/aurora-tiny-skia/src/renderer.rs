@@ -2,15 +2,15 @@
 
 use tiny_skia::{Pixmap, Transform as SkiaTransform};
 
-use crate::foundation::DamageRegion;
-use crate::render::error::BackendError;
-use crate::render::tiny_skia::clip::ClipStack;
-use crate::render::tiny_skia::command::{execute_commands, CommandContext};
-use crate::render::tiny_skia::image::ImageCache;
-use crate::render::tiny_skia::shadow::ShadowRasterizer;
-use crate::render::tiny_skia::svg::SvgCache;
-use crate::scene::scene::Scene;
-use crate::text::TextContext;
+use aurora::foundation::DamageRegion;
+use aurora::render::error::BackendError;
+use crate::clip::ClipStack;
+use crate::command::{execute_commands, CommandContext};
+use crate::image::ImageCache;
+use crate::shadow::ShadowRasterizer;
+use crate::svg::SvgCache;
+use aurora::scene::scene::Scene;
+use aurora::text::TextContext;
 
 /// Software rasterizer driving scene chunks into CPU pixel buffers.
 pub struct TinySkiaRenderer {

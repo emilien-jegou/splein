@@ -6,8 +6,8 @@ use std::num::NonZeroU32;
 use tiny_skia::Pixmap;
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 
-use crate::foundation::{DamageRegion, ResolvedRect};
-use crate::render::swizzle_rgba_to_bgra;
+use aurora::foundation::{DamageRegion, ResolvedRect};
+use aurora::render::swizzle_rgba_to_bgra;
 
 /// Converts and presents premultiplied RGBA pixel buffers to OS surface displays.
 pub struct SurfacePresenter;

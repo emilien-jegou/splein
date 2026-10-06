@@ -1,6 +1,6 @@
 // Single responsibility: TinySkia path generation for W3C-compliant clamped rounded rectangles.
 
-use crate::foundation::{Radius, ResolvedRect};
+use aurora::foundation::{Radius, ResolvedRect};
 use tiny_skia::{Path, PathBuilder, Rect};
 
 /// Builds rounded rectangle path with strict W3C Bézier radius clamping supporting per-corner radii.

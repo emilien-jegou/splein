@@ -7,7 +7,7 @@ use aurora::dsl::{use_flip, use_ref, ElementRef, Trigger};
 use aurora::foundation::{Color, Direction, Size};
 use aurora::prelude::*;
 use aurora::reactive::{Cx, ReactiveRuntime, Signal};
-use aurora::testing::Harness;
+use aurora_tiny_skia::testing::Harness;
 
 /// A row that starts hard left and moves to the far side of its container when `moved` flips.
 ///

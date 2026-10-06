@@ -7,6 +7,7 @@ use aurora::dsl::IntoElement;
 use aurora::foundation::ResolvedRect;
 use aurora::reactive::{ReactiveRuntime, Signal};
 use aurora::runtime::Engine;
+use aurora_tiny_skia::HeadlessRaster;
 
 #[allow(dead_code)]
 #[path = "../examples/motion_accordion/main.rs"]
@@ -67,7 +68,7 @@ fn engine_over(
 }
 
 /// Runs the page's first frame and asserts no rect and no pixel leaves the viewport.
-fn fits(name: &str, engine: &mut Engine, w: u32, h: u32) {
+fn fits(name: &str, engine: &mut Engine, raster: &mut HeadlessRaster, w: u32, h: u32) {
     let report = engine.frame();
     let rects: Vec<ResolvedRect> = report.diagnostics.layout.recomputed_nodes;
 
@@ -100,7 +101,7 @@ fn fits(name: &str, engine: &mut Engine, w: u32, h: u32) {
         .expect("page hairline was not captured")
         .bottom() as u32;
 
-    let canvas = engine.canvas();
+    let canvas = raster.draw_engine(&mut *engine);
     let check = |x: u32, y: u32| {
         let p = canvas.pixel(x, y).expect("pixel must exist");
         let (r, g, b) = (p.red() as i16, p.green() as i16, (p.blue() as i16));
@@ -126,6 +127,7 @@ fn fits(name: &str, engine: &mut Engine, w: u32, h: u32) {
 #[test]
 #[ntest::timeout(30_000)]
 fn layout_split_page_fits_its_viewport() {
+    let mut raster = HeadlessRaster::new();
     let mut engine = engine_for_page(
         layout_split::Page,
         layout_split::WIDTH,
@@ -134,6 +136,7 @@ fn layout_split_page_fits_its_viewport() {
     fits(
         "layout_split",
         &mut engine,
+        &mut raster,
         layout_split::WIDTH,
         layout_split::HEIGHT,
     );
@@ -142,10 +145,12 @@ fn layout_split_page_fits_its_viewport() {
 #[test]
 #[ntest::timeout(30_000)]
 fn transitions_page_fits_its_viewport() {
+    let mut raster = HeadlessRaster::new();
     let mut engine = engine_for_page(transitions::Page, transitions::WIDTH, transitions::HEIGHT);
     fits(
         "transitions",
         &mut engine,
+        &mut raster,
         transitions::WIDTH,
         transitions::HEIGHT,
     );
@@ -154,10 +159,12 @@ fn transitions_page_fits_its_viewport() {
 #[test]
 #[ntest::timeout(30_000)]
 fn imperative_page_fits_its_viewport() {
+    let mut raster = HeadlessRaster::new();
     let mut engine = engine_for_page(imperative::Page, imperative::WIDTH, imperative::HEIGHT);
     fits(
         "imperative",
         &mut engine,
+        &mut raster,
         imperative::WIDTH,
         imperative::HEIGHT,
     );
@@ -166,6 +173,7 @@ fn imperative_page_fits_its_viewport() {
 #[test]
 #[ntest::timeout(30_000)]
 fn interruption_page_fits_its_viewport() {
+    let mut raster = HeadlessRaster::new();
     let mut engine = engine_for_page(
         interruption::Page,
         interruption::WIDTH,
@@ -174,6 +182,7 @@ fn interruption_page_fits_its_viewport() {
     fits(
         "interruption",
         &mut engine,
+        &mut raster,
         interruption::WIDTH,
         interruption::HEIGHT,
     );
@@ -182,22 +191,25 @@ fn interruption_page_fits_its_viewport() {
 #[test]
 #[ntest::timeout(30_000)]
 fn playback_page_fits_its_viewport() {
+    let mut raster = HeadlessRaster::new();
     let mut engine = engine_for_page(playback::Page, playback::WIDTH, playback::HEIGHT);
-    fits("playback", &mut engine, playback::WIDTH, playback::HEIGHT);
+    fits("playback", &mut engine, &mut raster, playback::WIDTH, playback::HEIGHT);
 }
 
 #[test]
 #[ntest::timeout(30_000)]
 fn signals_page_fits_its_viewport() {
+    let mut raster = HeadlessRaster::new();
     let mut engine = engine_for_page(signals::Page, signals::WIDTH, signals::HEIGHT);
-    fits("signals", &mut engine, signals::WIDTH, signals::HEIGHT);
+    fits("signals", &mut engine, &mut raster, signals::WIDTH, signals::HEIGHT);
 }
 
 #[test]
 #[ntest::timeout(30_000)]
 fn press_page_fits_its_viewport() {
+    let mut raster = HeadlessRaster::new();
     let mut engine = engine_for_page(press::Page, press::WIDTH, press::HEIGHT);
-    fits("press", &mut engine, press::WIDTH, press::HEIGHT);
+    fits("press", &mut engine, &mut raster, press::WIDTH, press::HEIGHT);
 }
 
 #[test]
@@ -206,6 +218,7 @@ fn accordion_page_fits_its_viewport() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let open = Signal::new(Rc::clone(&runtime), Some(0usize));
     let cx = aurora::reactive::Cx::new(Rc::clone(&runtime));
+    let mut raster = HeadlessRaster::new();
     let mut engine = engine_over(
         runtime,
         cx.enter(|| accordion::Page(open)),
@@ -215,6 +228,7 @@ fn accordion_page_fits_its_viewport() {
     fits(
         "accordion",
         &mut engine,
+        &mut raster,
         accordion::WIDTH,
         accordion::HEIGHT,
     );
@@ -223,13 +237,15 @@ fn accordion_page_fits_its_viewport() {
 #[test]
 #[ntest::timeout(30_000)]
 fn reorder_page_fits_its_viewport() {
+    let mut raster = HeadlessRaster::new();
     let mut engine = engine_for_page(reorder::Page, reorder::WIDTH, reorder::HEIGHT);
-    fits("reorder", &mut engine, reorder::WIDTH, reorder::HEIGHT);
+    fits("reorder", &mut engine, &mut raster, reorder::WIDTH, reorder::HEIGHT);
 }
 
 #[test]
 #[ntest::timeout(30_000)]
 fn validate_page_fits_its_viewport() {
+    let mut raster = HeadlessRaster::new();
     let mut engine = engine_for_page(validate::Page, validate::WIDTH, validate::HEIGHT);
-    fits("validate", &mut engine, validate::WIDTH, validate::HEIGHT);
+    fits("validate", &mut engine, &mut raster, validate::WIDTH, validate::HEIGHT);
 }

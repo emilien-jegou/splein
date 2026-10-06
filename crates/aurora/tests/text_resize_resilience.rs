@@ -2,7 +2,7 @@
 
 use aurora::dsl::*;
 use aurora::foundation::*;
-use aurora::render::TinySkiaRenderer;
+use aurora_tiny_skia::TinySkiaRenderer;
 use aurora::runtime::Engine;
 use aurora::scene::{Scene, SceneChunk, SceneCommand};
 use aurora::text::{TextConfig, TextContext};

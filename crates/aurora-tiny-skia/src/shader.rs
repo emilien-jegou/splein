@@ -1,6 +1,6 @@
 // Construction of TinySkia shaders for solid colors and gradients.
 
-use crate::foundation::{Color, Fill};
+use aurora::foundation::{Color, Fill};
 use tiny_skia::{
     Color as SkiaColor, GradientStop, LinearGradient, Paint, Point as SkiaPoint, RadialGradient,
     SpreadMode, Transform,

@@ -14,7 +14,7 @@ use std::rc::Rc;
 
 use aurora::foundation::Color;
 use aurora::reactive::{Cx, ReactiveRuntime, Signal};
-use aurora::testing::{Harness, Rgba};
+use aurora_tiny_skia::testing::{Harness, Rgba};
 
 /// The dark arena behind the cards, which must never be mistaken for content.
 const ARENA: Rgba = Rgba {
@@ -53,7 +53,7 @@ const MIN_INK_PER_ROW: u32 = 6;
 /// Copy is mid-grey; the lightest background blend in the gutter is near-white.
 const CONTENT_MAX_LUMA: f32 = 0.70;
 
-fn luma(p: aurora::testing::Rgba) -> f32 {
+fn luma(p: aurora_tiny_skia::testing::Rgba) -> f32 {
     (p.r as f32 + p.g as f32 + p.b as f32) / 765.0
 }
 

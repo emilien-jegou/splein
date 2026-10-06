@@ -1,7 +1,7 @@
 // Single responsibility: Glyph bitmap Porter-Duff alpha compositing via TinySkia.
 
-use crate::foundation::{Color, Point};
-use crate::text::{TextContext, TextLayout};
+use aurora::foundation::{Color, Point};
+use aurora::text::{TextContext, TextLayout};
 use tiny_skia::{
     FilterQuality, Mask, Pixmap, PixmapMut, PixmapPaint, Point as SkiaPoint, PremultipliedColorU8,
     Transform,

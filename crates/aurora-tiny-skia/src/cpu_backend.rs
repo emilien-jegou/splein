@@ -6,10 +6,12 @@ use std::sync::Arc;
 use std::time::Instant;
 use winit::window::Window;
 
-use crate::app::presenter::SurfacePresenter;
-use crate::app::runner::backend::{Backend, Present, PresentReport};
-use crate::render::{BackendError, TinySkiaRenderer};
-use crate::text::TextContext;
+use aurora::app::runner::backend::{Backend, Present, PresentReport};
+use aurora::render::BackendError;
+use aurora::text::TextContext;
+
+use crate::presenter::SurfacePresenter;
+use crate::renderer::TinySkiaRenderer;
 
 /// CPU SIMD rasterizer paired with softbuffer OS window presentation.
 pub struct CpuBackend {

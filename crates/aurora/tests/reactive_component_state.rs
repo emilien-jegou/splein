@@ -12,7 +12,7 @@ use std::rc::Rc;
 use aurora::dsl::Element;
 use aurora::prelude::*;
 use aurora::reactive::{Cx, ReactiveRuntime, Signal};
-use aurora::testing::Harness;
+use aurora_tiny_skia::testing::Harness;
 
 /// One click grows the row by 20. The height lives only in this component's hook state, so it
 /// is the observable: nothing outside the row can set or read it.

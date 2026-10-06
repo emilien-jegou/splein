@@ -3,10 +3,12 @@
 use aurora::dsl::*;
 use aurora::foundation::*;
 use aurora::runtime::{Engine, FrameReport};
+use aurora_tiny_skia::HeadlessRaster;
 
 #[test]
 #[ntest::timeout(30_000)]
 fn test_4_1_underlying_mutation_forces_repaint_of_overlapping_clean_sibling() {
+    let mut raster = HeadlessRaster::new();
     let mut engine = Engine::headless(400, 400);
     let fill_a = engine.signal(Color::RED);
 
@@ -29,7 +31,7 @@ fn test_4_1_underlying_mutation_forces_repaint_of_overlapping_clean_sibling() {
     fill_a.set(Color::GREEN);
     engine.frame();
 
-    let canvas = engine.canvas();
+    let canvas = raster.draw_engine(&mut engine);
     let overlap_pixel = canvas.pixel(75, 50).unwrap();
     assert_eq!(
         overlap_pixel.blue(),
@@ -41,6 +43,7 @@ fn test_4_1_underlying_mutation_forces_repaint_of_overlapping_clean_sibling() {
 #[test]
 #[ntest::timeout(30_000)]
 fn test_4_3_repetitive_damage_repaints_do_not_progressively_darken() {
+    let mut raster = HeadlessRaster::new();
     let mut engine = Engine::headless(400, 400);
     let fill_a = engine.signal(Color::WHITE);
 
@@ -55,7 +58,7 @@ fn test_4_3_repetitive_damage_repaints_do_not_progressively_darken() {
     ]));
     engine.frame();
 
-    let initial_alpha = engine.canvas().pixel(50, 105).unwrap().alpha();
+    let initial_alpha = raster.draw_engine(&mut engine).pixel(50, 105).unwrap().alpha();
 
     for i in 0..20 {
         let val = if i % 2 == 0 {
@@ -67,7 +70,7 @@ fn test_4_3_repetitive_damage_repaints_do_not_progressively_darken() {
         engine.frame();
     }
 
-    let end_alpha = engine.canvas().pixel(50, 105).unwrap().alpha();
+    let end_alpha = raster.draw_engine(&mut engine).pixel(50, 105).unwrap().alpha();
     assert_eq!(
         initial_alpha, end_alpha,
         "Scenario 4.3: Alpha must not accumulate over frames"
@@ -115,6 +118,7 @@ fn test_4_5_distant_clean_node_is_excluded_from_repaint() {
 #[test]
 #[ntest::timeout(30_000)]
 fn test_4_6_equal_z_index_resolved_by_tree_order() {
+    let mut raster = HeadlessRaster::new();
     let mut engine = Engine::headless(200, 200);
 
     engine.mount(
@@ -133,7 +137,7 @@ fn test_4_6_equal_z_index_resolved_by_tree_order() {
     );
     engine.frame();
 
-    let canvas = engine.canvas();
+    let canvas = raster.draw_engine(&mut engine);
     let pixel = canvas.pixel(50, 50).expect("Pixel must exist");
     assert_eq!(
         pixel.blue(),
@@ -146,6 +150,7 @@ fn test_4_6_equal_z_index_resolved_by_tree_order() {
 #[test]
 #[ntest::timeout(30_000)]
 fn test_4_7_overlay_is_drawn_above_base_tree_regardless_of_dom_order() {
+    let mut raster = HeadlessRaster::new();
     let mut engine = Engine::headless(400, 400);
 
     engine.mount(
@@ -161,7 +166,7 @@ fn test_4_7_overlay_is_drawn_above_base_tree_regardless_of_dom_order() {
     );
     engine.frame();
 
-    let canvas = engine.canvas();
+    let canvas = raster.draw_engine(&mut engine);
     let top_pixel = canvas.pixel(50, 50).unwrap();
     assert_eq!(
         top_pixel.blue(),
@@ -173,6 +178,7 @@ fn test_4_7_overlay_is_drawn_above_base_tree_regardless_of_dom_order() {
 #[test]
 #[ntest::timeout(30_000)]
 fn test_4_8_absolute_overlay_over_nested_boxes() {
+    let mut raster = HeadlessRaster::new();
     let mut engine = Engine::headless(500, 500);
 
     engine.mount(
@@ -198,7 +204,7 @@ fn test_4_8_absolute_overlay_over_nested_boxes() {
     );
     engine.frame();
 
-    let canvas = engine.canvas();
+    let canvas = raster.draw_engine(&mut engine);
     let pixel = canvas.pixel(75, 75).unwrap();
     assert_eq!(
         pixel.blue(),

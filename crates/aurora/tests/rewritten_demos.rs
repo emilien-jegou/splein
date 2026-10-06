@@ -24,7 +24,7 @@ mod reorder;
 mod signals;
 
 use aurora::foundation::Color;
-use aurora::testing::{report, Harness, Rgba};
+use aurora_tiny_skia::testing::{report, Harness, Rgba};
 
 /// `common::motion_ui::ACCENT`, measured off a rendered frame.
 const ACCENT: Rgba = Rgba {
@@ -426,6 +426,6 @@ fn every_demo_draws_and_reports_little_unexpected_geometry() {
 /// Read from the tree rather than imported from the demo: the demo declares no row height at all
 /// any more, because the rows fill the list and divide whatever space it was given. Any test that
 /// needs a distance in rows has to measure one.
-fn row_height(h: &aurora::testing::Harness) -> f32 {
+fn row_height(h: &aurora_tiny_skia::testing::Harness) -> f32 {
     h.located("row-Baseline").flow.height
 }

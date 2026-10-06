@@ -18,7 +18,7 @@ use std::rc::Rc;
 
 use aurora::foundation::Color;
 use aurora::reactive::{Cx, ReactiveRuntime};
-use aurora::testing::Harness;
+use aurora_tiny_skia::testing::Harness;
 
 const LABELS: [&str; 5] = [
     "Baseline",
@@ -265,7 +265,7 @@ fn regrabbing_a_row_after_it_moved_does_not_use_its_old_slot() {
 /// The demo declares no row height any more -- the rows fill the list and divide whatever space
 /// it was given -- so a drag distance has to be measured rather than imported. Importing a
 /// constant is what made this file disagree with the demo in the first place.
-fn pitch(h: &aurora::testing::Harness) -> f32 {
+fn pitch(h: &aurora_tiny_skia::testing::Harness) -> f32 {
     let a = h.located("row-Baseline").flow;
     let b = h.located("row-Underline").flow;
     b.y - a.y
