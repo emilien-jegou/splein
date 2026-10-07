@@ -86,7 +86,7 @@ fn accordion_engine(open_index: usize) -> (Engine, Signal<Option<usize>>) {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_height_change_below_a_fill_root_repaints_without_a_resize() {
     let mut raster = HeadlessRaster::new();
     let mut engine = Engine::headless(400, 400);
@@ -117,7 +117,7 @@ fn a_height_change_below_a_fill_root_repaints_without_a_resize() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn accordion_items_keep_their_declared_heights() {
     for open_index in 0..4usize {
         let (mut engine, _open) = accordion_engine(open_index);

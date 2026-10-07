@@ -7,7 +7,7 @@ use aurora::runtime::{Engine, FrameReport};
 use aurora::tree::DirtyFlags;
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(3_000)]
 fn test_1_1_fill_change_sets_paint_only_and_bypasses_layout() {
     let mut engine = Engine::headless(400, 400);
     let fill = engine.signal(Color::RED);
@@ -30,7 +30,7 @@ fn test_1_1_fill_change_sets_paint_only_and_bypasses_layout() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(3_000)]
 fn test_1_2_opacity_and_shadow_color_are_paint_only() {
     let mut engine = Engine::headless(400, 400);
     let opacity = engine.signal(1.0f32);
@@ -73,7 +73,7 @@ fn test_1_2_opacity_and_shadow_color_are_paint_only() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(3_000)]
 fn test_1_3_transform_sets_paint_only_and_skips_layout() {
     let mut engine = Engine::headless(400, 400);
     let offset_x = engine.signal(0.0f32);
@@ -108,7 +108,7 @@ fn test_1_3_transform_sets_paint_only_and_skips_layout() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(3_000)]
 fn test_1_4_text_content_change_triggers_measure_without_reconcile() {
     let mut engine = Engine::headless(400, 400);
     let content = engine.signal("5".to_string());
@@ -131,7 +131,7 @@ fn test_1_4_text_content_change_triggers_measure_without_reconcile() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(3_000)]
 fn test_1_5_child_structural_mutation_forces_reconciliation() {
     let mut engine = Engine::headless(400, 400);
     engine.mount(
@@ -155,7 +155,7 @@ fn test_1_5_child_structural_mutation_forces_reconciliation() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(3_000)]
 fn test_1_6_identical_property_mutation_suppresses_invalidation() {
     let mut engine = Engine::headless(400, 400);
     let width = engine.signal(100.0f32);

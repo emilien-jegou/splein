@@ -6,7 +6,7 @@ use aurora::runtime::{Engine, FrameReport};
 use aurora_tiny_skia::HeadlessRaster;
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_4_1_underlying_mutation_forces_repaint_of_overlapping_clean_sibling() {
     let mut raster = HeadlessRaster::new();
     let mut engine = Engine::headless(400, 400);
@@ -41,7 +41,7 @@ fn test_4_1_underlying_mutation_forces_repaint_of_overlapping_clean_sibling() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_4_3_repetitive_damage_repaints_do_not_progressively_darken() {
     let mut raster = HeadlessRaster::new();
     let mut engine = Engine::headless(400, 400);
@@ -78,7 +78,7 @@ fn test_4_3_repetitive_damage_repaints_do_not_progressively_darken() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_4_5_distant_clean_node_is_excluded_from_repaint() {
     let mut engine = Engine::headless(800, 400);
     let color_a = engine.signal(Color::RED);
@@ -116,7 +116,7 @@ fn test_4_5_distant_clean_node_is_excluded_from_repaint() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_4_6_equal_z_index_resolved_by_tree_order() {
     let mut raster = HeadlessRaster::new();
     let mut engine = Engine::headless(200, 200);
@@ -148,7 +148,7 @@ fn test_4_6_equal_z_index_resolved_by_tree_order() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_4_7_overlay_is_drawn_above_base_tree_regardless_of_dom_order() {
     let mut raster = HeadlessRaster::new();
     let mut engine = Engine::headless(400, 400);
@@ -176,7 +176,7 @@ fn test_4_7_overlay_is_drawn_above_base_tree_regardless_of_dom_order() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_4_8_absolute_overlay_over_nested_boxes() {
     let mut raster = HeadlessRaster::new();
     let mut engine = Engine::headless(500, 500);

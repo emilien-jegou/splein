@@ -4,6 +4,19 @@ use std::rc::Rc;
 
 use crate::input::event::{ClickInfo, DragInfo, HoverInfo, PointerEvent};
 
+/// Bubbling control returned by `_handled` handler variants.
+///
+/// Plain `on_*` handlers always bubble; `on_*_handled` handlers return this to
+/// decide whether ancestors in the press chain still observe the event.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub enum Propagation {
+    /// Let the event continue to ancestors (default, preserves chip+card observation).
+    #[default]
+    Bubble,
+    /// Stop the event here; ancestors in the press chain are not fired.
+    Stop,
+}
+
 /// Closures a view declares for pointer interaction.
 ///
 /// Handlers are stored behind one `Rc` per node, so reconciliation swaps them in O(1) and a
@@ -12,18 +25,18 @@ use crate::input::event::{ClickInfo, DragInfo, HoverInfo, PointerEvent};
 /// what that dirties.
 #[derive(Default)]
 pub struct HandlerSet {
-    pub click: Option<Rc<dyn Fn(&ClickInfo)>>,
-    pub pointer_down: Option<Rc<dyn Fn(&PointerEvent)>>,
-    pub pointer_up: Option<Rc<dyn Fn(&PointerEvent)>>,
-    pub pointer_move: Option<Rc<dyn Fn(&PointerEvent)>>,
-    pub pointer_enter: Option<Rc<dyn Fn(&HoverInfo)>>,
-    pub pointer_leave: Option<Rc<dyn Fn(&HoverInfo)>>,
+    pub click: Option<Rc<dyn Fn(&ClickInfo) -> Propagation>>,
+    pub pointer_down: Option<Rc<dyn Fn(&PointerEvent) -> Propagation>>,
+    pub pointer_up: Option<Rc<dyn Fn(&PointerEvent) -> Propagation>>,
+    pub pointer_move: Option<Rc<dyn Fn(&PointerEvent) -> Propagation>>,
+    pub pointer_enter: Option<Rc<dyn Fn(&HoverInfo) -> Propagation>>,
+    pub pointer_leave: Option<Rc<dyn Fn(&HoverInfo) -> Propagation>>,
     /// Fired once a press has moved far enough to count as a drag rather than a click.
-    pub drag_start: Option<Rc<dyn Fn(&DragInfo)>>,
+    pub drag_start: Option<Rc<dyn Fn(&DragInfo) -> Propagation>>,
     /// Fired for every pointer sample while a drag is active.
-    pub drag_step: Option<Rc<dyn Fn(&DragInfo)>>,
+    pub drag_step: Option<Rc<dyn Fn(&DragInfo) -> Propagation>>,
     /// Fired on release, carrying the release velocity a gesture hands to a spring.
-    pub drag_end: Option<Rc<dyn Fn(&DragInfo)>>,
+    pub drag_end: Option<Rc<dyn Fn(&DragInfo) -> Propagation>>,
 }
 
 impl HandlerSet {
@@ -91,73 +104,91 @@ impl NodeHandlers {
 impl HandlerSet {
     /// Invokes the drag-start handler, if present.
     #[inline]
-    pub fn fire_drag_start(&self, info: &DragInfo) {
+    pub fn fire_drag_start(&self, info: &DragInfo) -> Propagation {
         if let Some(h) = self.drag_start.as_ref() {
-            h(info);
+            h(info)
+        } else {
+            Propagation::Bubble
         }
     }
 
     /// Invokes the drag-step handler, if present.
     #[inline]
-    pub fn fire_drag_step(&self, info: &DragInfo) {
+    pub fn fire_drag_step(&self, info: &DragInfo) -> Propagation {
         if let Some(h) = self.drag_step.as_ref() {
-            h(info);
+            h(info)
+        } else {
+            Propagation::Bubble
         }
     }
 
     /// Invokes the drag-end handler, if present.
     #[inline]
-    pub fn fire_drag_end(&self, info: &DragInfo) {
+    pub fn fire_drag_end(&self, info: &DragInfo) -> Propagation {
         if let Some(h) = self.drag_end.as_ref() {
-            h(info);
+            h(info)
+        } else {
+            Propagation::Bubble
         }
     }
 
     /// Invokes the click handler, if present.
     #[inline]
-    pub fn fire_click(&self, info: &ClickInfo) {
+    pub fn fire_click(&self, info: &ClickInfo) -> Propagation {
         if let Some(h) = self.click.as_ref() {
-            h(info);
+            h(info)
+        } else {
+            Propagation::Bubble
         }
     }
 
     /// Invokes the pointer-down handler, if present.
     #[inline]
-    pub fn fire_pointer_down(&self, event: &PointerEvent) {
+    pub fn fire_pointer_down(&self, event: &PointerEvent) -> Propagation {
         if let Some(h) = self.pointer_down.as_ref() {
-            h(event);
+            h(event)
+        } else {
+            Propagation::Bubble
         }
     }
 
     /// Invokes the pointer-up handler, if present.
     #[inline]
-    pub fn fire_pointer_up(&self, event: &PointerEvent) {
+    pub fn fire_pointer_up(&self, event: &PointerEvent) -> Propagation {
         if let Some(h) = self.pointer_up.as_ref() {
-            h(event);
+            h(event)
+        } else {
+            Propagation::Bubble
         }
     }
 
     /// Invokes the pointer-move handler, if present.
     #[inline]
-    pub fn fire_pointer_move(&self, event: &PointerEvent) {
+    pub fn fire_pointer_move(&self, event: &PointerEvent) -> Propagation {
         if let Some(h) = self.pointer_move.as_ref() {
-            h(event);
+            h(event)
+        } else {
+            Propagation::Bubble
         }
     }
 
     /// Invokes the pointer-enter handler, if present.
     #[inline]
-    pub fn fire_pointer_enter(&self, info: &HoverInfo) {
+    pub fn fire_pointer_enter(&self, info: &HoverInfo) -> Propagation {
         if let Some(h) = self.pointer_enter.as_ref() {
-            h(info);
+            h(info)
+        } else {
+            Propagation::Bubble
         }
     }
 
     /// Invokes the pointer-leave handler, if present.
     #[inline]
-    pub fn fire_pointer_leave(&self, info: &HoverInfo) {
+    pub fn fire_pointer_leave(&self, info: &HoverInfo) -> Propagation {
         if let Some(h) = self.pointer_leave.as_ref() {
-            h(info);
+            h(info)
+        } else {
+            Propagation::Bubble
         }
     }
 }

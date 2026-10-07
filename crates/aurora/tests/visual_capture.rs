@@ -18,7 +18,7 @@ mod accordion;
 /// The scan is the assertion; the strip is for a human to look at. Running the scan at every
 /// step is what turns "it looked fine at frame 39" into a statement about the whole switch.
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn capture_an_accordion_switch() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let open = Signal::new(Rc::clone(&runtime), Some(0usize));
@@ -74,7 +74,7 @@ fn capture_an_accordion_switch() {
 
 /// Captures a single settled frame at full size, for looking at detail.
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn capture_a_settled_accordion_frame() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let open = Signal::new(Rc::clone(&runtime), Some(2usize));

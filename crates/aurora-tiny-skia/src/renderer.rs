@@ -152,6 +152,32 @@ impl TinySkiaRenderer {
             };
 
             for chunk in scene.chunks.iter().filter(|c| c.bounds.overlaps(rect)) {
+                // Chunk-local streams: placement (origin + hoisted root
+                // transform) and absolute inherited clips are applied here,
+                // around the content, so moved chunks reuse their encoding.
+                let base = *ctx.tx_stack.last().unwrap();
+                for clip in chunk.inherited_clips.iter() {
+                    ctx.clip_stack.push(
+                        &clip.rect,
+                        clip.radius,
+                        base,
+                        rw,
+                        rh,
+                        scratch.width(),
+                        scratch.height(),
+                    );
+                }
+                let placed = base
+                    .pre_translate(chunk.abs_origin.x, chunk.abs_origin.y)
+                    .pre_concat(SkiaTransform::from_row(
+                        chunk.placement.a,
+                        chunk.placement.b,
+                        chunk.placement.c,
+                        chunk.placement.d,
+                        chunk.placement.tx,
+                        chunk.placement.ty,
+                    ));
+                ctx.tx_stack.push(placed);
                 execute_commands(
                     &chunk.commands,
                     &mut scratch.as_mut(),
@@ -159,6 +185,10 @@ impl TinySkiaRenderer {
                     rw as f32,
                     rh as f32,
                 );
+                ctx.tx_stack.pop();
+                for _ in chunk.inherited_clips.iter() {
+                    ctx.clip_stack.pop();
+                }
             }
             self.tx_stack.pop();
             self.clip_stack.reset();

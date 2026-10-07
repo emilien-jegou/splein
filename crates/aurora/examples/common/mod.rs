@@ -40,8 +40,28 @@ pub struct ExampleCli {
     pub fps_limit: FpsLimit,
 }
 
+/// Maps a user-supplied engine name to a [`RenderBackend`].
+///
+/// Accepts `tiny-skia` / `skia` / `cpu`, `vello` / `gpu`, and
+/// `vello-cpu` / `vello_cpu` (dashes and underscores are interchangeable,
+/// case-insensitive). Returns `None` for anything else so typos in unrelated
+/// positionals never silently switch the rasterizer.
+fn parse_engine_name(raw: &str) -> Option<RenderBackend> {
+    match raw.to_lowercase().replace('_', "-").as_str() {
+        "tiny-skia" | "tinyskia" | "skia" | "cpu" => Some(RenderBackend::TinySkia),
+        "vello" | "vello-gpu" | "gpu" => Some(RenderBackend::Vello),
+        "vello-cpu" | "cpu-vello" | "vellocpu" => Some(RenderBackend::VelloCpu),
+        _ => None,
+    }
+}
+
 impl ExampleCli {
-    /// Parses CLI arguments (`--gpu`, `--cpu`, `--fps <N>`, `--uncapped`, `--no-hud`).
+    /// Parses CLI arguments (`[engine]`, `--gpu`, `--cpu`, `--fps <N>`, `--uncapped`, `--no-hud`).
+    ///
+    /// The engine can be given positionally, e.g. `cargo run --example demo1 -- vello-cpu`:
+    /// `tiny-skia` (default), `vello` (GPU compute), or `vello-cpu` (CPU-staged
+    /// Vello). The legacy `--gpu` / `--vello` / `--cpu` / `--skia` flags still
+    /// work; an explicit positional engine wins over flags.
     pub fn parse(default_w: u32, default_h: u32) -> Self {
         let args: Vec<String> = std::env::args().collect();
 
@@ -49,7 +69,10 @@ impl ExampleCli {
             println!("┌────────────────────────────────────────────────────────┐");
             println!("│                AURORA EXAMPLE RUNNER                   │");
             println!("├────────────────────────────────────────────────────────┤");
+            println!("│ [engine]             tiny-skia (default) | vello |     │");
+            println!("│                      vello-cpu                         │");
             println!("│ --gpu / --vello    Use Vello GPU Compute (Metal/VK/D3D)│");
+            println!("│ --vello-cpu        Use Vello with CPU-staged coarse    │");
             println!("│ --cpu / --skia     Use TinySkia CPU Rasterizer (Def.)  │");
             println!("│ --fps <N>          Cap target FPS (e.g. 144, 240, 360) │");
             println!("│ --uncapped         Disable frame pacer (max benchmark) │");
@@ -60,9 +83,24 @@ impl ExampleCli {
             std::process::exit(0);
         }
 
-        let mut backend = RenderBackend::TinySkia;
-        if args.iter().any(|a| a == "--gpu" || a == "--vello") {
-            backend = RenderBackend::Vello;
+        // Positional engine first: the first bare arg names the rasterizer.
+        let positional = args
+            .iter()
+            .skip(1)
+            .find(|a| !a.starts_with('-'))
+            .and_then(|a| parse_engine_name(a));
+        let mut backend = positional.unwrap_or(RenderBackend::TinySkia);
+        if positional.is_none() {
+            if args
+                .iter()
+                .any(|a| a == "--gpu" || a == "--vello" || a == "--vello-gpu")
+            {
+                backend = RenderBackend::Vello;
+            } else if args.iter().any(|a| {
+                a == "--vello-cpu" || a == "--vello_cpu" || a == "--cpu-vello"
+            }) {
+                backend = RenderBackend::VelloCpu;
+            }
         }
 
         let mut width = default_w;
@@ -100,9 +138,14 @@ impl ExampleCli {
 
         let show_hud = !args.iter().any(|a| a == "--no-hud");
 
+        let engine_name = match backend {
+            RenderBackend::TinySkia => "tiny-skia",
+            RenderBackend::Vello => "vello",
+            RenderBackend::VelloCpu => "vello-cpu",
+        };
         println!(
-            "⚡ Backend: {:?} | Resolution: {}x{} | FPS: {:?} | HUD: {}",
-            backend, width, height, fps_limit, show_hud
+            "⚡ Backend: {} | Resolution: {}x{} | FPS: {:?} | HUD: {}",
+            engine_name, width, height, fps_limit, show_hud
         );
 
         Self {
@@ -113,7 +156,6 @@ impl ExampleCli {
             fps_limit,
         }
     }
-
     /// Initializes Tracy profiling layer and stdout logger.
     pub fn init_telemetry(&self) {
         #[cfg(feature = "tracy")]
@@ -158,6 +200,9 @@ impl ExampleCli {
                 config.backend_factory(aurora_tiny_skia::create_backend)
             }
             RenderBackend::Vello => config.backend_factory(aurora_vello::create_backend),
+            RenderBackend::VelloCpu => {
+                config.backend_factory(aurora_vello::create_cpu_backend)
+            }
         }
     }
 }

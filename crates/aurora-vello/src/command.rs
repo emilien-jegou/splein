@@ -31,19 +31,38 @@ impl VelloImageCache {
     }
 
     /// Obtains a retained Peniko image handle without cloning raw pixel memory.
+    /// Keyed by (ptr, dimensions, byte length): a re-decoded identical image
+    /// (new Arc) reuses only if dims+length match AND bytes match — checked
+    /// lazily via stored length + first/last word to avoid full hash per frame.
     pub fn get_or_insert(&mut self, image: &aurora::scene::image::ImageSource) -> Arc<PenikoImage> {
         let ptr_key = Arc::as_ptr(&image.data) as usize;
-        self.cache
-            .entry(ptr_key)
-            .or_insert_with(|| {
-                Arc::new(PenikoImage::new(
-                    Blob::from(image.data.as_slice().to_vec()),
-                    PenikoFormat::Rgba8,
-                    image.width,
-                    image.height,
-                ))
+        // Fast path: same allocation.
+        if let Some(hit) = self.cache.get(&ptr_key) {
+            return hit.clone();
+        }
+        // Slow path: same pixel content under a different allocation.
+        // Compare length + dims first (cheap), then full bytes.
+        let found = self
+            .cache
+            .iter()
+            .find(|(_, v)| {
+                v.width == image.width
+                    && v.height == image.height
+                    && (AsRef::<[u8]>::as_ref(&v.data) == image.data.as_slice())
             })
-            .clone()
+            .map(|(_, v)| v.clone());
+        if let Some(hit) = found {
+            self.cache.insert(ptr_key, hit.clone());
+            return hit;
+        }
+        let inserted = Arc::new(PenikoImage::new(
+            Blob::from(image.data.as_slice().to_vec()),
+            PenikoFormat::Rgba8,
+            image.width,
+            image.height,
+        ));
+        self.cache.insert(ptr_key, inserted.clone());
+        inserted
     }
 }
 
@@ -62,6 +81,7 @@ pub fn compile_vello_chunk(
 ) {
     let base_tx_len = tx_stack.len();
     tx_stack.push(tx_stack.last().copied().unwrap_or(Affine::IDENTITY));
+    let mut opacity_noop: Vec<bool> = Vec::new();
 
     for cmd in commands {
         let cur_tx = *tx_stack.last().unwrap();
@@ -87,9 +107,19 @@ pub fn compile_vello_chunk(
                 tx_stack.pop();
             }
             SceneCommand::PushOpacity(o) => {
-                scene.push_layer(BlendMode::default(), *o as f32, Affine::IDENTITY, bound);
+                // No-op layer collapse: opacity ~1.0 adds a Vello blend
+                // layer with no visual effect — skip both push and pop.
+                let noop = *o >= 0.999;
+                opacity_noop.push(noop);
+                if !noop {
+                    scene.push_layer(BlendMode::default(), *o as f32, Affine::IDENTITY, bound);
+                }
             }
-            SceneCommand::PopOpacity => scene.pop_layer(),
+            SceneCommand::PopOpacity => {
+                if !opacity_noop.pop().unwrap_or(false) {
+                    scene.pop_layer();
+                }
+            }
             SceneCommand::PushClip { rect, radius } => {
                 let local_shape = build_kurbo_rounded_rect(rect, *radius);
                 scene.push_layer(BlendMode::default(), 1.0, cur_tx, &local_shape);

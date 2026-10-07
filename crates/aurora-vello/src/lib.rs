@@ -34,3 +34,18 @@ pub fn create_backend(
         window, width, height, text_ctx,
     )?))
 }
+
+/// Builds a boxed CPU-staged Vello presentation backend for [`aurora::app::AppConfig`].
+///
+/// Same contract as [`create_backend`], but coarse rasterization runs on the
+/// CPU (`RendererOptions::use_cpu`). Pair with `RenderBackend::VelloCpu`.
+pub fn create_cpu_backend(
+    window: Arc<Window>,
+    width: u32,
+    height: u32,
+    text_ctx: aurora::text::TextContext,
+) -> Result<Box<dyn aurora::app::runner::Backend>, aurora::render::BackendError> {
+    Ok(Box::new(GpuBackend::new_cpu(
+        window, width, height, text_ctx,
+    )?))
+}

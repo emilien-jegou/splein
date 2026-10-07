@@ -58,7 +58,7 @@ fn drawn_area(h: &mut Harness) -> usize {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn layout_split_moves_its_card_without_relayout() {
     let mut h = Harness::page(
         layout_split::Page,
@@ -88,7 +88,7 @@ fn layout_split_moves_its_card_without_relayout() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn signals_drives_every_row_from_one_spring() {
     let mut h = Harness::page(signals::Page, signals::WIDTH, signals::HEIGHT)
         .with_background(Color::hex(0xF4F5F7));
@@ -118,7 +118,7 @@ fn signals_drives_every_row_from_one_spring() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn imperative_moves_panel_and_badge_on_their_own_curves() {
     let mut h = Harness::page(imperative::Page, imperative::WIDTH, imperative::HEIGHT)
         .with_background(Color::hex(0xF4F5F7));
@@ -142,7 +142,7 @@ fn imperative_moves_panel_and_badge_on_their_own_curves() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn interruption_never_lets_the_card_snap() {
     let mut h = Harness::page(
         interruption::Page,
@@ -167,7 +167,7 @@ fn interruption_never_lets_the_card_snap() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn press_responds_to_a_real_press_and_springs_back() {
     let mut h = Harness::page(press::Page, press::WIDTH, press::HEIGHT)
         .with_background(Color::hex(0xF4F5F7));
@@ -229,7 +229,7 @@ fn reorder_ready() -> Harness {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn reorder_rows_actually_paint() {
     // Non-vacuous by construction: damage-parity tests compare two canvases and pass
     // when both are blank, so only an absolute pixel count catches a backend that
@@ -244,7 +244,7 @@ fn reorder_rows_actually_paint() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn reorder_lifts_a_row_and_swaps_the_list() {
     let mut h = reorder_ready();
 
@@ -302,7 +302,7 @@ fn reorder_lifts_a_row_and_swaps_the_list() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_reorder_uses_the_real_row_pitch() {
     let h = reorder_ready();
 
@@ -341,7 +341,7 @@ fn a_reorder_uses_the_real_row_pitch() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_drag_across_several_strides_lands_the_row_at_the_bottom() {
     let mut h = reorder_ready();
     let last_y = h.located("row-Squiggle").absolute.y;
@@ -394,7 +394,7 @@ fn a_drag_across_several_strides_lands_the_row_at_the_bottom() {
 /// outside a non-clipping parent shows up here, and the per-demo tests above pin down
 /// whether that is intended.
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn every_demo_draws_and_reports_little_unexpected_geometry() {
     let pages: [(&str, fn() -> aurora::dsl::Element, u32, u32); 6] = [
         (

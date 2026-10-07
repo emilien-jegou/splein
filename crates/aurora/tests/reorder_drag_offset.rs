@@ -54,7 +54,7 @@ fn index_of(h: &mut Harness, label: &str) -> usize {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn dragging_up_keeps_the_row_under_the_pointer() {
     let mut h = mount();
     let start = h.located("row-Strikethrough").center();
@@ -100,7 +100,7 @@ fn dragging_up_keeps_the_row_under_the_pointer() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn dragging_down_keeps_the_row_under_the_pointer() {
     let mut h = mount();
     let start = h.located("row-Underline").center();
@@ -166,7 +166,7 @@ fn release() -> winit::event::WindowEvent {
 /// reorder moved it into. It does, which is why a held row visibly lags and then catches up
 /// instead of staying under the cursor.
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_held_row_does_not_flip_while_dragged() {
     let mut h = mount();
     let start = h.located("row-Strikethrough").center();
@@ -205,7 +205,7 @@ fn moved(x: f32, y: f32) -> winit::event::WindowEvent {
 /// slot than the first. Anything the first drag left behind -- a stale index baked into a
 /// closure, an origin signal that outlived the gesture -- shows up here and nowhere else.
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn regrabbing_a_row_after_it_moved_does_not_use_its_old_slot() {
     let mut h = mount();
     let labels: Vec<String> = LABELS.iter().map(|s| s.to_string()).collect();
@@ -282,7 +282,7 @@ fn pitch(h: &aurora_tiny_skia::testing::Harness) -> f32 {
 /// The rows fill the list and the pitch is read back from the measured box, so the arithmetic
 /// follows the window.
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_drag_tracks_the_pointer_after_the_window_is_resized() {
     for height in [900u32, 560, 760] {
         let mut h = mount();

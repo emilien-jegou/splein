@@ -54,7 +54,7 @@ fn device() -> DeviceId {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn clicking_an_accordion_header_in_a_real_window_switches_the_open_panel() {
     let rt = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let open = Signal::new(Rc::clone(&rt), Some(0usize));
@@ -85,7 +85,7 @@ fn clicking_an_accordion_header_in_a_real_window_switches_the_open_panel() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn clicking_a_second_accordion_header_moves_the_open_panel() {
     let rt = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let open = Signal::new(Rc::clone(&rt), Some(0usize));
@@ -110,7 +110,7 @@ fn clicking_a_second_accordion_header_moves_the_open_panel() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_press_and_hold_on_the_demo_button_squeezes_it() {
     let rt = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let mut h = Harness::from_runtime(
@@ -147,7 +147,7 @@ fn a_press_and_hold_on_the_demo_button_squeezes_it() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn dragging_a_reorder_row_by_pointer_reorders_the_list() {
     let rt = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let mut h = Harness::from_runtime(
@@ -204,7 +204,7 @@ fn dragging_a_reorder_row_by_pointer_reorders_the_list() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn leaving_the_window_mid_drag_does_not_pin_the_row_to_the_pointer() {
     // The failure this guards against is nasty because it looks like a rendering bug: the row
     // stays stuck where the pointer was when it left, and nothing moves it again.

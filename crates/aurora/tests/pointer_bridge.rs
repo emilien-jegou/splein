@@ -53,6 +53,10 @@ fn counter_page(taps: Signal<u32>) -> Element {
                     Color::hex(0x1D4ED8)
                 }
             }))
+            // Draggable on purpose: the threshold test below needs a drag source, and
+            // since drag recognition requires drag interest, a click-only card would
+            // (correctly) never report dragging no matter how far the pointer travels.
+            .on_drag_step(move |_| {})
             .on_click(move |_| taps.set(taps.get() + 1))
             .children([text("tap").size(12.0).color(Color::BLACK)])])
         .into_element()
@@ -85,7 +89,7 @@ fn tapped(h: &mut Harness) -> bool {
 /// The regression this module exists for: a real press-and-release through platform
 /// events must reach the view's click handler.
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_platform_press_and_release_reaches_the_click_handler() {
     let (mut h, _rt) = counter();
     h.steps(2);
@@ -113,7 +117,7 @@ fn a_platform_press_and_release_reaches_the_click_handler() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_press_away_from_any_view_changes_nothing() {
     let (mut h, _rt) = counter();
     h.steps(2);
@@ -135,7 +139,7 @@ fn a_press_away_from_any_view_changes_nothing() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_press_without_a_known_position_is_dropped_rather_than_aimed_at_the_origin() {
     let (mut h, _rt) = counter();
     h.steps(2);
@@ -150,7 +154,7 @@ fn a_press_without_a_known_position_is_dropped_rather_than_aimed_at_the_origin()
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_non_primary_button_does_not_fire_a_click_handler() {
     let (mut h, _rt) = counter();
     h.steps(2);
@@ -173,7 +177,7 @@ fn a_non_primary_button_does_not_fire_a_click_handler() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn leaving_the_window_mid_drag_releases_the_gesture() {
     let (mut h, _rt) = counter();
     h.steps(2);
@@ -198,7 +202,7 @@ fn leaving_the_window_mid_drag_releases_the_gesture() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn losing_focus_mid_drag_releases_the_gesture() {
     let (mut h, _rt) = counter();
     h.steps(2);
@@ -213,7 +217,7 @@ fn losing_focus_mid_drag_releases_the_gesture() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_modifier_change_alone_does_not_ask_for_a_redraw() {
     // A modifier can change what the next click does, but nothing on screen has changed
     // yet, so an app that repainted here would burn a frame on every key press.
@@ -227,7 +231,7 @@ fn a_modifier_change_alone_does_not_ask_for_a_redraw() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_drag_crosses_the_threshold_and_reports_dragging() {
     let (mut h, _rt) = counter();
     h.steps(2);
@@ -258,7 +262,7 @@ fn a_drag_crosses_the_threshold_and_reports_dragging() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn an_unrelated_window_event_is_ignored() {
     let (mut h, _rt) = counter();
     h.steps(2);

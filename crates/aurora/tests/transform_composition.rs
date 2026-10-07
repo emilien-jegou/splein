@@ -27,7 +27,7 @@ fn child_transform(h: &mut Harness) -> Transform {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_declared_transform_survives_a_bound_x_change() {
     let rt = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let x = Signal::new(Rc::clone(&rt), 0.0f32);
@@ -71,7 +71,7 @@ fn a_declared_transform_survives_a_bound_x_change() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_declared_scale_survives_a_bound_x_change() {
     let rt = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let x = Signal::new(Rc::clone(&rt), 0.0f32);

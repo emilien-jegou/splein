@@ -83,7 +83,7 @@ fn stacked_siblings() -> impl aurora::dsl::IntoElement {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_view_clipped_out_of_its_parent_is_not_clickable() {
     let engine = mounted(clipped_child());
 
@@ -100,7 +100,7 @@ fn a_view_clipped_out_of_its_parent_is_not_clickable() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn hit_test_agrees_with_the_router_on_a_clipped_view() {
     let engine = mounted(clipped_child());
     for y in [10.0, 50.0, 90.0, 150.0, 300.0, 390.0] {
@@ -113,7 +113,7 @@ fn hit_test_agrees_with_the_router_on_a_clipped_view() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn hit_test_agrees_with_the_router_on_stacked_siblings() {
     let engine = mounted(stacked_siblings());
     for y in [10.0, 100.0, 190.0] {
@@ -126,7 +126,7 @@ fn hit_test_agrees_with_the_router_on_stacked_siblings() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn the_topmost_stacked_sibling_is_the_hit_target() {
     let engine = mounted(stacked_siblings());
     assert_eq!(
@@ -142,7 +142,7 @@ fn the_topmost_stacked_sibling_is_the_hit_target() {
 /// one pipeline and not the other, and it is what a user actually notices. The two siblings here
 /// fully overlap, so a click in the shared area must land on whichever one is visible.
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn the_clicked_view_is_the_painted_view() {
     let mut h = Harness::root(stacked_siblings(), 400, 400);
     h.step();

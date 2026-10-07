@@ -44,7 +44,7 @@ fn harness() -> Harness {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn the_harness_freezes_time_without_freezing_the_frame() {
     let mut h = harness();
     h.click("card");
@@ -80,7 +80,7 @@ fn the_harness_freezes_time_without_freezing_the_frame() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn slow_motion_stretches_a_transition_over_more_frames() {
     let frames_to_arrive = |h: &mut Harness, budget: u32| -> u32 {
         h.click("card");
@@ -103,7 +103,7 @@ fn slow_motion_stretches_a_transition_over_more_frames() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn settle_reports_whether_it_actually_settled() {
     let mut h = harness();
     assert!(h.is_settled(), "a fresh scene is already at rest");
@@ -115,7 +115,7 @@ fn settle_reports_whether_it_actually_settled() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_trace_reveals_the_shape_of_motion_not_just_its_endpoints() {
     let mut h = harness();
     h.click("card");
@@ -142,7 +142,7 @@ fn a_trace_reveals_the_shape_of_motion_not_just_its_endpoints() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn located_names_the_three_coordinate_spaces_separately() {
     let h = harness();
     let here: Located = h.located("card");
@@ -161,7 +161,7 @@ fn located_names_the_three_coordinate_spaces_separately() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn clicking_by_key_lands_on_the_view_and_nowhere_else() {
     let mut h = harness();
     let card = h.located("card").center();
@@ -182,7 +182,7 @@ fn clicking_by_key_lands_on_the_view_and_nowhere_else() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_filmstrip_composites_and_labels_its_frames() {
     let mut h = harness();
     let mut frames = Vec::new();
@@ -216,7 +216,7 @@ fn a_filmstrip_composites_and_labels_its_frames() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn snapshots_detect_change_and_equality() {
     let mut h = harness();
     h.click("card");
@@ -240,7 +240,7 @@ fn snapshots_detect_change_and_equality() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn runs_read_a_stack_of_cards_as_solid_runs() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let cx = Cx::new(Rc::clone(&runtime));
@@ -292,7 +292,7 @@ fn runs_read_a_stack_of_cards_as_solid_runs() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn the_overflow_scan_finds_content_escaping_an_unclipped_parent() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let cx = Cx::new(Rc::clone(&runtime));
@@ -340,7 +340,7 @@ fn the_overflow_scan_finds_content_escaping_an_unclipped_parent() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn the_overflow_scan_is_quiet_when_nothing_escapes() {
     let mut h = harness();
     h.step();
@@ -353,7 +353,7 @@ fn the_overflow_scan_is_quiet_when_nothing_escapes() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_pointer_away_from_the_view_changes_nothing() {
     let mut h = harness();
     let before = h.transform("card");
@@ -375,7 +375,7 @@ fn a_pointer_away_from_the_view_changes_nothing() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_drag_by_key_is_delivered_in_visible_increments() {
     let mut h = harness();
     let before = h.located("card").flow;
@@ -403,7 +403,7 @@ fn a_drag_by_key_is_delivered_in_visible_increments() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_fresh_harness_has_already_rendered_one_frame() {
     // Regression: a harness that had not stepped anything reported every rect as zero, and
     // `settle` returned immediately because nothing was moving yet. Both looked like a page
@@ -441,7 +441,7 @@ fn Draggable() -> impl IntoElement {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_drag_can_be_inspected_while_it_is_still_held() {
     // The reason `drag_holding` exists. `drag_by` releases before returning, so by the time
     // it returns the card has usually sprung most of the way home and the held reading is

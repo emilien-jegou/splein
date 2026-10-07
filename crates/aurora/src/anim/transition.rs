@@ -125,6 +125,12 @@ impl Transition {
     ///
     /// The output starts at the target, so only later changes animate. A spring keeps its
     /// live velocity across target changes, which is what makes interruption seamless.
+    ///
+    /// Prefer [`use_transition`](crate::reactive::use_transition) inside components,
+    /// especially rows in reactive lists: it recalls the cell across rebuilds so a
+    /// retarget keeps position *and* velocity, and it registers the frame ticker once
+    /// per hook slot instead of once per rebuild. Use `on` only for one-shot,
+    /// non-component bindings where no rebuild can re-run the call.
     pub fn on(self, target: impl Readable<f32> + 'static) -> Signal<f32> {
         let reader: Rc<dyn Readable<f32>> = Rc::from(Box::new(target) as Box<dyn Readable<f32>>);
         let cell = Rc::new(TransitionCell::new(self.mode, Rc::clone(&reader)));

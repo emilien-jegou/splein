@@ -10,6 +10,24 @@ use std::sync::{Arc, Mutex};
 
 const MAX_CACHE_ENTRIES: usize = 2048;
 
+/// Cache identity granularity: layout routinely produces fractional widths
+/// (spring values, fill division, window resize) that differ by far less
+/// than a pixel. Quantizing to 1/16px is visually identical in shaping
+/// output and turns per-frame jitter into cache hits instead of cold
+/// shapes — an animation sweeping a width from 400.0 to 400.5 reuses one
+/// entry rather than shaping dozens.
+const QUANTIZE_STEPS_PER_PX: f32 = 16.0;
+
+/// Identity bits for one float dimension: non-finite values share a bucket,
+/// and ±0 collapse to +0 so sign jitter on zero never defeats the cache.
+fn quantize_bits(v: f32) -> u32 {
+    if !v.is_finite() {
+        return u32::MAX;
+    }
+    let q = (v * QUANTIZE_STEPS_PER_PX).round();
+    (if q == 0.0 { 0.0 } else { q }).to_bits()
+}
+
 /// Style and width identity shared by every string shaped the same way.
 #[derive(Clone, PartialEq, Eq, Hash)]
 struct StyleKey {
@@ -28,23 +46,24 @@ struct StyleKey {
 
 impl StyleKey {
     /// Builds a style identity from shaping parameters, ignoring the content string.
+    ///
+    /// Float dimensions are quantized (see `quantize_bits`): two layouts
+    /// whose widths differ by less than 1/16px share the first shaped
+    /// entry, which is what keeps animated/resizing text on the cache-hit
+    /// path instead of cold-shaping every frame.
     fn from_params(params: &TextShapeParams) -> Self {
         Self {
             font: params.font,
             family: params.family.map(str::to_string),
             style: params.style,
-            size_bits: params.size.to_bits(),
+            size_bits: quantize_bits(params.size),
             weight: params.weight,
-            line_height_bits: params.line_height.to_bits(),
-            letter_spacing_bits: params.letter_spacing.to_bits(),
+            line_height_bits: quantize_bits(params.line_height),
+            letter_spacing_bits: quantize_bits(params.letter_spacing),
             align: params.align,
             overflow: params.overflow,
             max_lines: params.max_lines,
-            max_width_bits: if params.constraints.max_width.is_finite() {
-                params.constraints.max_width.to_bits()
-            } else {
-                0
-            },
+            max_width_bits: quantize_bits(params.constraints.max_width),
         }
     }
 }
@@ -139,5 +158,75 @@ impl Inner {
                 self.styles.remove(&key);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::foundation::{Constraints, IntrinsicSize};
+    use crate::text::fonts::FontStyle;
+
+    fn params_for(text: &str, max_width: f32) -> TextShapeParams<'_> {
+        TextShapeParams {
+            text,
+            font: None,
+            family: None,
+            style: FontStyle::Normal,
+            size: 16.0,
+            line_height: 20.0,
+            letter_spacing: 0.0,
+            align: TextAlign::Start,
+            overflow: TextOverflow::Clip,
+            max_lines: None,
+            weight: 400,
+            constraints: Constraints::loose(max_width, f32::INFINITY),
+        }
+    }
+
+    fn dummy_layout() -> Arc<TextLayout> {
+        Arc::new(TextLayout::new(
+            Vec::new(),
+            IntrinsicSize {
+                width: 10.0,
+                height: 20.0,
+            },
+        ))
+    }
+
+    /// Fractional width jitter within 1/16px must hit the same entry:
+    /// this is what keeps animated/resizing text off the cold-shape path.
+    #[test]
+    fn fractional_widths_share_one_cache_entry() {
+        let cache = ShapedTextCache::new();
+        let stored = dummy_layout();
+        cache.store(&params_for("hello", 400.0), Arc::clone(&stored));
+
+        for width in [400.0, 400.01, 400.03, 399.98, 400.02] {
+            let hit = cache
+                .get(&params_for("hello", width))
+                .expect("jittered width must hit");
+            assert!(
+                Arc::ptr_eq(&hit, &stored),
+                "width {width} must reuse the 400.0 entry"
+            );
+        }
+    }
+
+    /// Widths beyond the quantum and different strings must still miss.
+    #[test]
+    fn distant_widths_and_strings_miss() {
+        let cache = ShapedTextCache::new();
+        cache.store(&params_for("hello", 400.0), dummy_layout());
+
+        assert!(cache.get(&params_for("hello", 500.0)).is_none());
+        assert!(cache.get(&params_for("other", 400.0)).is_none());
+    }
+
+    /// Non-finite and signed-zero widths collapse instead of keying apart.
+    #[test]
+    fn degenerate_widths_share_one_bucket() {
+        assert_eq!(quantize_bits(f32::INFINITY), quantize_bits(f32::NAN));
+        assert_eq!(quantize_bits(0.0), quantize_bits(-0.0));
     }
 }

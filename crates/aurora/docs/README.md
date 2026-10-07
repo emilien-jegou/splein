@@ -6,6 +6,7 @@ Developer guides. Each one is a topic, not a reference — for signatures, read 
 | Guide | What it covers |
 |---|---|
 | [Motion in Aurora](transitions.md) | Animating values and boxes, FLIP, reading geometry, debugging and testing motion. |
+| [Retention in Aurora](retention.md) | Chunk replay, dirty-flag lifecycle, damage vs content, cache-key contracts. |
 
 ## The one-paragraph version
 

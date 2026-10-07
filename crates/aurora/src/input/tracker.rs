@@ -24,7 +24,6 @@ struct Sample {
 }
 
 /// A pointer sample plus the gesture state it implies.
-#[derive(Default)]
 pub struct PointerTracker {
     /// Latest known cursor position, absent while the pointer is outside the window.
     pub cursor: Option<Point>,
@@ -38,6 +37,14 @@ pub struct PointerTracker {
     press_at: Point,
     /// Position of the most recent sample.
     last: Point,
+    /// Whether the current press may become a drag at all.
+    ///
+    /// Set per press by the router from the press chain: a press on content with no
+    /// drag handlers is a press no matter how far it moves — the web draws the same
+    /// line (a `dragstart` only exists for draggable content), and without it every
+    /// click that drifts past the threshold dies silently with no handler observing
+    /// anything. Defaults to true so a bare tracker behaves as before.
+    drag_enabled: bool,
     /// Whether the gesture has passed the drag threshold.
     dragging: bool,
     /// Whether a click should be delivered when the press is released.
@@ -57,6 +64,14 @@ impl PointerTracker {
     /// Creates a tracker with no pointer contact.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Whether the current press may be recognised as a drag.
+    ///
+    /// The router sets this per press from the press chain. Test and harness code
+    /// driving the tracker directly keeps the default (enabled).
+    pub fn set_drag_enabled(&mut self, enabled: bool) {
+        self.drag_enabled = enabled;
     }
 
     /// Node currently capturing the gesture.
@@ -149,7 +164,11 @@ impl PointerTracker {
                 if self.held {
                     let travel = (event.position.x - self.press_at.x).abs()
                         + (event.position.y - self.press_at.y).abs();
-                    if !self.dragging && travel > DRAG_THRESHOLD {
+                    // Gated on drag interest as well as distance: a press on content
+                    // with no drag handlers never becomes a drag, however far it moves.
+                    // Without this, every click that drifts past the threshold dies —
+                    // no click, and no drag handler observing anything either.
+                    if self.drag_enabled && !self.dragging && travel > DRAG_THRESHOLD {
                         self.dragging = true;
                         // Movement disqualifies the press as a click, so releasing after a
                         // drag cannot also fire one.
@@ -159,7 +178,12 @@ impl PointerTracker {
                     }
                 }
                 self.last = event.position;
-                if event.phase == PointerPhase::Drag {
+                // A drag-phase sample below the threshold is not a drag step: some
+                // platforms report any held movement as drag-bearing, and treating a
+                // 1px wiggle as a drag would both move the view and (via click_armed
+                // still holding) deliver a click for the same press. Only a recognised
+                // drag streams steps; anything else is an ordinary move.
+                if event.phase == PointerPhase::Drag && self.dragging {
                     TrackerChange::Dragged
                 } else {
                     TrackerChange::Moved
@@ -207,7 +231,28 @@ impl PointerTracker {
     pub fn set_capture(&mut self, node: Option<NodeId>) {
         self.capture = node;
     }
+}
 
+impl Default for PointerTracker {
+    fn default() -> Self {
+        Self {
+            cursor: None,
+            held: false,
+            capture: None,
+            press_at: Point::ZERO,
+            last: Point::ZERO,
+            drag_enabled: true,
+            dragging: false,
+            click_armed: false,
+            clicks: 0,
+            since_click: 0.0,
+            last_sample_at: 0.0,
+            history: Vec::new(),
+        }
+    }
+}
+
+impl PointerTracker {
     /// Abandons the gesture in progress, leaving no pointer contact behind.
     ///
     /// Needed when the pointer goes away without a release arriving: the window losing focus,
@@ -221,6 +266,7 @@ impl PointerTracker {
     /// double click.
     pub fn cancel_gesture(&mut self) {
         self.held = false;
+        self.drag_enabled = true;
         self.dragging = false;
         self.capture = None;
         self.click_armed = false;

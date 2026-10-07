@@ -72,7 +72,7 @@ fn key_at(engine: &Engine, x: f32, y: f32) -> Option<String> {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn hit_test_resolves_the_card_under_a_point() {
     let mut engine = Engine::headless(400, 400);
     engine.mount(two_cards());
@@ -88,7 +88,7 @@ fn hit_test_resolves_the_card_under_a_point() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn hit_test_follows_a_bound_transform() {
     let (mut engine, offset, _ready) = cards_with_bound_offset();
     engine.frame();
@@ -115,7 +115,7 @@ fn hit_test_follows_a_bound_transform() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn hit_test_falls_through_to_the_keyed_ancestor() {
     let mut engine = Engine::headless(400, 400);
     engine.mount(
@@ -145,7 +145,7 @@ fn hit_test_falls_through_to_the_keyed_ancestor() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn hit_test_prefers_the_later_sibling_on_overlap() {
     let mut engine = Engine::headless(400, 400);
     engine.mount(

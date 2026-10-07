@@ -89,6 +89,10 @@ impl PointerInput {
         if self.queued.is_empty() {
             return None;
         }
+        // Handlers write signals; they resolve ambiently, so dispatch pushes
+        // the scheduler's runtime even though frames usually already have.
+        // (Called before any frame pass, and standalone in stepping harnesses.)
+        let _ambient = crate::reactive::ambient_guard(&scheduler.runtime);
         // Pointer history advances on the frame's own delta, so a gesture measured in headless
         // stepping sees exactly the velocity it would in the app.
         self.router.advance_clock(last_delta);

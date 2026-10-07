@@ -6,7 +6,7 @@ use crate::dsl::component::IntoElement;
 use crate::dsl::element::{Element, IntoChildList};
 use crate::dsl::element_ref::ElementRef;
 use crate::foundation::*;
-use crate::input::{ClickInfo, DragInfo, HandlerSet, HoverInfo, PointerEvent};
+use crate::input::{ClickInfo, DragInfo, HandlerSet, HitTest, HoverInfo, PointerEvent, Propagation};
 use crate::reactive::prop::{DynamicProp, IntoProp};
 use crate::reactive::readable::Readable;
 
@@ -45,6 +45,8 @@ pub struct GroupDef {
     pub element_ref: Option<ElementRef>,
     /// Pointer interaction handlers, reconciled onto the node alongside its bindings.
     pub handlers: HandlerSet,
+    /// Hit-test participation for this node (and, for passthrough, its subtree).
+    pub hit_test: HitTest,
     /// Builds children from reactive state, when the list is not static.
     pub children_builder: Option<Rc<dyn Fn() -> Vec<Element>>>,
     pub children: Vec<Element>,
@@ -77,6 +79,7 @@ pub fn group() -> GroupDef {
         presence: None,
         element_ref: None,
         handlers: HandlerSet::default(),
+        hit_test: HitTest::Auto,
         children_builder: None,
         children: Vec::new(),
     }
@@ -311,36 +314,108 @@ impl GroupDef {
     /// Fires only when the pointer barely moved between them; a gesture that travelled is a
     /// drag, and a drag never also reports a click.
     pub fn on_click(mut self, f: impl Fn(&ClickInfo) + 'static) -> Self {
+        self.handlers.click = Some(Rc::new(move |info| {
+            f(info);
+            Propagation::Bubble
+        }));
+        self
+    }
+
+    /// Handles a click, with control over whether ancestors still observe it.
+    pub fn on_click_handled(
+        mut self,
+        f: impl Fn(&ClickInfo) -> Propagation + 'static,
+    ) -> Self {
         self.handlers.click = Some(Rc::new(f));
         self
     }
 
     /// Handles the primary button going down anywhere on this node.
     pub fn on_pointer_down(mut self, f: impl Fn(&PointerEvent) + 'static) -> Self {
+        self.handlers.pointer_down = Some(Rc::new(move |e| {
+            f(e);
+            Propagation::Bubble
+        }));
+        self
+    }
+
+    /// Handles pointer-down, with control over whether ancestors still observe it.
+    pub fn on_pointer_down_handled(
+        mut self,
+        f: impl Fn(&PointerEvent) -> Propagation + 'static,
+    ) -> Self {
         self.handlers.pointer_down = Some(Rc::new(f));
         self
     }
 
     /// Handles the primary button coming up on this node.
     pub fn on_pointer_up(mut self, f: impl Fn(&PointerEvent) + 'static) -> Self {
+        self.handlers.pointer_up = Some(Rc::new(move |e| {
+            f(e);
+            Propagation::Bubble
+        }));
+        self
+    }
+
+    /// Handles pointer-up, with control over whether ancestors still observe it.
+    pub fn on_pointer_up_handled(
+        mut self,
+        f: impl Fn(&PointerEvent) -> Propagation + 'static,
+    ) -> Self {
         self.handlers.pointer_up = Some(Rc::new(f));
         self
     }
 
     /// Handles every pointer move while it is over this node.
     pub fn on_pointer_move(mut self, f: impl Fn(&PointerEvent) + 'static) -> Self {
+        self.handlers.pointer_move = Some(Rc::new(move |e| {
+            f(e);
+            Propagation::Bubble
+        }));
+        self
+    }
+
+    /// Handles pointer-move, with control over whether ancestors still observe it.
+    pub fn on_pointer_move_handled(
+        mut self,
+        f: impl Fn(&PointerEvent) -> Propagation + 'static,
+    ) -> Self {
         self.handlers.pointer_move = Some(Rc::new(f));
         self
     }
 
     /// Handles the pointer arriving on this node.
     pub fn on_pointer_enter(mut self, f: impl Fn(&HoverInfo) + 'static) -> Self {
+        self.handlers.pointer_enter = Some(Rc::new(move |info| {
+            f(info);
+            Propagation::Bubble
+        }));
+        self
+    }
+
+    /// Handles pointer-enter, with control over whether ancestors still observe it.
+    pub fn on_pointer_enter_handled(
+        mut self,
+        f: impl Fn(&HoverInfo) -> Propagation + 'static,
+    ) -> Self {
         self.handlers.pointer_enter = Some(Rc::new(f));
         self
     }
 
     /// Handles the pointer leaving this node.
     pub fn on_pointer_leave(mut self, f: impl Fn(&HoverInfo) + 'static) -> Self {
+        self.handlers.pointer_leave = Some(Rc::new(move |info| {
+            f(info);
+            Propagation::Bubble
+        }));
+        self
+    }
+
+    /// Handles pointer-leave, with control over whether ancestors still observe it.
+    pub fn on_pointer_leave_handled(
+        mut self,
+        f: impl Fn(&HoverInfo) -> Propagation + 'static,
+    ) -> Self {
         self.handlers.pointer_leave = Some(Rc::new(f));
         self
     }
@@ -350,12 +425,36 @@ impl GroupDef {
     /// The node captures the gesture, so it keeps receiving moves after the pointer leaves
     /// it, and only a release ends it.
     pub fn on_drag_start(mut self, f: impl Fn(&DragInfo) + 'static) -> Self {
+        self.handlers.drag_start = Some(Rc::new(move |info| {
+            f(info);
+            Propagation::Bubble
+        }));
+        self
+    }
+
+    /// Handles a drag-start, with control over whether ancestors still observe it.
+    pub fn on_drag_start_handled(
+        mut self,
+        f: impl Fn(&DragInfo) -> Propagation + 'static,
+    ) -> Self {
         self.handlers.drag_start = Some(Rc::new(f));
         self
     }
 
     /// Handles each pointer sample of an active drag.
     pub fn on_drag_step(mut self, f: impl Fn(&DragInfo) + 'static) -> Self {
+        self.handlers.drag_step = Some(Rc::new(move |info| {
+            f(info);
+            Propagation::Bubble
+        }));
+        self
+    }
+
+    /// Handles a drag-step, with control over whether ancestors still observe it.
+    pub fn on_drag_step_handled(
+        mut self,
+        f: impl Fn(&DragInfo) -> Propagation + 'static,
+    ) -> Self {
         self.handlers.drag_step = Some(Rc::new(f));
         self
     }
@@ -366,9 +465,76 @@ impl GroupDef {
     /// element had when the finger left the screen, and handing it to a spring is what stops
     /// a flick from appearing to stop dead.
     pub fn on_drag_end(mut self, f: impl Fn(&DragInfo) + 'static) -> Self {
+        self.handlers.drag_end = Some(Rc::new(move |info| {
+            f(info);
+            Propagation::Bubble
+        }));
+        self
+    }
+
+    /// Handles a drag-end, with control over whether ancestors still observe it.
+    pub fn on_drag_end_handled(
+        mut self,
+        f: impl Fn(&DragInfo) -> Propagation + 'static,
+    ) -> Self {
         self.handlers.drag_end = Some(Rc::new(f));
         self
     }
+
+    /// Hit-test participation for this node.
+    ///
+    /// `HitTest::Opaque` makes even handler-less dead space solid, so clicks on a
+    /// menu or modal never ghost through to nodes beneath. `HitTest::Passthrough`
+    /// makes the subtree invisible to collision (the default for layout spacers,
+    /// now formalized rather than implied by having no handlers).
+    pub fn hit_test(mut self, policy: HitTest) -> Self {
+        self.hit_test = policy;
+        self
+    }
+
+    /// Toggles the layout footprint this view presents to its parent.
+    ///
+    /// Sugar over [`Self::layout_presence`]: `visible(true)` is
+    /// `LayoutPresence::Present`, `visible(false)` is `LayoutPresence::Absent`.
+    /// Accepts any bool prop (literal, `Signal<bool>`, `Derived<bool>`, closure).
+    pub fn visible<P: IntoProp<bool>>(mut self, v: P) -> Self {
+        let prop = v.into_prop();
+        self.presence = Some(match prop {
+            DynamicProp::Static(on) => DynamicProp::Static(if on {
+                LayoutPresence::Present
+            } else {
+                LayoutPresence::Absent
+            }),
+            DynamicProp::Dynamic(f) => {
+                DynamicProp::Dynamic(Rc::new(move || {
+                    if f() {
+                        LayoutPresence::Present
+                    } else {
+                        LayoutPresence::Absent
+                    }
+                }))
+            }
+        });
+        self
+    }
+
+    /// Attaches an interaction behavior, decoupling gestures from the DSL.
+    ///
+    /// A behavior owns its state (one clone, inside the behavior) and fans out to
+    /// the typed `on_*` slots, so call sites read as one verb instead of five
+    /// closures: `row.attach(ReorderGesture::new(drag))`.
+    pub fn attach<B: Behavior>(self, behavior: B) -> Self {
+        behavior.attach(self)
+    }
+}
+
+/// An interaction behavior decoupled from the element DSL.
+///
+/// Implementors own their signal clones and attach to the typed handler slots,
+/// keeping `GroupDef` free of gesture-specific builder noise.
+pub trait Behavior {
+    /// Attaches this behavior's handlers to a group builder.
+    fn attach(self, row: GroupDef) -> GroupDef;
 }
 
 impl IntoElement for GroupDef {

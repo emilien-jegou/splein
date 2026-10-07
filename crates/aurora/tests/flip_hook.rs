@@ -90,7 +90,7 @@ fn mount() -> (Harness, Signal<bool>, ElementRef) {
 
 /// A handle reads where its element landed, in window coordinates.
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(3_000)]
 fn a_bound_handle_reports_where_layout_put_the_element() {
     let (h, _moved, handle) = mount();
 
@@ -110,7 +110,7 @@ fn a_bound_handle_reports_where_layout_put_the_element() {
 ///
 /// The distinction is what stops a first measurement being taken against the origin.
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(3_000)]
 fn an_unbound_handle_reports_nothing_rather_than_the_origin() {
     let orphan = ElementRef::new(Rc::new(RefCell::new(ReactiveRuntime::new())));
     assert!(
@@ -127,7 +127,7 @@ fn an_unbound_handle_reports_nothing_rather_than_the_origin() {
 /// index and converting to pixels with a pitch makes the offset zero on the frame the swap lands,
 /// so nothing is ever *in between* — and every other test in that suite still passed.
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(3_000)]
 fn a_moved_element_is_caught_in_flight_rather_than_teleporting() {
     let (mut h, moved, _handle) = mount();
 
@@ -171,7 +171,7 @@ fn a_moved_element_is_caught_in_flight_rather_than_teleporting() {
 /// hands the row a fresh spring already sitting on its new position, which is precisely how a
 /// FLIP degrades into a teleport.
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_flip_survives_the_rebuild_that_caused_it() {
     let (mut h, moved, _handle) = mount();
 
@@ -196,7 +196,7 @@ fn a_flip_survives_the_rebuild_that_caused_it() {
 /// Position is not by itself a reason to animate. This is the case a pure position-diff gets
 /// wrong: everything on screen moves and none of it was reordered.
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_resize_does_not_animate_a_layout_that_did_not_reorder() {
     let (mut h, _moved, _handle) = mount();
 
@@ -219,7 +219,7 @@ fn a_resize_does_not_animate_a_layout_that_did_not_reorder() {
 /// per rebuild therefore grows the registry without bound — invisibly, until a long session starts
 /// dropping frames.
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn repeated_moves_do_not_accumulate_post_layout_work() {
     let rt = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let moved = Signal::new(Rc::clone(&rt), false);
@@ -252,7 +252,7 @@ fn repeated_moves_do_not_accumulate_post_layout_work() {
 /// invalidates that signal's subscribers, and an invalidated subscriber is itself what asks for
 /// frames — so a scene that measures itself cannot settle. A handle has no such edge.
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn reading_geometry_does_not_ask_the_engine_for_frames() {
     let (mut h, _moved, handle) = mount();
 
@@ -272,7 +272,7 @@ fn reading_geometry_does_not_ask_the_engine_for_frames() {
 
 /// `child_rects` is how a list learns its own geometry without declaring a pitch.
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_container_reports_its_children_in_child_order() {
     let rt = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let list_ref = ElementRef::new(Rc::clone(&rt));

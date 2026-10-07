@@ -2,7 +2,8 @@
 
 use crate::foundation::Point;
 use crate::input::event::{ClickInfo, HoverInfo, PointerEvent, PointerPhase};
-use crate::input::hit::{hit_chain, HitNode};
+use crate::input::handlers::Propagation;
+use crate::input::hit::{hit_chain, HitNode, HitTest};
 use crate::input::tracker::{PointerTracker, TrackerChange};
 use crate::tree::{NodeId, TreeArena};
 
@@ -114,28 +115,67 @@ impl PointerRouter {
         let mut handled = false;
         match change {
             TrackerChange::Pressed => {
-                // The press binds to the topmost node on the chain that actually wants
-                // pointer input, so a decorative wrapper can never swallow a click meant
-                // for the control inside it.
+                // The press binds to the topmost absorbing node: one with handlers,
+                // or an Opaque node whose dead space must not ghost through.
+                // A decorative (Auto, handler-less) or Passthrough wrapper can never
+                // swallow a click meant for the control inside it.
                 if let Some(index) = self
                     .chain
                     .iter()
-                    .position(|hit| !arena.get(hit.id).state.handlers.is_empty())
+                    .position(|hit| absorbs(arena, hit.id))
                 {
                     let target = self.chain[index].id;
                     self.tracker.set_capture(Some(target));
                     // The chain runs topmost-first, so the target's ancestors are everything
                     // after it. Firing from the target outward lets a chip inside a card be
-                    // observed by either.
-                    self.press_chain = self.chain[index..].iter().map(|hit| hit.id).collect();
-                    for &id in &self.press_chain {
-                        handled |= fire(arena, id, |h| h.fire_pointer_down(event));
+                    // observed by either. Truncated at the first Opaque node outward: an
+                    // opaque menu or modal absorbs the press, so nodes beneath never fire.
+                    // An Opaque target without handlers absorbs without firing at all.
+                    let mut press_chain: Vec<NodeId> = Vec::new();
+                    let mut absorbed = false;
+                    for hit in &self.chain[index..] {
+                        press_chain.push(hit.id);
+                        if arena.get(hit.id).style.hit_test == HitTest::Opaque {
+                            absorbed = true;
+                            break;
+                        }
                     }
+                    self.press_chain = press_chain;
+                    // A drag only exists for content that can be dragged. If nobody
+                    // in the pressed chain handles drags, this press stays a press no
+                    // matter how far it moves, and release still clicks — the web's
+                    // `dragstart`-only-if-draggable rule, and what keeps an ordinary
+                    // click that drifts past the threshold from dying silently.
+                    let draggable = self
+                        .press_chain
+                        .iter()
+                        .any(|id| arena.get(*id).state.handlers.handles_drag());
+                    self.tracker.set_drag_enabled(draggable);
+                    if absorbs_handlers_only(arena, target) {
+                        for &id in &self.press_chain {
+                            let (fired, stopped) =
+                                fire(arena, id, |h| h.fire_pointer_down(event));
+                            handled |= fired;
+                            if stopped {
+                                break;
+                            }
+                        }
+                    } else {
+                        handled |= absorbed;
+                    }
+                } else {
+                    // A press that bound to nothing has no drag handlers by definition.
+                    self.tracker.set_drag_enabled(false);
                 }
             }
             TrackerChange::Moved => {
                 handled |= self.update_hover(arena, event.position);
-                if self.tracker.is_held() {
+                // Steps stream only once the threshold has been crossed. A held button
+                // on its own is a press, not a drag: firing steps for sub-threshold
+                // moves makes a 1px click wiggle nudge the view (and still deliver the
+                // click, since click_armed survives it) — the click that passes off as
+                // a drag. Browsers draw the same line with their drag slop.
+                if self.tracker.is_dragging() {
                     handled |= self.deliver_to(
                         arena,
                         captured,
@@ -163,14 +203,26 @@ impl PointerRouter {
             TrackerChange::Released { click } => {
                 // The release goes to the views that took the press, not to whatever is
                 // under the pointer now, so a click cannot land on a different view.
-                for &id in self.press_chain.iter().rev() {
-                    handled |= fire(arena, id, |h| h.fire_pointer_up(event));
+                // Same target-first (bubbling) order as the press: the press bound
+                // target-outward, so the release unwinds the same chain.
+                for &id in self.press_chain.iter() {
+                    let (fired_up, stopped_up) =
+                        fire(arena, id, |h| h.fire_pointer_up(event));
+                    handled |= fired_up;
+                    if stopped_up {
+                        break;
+                    }
                     if click > 0 {
                         let info = ClickInfo {
                             position: event.position,
                             click_count: click,
                         };
-                        handled |= fire(arena, id, |h| h.fire_click(&info));
+                        let (fired_click, stopped_click) =
+                            fire(arena, id, |h| h.fire_click(&info));
+                        handled |= fired_click;
+                        if stopped_click {
+                            break;
+                        }
                     }
                 }
                 self.press_chain.clear();
@@ -180,7 +232,7 @@ impl PointerRouter {
                 let position = event.position;
                 let info = self.tracker.drag_info(position, false);
                 if let Some(target) = captured {
-                    handled |= fire(arena, target, |h| h.fire_drag_end(&info));
+                    handled |= fire(arena, target, |h| h.fire_drag_end(&info)).0;
                 }
                 self.press_chain.clear();
                 handled |= self.update_hover(arena, position);
@@ -203,7 +255,7 @@ impl PointerRouter {
         &mut self,
         arena: &TreeArena,
         target: Option<NodeId>,
-        invoke: fn(&crate::input::handlers::HandlerSet, &crate::input::event::DragInfo),
+        invoke: fn(&crate::input::handlers::HandlerSet, &crate::input::event::DragInfo) -> Propagation,
         position: Point,
     ) -> bool {
         let Some(target) = target else {
@@ -216,7 +268,7 @@ impl PointerRouter {
             return false;
         }
         let info = self.tracker.drag_info(position, true);
-        fire(arena, target, |h| invoke(h, &info))
+        fire(arena, target, |h| invoke(h, &info)).0
     }
 
     /// Emits enter/leave as the topmost interested node under the cursor changes.
@@ -224,7 +276,7 @@ impl PointerRouter {
         let next = self
             .chain
             .iter()
-            .find(|hit| !arena.get(hit.id).state.handlers.is_empty())
+            .find(|hit| absorbs(arena, hit.id))
             .map(|hit| hit.id);
         if next == self.hovered {
             return false;
@@ -233,34 +285,51 @@ impl PointerRouter {
         if let Some(leaving) = self.hovered {
             if arena.is_valid(leaving) {
                 let info = HoverInfo { position };
-                handled |= fire(arena, leaving, |h| h.fire_pointer_leave(&info));
+                handled |= fire(arena, leaving, |h| h.fire_pointer_leave(&info)).0;
             }
         }
         if let Some(entering) = next {
             let info = HoverInfo { position };
-            handled |= fire(arena, entering, |h| h.fire_pointer_enter(&info));
+            handled |= fire(arena, entering, |h| h.fire_pointer_enter(&info)).0;
         }
         self.hovered = next;
         handled
     }
 }
 
+/// Whether a node absorbs a press/hover: it has handlers, or it is Opaque dead
+/// space that must not ghost through to nodes beneath.
+#[inline]
+fn absorbs(arena: &TreeArena, id: NodeId) -> bool {
+    !arena.get(id).state.handlers.is_empty()
+        || arena.get(id).style.hit_test == HitTest::Opaque
+}
+
+/// Whether a node has handlers to fire (vs. absorbing silently as Opaque space).
+#[inline]
+fn absorbs_handlers_only(arena: &TreeArena, id: NodeId) -> bool {
+    !arena.get(id).state.handlers.is_empty()
+}
+
 /// Invokes one handler slot on a node, if it has one.
+///
+/// Returns `(fired, stopped)`: whether a handler ran, and whether it returned
+/// [`Propagation::Stop`] to halt bubbling to ancestors.
 #[inline]
 fn fire(
     arena: &TreeArena,
     id: NodeId,
-    invoke: impl FnOnce(&crate::input::handlers::HandlerSet),
-) -> bool {
+    invoke: impl FnOnce(&crate::input::handlers::HandlerSet) -> Propagation,
+) -> (bool, bool) {
     if !arena.is_valid(id) {
-        return false;
+        return (false, false);
     }
     match arena.get(id).state.handlers.get() {
         Some(handlers) => {
-            invoke(handlers);
-            true
+            let propagation = invoke(handlers);
+            (true, propagation == Propagation::Stop)
         }
-        None => false,
+        None => (false, false),
     }
 }
 

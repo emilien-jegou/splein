@@ -12,6 +12,22 @@ pub struct HitNode {
     pub bounds: ResolvedRect,
 }
 
+/// How a node participates in pointer hit testing.
+///
+/// `Auto` is the default: handler-less nodes are skipped by the router's target
+/// search, so decorative wrappers never swallow input meant for the control inside.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub enum HitTest {
+    /// Default participation: skipped by target search when handler-less.
+    #[default]
+    Auto,
+    /// Solid even without handlers: absorbs hits so clicks on dead space never
+    /// ghost through to nodes beneath (menus, modals). Acts as an implicit stop.
+    Opaque,
+    /// Invisible to collision: the subtree is skipped as if it were not there.
+    Passthrough,
+}
+
 /// Nodes under a point, ordered topmost first, ending at the root.
 ///
 /// Ordering mirrors `compile_stacking_context` exactly, in reverse: the topmost painted
@@ -53,6 +69,10 @@ fn collect(
     point: Point,
     out: &mut Vec<HitNode>,
 ) -> bool {
+    // Passthrough nodes are invisible to collision themselves, but their children
+    // are still hittable: the node never joins the chain, so it can neither
+    // swallow input nor observe it (DOM `pointer-events: none` semantics).
+    let passthrough = arena.get(id).style.hit_test == HitTest::Passthrough;
     let (child_tx, bounds, next_clip, layers) = {
         let node = arena.get(id);
         let painted = node.resolved_rect;
@@ -124,11 +144,15 @@ fn collect(
 
     if let Some(_) = deepest {
         // A descendant was hit. Join the chain behind it if this node is under the point too,
-        // which is what lets the event reach ancestors.
-        if contains_clipped(&bounds, active_clip, point) {
+        // which is what lets the event reach ancestors. Passthrough nodes never join.
+        if !passthrough && contains_clipped(&bounds, active_clip, point) {
             out.push(HitNode { id, bounds });
         }
         return true;
+    }
+
+    if passthrough {
+        return false;
     }
 
     if contains_clipped(&bounds, active_clip, point) {

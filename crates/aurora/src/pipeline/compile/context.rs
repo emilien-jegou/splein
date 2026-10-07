@@ -3,7 +3,7 @@
 use crate::foundation::{DamageRegion, ResolvedRect, Transform};
 use crate::pipeline::compile::hierarchy::compile_node_hierarchy;
 use crate::pipeline::compile::stacking::StackingContext;
-use crate::scene::{Scene, SceneChunk, SceneCommand};
+use crate::scene::{Scene, SceneChunk};
 use crate::text::TextContext;
 use crate::tree::{DirtyFlags, TreeArena};
 
@@ -20,10 +20,6 @@ pub fn compile_stacking_context(
 ) {
     let node_state = &arena.get(ctx.node_id).state;
     let is_clean = !node_state.dirty.contains(DirtyFlags::SUBTREE_DIRTY);
-    let touches_damage = damage
-        .rects()
-        .iter()
-        .any(|d| node_state.subtree_bounds.intersects(d));
 
     // A chunk replayed from cache carries the ancestor clips it was compiled with, so a
     // parent whose box moved or resized invalidates it even when this subtree is clean.
@@ -32,10 +28,23 @@ pub fn compile_stacking_context(
         .as_ref()
         .is_some_and(|c| c.inherited_clips == ctx.inherited_clips);
 
-    if is_clean && clips_match && (!touches_damage || damage.is_empty()) {
+    // Damage overlap deliberately does NOT gate re-encoding: damage decides
+    // what gets re-rasterized downstream, while content validity is fully
+    // described by the conditions below (docs/retention.md §4). Recompiling
+    // byte-identical commands because pixels got dirty is the conflation
+    // this branch exists to prevent.
+    if is_clean && clips_match {
         if let Some(cached) = &node_state.retained_chunk {
-            if cached.abs_origin == ctx.abs_origin && cached.bounds.overlaps(&viewport) {
-                scene.push_chunk(cached.clone());
+            // Content is origin-relative, so any origin replays. Cull and
+            // emit with the LIVE subtree bounds (recomputed by the damage
+            // pass just before compile), never the retained ones, which
+            // describe where the chunk was last frame.
+            if node_state.subtree_bounds.overlaps(&viewport) {
+                let mut replay = cached.clone();
+                replay.abs_origin = ctx.abs_origin;
+                replay.bounds = node_state.subtree_bounds;
+                replay.fresh = false;
+                scene.push_chunk(replay);
                 *cached_chunks += 1;
                 return;
             }
@@ -58,15 +67,10 @@ pub fn compile_stacking_context(
     let mut chunk = SceneChunk::new(arena.get(ctx.node_id).state.subtree_bounds, ctx.abs_origin);
     let cmd_start = chunk.commands.len();
 
-    // Ancestor clips are absolute screen space and the chunk opens on the tile origin, so
-    // they are pushed before any node frame applies a local offset.
+    // Placement-time clips, not content: the chunk stream is origin-relative,
+    // so ancestor clips are stored absolute and applied by the consumer around
+    // the placed stream. This is what lets a moved chunk reuse its encoding.
     chunk.inherited_clips = ctx.inherited_clips.clone();
-    for clip in &ctx.inherited_clips {
-        chunk.push(SceneCommand::PushClip {
-            rect: clip.rect,
-            radius: clip.radius,
-        });
-    }
 
     compile_node_hierarchy(
         arena,
@@ -78,9 +82,10 @@ pub fn compile_stacking_context(
         true,
     );
 
-    for _ in &ctx.inherited_clips {
-        chunk.push(SceneCommand::PopClip);
-    }
+    // Rebase to chunk-local: the root offset becomes (0,0), placement travels
+    // in `abs_origin` + `placement` instead of the stream.
+    chunk.rebase_to_local();
+    chunk.fresh = true;
     *new_commands += chunk.commands.len() - cmd_start;
 
     arena.get_mut(ctx.node_id).state.retained_chunk = Some(chunk.clone());

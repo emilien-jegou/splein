@@ -1,0 +1,22 @@
+[package]
+name = "bench_suite"
+version = "0.0.1"
+edition = "2021"
+description = "Criterion benchmark suite for Aurora core performance gates (ported from Martensite bench_suite)."
+publish = false
+autobins = false
+
+[dependencies]
+aurora = { path = "../.." }
+taffy = "0.5"
+
+[target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]
+criterion = "0.5"
+
+[lib]
+bench = false
+
+[[bench]]
+name = "bench_suite"
+path = "src/main.rs"
+harness = false

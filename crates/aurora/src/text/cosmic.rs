@@ -3,6 +3,7 @@
 use std::sync::{Arc, Mutex};
 
 use cosmic_text::{fontdb, CacheKey, FontSystem};
+use rustc_hash::FxHashMap;
 
 use crate::text::buffer_pool::BufferPool;
 use crate::text::glyph::GlyphKey;
@@ -11,6 +12,22 @@ use crate::text::overflow::{truncate_to_lines, TextOverflow};
 use crate::text::shape::shape_text;
 use crate::text::shaper::{TextShapeParams, TextShaper};
 
+/// Style inputs that determine family resolution: same key, same faces.
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub(crate) struct ResolvedStyleKey {
+    pub font: Option<u32>,
+    pub family: Option<String>,
+    pub style: u8,
+    pub weight: u16,
+}
+
+/// Face lookups hoisted out of the per-string shaping path.
+#[derive(Clone)]
+pub(crate) struct ResolvedStyle {
+    pub family_name: Option<String>,
+    pub has_exact_face: bool,
+}
+
 /// Production text layout shaper wrapping cosmic-text with zero system font scanning.
 #[derive(Clone)]
 pub struct CosmicTextEngine {
@@ -18,6 +35,7 @@ pub struct CosmicTextEngine {
     pub(crate) key_map: Arc<Mutex<std::collections::HashMap<GlyphKey, CacheKey>>>,
     pub(crate) id_to_blob: Arc<Mutex<std::collections::HashMap<fontdb::ID, usize>>>,
     pub(crate) buffers: Arc<Mutex<BufferPool>>,
+    pub(crate) resolved_styles: Arc<Mutex<FxHashMap<ResolvedStyleKey, ResolvedStyle>>>,
 }
 
 impl CosmicTextEngine {
@@ -31,6 +49,7 @@ impl CosmicTextEngine {
             key_map: Arc::new(Mutex::new(std::collections::HashMap::with_capacity(2048))),
             id_to_blob: Arc::new(Mutex::new(std::collections::HashMap::new())),
             buffers: Arc::new(Mutex::new(BufferPool::default())),
+            resolved_styles: Arc::new(Mutex::new(FxHashMap::default())),
         }
     }
 

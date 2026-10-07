@@ -45,7 +45,7 @@ fn pitch(h: &Harness, a: &str, b: &str) -> f32 {
 /// moved, the pointer's target did not, and every offset downstream is measured from a stride that
 /// no longer exists. Nothing crashes and nothing logs — the row just drifts away from the cursor.
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_resize_in_the_middle_of_a_drag_does_not_detach_the_row_from_the_pointer() {
     let mut h = {
         let rt = Rc::new(RefCell::new(ReactiveRuntime::new()));
@@ -99,7 +99,7 @@ fn a_resize_in_the_middle_of_a_drag_does_not_detach_the_row_from_the_pointer() {
 /// left, but each is then clamped at its own min-content floor — so past some height there is no
 /// single stride left to divide a distance by, and arithmetic built on one is simply wrong.
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn rows_stay_usable_when_a_squashed_window_makes_them_unequal() {
     let mut h = {
         let rt = Rc::new(RefCell::new(ReactiveRuntime::new()));
@@ -143,7 +143,7 @@ fn rows_stay_usable_when_a_squashed_window_makes_them_unequal() {
 /// Every row is still a distinct target after a squashed resize, which is what lets the gesture
 /// pick the slot the pointer is over without a pitch.
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_squashed_list_still_reorders_by_measured_slot() {
     let mut h = {
         let rt = Rc::new(RefCell::new(ReactiveRuntime::new()));
@@ -204,7 +204,7 @@ fn a_squashed_list_still_reorders_by_measured_slot() {
 /// A transition is never retired — its target may move again at any time — so anything registered
 /// per rebuild grows without bound. Invisible until a long session starts dropping frames.
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn repeated_reorders_do_not_accumulate_animation_work() {
     let rt = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let tree = Cx::new(Rc::clone(&rt)).enter(reorder::Page);
@@ -241,7 +241,7 @@ fn repeated_reorders_do_not_accumulate_animation_work() {
 /// The assertion is on *which* rows moved, not just that something did: asserting on the last row
 /// would pass whenever the double-counted target happened to shuffle the whole list.
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_reorder_moves_exactly_the_rows_the_drag_passed() {
     let mut h = {
         let rt = Rc::new(RefCell::new(ReactiveRuntime::new()));
@@ -301,7 +301,7 @@ fn a_reorder_moves_exactly_the_rows_the_drag_passed() {
 /// The demo no longer declares a row height or derives a pitch, so the invariant that replaced
 /// both is that the rows divide the space they were given and agree with each other.
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn the_rows_divide_the_space_the_list_was_given() {
     let mut h = {
         let rt = Rc::new(RefCell::new(ReactiveRuntime::new()));

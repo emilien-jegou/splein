@@ -27,7 +27,7 @@ fn peak_position(mut state: SpringState, frames: u32) -> f32 {
 // ---- Easing ----
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn ease_endpoints_are_exact() {
     let eases = [
         Ease::Linear,
@@ -53,13 +53,13 @@ fn ease_endpoints_are_exact() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn linear_ease_is_the_identity() {
     assert_eq!(Ease::Linear.sample(0.37), 0.37);
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn out_eases_front_load_their_progress() {
     assert!(Ease::OutCubic.sample(0.25) > 0.25, "OutCubic must lead");
     assert!(
@@ -70,7 +70,7 @@ fn out_eases_front_load_their_progress() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn in_ease_mirrors_its_out_counterpart() {
     for t in [0.0, 0.1, 0.35, 0.5, 0.75, 1.0] {
         let mirrored = 1.0 - Ease::OutCubic.sample(1.0 - t);
@@ -82,14 +82,14 @@ fn in_ease_mirrors_its_out_counterpart() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn in_out_eases_cross_the_midpoint() {
     assert!((Ease::InOutCubic.sample(0.5) - 0.5).abs() < 1e-6);
     assert!((Ease::InOutQuint.sample(0.5) - 0.5).abs() < 1e-6);
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn ease_clamps_progress_outside_the_unit_range() {
     assert_eq!(Ease::OutCubic.sample(-3.0), 0.0);
     assert_eq!(Ease::OutCubic.sample(4.0), 1.0);
@@ -98,7 +98,7 @@ fn ease_clamps_progress_outside_the_unit_range() {
 // ---- Tweening ----
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn tween_lerps_across_its_duration() {
     let tween = Tween::new(0.4, Ease::Linear);
     assert_eq!(tween.lerp(0.0, -10.0, 30.0), -10.0);
@@ -107,7 +107,7 @@ fn tween_lerps_across_its_duration() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn tween_fraction_clamps_before_start_and_after_end() {
     let tween = Tween::new(0.25, Ease::OutCubic);
     assert_eq!(tween.fraction(-1.0), 0.0);
@@ -115,7 +115,7 @@ fn tween_fraction_clamps_before_start_and_after_end() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn tween_completes_at_its_duration() {
     let tween = Tween::new(0.3, Ease::Linear);
     assert!(!tween.is_complete(0.29));
@@ -123,7 +123,7 @@ fn tween_completes_at_its_duration() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn zero_duration_tween_completes_immediately() {
     let tween = Tween::new(0.0, Ease::Linear);
     assert!(tween.is_complete(0.0));
@@ -133,7 +133,7 @@ fn zero_duration_tween_completes_immediately() {
 // ---- Springs ----
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn spring_settles_on_its_target() {
     let settled = settle(SpringState::new(Spring::snappy(), 0.0, 1.0), 3.0);
     assert!(
@@ -146,21 +146,21 @@ fn spring_settles_on_its_target() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn overdamped_spring_never_crosses_its_target() {
     let peak = peak_position(SpringState::new(Spring::smooth(), 0.0, 1.0), 180);
     assert!(peak <= 1.01, "smooth must not overshoot, peaked at {peak}");
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn underdamped_spring_overshoots_its_target() {
     let peak = peak_position(SpringState::new(Spring::bouncy(), 0.0, 1.0), 180);
     assert!(peak > 1.05, "bouncy must overshoot, peaked at {peak}");
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn damping_ratio_classifies_each_preset() {
     assert!(Spring::snappy().damping_ratio() < 1.0, "snappy overshoots");
     assert!(
@@ -175,7 +175,7 @@ fn damping_ratio_classifies_each_preset() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn retarget_preserves_position_and_velocity() {
     let mut state = SpringState::new(Spring::snappy(), 0.0, 400.0);
     for _ in 0..10 {
@@ -195,14 +195,14 @@ fn retarget_preserves_position_and_velocity() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn launch_velocity_is_imparted_to_the_simulation() {
     let spring = Spring::snappy().with_velocity(100.0);
     assert_eq!(SpringState::new(spring, 0.0, 1.0).velocity, 100.0);
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn settled_spring_stops_moving() {
     let mut state = settle(SpringState::new(Spring::snappy(), 0.0, 1.0), 3.0);
     assert!(state.is_settled());
@@ -218,7 +218,7 @@ fn settled_spring_stops_moving() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_long_frame_delta_cannot_explode_the_spring() {
     let mut state = SpringState::new(Spring::snappy(), 0.0, 1.0);
     state.advance(5.0);
@@ -237,7 +237,7 @@ fn a_long_frame_delta_cannot_explode_the_spring() {
 // ---- Reactive derivation ----
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn signal_map_derives_updated_values() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let source = Signal::new(Rc::clone(&runtime), 10.0f32);

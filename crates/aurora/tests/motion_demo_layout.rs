@@ -125,7 +125,7 @@ fn fits(name: &str, engine: &mut Engine, raster: &mut HeadlessRaster, w: u32, h:
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn layout_split_page_fits_its_viewport() {
     let mut raster = HeadlessRaster::new();
     let mut engine = engine_for_page(
@@ -143,7 +143,7 @@ fn layout_split_page_fits_its_viewport() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn transitions_page_fits_its_viewport() {
     let mut raster = HeadlessRaster::new();
     let mut engine = engine_for_page(transitions::Page, transitions::WIDTH, transitions::HEIGHT);
@@ -157,7 +157,7 @@ fn transitions_page_fits_its_viewport() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn imperative_page_fits_its_viewport() {
     let mut raster = HeadlessRaster::new();
     let mut engine = engine_for_page(imperative::Page, imperative::WIDTH, imperative::HEIGHT);
@@ -171,7 +171,7 @@ fn imperative_page_fits_its_viewport() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn interruption_page_fits_its_viewport() {
     let mut raster = HeadlessRaster::new();
     let mut engine = engine_for_page(
@@ -189,7 +189,7 @@ fn interruption_page_fits_its_viewport() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn playback_page_fits_its_viewport() {
     let mut raster = HeadlessRaster::new();
     let mut engine = engine_for_page(playback::Page, playback::WIDTH, playback::HEIGHT);
@@ -197,7 +197,7 @@ fn playback_page_fits_its_viewport() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn signals_page_fits_its_viewport() {
     let mut raster = HeadlessRaster::new();
     let mut engine = engine_for_page(signals::Page, signals::WIDTH, signals::HEIGHT);
@@ -205,7 +205,7 @@ fn signals_page_fits_its_viewport() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn press_page_fits_its_viewport() {
     let mut raster = HeadlessRaster::new();
     let mut engine = engine_for_page(press::Page, press::WIDTH, press::HEIGHT);
@@ -213,7 +213,7 @@ fn press_page_fits_its_viewport() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn accordion_page_fits_its_viewport() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let open = Signal::new(Rc::clone(&runtime), Some(0usize));
@@ -235,7 +235,7 @@ fn accordion_page_fits_its_viewport() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn reorder_page_fits_its_viewport() {
     let mut raster = HeadlessRaster::new();
     let mut engine = engine_for_page(reorder::Page, reorder::WIDTH, reorder::HEIGHT);
@@ -243,7 +243,7 @@ fn reorder_page_fits_its_viewport() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn validate_page_fits_its_viewport() {
     let mut raster = HeadlessRaster::new();
     let mut engine = engine_for_page(validate::Page, validate::WIDTH, validate::HEIGHT);

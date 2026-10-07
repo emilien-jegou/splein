@@ -60,36 +60,47 @@ impl TreeArena {
     }
 
     /// Removes a node and all recursive children from the arena, invoking a visitor on each.
+    ///
+    /// The top node is unlinked from its parent once; descendants die with
+    /// it and never pay a sibling scan of their own. Children are taken
+    /// (not cloned) and the subtree drains over an explicit stack, so deep
+    /// trees cannot overflow the call stack and teardown allocates nothing.
     pub fn remove_with<F: FnMut(NodeId)>(&mut self, id: NodeId, mut on_remove: F) {
-        self.remove_internal(id, &mut on_remove);
-    }
-
-    fn remove_internal<F: FnMut(NodeId)>(&mut self, id: NodeId, on_remove: &mut F) {
         if !self.is_valid(id) {
             return;
         }
         if let Some(parent) = self.slots[id.index as usize].parent {
             if self.is_valid(parent) {
-                self.slots[parent.index as usize]
-                    .children
-                    .retain(|&c| c != id);
+                // Single order-preserving unlink for the top node only:
+                // one shift here replaces a scan per descendant, and
+                // surviving siblings keep document order.
+                let siblings = &mut self.slots[parent.index as usize].children;
+                if let Some(pos) = siblings.iter().position(|&c| c == id) {
+                    siblings.remove(pos);
+                }
             }
         }
-        for child in self.slots[id.index as usize].children.clone() {
-            self.remove_internal(child, on_remove);
-        }
-        on_remove(id);
-        self.keys.unbind(id);
+        let mut stack = vec![id];
+        while let Some(cur) = stack.pop() {
+            if !self.is_valid(cur) {
+                continue;
+            }
+            let children = std::mem::take(&mut self.slots[cur.index as usize].children);
+            stack.extend(children.into_iter());
+            on_remove(cur);
+            self.keys.unbind(cur);
 
-        if let Some(bounds) = self.slots[id.index as usize].node.state.last_painted_bounds {
-            self.removed_damage.push(bounds);
+            if let Some(bounds) = self.slots[cur.index as usize].node.state.last_painted_bounds {
+                self.removed_damage.push(bounds);
+            }
+            let slot = &mut self.slots[cur.index as usize];
+            slot.is_active = false;
+            slot.generation += 1;
+            slot.parent = None;
+            // Children were taken above, so the buffer is already empty and
+            // keeps its capacity for the slot's next occupant.
+            self.free_indices.push(cur.index);
         }
-        let slot = &mut self.slots[id.index as usize];
-        slot.is_active = false;
-        slot.generation += 1;
-        slot.parent = None;
-        slot.children.clear();
-        self.free_indices.push(id.index);
     }
 
     /// Drains all accumulated damage from unmounted nodes.

@@ -1,5 +1,6 @@
 // Single responsibility: Visual inspector state and telemetry store for the debugger extension.
 
+use std::cell::Cell;
 use std::time::Instant;
 use winit::event::WindowEvent;
 
@@ -56,6 +57,15 @@ pub struct VisualDebugger {
     is_idle: bool,
     prev_show_hud: bool,
     prev_mode: InspectorMode,
+    /// Overlay footprint drawn last frame.
+    ///
+    /// Scanline overlays tint the OS surface buffer directly, and damage
+    /// tracking never covers overlay pixels — so without repainting where
+    /// the overlay drew last frame, stale tint/wireframe pixels persist
+    /// forever and red boxes accumulate. This footprint is included in
+    /// `overlay_damage` every frame so old overlay pixels are replaced
+    /// with clean canvas pixels before the new overlay draws.
+    prev_overlay: Cell<Option<ResolvedRect>>,
     worker: TelemetryWorker,
 }
 
@@ -77,6 +87,7 @@ impl Default for VisualDebugger {
             is_idle: true,
             prev_show_hud: true,
             prev_mode: InspectorMode::Off,
+            prev_overlay: Cell::new(None),
             worker: TelemetryWorker::spawn(),
         }
     }
@@ -237,13 +248,42 @@ impl AppExtension for VisualDebugger {
     }
 
     fn overlay_damage(&self) -> Option<ResolvedRect> {
+        // The overlay draws with last frame's diagnostics, so what it is
+        // about to draw (last_diag footprint) and what it drew last frame
+        // (prev_overlay) must BOTH be repainted: the presenter copies damage
+        // tiles from the clean canvas, then the overlay tints on top.
+        // Only the fresh footprint is stored — otherwise a stale region
+        // would be re-damaged every idle frame forever. Stale pixels get
+        // exactly one cleanup repaint, then silence.
         if self.mode != self.prev_mode {
-            Some(self.viewport)
-        } else if self.show_hud || self.show_hud != self.prev_show_hud {
-            Some(hud_panel())
-        } else {
-            None
+            self.prev_overlay.set(None);
+            return Some(self.viewport);
         }
+        let mut fresh: Option<ResolvedRect> = None;
+        let mut grow = |rect: &ResolvedRect| {
+            fresh = Some(match fresh {
+                Some(acc) => acc.union(rect),
+                None => *rect,
+            });
+        };
+        if self.mode != InspectorMode::Off {
+            for rect in &self.last_diag.spatial.damaged_rects {
+                grow(rect);
+            }
+            for rect in &self.last_diag.spatial.removed_rects {
+                grow(rect);
+            }
+        }
+        if self.show_hud || self.show_hud != self.prev_show_hud {
+            grow(&hud_panel());
+        }
+        let out = match (self.prev_overlay.get(), fresh) {
+            (Some(a), Some(b)) => Some(a.union(&b)),
+            (Some(a), None) => Some(a),
+            (None, b) => b,
+        };
+        self.prev_overlay.set(fresh);
+        out
     }
 
     fn render_overlay(
@@ -328,8 +368,9 @@ fn dump_scene(scene: &crate::scene::Scene) -> String {
     let mut out = String::new();
     for (i, c) in scene.chunks.iter().enumerate() {
         out.push_str(&format!(
-            "chunk {i} origin=({:.1},{:.1}) bounds=({:.1},{:.1}) {:.1}x{:.1}\n",
-            c.abs_origin.x, c.abs_origin.y, c.bounds.x, c.bounds.y, c.bounds.width, c.bounds.height
+            "chunk {i} origin=({:.1},{:.1}) placement={:?} fresh={} bounds=({:.1},{:.1}) {:.1}x{:.1}\n",
+            c.abs_origin.x, c.abs_origin.y, c.placement, c.fresh,
+            c.bounds.x, c.bounds.y, c.bounds.width, c.bounds.height
         ));
         for clip in c.inherited_clips.iter() {
             out.push_str(&format!(
@@ -345,7 +386,7 @@ fn dump_scene(scene: &crate::scene::Scene) -> String {
                 }
             ));
         }
-        for cmd in &c.commands {
+        for cmd in c.commands.iter() {
             match cmd {
                 SceneCommand::PushOffset(p) => {
                     out.push_str(&format!("    PushOffset ({:.1},{:.1})\n", p.x, p.y));
@@ -396,4 +437,79 @@ fn dump_scene(scene: &crate::scene::Scene) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::extension::AppExtension;
+
+    fn diag_with(rects: &[(f32, f32, f32, f32)]) -> FrameDiagnostics {
+        let mut diag = FrameDiagnostics::default();
+        for &(x, y, w, h) in rects {
+            diag.spatial.damaged_rects.push(ResolvedRect::new(x, y, w, h));
+        }
+        diag
+    }
+
+    fn covers(damage: Option<ResolvedRect>, x: f32, y: f32, w: f32, h: f32) -> bool {
+        match damage {
+            Some(r) => r.x <= x && r.y <= y && r.right() >= x + w && r.bottom() >= y + h,
+            None => false,
+        }
+    }
+
+    /// Overlay pixels persist in the OS surface buffer, so the previous
+    /// frame's footprint must be re-damaged even after damage moves
+    /// elsewhere — otherwise stale red boxes accumulate forever.
+    #[test]
+    fn overlay_damage_covers_previous_footprint() {
+        let mut dbg = VisualDebugger::new();
+        dbg.mode = InspectorMode::DamageHeatmap;
+        // HUD off: isolate the heatmap footprint (the HUD panel has its own
+        // always-damage path and would mask the assertions below).
+        dbg.show_hud = false;
+
+        // First frame after enabling: footprint covers the damage (on_frame
+        // already synced prev_mode, so this is the steady path, not the
+        // transition viewport).
+        dbg.on_frame(&diag_with(&[(10.0, 10.0, 50.0, 50.0)]));
+        let first = dbg.overlay_damage();
+        assert!(covers(first, 10.0, 10.0, 50.0, 50.0));
+
+        // Damage moves to B: footprint must cover B (about to draw).
+        dbg.on_frame(&diag_with(&[(300.0, 300.0, 40.0, 40.0)]));
+        let moved = dbg.overlay_damage();
+        assert!(covers(moved, 300.0, 300.0, 40.0, 40.0));
+
+        // Damage moves to C: footprint must still cover B (drawn last
+        // frame) as well as C, or B's tint pixels survive.
+        dbg.on_frame(&diag_with(&[(500.0, 100.0, 20.0, 20.0)]));
+        let moved_again = dbg.overlay_damage();
+        assert!(covers(moved_again, 300.0, 300.0, 40.0, 40.0));
+        assert!(covers(moved_again, 500.0, 100.0, 20.0, 20.0));
+    }
+
+    /// Once overlay content stops changing, cleanup repaints exactly once
+    /// and then goes quiet — stale regions must not be re-damaged forever.
+    #[test]
+    fn overlay_damage_goes_quiet_after_cleanup() {
+        let mut dbg = VisualDebugger::new();
+        dbg.mode = InspectorMode::DamageHeatmap;
+        dbg.show_hud = false;
+
+        dbg.on_frame(&diag_with(&[(10.0, 10.0, 50.0, 50.0)]));
+        let _ = dbg.overlay_damage();
+        dbg.on_frame(&diag_with(&[(300.0, 300.0, 40.0, 40.0)]));
+        let _ = dbg.overlay_damage();
+
+        // Empty damage: one cleanup repaint covering the stale footprint…
+        dbg.on_frame(&diag_with(&[]));
+        let cleanup = dbg.overlay_damage();
+        assert!(covers(cleanup, 300.0, 300.0, 40.0, 40.0));
+
+        // …then silence.
+        dbg.on_frame(&diag_with(&[]));
+        assert!(dbg.overlay_damage().is_none());
+    }
 }

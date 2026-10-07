@@ -31,7 +31,7 @@ fn draw_runs(engine: &Engine) -> Vec<(Point, f32, f32)> {
     for chunk in &engine.scene().chunks {
         let mut offset = chunk.abs_origin;
         let mut stack: Vec<Point> = Vec::new();
-        for cmd in &chunk.commands {
+        for cmd in chunk.commands.iter() {
             match cmd {
                 SceneCommand::PushOffset(p) => {
                     stack.push(*p);
@@ -55,7 +55,7 @@ fn draw_runs(engine: &Engine) -> Vec<(Point, f32, f32)> {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn missing_weight_face_does_not_panic() {
     let ctx = context();
     let mut cfg = config("Bold heading");
@@ -66,7 +66,7 @@ fn missing_weight_face_does_not_panic() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn italic_without_italic_face_does_not_panic() {
     let ctx = context();
     let mut cfg = config("Emphasis");
@@ -77,7 +77,7 @@ fn italic_without_italic_face_does_not_panic() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn wraps_at_constrained_width() {
     let ctx = context();
     let layout = ctx.shape_config(&config(LOREM), Constraints::loose(160.0, f32::INFINITY));
@@ -85,7 +85,7 @@ fn wraps_at_constrained_width() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn center_alignment_offsets_line_origin() {
     let ctx = context();
     let mut cfg = config("Hi");
@@ -96,7 +96,7 @@ fn center_alignment_offsets_line_origin() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn ellipsis_clamps_to_line_budget() {
     let ctx = context();
     let mut cfg = config(LOREM);
@@ -108,7 +108,7 @@ fn ellipsis_clamps_to_line_budget() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn decoration_produces_underline_rule() {
     let ctx = context();
     let layout = ctx.shape_config(
@@ -121,7 +121,7 @@ fn decoration_produces_underline_rule() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn fixed_width_text_wraps_at_that_width_in_a_vertical_group() {
     let mut engine = Engine::headless(760, 980);
     engine.mount(
@@ -135,7 +135,7 @@ fn fixed_width_text_wraps_at_that_width_in_a_vertical_group() {
 
     let mut checked = false;
     for chunk in &engine.scene().chunks {
-        for cmd in &chunk.commands {
+        for cmd in chunk.commands.iter() {
             if let SceneCommand::DrawText { layout, .. } = cmd {
                 for line in &layout.lines {
                     assert!(
@@ -152,7 +152,7 @@ fn fixed_width_text_wraps_at_that_width_in_a_vertical_group() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn fill_width_text_wraps_within_parent_minus_margins() {
     let mut engine = Engine::headless(760, 980);
     engine.mount(
@@ -169,7 +169,7 @@ fn fill_width_text_wraps_within_parent_minus_margins() {
 
     let mut checked = false;
     for chunk in &engine.scene().chunks {
-        for cmd in &chunk.commands {
+        for cmd in chunk.commands.iter() {
             if let SceneCommand::DrawText { layout, .. } = cmd {
                 for line in &layout.lines {
                     assert!(
@@ -186,7 +186,7 @@ fn fill_width_text_wraps_within_parent_minus_margins() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn stacked_fill_text_siblings_do_not_overlap() {
     // Regression: Fill width forced a re-wrap after the parent reserved height at the
     // parent width, so the second paragraph started before the first one ended.
@@ -226,7 +226,7 @@ fn stacked_fill_text_siblings_do_not_overlap() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn row_text_wraps_at_assigned_width_not_parent_width() {
     let mut engine = Engine::headless(760, 980);
     engine.mount(
@@ -243,7 +243,7 @@ fn row_text_wraps_at_assigned_width_not_parent_width() {
 
     let mut checked = 0;
     for chunk in &engine.scene().chunks {
-        for cmd in &chunk.commands {
+        for cmd in chunk.commands.iter() {
             if let SceneCommand::DrawText { layout, .. } = cmd {
                 assert!(layout.lines.len() > 1, "row text should wrap at 300px");
                 for line in &layout.lines {
@@ -257,7 +257,7 @@ fn row_text_wraps_at_assigned_width_not_parent_width() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn tracking_does_not_overflow_wrap_width() {
     let ctx = context();
     let mut cfg = config(LOREM);
@@ -274,7 +274,7 @@ fn tracking_does_not_overflow_wrap_width() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn ellipsis_is_word_aware_and_within_width() {
     let ctx = context();
     let mut cfg = config(LOREM);
@@ -289,7 +289,7 @@ fn ellipsis_is_word_aware_and_within_width() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn ellipsis_handles_unbreakable_word() {
     let ctx = context();
     let mut cfg = config("supercalifragilisticexpialidociousandthensomemoretext");
@@ -301,7 +301,7 @@ fn ellipsis_handles_unbreakable_word() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn cache_shares_layouts_across_widths() {
     let ctx = context();
     let cfg = config(LOREM);

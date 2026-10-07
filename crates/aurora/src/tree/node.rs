@@ -130,7 +130,25 @@ impl LayoutNode {
     }
 
     /// Axis-aligned box of a local rect projected through `tx`, used for screen-space bounds.
+    ///
+    /// Inflated by `AA_PAD` on every side: rasterizers (tiny-skia, Vello) emit
+    /// antialiased edge pixels up to 1px outside the geometric box (rounded
+    /// corners, glyph edges, strokes). Damage culled on the tight box would
+    /// leave a 1px ghost fringe; the pad makes culling conservative.
+    pub const AA_PAD: f32 = 1.0;
     fn project(tx: &Transform, x: f32, y: f32, w: f32, h: f32) -> ResolvedRect {
+        Self::project_aa(tx, x, y, w, h, Self::AA_PAD)
+    }
+
+    /// Projected box with explicit extra padding (for callers that already pad).
+    fn project_aa(
+        tx: &Transform,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        pad: f32,
+    ) -> ResolvedRect {
         let corners = [
             Point::new(x, y),
             Point::new(x + w, y),
@@ -146,7 +164,12 @@ impl LayoutNode {
             max_x = max_x.max(p.x);
             max_y = max_y.max(p.y);
         }
-        ResolvedRect::new(min_x, min_y, max_x - min_x, max_y - min_y)
+        ResolvedRect::new(
+            min_x - pad,
+            min_y - pad,
+            (max_x - min_x) + 2.0 * pad,
+            (max_y - min_y) + 2.0 * pad,
+        )
     }
 
     /// Bounds of this node's content alone, sized by the flow box rather than the render box.

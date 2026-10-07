@@ -85,7 +85,7 @@ fn content_rows(h: &mut Harness, index: usize, from: f32, to: f32) -> Vec<u32> {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn nothing_is_painted_below_the_growing_box() {
     // The reveal is a clip, so anything the clip does not cut is a bug that reads as a card
     // leaking copy into the gutter between items.
@@ -125,7 +125,7 @@ fn nothing_is_painted_below_the_growing_box() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn the_copy_is_revealed_progressively_rather_than_all_at_once() {
     // If the copy fits inside the smallest box the item ever takes, the clip never has to cut
     // it: it is simply fully visible for the entire animation while the box grows around it,
@@ -152,7 +152,7 @@ fn the_copy_is_revealed_progressively_rather_than_all_at_once() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn the_copy_sits_centred_in_the_body_rather_than_above_a_gap() {
     // The original body was 120px tall and the copy filled about 40 of them, all of it at the
     // top: the box kept growing for another 80px after the text was fully visible, with the
@@ -194,7 +194,7 @@ fn the_copy_sits_centred_in_the_body_rather_than_above_a_gap() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn every_item_reveals_the_same_way() {
     // The reveal is a property of the item, so one item behaving differently is a bug even
     // though nothing about it looks special.

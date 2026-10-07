@@ -45,7 +45,7 @@ fn page(transform: Transform) -> impl IntoElement {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_declarative_scale_pivots_about_the_node_centre() {
     let mut raster = HeadlessRaster::new();
     let mut engine = Engine::headless(200, 200);
@@ -67,7 +67,7 @@ fn a_declarative_scale_pivots_about_the_node_centre() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_declarative_rotation_keeps_the_node_in_place() {
     let mut raster = HeadlessRaster::new();
     let mut engine = Engine::headless(200, 200);
@@ -88,7 +88,7 @@ fn a_declarative_rotation_keeps_the_node_in_place() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_pure_translation_is_left_untouched() {
     let mut raster = HeadlessRaster::new();
     let mut engine = Engine::headless(200, 200);

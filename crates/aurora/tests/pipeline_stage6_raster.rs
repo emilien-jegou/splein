@@ -8,7 +8,7 @@ use aurora_tiny_skia::HeadlessRaster;
 use aurora::tree::DirtyFlags;
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_6_1_hover_color_diff_strictly_isolated_to_damage_bounds() {
     let mut engine = Engine::headless(400, 400);
     let mut raster = HeadlessRaster::new();
@@ -48,7 +48,7 @@ fn test_6_1_hover_color_diff_strictly_isolated_to_damage_bounds() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_6_2_shadow_color_mutation_reuses_cached_blur_mask() {
     let mut engine = Engine::headless(400, 400);
     let shadow_color = engine.signal(Color::rgba(0.0, 0.0, 0.0, 0.5));
@@ -71,7 +71,7 @@ fn test_6_2_shadow_color_mutation_reuses_cached_blur_mask() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_6_4_layer_wraps_subtree_in_clip_isolation() {
     use aurora_tiny_skia::TinySkiaRenderer;
     use aurora::scene::{LayerId, Scene, SceneChunk, SceneCommand};
@@ -112,7 +112,7 @@ fn test_6_4_layer_wraps_subtree_in_clip_isolation() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_6_5_rotated_rect_outside_translation_box_still_rasterizes() {
     use aurora_tiny_skia::TinySkiaRenderer;
     use aurora::scene::{Scene, SceneChunk, SceneCommand};
@@ -147,7 +147,7 @@ fn test_6_5_rotated_rect_outside_translation_box_still_rasterizes() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_6_6_rotated_text_rotates_glyph_shapes_not_just_positions() {
     use aurora_tiny_skia::{render_text, TextRenderParams};
     use aurora::text::{TextConfig, TextContext};
@@ -227,7 +227,7 @@ fn test_6_6_rotated_text_rotates_glyph_shapes_not_just_positions() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_6_3_box_smaller_than_corner_patch_falls_back_to_direct_blur_without_crash() {
     let mut engine = Engine::headless(200, 200);
 

@@ -33,16 +33,18 @@ pub fn diff_children(
     }
 
     let mut ops = Vec::new();
-    let mut old_keyed = std::collections::HashMap::new();
+    // Borrowed map: keys stay owned by `old_children`, so indexing them
+    // clones nothing. Lifetimes are local to this call.
+    let mut old_keyed: rustc_hash::FxHashMap<&Key, NodeId> = rustc_hash::FxHashMap::default();
     let mut unkeyed_old = Vec::new();
 
-    for &(id, ref key) in old_children {
+    for (id, key) in old_children {
         if let Some(k) = key {
-            if let Some(displaced) = old_keyed.insert(k.clone(), id) {
+            if let Some(displaced) = old_keyed.insert(k, *id) {
                 ops.push(ChildOp::Remove(displaced));
             }
         } else {
-            unkeyed_old.push(id);
+            unkeyed_old.push(*id);
         }
     }
 

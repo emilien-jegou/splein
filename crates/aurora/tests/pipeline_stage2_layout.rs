@@ -5,7 +5,7 @@ use aurora::foundation::*;
 use aurora::runtime::{Engine, FrameReport};
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_2_1_fixed_child_hits_cache_while_fill_child_recomputes() {
     let mut engine = Engine::headless(100, 100);
     engine.mount(
@@ -39,7 +39,7 @@ fn test_2_1_fixed_child_hits_cache_while_fill_child_recomputes() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_2_2_moved_sibling_does_not_remeasure() {
     let mut engine = Engine::headless(200, 100);
     engine.mount(
@@ -73,7 +73,7 @@ fn test_2_2_moved_sibling_does_not_remeasure() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_2_3_text_in_fixed_container_skips_reshaping_on_window_resize() {
     let mut engine = Engine::headless(200, 100);
     engine.mount(
@@ -97,7 +97,7 @@ fn test_2_3_text_in_fixed_container_skips_reshaping_on_window_resize() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_2_4_height_only_resize_never_reshapes_single_line_text() {
     let mut engine = Engine::headless(200, 100);
     engine.mount(
@@ -118,7 +118,7 @@ fn test_2_4_height_only_resize_never_reshapes_single_line_text() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_2_5_clipped_fixed_boundary_isolates_layout_to_boundary_only() {
     let mut engine = Engine::headless(800, 600);
     let count = engine.signal("0".to_string());
@@ -149,7 +149,7 @@ fn test_2_5_clipped_fixed_boundary_isolates_layout_to_boundary_only() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_2_6_disjoint_boundaries_both_dirty_execute_independently() {
     let mut engine = Engine::headless(600, 600);
     let w1 = engine.signal(20.0f32);
@@ -183,7 +183,7 @@ fn test_2_6_disjoint_boundaries_both_dirty_execute_independently() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_2_7_nested_dirty_boundaries_deduplicate_to_outer_boundary() {
     let mut engine = Engine::headless(800, 800);
     let sig_outer = engine.signal(80.0f32);
@@ -219,7 +219,7 @@ fn test_2_7_nested_dirty_boundaries_deduplicate_to_outer_boundary() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_2_8_boundary_escalates_to_parent_when_fixed_changes_to_fit() {
     let mut engine = Engine::headless(500, 500);
     let size_intent = engine.signal(Size::Fixed(100.0));
@@ -242,7 +242,7 @@ fn test_2_8_boundary_escalates_to_parent_when_fixed_changes_to_fit() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_2_9_boundary_relayout_uses_exact_parent_constraints() {
     let mut engine = Engine::headless(600, 600);
     let inner_w = engine.signal(50.0f32);

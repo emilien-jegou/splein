@@ -5,7 +5,7 @@ use aurora::foundation::*;
 use aurora::runtime::{Engine, FrameReport};
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_2_10_absolute_element_does_not_affect_sibling_flow() {
     let mut engine = Engine::headless(600, 400);
     let abs_top = engine.signal(10.0f32);
@@ -43,7 +43,7 @@ fn test_2_10_absolute_element_does_not_affect_sibling_flow() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_2_11_box_in_boxed_re_render_keeps_outer_box_cached() {
     let mut engine = Engine::headless(800, 800);
     let inner_sig = engine.signal(50.0f32);

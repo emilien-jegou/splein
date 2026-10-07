@@ -38,7 +38,7 @@ fn approx(a: f32, b: f32) -> bool {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn an_untransformed_box_reports_its_own_rect() {
     let mut h = harness(
         group()
@@ -48,16 +48,18 @@ fn an_untransformed_box_reports_its_own_rect() {
             .fill(Color::hex(0xFF0000)),
     );
     let r = bounds(&mut h);
-    assert!(approx(r.x, 0.0) && approx(r.y, 0.0), "origin was {:?}", r);
+    // Envelope includes the 1px AA fringe rasterizers paint outside the
+    // geometric box (see LayoutNode::AA_PAD).
+    assert!(approx(r.x, -1.0) && approx(r.y, -1.0), "origin was {:?}", r);
     assert!(
-        approx(r.width, 100.0) && approx(r.height, 40.0),
+        approx(r.width, 102.0) && approx(r.height, 42.0),
         "size was {:?}",
         r
     );
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_translated_box_reports_its_offset_origin() {
     let mut h = harness(
         group()
@@ -68,16 +70,16 @@ fn a_translated_box_reports_its_offset_origin() {
             .transform(Transform::from_translation(30.0, 20.0)),
     );
     let r = bounds(&mut h);
-    assert!(approx(r.x, 30.0) && approx(r.y, 20.0), "origin was {:?}", r);
+    assert!(approx(r.x, 29.0) && approx(r.y, 19.0), "origin was {:?}", r);
     assert!(
-        approx(r.width, 100.0) && approx(r.height, 40.0),
+        approx(r.width, 102.0) && approx(r.height, 42.0),
         "size was {:?}",
         r
     );
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_scaled_box_reports_the_grown_extent() {
     let mut h = harness(
         group()
@@ -89,13 +91,13 @@ fn a_scaled_box_reports_the_grown_extent() {
     );
     let r = bounds(&mut h);
     assert!(
-        approx(r.width, 200.0) && approx(r.height, 120.0),
+        approx(r.width, 202.0) && approx(r.height, 122.0),
         "a scaled box must report its scaled extent, got {r:?}"
     );
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_rotated_box_reports_its_axis_aligned_envelope() {
     // 90 degrees: the 100x40 box becomes 40x100. Reporting the unrotated 100x40 here is exactly
     // the bug -- the origin is right but the extent is not.
@@ -109,13 +111,13 @@ fn a_rotated_box_reports_its_axis_aligned_envelope() {
     );
     let r = bounds(&mut h);
     assert!(
-        approx(r.width, 40.0) && approx(r.height, 100.0),
+        approx(r.width, 42.0) && approx(r.height, 102.0),
         "a 90-degree rotation must swap the reported extent, got {r:?}"
     );
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn the_reported_bounds_contain_the_painted_pixels() {
     // The property that actually matters: a click aimed using these bounds lands on the view.
     let mut h = harness(

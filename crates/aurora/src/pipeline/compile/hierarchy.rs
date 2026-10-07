@@ -37,7 +37,14 @@ pub fn compile_node_hierarchy(
     } else {
         (painted.x, painted.y)
     };
-    enter_node_frame(node, chunk, off_x, off_y, LayerId::from_packed(id.packed()));
+    enter_node_frame(
+        node,
+        chunk,
+        off_x,
+        off_y,
+        LayerId::from_packed(id.packed()),
+        is_stacking_root,
+    );
     emit_node_content(node, chunk, text_ctx);
 
     let child_count = arena.children(id).len();
@@ -51,7 +58,12 @@ pub fn compile_node_hierarchy(
     }
 
     let node_mut = arena.get_mut(id);
-    exit_node_frame(node_mut, chunk, LayerId::from_packed(id.packed()));
+    exit_node_frame(
+        node_mut,
+        chunk,
+        LayerId::from_packed(id.packed()),
+        is_stacking_root,
+    );
     node_mut
         .state
         .dirty

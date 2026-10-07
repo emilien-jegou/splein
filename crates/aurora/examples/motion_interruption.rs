@@ -37,7 +37,7 @@ pub fn Page() -> impl IntoElement {
     let target = step.map(|n| if n % 2 == 0 { RIGHT } else { LEFT });
     use_interval(RETARGET_SECS, {
         let step = step.clone();
-        move || step.set(step.get() + 1)
+        move || step.update(|n| *n += 1)
     });
 
     let x = Transition::spring(Spring::snappy()).on(target);

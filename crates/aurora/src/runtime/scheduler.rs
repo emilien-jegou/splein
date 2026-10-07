@@ -294,7 +294,7 @@ impl FrameScheduler {
                     .requeue_dirty_subscribers(dirty_subs);
                 break;
             }
-            let mut deferred = std::collections::HashSet::new();
+            let mut deferred = rustc_hash::FxHashSet::default();
 
             for sub in dirty_subs {
                 // Anything that is not a pure paint subscriber is requeued for the next

@@ -1,6 +1,7 @@
 // Single responsibility: Immutable styling intent and layout constraints for retained nodes.
 
 use crate::foundation::{Anchor, Appearance, LayoutConfig, Margin, Size};
+use crate::input::HitTest;
 
 /// Declared styling specification and layout constraints on a tree node.
 #[derive(Clone, Debug, PartialEq)]
@@ -17,6 +18,8 @@ pub struct NodeStyle {
     pub z_index: i32,
     pub is_overlay: bool,
     pub has_layer: bool,
+    /// Hit-test participation; retained so hit testing mirrors paint order.
+    pub hit_test: HitTest,
 }
 
 impl Default for NodeStyle {
@@ -34,6 +37,7 @@ impl Default for NodeStyle {
             z_index: 0,
             is_overlay: false,
             has_layer: false,
+            hit_test: HitTest::Auto,
         }
     }
 }

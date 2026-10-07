@@ -3,8 +3,9 @@
 use crate::foundation::Point;
 use crate::text::cosmic::CosmicTextEngine;
 use crate::text::glyph::{GlyphKey, ShapedGlyph, ShapedLine};
-use cosmic_text::{CacheKey, CacheKeyFlags, SubpixelBin};
-use std::hash::{DefaultHasher, Hash, Hasher};
+use cosmic_text::{fontdb, CacheKey, CacheKeyFlags, SubpixelBin};
+use rustc_hash::FxHasher;
+use std::hash::{Hash, Hasher};
 
 /// Converts the buffer's layout runs into shaped lines, applying inter-glyph tracking.
 pub(crate) fn extract_lines(
@@ -23,6 +24,9 @@ pub(crate) fn extract_lines(
         let mut glyphs = Vec::new();
         let mut line_w = run.line_w;
         let count = run.glyphs.len();
+        // Runs are usually single-font: remember the last blob lookup
+        // instead of hashing the id map per glyph.
+        let mut last_blob: Option<(fontdb::ID, usize)> = None;
         for (idx, g) in run.glyphs.iter().enumerate() {
             let extra_spacing = if idx + 1 < count { spacing } else { 0.0 };
             let ck = CacheKey {
@@ -34,18 +38,27 @@ pub(crate) fn extract_lines(
                 y_bin: SubpixelBin::Zero,
             };
 
-            let mut hasher = DefaultHasher::new();
+            let mut hasher = FxHasher::default();
             ck.hash(&mut hasher);
             let opaque_key = GlyphKey(hasher.finish());
-            key_map.insert(opaque_key, ck);
+            // Insert-only: the same key always maps to the same entry.
+            key_map.entry(opaque_key).or_insert(ck);
 
+            let blob = match last_blob {
+                Some((id, blob)) if id == g.font_id => blob,
+                _ => {
+                    let blob = id_to_blob.get(&g.font_id).copied().unwrap_or(0);
+                    last_blob = Some((g.font_id, blob));
+                    blob
+                }
+            };
             glyphs.push(ShapedGlyph {
                 glyph_id: g.glyph_id as u32,
                 point: Point::new(g.x + idx as f32 * spacing, run.line_y),
                 advance: g.w + extra_spacing,
                 cluster: g.start,
                 cache_key: opaque_key,
-                font_blob: id_to_blob.get(&g.font_id).copied().unwrap_or(0),
+                font_blob: blob,
             });
             line_w += extra_spacing;
         }

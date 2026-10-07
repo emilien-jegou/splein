@@ -64,6 +64,8 @@ fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: T
     // closure while holding the font-system locks, so the bitmap is copied out
     // and blitted after the locks are released instead of compositing inline.
     let mut coverage = Vec::with_capacity(256);
+    // Scratch accumulation for fractional blits, resized per glyph below.
+    let mut fractional = Vec::new();
 
     for line in &params.layout.lines {
         for g in &line.glyphs {
@@ -72,7 +74,10 @@ fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: T
                 params.origin.y + g.point.y,
             );
             params.transform.map_point(&mut pt);
-            let (base_x, base_y) = (pt.x.round() as i32, pt.y.round() as i32);
+            // Floor, not round: the fractional remainder is carried into the blit
+            // (see below) instead of being discarded.
+            let (base_x, base_y) = (pt.x.floor() as i32, pt.y.floor() as i32);
+            let (fx, fy) = (pt.x - pt.x.floor(), pt.y - pt.y.floor());
 
             let mut placed: Option<(i32, i32, u32, u32)> = None;
             text_ctx.raster_glyph(g.cache_key, |img_opt| {
@@ -84,23 +89,49 @@ fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: T
             });
 
             if let Some((start_x, start_y, w, h)) = placed {
-                blit_glyph(
-                    pixels,
-                    pw,
-                    ph,
-                    &coverage,
-                    w,
-                    h,
-                    start_x,
-                    start_y,
-                    ink_r,
-                    ink_g,
-                    ink_b,
-                    &alpha_lut,
-                    params.clip,
-                    clip_w,
-                    clip_h,
-                );
+                // Exact pixel origins keep the historical fast path bit-identical;
+                // anything fractional distributes coverage instead of rounding it
+                // away (see `blit_glyph_fractional`).
+                if fx == 0.0 && fy == 0.0 {
+                    blit_glyph(
+                        pixels,
+                        pw,
+                        ph,
+                        &coverage,
+                        w,
+                        h,
+                        start_x,
+                        start_y,
+                        ink_r,
+                        ink_g,
+                        ink_b,
+                        &alpha_lut,
+                        params.clip,
+                        clip_w,
+                        clip_h,
+                    );
+                } else {
+                    blit_glyph_fractional(
+                        pixels,
+                        pw,
+                        ph,
+                        &coverage,
+                        w,
+                        h,
+                        start_x,
+                        start_y,
+                        fx,
+                        fy,
+                        ink_r,
+                        ink_g,
+                        ink_b,
+                        &alpha_lut,
+                        params.clip,
+                        clip_w,
+                        clip_h,
+                        &mut fractional,
+                    );
+                }
             }
         }
     }
@@ -236,6 +267,258 @@ fn blit_glyph(
             let idx = (target_y as usize * pw as usize) + target_x as usize;
             blend_source_over(&mut pixels[idx], r, g, b, alpha);
         }
+    }
+}
+
+/// Blits glyph coverage at a fractional pixel offset.
+///
+/// The integer path above rounds the glyph origin, so an animation sweeping a
+/// translation moves text in whole-pixel steps — and worse, each glyph's
+/// fractional remainder differs (advances accumulate fractionally), so glyphs
+/// pop across pixel boundaries at different times and the spacing visibly
+/// boils. This distributes each coverage texel across its neighbours by the
+/// fractional remainder instead: the run glides smoothly, and total ink is
+/// conserved (the four weights sum to one), so nothing brightens or dims
+/// mid-flight. This is the standard subpixel-positioning approximation —
+/// shifting resampled coverage rather than re-rasterizing per offset — and it
+/// keeps the cached integer-raster glyph bitmaps untouched.
+#[allow(clippy::too_many_arguments)]
+fn blit_glyph_fractional(
+    pixels: &mut [PremultipliedColorU8],
+    pw: u32,
+    ph: u32,
+    data: &[u8],
+    gw: u32,
+    gh: u32,
+    x: i32,
+    y: i32,
+    fx: f32,
+    fy: f32,
+    r: u8,
+    g: u8,
+    b: u8,
+    alpha_lut: &[u8; 256],
+    clip: Option<&Mask>,
+    clip_w: u32,
+    clip_h: u32,
+    scratch: &mut Vec<f32>,
+) {
+    let (w, h) = (gw as usize, gh as usize);
+    debug_assert!(data.len() >= w * h, "glyph coverage smaller than its bitmap");
+    // One extra row and column: a shifted texel spills over both far edges.
+    let (sw, sh) = (w + 1, h + 1);
+    scratch.clear();
+    scratch.resize(sw * sh, 0.0);
+
+    let (wx0, wy0) = (1.0 - fx, 1.0 - fy);
+    for row in 0..h {
+        for col in 0..w {
+            let c = data[row * w + col] as f32;
+            if c == 0.0 {
+                continue;
+            }
+            let base = row * sw + col;
+            // Weights sum to one per texel, so shifting conserves ink exactly
+            // (up to the final rounding, shared with the integer path).
+            scratch[base] += c * wx0 * wy0;
+            scratch[base + 1] += c * fx * wy0;
+            scratch[base + sw] += c * wx0 * fy;
+            scratch[base + sw + 1] += c * fx * fy;
+        }
+    }
+
+    for row in 0..sh {
+        let target_y = y + row as i32;
+        if target_y < 0 || target_y >= ph as i32 {
+            continue;
+        }
+        for col in 0..sw {
+            let target_x = x + col as i32;
+            if target_x < 0 || target_x >= pw as i32 {
+                continue;
+            }
+            let covered = scratch[row * sw + col].round().clamp(0.0, 255.0) as usize;
+            let mut alpha = alpha_lut[covered];
+            if let Some(mask) = clip {
+                let tx = target_x as u32;
+                let ty = target_y as u32;
+                if tx >= clip_w || ty >= clip_h {
+                    continue;
+                }
+                // Modulate by the mask instead of thresholding so clipped
+                // glyph edges fade like every other primitive.
+                let coverage = mask.data()[(ty * clip_w + tx) as usize] as f32 / 255.0;
+                alpha = (alpha as f32 * coverage).round() as u8;
+            }
+
+            if alpha == 0 {
+                continue;
+            }
+
+            let idx = (target_y as usize * pw as usize) + target_x as usize;
+            blend_source_over(&mut pixels[idx], r, g, b, alpha);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn identity_lut() -> [u8; 256] {
+        std::array::from_fn(|i| i as u8)
+    }
+
+    fn blank(w: u32, h: u32) -> Pixmap {
+        Pixmap::new(w, h).expect("test pixmap allocates")
+    }
+
+    /// Zero fractions must reproduce the integer path exactly: the fast path
+    /// stays bit-identical by construction, and this locks it in.
+    #[test]
+    fn zero_fractions_match_the_integer_blit() {
+        let data: Vec<u8> = (0..20).map(|i| (i * 37 % 256) as u8).collect();
+        let lut = identity_lut();
+
+        let mut a = blank(16, 16);
+        blit_glyph(
+            a.pixels_mut(),
+            16,
+            16,
+            &data,
+            5,
+            4,
+            3,
+            2,
+            255,
+            255,
+            255,
+            &lut,
+            None,
+            0,
+            0,
+        );
+
+        let mut scratch = Vec::new();
+        let mut b = blank(16, 16);
+        blit_glyph_fractional(
+            b.pixels_mut(),
+            16,
+            16,
+            &data,
+            5,
+            4,
+            3,
+            2,
+            0.0,
+            0.0,
+            255,
+            255,
+            255,
+            &lut,
+            None,
+            0,
+            0,
+            &mut scratch,
+        );
+
+        assert_eq!(a.pixels(), b.pixels());
+    }
+
+    /// A half-pixel shift must split ink evenly, conserving the total: this is
+    /// what turns per-pixel popping into a smooth glide.
+    #[test]
+    fn half_pixel_shift_splits_ink_evenly() {
+        let lut = identity_lut();
+        let mut scratch = Vec::new();
+        let mut canvas = blank(16, 16);
+        blit_glyph_fractional(
+            canvas.pixels_mut(),
+            16,
+            16,
+            &[255],
+            1,
+            1,
+            4,
+            4,
+            0.5,
+            0.0,
+            255,
+            255,
+            255,
+            &lut,
+            None,
+            0,
+            0,
+            &mut scratch,
+        );
+
+        let at = |x: usize, y: usize| canvas.pixels()[y * 16 + x].alpha();
+        assert_eq!(at(4, 4), 128);
+        assert_eq!(at(5, 4), 128);
+        assert_eq!(at(4, 4) as u32 + at(5, 4) as u32, 256);
+    }
+
+    /// Shifting must conserve ink across a whole glyph: the sum of blended
+    /// alpha is identical at integer and fractional origins (up to rounding),
+    /// so text neither brightens nor dims mid-animation.
+    #[test]
+    fn fractional_shift_conserves_total_ink() {
+        let data: Vec<u8> = (0..48).map(|i| (i * 53 % 256) as u8).collect();
+        let lut = identity_lut();
+
+        let total = |pixels: &[PremultipliedColorU8]| -> u32 {
+            pixels.iter().map(|p| p.alpha() as u32).sum()
+        };
+
+        let mut a = blank(24, 24);
+        blit_glyph(
+            a.pixels_mut(),
+            24,
+            24,
+            &data,
+            8,
+            6,
+            5,
+            5,
+            255,
+            255,
+            255,
+            &lut,
+            None,
+            0,
+            0,
+        );
+
+        let mut scratch = Vec::new();
+        let mut b = blank(24, 24);
+        blit_glyph_fractional(
+            b.pixels_mut(),
+            24,
+            24,
+            &data,
+            8,
+            6,
+            5,
+            5,
+            0.37,
+            0.71,
+            255,
+            255,
+            255,
+            &lut,
+            None,
+            0,
+            0,
+            &mut scratch,
+        );
+
+        let (ta, tb) = (total(a.pixels()), total(b.pixels()));
+        let diff = ta.abs_diff(tb);
+        assert!(
+            diff * 100 <= ta * 2,
+            "ink must be conserved within rounding: integer sum {ta}, shifted sum {tb}"
+        );
     }
 }
 

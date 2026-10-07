@@ -23,7 +23,7 @@ fn run(runtime: &Rc<RefCell<ReactiveRuntime>>, frames: u32, dt: f32) {
 // ---- ScalarTrack ----
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn scalar_track_settles_exactly_on_its_target() {
     let mut track = ScalarTrack::new(Spring::snappy(), 0.0, 100.0);
     for _ in 0..600 {
@@ -43,7 +43,7 @@ fn scalar_track_settles_exactly_on_its_target() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn scalar_track_retarget_preserves_velocity() {
     let mut track = ScalarTrack::new(Spring::snappy(), 0.0, 100.0);
     for _ in 0..6 {
@@ -61,7 +61,7 @@ fn scalar_track_retarget_preserves_velocity() {
 // ---- Transition::on ----
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn spring_transition_follows_its_target_and_settles() {
     let (runtime, target) = world(0.0f32);
     let animated = Transition::spring(Spring::snappy()).on(target.clone());
@@ -79,7 +79,7 @@ fn spring_transition_follows_its_target_and_settles() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn spring_transition_never_passes_through_zero_when_leaving_it() {
     let (runtime, target) = world(0.0f32);
     let animated = Transition::spring(Spring::snappy()).on(target.clone());
@@ -99,7 +99,7 @@ fn spring_transition_never_passes_through_zero_when_leaving_it() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn tween_transition_restarts_from_the_current_value() {
     let (runtime, target) = world(0.0f32);
     let animated = Transition::ease(200.0 * 0.001, Ease::Linear).on(target.clone());
@@ -123,7 +123,7 @@ fn tween_transition_restarts_from_the_current_value() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn one_transition_drives_several_independent_streams() {
     let (runtime, target) = world(false);
     let tween = Transition::ease(100.0 * 0.001, Ease::Linear);
@@ -149,7 +149,7 @@ fn one_transition_drives_several_independent_streams() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn retargeting_a_spring_mid_flight_does_not_pop() {
     let (runtime, target) = world(0.0f32);
     let animated = Transition::spring(Spring::snappy()).on(target.clone());
@@ -169,7 +169,7 @@ fn retargeting_a_spring_mid_flight_does_not_pop() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn an_idle_transition_does_not_keep_the_frame_loop_awake() {
     let (runtime, target) = world(0.0f32);
     let _animated = Transition::spring(Spring::snappy()).on(target.clone());
@@ -184,7 +184,7 @@ fn an_idle_transition_does_not_keep_the_frame_loop_awake() {
 // ---- Playback ----
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn playback_runs_to_its_target_and_finishes() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let (value, control) = Transition::ease(1.0, Ease::Linear).playback(&runtime, 0.0, 100.0);
@@ -210,7 +210,7 @@ fn playback_runs_to_its_target_and_finishes() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn paused_playback_holds_its_value_and_sleeps() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let (value, control) = Transition::ease(1.0, Ease::Linear).playback(&runtime, 0.0, 100.0);
@@ -235,7 +235,7 @@ fn paused_playback_holds_its_value_and_sleeps() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn ping_pong_playback_reverses_at_both_ends() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let (value, _control) = Transition::ease(0.2, Ease::Linear)
@@ -262,7 +262,7 @@ fn ping_pong_playback_reverses_at_both_ends() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_looping_playback_jumps_back_instead_of_reversing() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let (value, _control) = Transition::ease(0.2, Ease::Linear)
@@ -280,7 +280,7 @@ fn a_looping_playback_jumps_back_instead_of_reversing() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn restarting_a_playback_returns_to_the_beginning() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let (value, control) = Transition::ease(1.0, Ease::Linear).playback(&runtime, 0.0, 100.0);
@@ -298,7 +298,7 @@ fn restarting_a_playback_returns_to_the_beginning() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn seeking_jumps_to_the_requested_progress() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let (value, control) = Transition::ease(1.0, Ease::Linear).playback(&runtime, 0.0, 200.0);
@@ -313,7 +313,7 @@ fn seeking_jumps_to_the_requested_progress() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn frame_clock_advances_with_simulated_time() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let clock = aurora::reactive::hooks::Cx::new(Rc::clone(&runtime)).frame_clock();
@@ -328,7 +328,7 @@ fn frame_clock_advances_with_simulated_time() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn an_interval_toggle_flips_on_its_period() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let cx = aurora::reactive::hooks::Cx::new(Rc::clone(&runtime));

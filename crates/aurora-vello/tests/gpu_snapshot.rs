@@ -97,11 +97,14 @@ impl Gpu {
 
     /// Renders an aurora scene offscreen, returning raw RGBA8 pixels.
     fn render(&mut self, engine: &Engine, w: u32, h: u32) -> Vec<u8> {
+        use aurora::scene::chunk::InheritedClips;
         use aurora_vello::command::{compile_vello_chunk, VelloImageCache};
+        use aurora_vello::renderer::{chunk_placement_affine, local_viewport_bound};
         use aurora_vello::shadow::VelloShadowCache;
         use aurora_vello::svg::VelloSvgCache;
         use aurora_vello::text::VelloGlyphCache;
         use vello::kurbo::Affine;
+        use vello::peniko::BlendMode;
         use vello::Scene as VelloScene;
 
         let mut scene = VelloScene::new();
@@ -112,10 +115,14 @@ impl Gpu {
         let mut glyph_cache = VelloGlyphCache::new();
         let bound = KurboRect::new(0.0, 0.0, w as f64, h as f64);
         for chunk in engine.scene().chunks.iter() {
+            // Chunk-local streams: compile content in isolation, then place.
+            let placement = chunk_placement_affine(&chunk.abs_origin, &chunk.placement);
+            let local_bound = local_viewport_bound(&bound, &placement);
+            let mut frag = VelloScene::new();
             compile_vello_chunk()
                 .commands(&chunk.commands)
-                .scene(&mut scene)
-                .bound(&bound)
+                .scene(&mut frag)
+                .bound(&local_bound)
                 .tx_stack(&mut tx_stack)
                 .shadow_cache(&mut shadow_cache)
                 .svg_cache(&mut svg_cache)
@@ -123,6 +130,14 @@ impl Gpu {
                 .glyph_cache(&mut glyph_cache)
                 .text_ctx(&engine.text_context())
                 .call();
+            for clip in chunk.inherited_clips.iter() {
+                let shape = aurora_vello::path::build_kurbo_rounded_rect(&clip.rect, clip.radius);
+                scene.push_layer(BlendMode::default(), 1.0, Affine::IDENTITY, &shape);
+            }
+            scene.append(&frag, Some(placement));
+            for _ in chunk.inherited_clips.iter() {
+                scene.pop_layer();
+            }
         }
 
         let texture = self.device.create_texture(&wgpu::TextureDescriptor {

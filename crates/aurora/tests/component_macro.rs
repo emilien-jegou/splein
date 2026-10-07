@@ -98,7 +98,7 @@ fn press(engine: &mut Engine, x: f32, y: f32) {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_component_can_allocate_its_own_state_with_argument_free_hooks() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let cx = Cx::new(Rc::clone(&runtime));
@@ -124,7 +124,7 @@ fn a_component_can_allocate_its_own_state_with_argument_free_hooks() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_component_forwards_its_arguments() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let cx = Cx::new(Rc::clone(&runtime));
@@ -149,7 +149,7 @@ fn a_component_forwards_its_arguments() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_component_body_runs_exactly_once_per_mount() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let cx = Cx::new(Rc::clone(&runtime));
@@ -186,7 +186,7 @@ fn a_component_body_runs_exactly_once_per_mount() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_component_can_drive_a_spring_with_no_engine_handle() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let open = Signal::new(Rc::clone(&runtime), false);
@@ -212,7 +212,7 @@ fn a_component_can_drive_a_spring_with_no_engine_handle() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_generic_component_keeps_its_parameters() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let cx = Cx::new(Rc::clone(&runtime));
@@ -247,7 +247,7 @@ fn a_generic_component_keeps_its_parameters() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_component_builds_a_keyed_child_per_list_item() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let cx = Cx::new(Rc::clone(&runtime));
@@ -277,7 +277,7 @@ fn a_component_builds_a_keyed_child_per_list_item() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 #[should_panic(expected = "hook called outside a component body")]
 fn a_component_built_outside_a_scope_fails_loudly() {
     // No ambient Cx: silently allocating onto a throwaway graph would look like it worked
@@ -286,7 +286,7 @@ fn a_component_built_outside_a_scope_fails_loudly() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_component_can_nest_inside_another_components_scope() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let cx = Cx::new(Rc::clone(&runtime));
@@ -312,7 +312,7 @@ fn a_component_can_nest_inside_another_components_scope() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn the_hand_written_component_trait_still_works() {
     struct Panel;
     impl Component for Panel {

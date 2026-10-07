@@ -2,9 +2,9 @@
 
 use std::sync::Arc;
 use wgpu::{
-    Backends, CompositeAlphaMode, Device, DeviceDescriptor, Instance, InstanceDescriptor,
-    PresentMode, Queue, RequestAdapterOptions, Surface, SurfaceConfiguration, TextureFormat,
-    TextureUsages,
+    Backends, CompositeAlphaMode, Device, DeviceDescriptor, Extent3d, Instance, InstanceDescriptor,
+    PresentMode, Queue, RequestAdapterOptions, Surface, SurfaceConfiguration, Texture,
+    TextureDescriptor, TextureDimension, TextureFormat, TextureUsages, TextureView,
 };
 use winit::window::Window;
 
@@ -18,6 +18,38 @@ pub struct GpuContext {
     pub surface: Surface<'static>,
     /// Swapchain surface configuration parameters.
     pub config: SurfaceConfiguration,
+    /// Persistent Vello render target, kept across frames.
+    ///
+    /// Vello renders the assembled scene here; only damaged rects are then
+    /// blitted to the swapchain image. This saves present bandwidth (and
+    /// compositor work) on partial updates, and is the staging point for
+    /// future scissored tile re-render.
+    pub persistent: Texture,
+    /// View of the persistent render target for Vello.
+    pub persistent_view: TextureView,
+}
+
+fn make_persistent(device: &Device, width: u32, height: u32) -> (Texture, TextureView) {
+    let texture = device.create_texture(&TextureDescriptor {
+        label: Some("aurora-vello-persistent"),
+        size: Extent3d {
+            width: width.max(1),
+            height: height.max(1),
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        // Vello's `render_to_texture` requires Rgba8Unorm + STORAGE_BINDING;
+        // sRGB swapchain formats (e.g. Bgra8UnormSrgb) reject that usage.
+        // The blit pass below samples this as a texture and converts to the
+        // swapchain format, mirroring Vello's own `render_to_surface` path.
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::STORAGE_BINDING | TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    });
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    (texture, view)
 }
 
 impl GpuContext {
@@ -91,7 +123,7 @@ impl GpuContext {
         );
 
         let config = SurfaceConfiguration {
-            usage: TextureUsages::RENDER_ATTACHMENT,
+            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_DST,
             format,
             width: width.max(1),
             height: height.max(1),
@@ -101,12 +133,15 @@ impl GpuContext {
             desired_maximum_frame_latency: 1, // Single-frame latency for minimum input-to-photon delay
         };
         surface.configure(&device, &config);
+        let (persistent, persistent_view) = make_persistent(&device, config.width, config.height);
 
         Ok(Self {
             device,
             queue,
             surface,
             config,
+            persistent,
+            persistent_view,
         })
     }
 
@@ -115,5 +150,11 @@ impl GpuContext {
         self.config.width = width.max(1);
         self.config.height = height.max(1);
         self.surface.configure(&self.device, &self.config);
+        // The persistent target must match the swapchain exactly or blits
+        // fault: rebuild it (old contents are meaningless at a new size).
+        let (persistent, persistent_view) =
+            make_persistent(&self.device, self.config.width, self.config.height);
+        self.persistent = persistent;
+        self.persistent_view = persistent_view;
     }
 }

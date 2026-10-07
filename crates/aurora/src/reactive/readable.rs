@@ -8,6 +8,28 @@ use crate::reactive::runtime::ReactiveRuntime;
 use crate::reactive::signal::Signal;
 use crate::reactive::ticker::Ticker;
 
+/// Read-only view of a reactive value.
+///
+/// Implemented by both [`Signal`] and [`Derived`], so a component that only needs to read
+/// a value can accept `impl SignalRead<T>` and the compiler guarantees the child cannot
+/// mutate parent state. This is the least-privilege prop type for child components.
+pub trait SignalRead<T: Clone + 'static> {
+    /// Reads the current value, subscribing the active observer.
+    fn get(&self) -> T;
+}
+
+impl<T: Clone + 'static> SignalRead<T> for Signal<T> {
+    fn get(&self) -> T {
+        Signal::get(self)
+    }
+}
+
+impl<T: Clone + 'static> SignalRead<T> for Derived<T> {
+    fn get(&self) -> T {
+        Derived::get(self)
+    }
+}
+
 /// A value source an adapter can read and attach frame-driven work to.
 ///
 /// Both [`Signal`] and [`Derived`] implement this, so a caller can animate a value whether

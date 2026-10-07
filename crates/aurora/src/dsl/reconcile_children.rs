@@ -18,33 +18,38 @@ pub fn reconcile_children(
     parent: NodeId,
     new_children: Vec<Element>,
 ) {
-    let old_child_ids = arena.children(parent).to_vec();
-    let old_specs: Vec<(NodeId, Option<_>)> = old_child_ids
+    // Old specs straight from the arena slice: one Vec, one key clone per
+    // child, no intermediate id list.
+    let old_specs: Vec<(NodeId, Option<_>)> = arena
+        .children(parent)
         .iter()
         .map(|&id| (id, arena.get(id).key.clone()))
         .collect();
 
-    let new_keys: Vec<Option<_>> = new_children.iter().map(|c| c.key()).collect();
+    let mut new_keys: Vec<Option<_>> = new_children.iter().map(|c| c.key()).collect();
     let ops = diff_children(&old_specs, &new_keys);
 
     let mut elements: Vec<Option<Element>> = new_children.into_iter().map(Some).collect();
-    let mut final_children: Vec<(usize, NodeId)> = Vec::new();
+    // Indexed resolve: every new index gets exactly one Reuse/Create op, so
+    // placement is O(n) with no sort. Keys move out of `new_keys` instead
+    // of being re-queried (and re-cloned) off the element.
+    let mut resolved: Vec<Option<NodeId>> = (0..elements.len()).map(|_| None).collect();
 
     for op in ops {
         match op {
             ChildOp::Reuse { old, new_idx } => {
                 let elem = elements[new_idx].take().expect("Child already consumed");
-                let key = elem.key();
+                let key = new_keys[new_idx].take();
                 let child_id = reconcile(runtime, arena, router, Some(old), elem);
                 arena.bind_key(key, child_id);
-                final_children.push((new_idx, child_id));
+                resolved[new_idx] = Some(child_id);
             }
             ChildOp::Create { new_idx } => {
                 let elem = elements[new_idx].take().expect("Child already consumed");
-                let key = elem.key();
+                let key = new_keys[new_idx].take();
                 let child_id = reconcile(runtime, arena, router, None, elem);
                 arena.bind_key(key, child_id);
-                final_children.push((new_idx, child_id));
+                resolved[new_idx] = Some(child_id);
             }
             ChildOp::Remove(stale) => {
                 purge_node(runtime, arena, router, stale);
@@ -52,7 +57,9 @@ pub fn reconcile_children(
         }
     }
 
-    final_children.sort_by_key(|&(idx, _)| idx);
-    let resolved = final_children.into_iter().map(|(_, id)| id).collect();
+    let resolved = resolved
+        .into_iter()
+        .map(|slot| slot.expect("diff must cover every new child index"))
+        .collect();
     arena.set_children(parent, resolved);
 }

@@ -16,7 +16,7 @@ use aurora::tree::*;
 // 2.3 DamageRegion & Outward Physical Rounding Math
 // =========================================================================
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_resolved_rect_math_and_physical_outward_rounding() {
     let r1 = ResolvedRect::new(10.25, 20.75, 100.25, 50.5);
     assert_eq!(r1.right(), 110.5);
@@ -50,7 +50,7 @@ fn test_resolved_rect_math_and_physical_outward_rounding() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_damage_region_absorbs_overlapping_rects() {
     let mut damage = DamageRegion::new();
 
@@ -72,7 +72,7 @@ fn test_damage_region_absorbs_overlapping_rects() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_damage_region_greedy_clustering_clamps_to_max_rects() {
     let mut damage = DamageRegion::new();
 
@@ -104,7 +104,7 @@ fn test_damage_region_greedy_clustering_clamps_to_max_rects() {
 // =========================================================================
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_damage_ring_history_and_age_synchronization() {
     let mut ring = DamageRing::new();
     let full_window = ResolvedRect::new(0.0, 0.0, 800.0, 600.0);
@@ -149,7 +149,7 @@ fn test_damage_ring_history_and_age_synchronization() {
 // =========================================================================
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_visual_bounds_expansion_for_strokes_and_outer_shadows() {
     let mut node = LayoutNode::new(NodeKind::Group);
     node.resolved_rect = ResolvedRect::new(0.0, 0.0, 100.0, 50.0);
@@ -193,12 +193,36 @@ fn test_visual_bounds_expansion_for_strokes_and_outer_shadows() {
     );
 }
 
+#[test]
+#[ntest::timeout(5_000)]
+fn test_visual_bounds_include_aa_fringe() {
+    // Bare node: no stroke, no shadow. Rasterizers still emit antialiased
+    // edge pixels up to 1px outside the geometric box — damage culled on the
+    // tight box would leave a ghost fringe. Bounds must carry AA_PAD.
+    let mut node = LayoutNode::new(NodeKind::Group);
+    node.resolved_rect = ResolvedRect::new(0.0, 0.0, 100.0, 50.0);
+    let tx = Transform::from_translation(100.0, 200.0);
+    let bounds = node.compute_visual_bounds(&tx, None);
+    assert!(
+        bounds.x <= 99.0 && bounds.y <= 199.0,
+        "AA fringe must pad top-left, got ({}, {})",
+        bounds.x,
+        bounds.y
+    );
+    assert!(
+        bounds.right() >= 201.0 && bounds.bottom() >= 251.0,
+        "AA fringe must pad bottom-right, got right={} bottom={}",
+        bounds.right(),
+        bounds.bottom()
+    );
+}
+
 // =========================================================================
 // 2.2 Removal Damage & Moved-Node Invalidation
 // =========================================================================
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_removal_damage_captures_unmounted_node_bounds() {
     let mut engine = Engine::headless(500, 500);
 
@@ -234,7 +258,7 @@ fn test_removal_damage_captures_unmounted_node_bounds() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_moved_node_triggers_dual_damage() {
     let mut engine = Engine::headless(800, 600);
     let width_sig = engine.signal(100.0f32);
@@ -280,7 +304,7 @@ fn test_moved_node_triggers_dual_damage() {
 // =========================================================================
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_persistent_canvas_retains_untouched_pixels() {
     let mut raster = HeadlessRaster::new();
     let mut engine = Engine::headless(400, 400);
@@ -356,7 +380,7 @@ fn test_persistent_canvas_retains_untouched_pixels() {
 // 2.5 Window Resize & Full-Damage Reset
 // =========================================================================
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_window_resize_forces_full_window_damage() {
     let mut raster = HeadlessRaster::new();
     let mut engine = Engine::headless(400, 300);
@@ -390,7 +414,7 @@ fn test_window_resize_forces_full_window_damage() {
 // =========================================================================
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_shadow_blur_fringe_damage_expansion_and_cleanup() {
     let mut raster = HeadlessRaster::new();
     let mut engine = Engine::headless(600, 600);
@@ -462,7 +486,7 @@ fn test_shadow_blur_fringe_damage_expansion_and_cleanup() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_screen_overlay_modal_unmount_restores_underlying_content() {
     let mut raster = HeadlessRaster::new();
     let mut engine = Engine::headless(800, 600);
@@ -535,7 +559,7 @@ fn test_screen_overlay_modal_unmount_restores_underlying_content() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_window_resize_preserves_canvas_and_damages_exposed_strips() {
     let mut raster = HeadlessRaster::new();
     let mut engine = Engine::headless(400, 300);

@@ -5,6 +5,7 @@ use crate::reactive::observer::Observer;
 use crate::reactive::readable::Readable;
 use crate::reactive::runtime::ReactiveRuntime;
 use std::cell::RefCell;
+use rustc_hash::FxHashSet;
 use std::rc::Rc;
 
 thread_local! {
@@ -12,11 +13,97 @@ thread_local! {
 }
 
 /// Memoized computed value tracking upstream signal reads and updating lazily.
+///
+/// The compute closure lives in the runtime's `derived_recompute` registry,
+/// never in the handle: a chain of derivations would otherwise own each
+/// other through nested `Rc` closures, and dropping a deep chain would nest
+/// one destructor per link until the stack overflows. Handles only share a
+/// counting token so `Drop` still disposes exactly when the last clone goes
+/// away.
 #[derive(Clone)]
 pub struct Derived<T: 'static> {
     id: SignalId,
-    compute: Rc<dyn Fn() -> T>,
     runtime: Rc<RefCell<ReactiveRuntime>>,
+    _shared: Rc<()>,
+    _marker: std::marker::PhantomData<T>,
+}
+
+/// Refreshes a dirty derivation and every dirty transitive dependency it
+/// reads, dependencies first, over an explicit work stack.
+///
+/// Walks up through `derived_sources` (dependency direction) collecting
+/// dirty derivations in post-order, so evaluation runs deepest-dependency
+/// first: each recompute reads already-fresh inputs, and the nested `get()`
+/// calls inside user closures hit clean values and return immediately
+/// instead of recursing. Stack usage stays flat no matter how deep the
+/// chain is. Each flag is claimed before its recompute runs, so a cyclic
+/// graph reads a stale value and terminates instead of looping forever.
+fn ensure_fresh(runtime: &Rc<RefCell<ReactiveRuntime>>, id: SignalId) {
+    let order = {
+        let rt = runtime.borrow();
+        let mut visited = FxHashSet::default();
+        let mut order = Vec::new();
+        let mut stack = vec![(id, false)];
+        visited.insert(id);
+        while let Some((cur, expanded)) = stack.pop() {
+            if expanded {
+                order.push(cur);
+                continue;
+            }
+            stack.push((cur, true));
+            if let Some(srcs) = rt.derived_sources.get(&cur) {
+                for src in srcs {
+                    if !visited.insert(*src) {
+                        continue;
+                    }
+                    // Only live, dirty derivations need evaluation; plain
+                    // signals and fresh derivations are read as-is.
+                    let needs_eval = rt.derived_recompute.contains_key(src)
+                        && rt.derived_dirty.contains(src);
+                    if needs_eval {
+                        stack.push((*src, false));
+                    }
+                }
+            }
+        }
+        order
+    };
+
+    // No runtime borrow is held across `recompute()` (arbitrary user code).
+    // A slot disposed mid-loop is skipped rather than resurrected.
+    for cur in order {
+        // Claim the slot and take its recompute under one borrow; the flag
+        // is cleared up front so a cyclic re-entry reads stale data and
+        // terminates instead of looping. The observer is pushed here so the
+        // recompute re-tracks the sources it actually reads.
+        let recompute = {
+            let mut rt = runtime.borrow_mut();
+            let recompute = rt.derived_recompute.get(&cur).cloned();
+            if recompute.is_some() {
+                rt.derived_dirty.remove(&cur);
+                rt.push_observer(Observer::Derived(cur));
+            }
+            recompute
+        };
+        let Some(recompute) = recompute else {
+            continue;
+        };
+        let value = recompute();
+        {
+            let mut rt = runtime.borrow_mut();
+            rt.pop_observer();
+            // Store only if still live; a re-entrant dispose may have
+            // unlinked the slot mid-recompute. Generation-checked: a stale id
+            // must not overwrite its successor's slot.
+            if rt.derived_recompute.contains_key(&cur) {
+                if let Some(slot) = rt.values.get_mut(cur.index) {
+                    if slot.generation == cur.generation && slot.value.is_some() {
+                        slot.value = Some(value);
+                    }
+                }
+            }
+        }
+    }
 }
 
 impl<T: Clone + 'static> Derived<T> {
@@ -25,37 +112,37 @@ impl<T: Clone + 'static> Derived<T> {
         runtime.borrow_mut().push_observer(Observer::Derived(id));
         let initial = compute();
         runtime.borrow_mut().pop_observer();
-        runtime.borrow_mut().values[id.0] = Box::new(Some(initial));
-        Self {
-            id,
-            compute: Rc::new(compute),
-            runtime: Rc::clone(&runtime),
+        *runtime.borrow_mut().slot_mut(id) = Box::new(Some(initial));
+        // Type-erased re-entry for iterative pulls: `ensure_fresh` refreshes
+        // this derivation through the registry without needing the handle,
+        // which keeps arbitrarily deep chains off the call stack.
+        {
+            let compute = Rc::new(compute);
+            let recompute: Rc<dyn Fn() -> Box<dyn std::any::Any>> = Rc::new({
+                let compute = Rc::clone(&compute);
+                move || Box::new(Some(compute())) as Box<dyn std::any::Any>
+            });
+            runtime.borrow_mut().derived_recompute.insert(id, recompute);
+            Self {
+                id,
+                runtime: Rc::clone(&runtime),
+                _shared: Rc::new(()),
+                _marker: std::marker::PhantomData,
+            }
         }
     }
 
     pub fn get(&self) -> T {
         self.runtime.borrow_mut().track_read(self.id);
-        let is_dirty = self.runtime.borrow().derived_dirty.contains(&self.id);
-
-        if is_dirty {
-            self.runtime
-                .borrow_mut()
-                .push_observer(Observer::Derived(self.id));
-            let fresh = (self.compute)();
-            self.runtime.borrow_mut().pop_observer();
-
-            let mut rt = self.runtime.borrow_mut();
-            rt.values[self.id.0] = Box::new(Some(fresh.clone()));
-            rt.derived_dirty.remove(&self.id);
-            fresh
-        } else {
-            self.runtime
-                .borrow()
-                .read_signal::<Option<T>>(self.id)
-                .as_ref()
-                .unwrap()
-                .clone()
+        if self.runtime.borrow().derived_dirty.contains(&self.id) {
+            ensure_fresh(&self.runtime, self.id);
         }
+        self.runtime
+            .borrow()
+            .read_signal::<Option<T>>(self.id)
+            .as_ref()
+            .unwrap()
+            .clone()
     }
 
     pub fn id(&self) -> SignalId {
@@ -102,7 +189,7 @@ impl<T: Clone + 'static> Derived<T> {
 
 impl<T: 'static> Drop for Derived<T> {
     fn drop(&mut self) {
-        if Rc::strong_count(&self.compute) == 1 {
+        if Rc::strong_count(&self._shared) == 1 {
             match self.runtime.try_borrow_mut() {
                 Ok(mut rt) => rt.dispose_derived(self.id),
                 Err(_) => DEFERRED_DISPOSALS
@@ -113,16 +200,30 @@ impl<T: 'static> Drop for Derived<T> {
 }
 
 /// Flushes and disposes any derived signals deferred during active runtime borrows.
+///
+/// Pops one entry at a time and releases the queue borrow before disposing:
+/// disposal drops recompute closures that own further handles, and a nested
+/// handle drop must find this queue unborrowed (it re-queues itself here
+/// when the runtime is busy). Holding the borrow across `dispose_derived`
+/// would panic on the nested re-borrow instead.
 pub fn drain_deferred_disposals() {
-    DEFERRED_DISPOSALS.with(|q| {
-        let mut items = q.borrow_mut();
-        items.retain(|(runtime, id)| {
-            if let Ok(mut rt) = runtime.try_borrow_mut() {
-                rt.dispose_derived(*id);
-                false
-            } else {
+    loop {
+        let item = DEFERRED_DISPOSALS.with(|q| q.borrow_mut().pop());
+        let Some((runtime, id)) = item else {
+            break;
+        };
+        // Scoped so the guard (and its borrow of `runtime`) ends before
+        // either branch below moves `runtime` again.
+        let done = match runtime.try_borrow_mut() {
+            Ok(mut rt) => {
+                rt.dispose_derived(id);
                 true
             }
-        });
-    });
+            Err(_) => false,
+        };
+        if !done {
+            DEFERRED_DISPOSALS.with(|q| q.borrow_mut().push((runtime, id)));
+            break;
+        }
+    }
 }

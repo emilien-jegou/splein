@@ -10,6 +10,7 @@ use std::rc::Rc;
 use aurora::dsl::{use_flip, use_follow, use_ref, ElementRef, Trigger};
 use aurora::foundation::ResolvedRect;
 use aurora::prelude::*;
+use aurora::reactive::Ticker;
 use common::ExampleCli;
 use motion_ui::*;
 
@@ -133,11 +134,11 @@ impl Drag {
         if from == to {
             return;
         }
-        let mut next = self.order.get();
-        let moved = next.remove(from);
-        next.insert(to, moved);
-        self.order.set(next);
-        self.revision.set(self.revision.get() + 1);
+        self.order.update(|list| {
+            let moved = list.remove(from);
+            list.insert(to, moved);
+        });
+        self.revision.update(|r| *r += 1);
     }
 
     /// A row's current slot.
@@ -222,11 +223,11 @@ fn Row(index: usize, spec: RowSpec) -> impl IntoElement {
     // it back, which springs to zero as it plays. Overdamped on purpose: displaced rows only
     // ever glide toward their new slot and never cross through each other, which is what a
     // snappier (underdamped) spring would read as mid-drag.
-    let flip = use_flip(row_ref.clone(), drag.revision.map(Trigger::from), SETTLE);
+    let flip_sig = use_flip(row_ref.clone(), drag.revision.map(Trigger::from), SETTLE);
 
     // The pointer offset, derived from the pointer's intent and the row's current box rather
     // than accumulated from the grab.
-    let follow = use_follow(
+    let follow_sig = use_follow(
         row_ref.clone(),
         drag.want_centre.clone(),
         drag.grab_dy.clone(),
@@ -239,41 +240,126 @@ fn Row(index: usize, spec: RowSpec) -> impl IntoElement {
     // Gating on the hold rather than on "the offset is non-zero" is deliberate: every row binds
     // both offsets unconditionally, so keying off a non-zero value would disable the FLIP
     // everywhere.
-    let is_held = drag.held.map({
+    //
+    // Plain closures with automatic dependency tracking: each `derived!` subscribes to
+    // every signal its body reads — no `.map()`/`.combine()` chains.
+    let is_held = derived!({
+        let held = drag.held.clone();
         let label = label.clone();
-        move |held| held.as_deref() == Some(label.as_str())
+        move || held.get().as_deref() == Some(label.as_str())
     });
-    let flip = flip.combine(
-        is_held.clone(),
-        |flip, held| {
-            if held {
+    // The release glide: eases the row from its release offset into its slot after a
+    // drop, so letting go lands softly instead of snapping. Starts at identity and is
+    // seeded by the gesture on release; a fresh grab cancels it outright.
+    let settle = use_signal(Transform::IDENTITY);
+    let settling = use_signal(false);
+    let flip = derived!({
+        let is_held = is_held.clone();
+        let settling = settling.clone();
+        move || {
+            // Kept shut while settling for the same reason as while held: the raw FLIP
+            // still holds decaying offsets from the drag's reorders, and letting them in
+            // would fight the glide.
+            if is_held.get() || settling.get() {
                 Transform::IDENTITY
             } else {
-                flip
+                flip_sig.get()
             }
-        },
-    );
+        }
+    });
     // Only the held row follows the pointer. `want_centre` is global intent, so an
     // ungated follow would pull every row toward the cursor and stack the list under it.
-    let follow = follow.combine(is_held.clone(), |follow, held| {
-        if held {
-            follow
-        } else {
-            Transform::IDENTITY
+    let follow = derived!({
+        let is_held = is_held.clone();
+        move || {
+            if is_held.get() {
+                follow_sig.get()
+            } else {
+                Transform::IDENTITY
+            }
         }
     });
     // The held row paints above the rows it passes. A plain sibling paints in document
     // order, so without this the rows gliding into their new slots slide *over* the row
     // being dragged. Bound like the offsets above: `held` flips on press and release, the
     // node repaints, layout never runs.
-    let elevation = is_held.map(|held| if held { 1 } else { 0 });
+    let elevation = derived!({
+        let is_held = is_held.clone();
+        let settling = settling.clone();
+        // Stay above while gliding home, for the same reason as while held.
+        move || if is_held.get() || settling.get() { 1 } else { 0 }
+    });
+
+    let displayed = offset(offset(flip, follow), settle.clone());
+    let release = Release {
+        settle,
+        settling,
+        displayed: displayed.clone(),
+        flip: flip_sig.clone(),
+    };
 
     row(index, &label)
         .bind_ref(row_ref)
-        .transform(offset(flip, follow))
+        .transform(displayed)
         .z_index(elevation)
-        .pipe_gesture(drag, label)
+        .pipe_gesture(drag, label, release)
         .into_element()
+}
+
+/// What the gesture needs to land a row softly: the glide offset it seeds on release,
+/// whether a glide is in flight, the row's total transform to capture at release, and
+/// the raw FLIP output the glide must wait for before handing control back.
+struct Release {
+    settle: Signal<Transform>,
+    settling: Signal<bool>,
+    displayed: Derived<Transform>,
+    flip: Signal<Transform>,
+}
+
+/// Seconds a released row takes to ease into its slot.
+const GLIDE_SECS: f32 = 0.22;
+
+/// Eases a release offset down to zero on an ease-out cubic, then retires.
+///
+/// Self-retiring is the point: unlike the follow ticker, which lives as long as the row,
+/// this only asks for frames while a glide is actually in flight, so a list at rest costs
+/// nothing. A fresh grab disarms it by clearing `settling` (see `gesture`), and the next
+/// advance then retires without touching the offset the new hold just claimed.
+///
+/// The glide ends when the timer is done *and* the raw FLIP is at rest — whichever comes
+/// later. Ending on the timer alone reopens the FLIP gate while the spring is still
+/// decaying from the drag's last reorder, and the residual snaps in as a visible jitter
+/// exactly when the glide looks finished. The FLIP snaps to exactly zero on settle, so an
+/// exact comparison is the right handoff test.
+struct GlideTicker {
+    out: Signal<Transform>,
+    settling: Signal<bool>,
+    flip: Signal<Transform>,
+    from: Transform,
+    t: f32,
+}
+
+impl Ticker for GlideTicker {
+    fn advance(&mut self, dt: f32) -> bool {
+        // Cancelled by a fresh grab, or already finished: retire without writing, so the
+        // offset the new hold owns is never clobbered a frame late.
+        if !self.settling.get() {
+            return false;
+        }
+        self.t += dt;
+        let k = (self.t / GLIDE_SECS).min(1.0);
+        let ease = 1.0 - (1.0 - k).powi(3);
+        let rest = 1.0 - ease;
+        self.out.set(Transform::from_translation(
+            self.from.tx * rest,
+            self.from.ty * rest,
+        ));
+        if k >= 1.0 && self.flip.get() == Transform::IDENTITY {
+            self.settling.set(false);
+            return false;
+        }
+        true
+    }
 }
 
 /// Sums two vertical offsets into the one transform a row is drawn with.
@@ -281,8 +367,13 @@ fn Row(index: usize, spec: RowSpec) -> impl IntoElement {
 /// Both animations write a y translation and neither writes an x, so this is a sum rather than a
 /// matrix product. Said out loud because a general compose would be wrong here in a way that
 /// only shows up as a diagonal drift.
-fn offset(flip: Derived<Transform>, follow: Derived<Transform>) -> Derived<Transform> {
-    flip.combine(follow, |a, b| {
+fn offset(
+    flip: impl SignalRead<Transform> + 'static,
+    follow: impl SignalRead<Transform> + 'static,
+) -> Derived<Transform> {
+    derived!(move || {
+        let a = flip.get();
+        let b = follow.get();
         Transform::from_translation(a.tx + b.tx, a.ty + b.ty)
     })
 }
@@ -293,14 +384,22 @@ fn offset(flip: Derived<Transform>, follow: Derived<Transform>) -> Derived<Trans
 /// The hand-off matters here more than anywhere else: without it the row stops dead the instant
 /// the pointer lifts, however hard it was thrown.
 #[allow(clippy::too_many_arguments)]
-fn gesture(row: GroupDef, drag: Rc<Drag>, label: String) -> GroupDef {
-    // Recorded on the press, not on the drag's start. A press followed by a small movement fires
-    // `on_drag_step` *before* the drag threshold is crossed and therefore before `on_drag_start`
-    // runs, so a grab recorded there would not exist when the first step is delivered.
+fn gesture(row: GroupDef, drag: Rc<Drag>, label: String, release: Release) -> GroupDef {
+    // Recorded on the press, not on the drag's start. Sub-threshold moves produce no
+    // drag events at all (a 1px click wiggle is a click, not a drag), so a grab recorded
+    // at drag start would not exist yet if the first step arrived any other way — and
+    // the press is the one moment the pointer is guaranteed to be on the row.
     row.on_pointer_down({
         let drag = drag.clone();
         let label = label.clone();
+        let settle = release.settle.clone();
+        let settling = release.settling.clone();
         move |event: &PointerEvent| {
+            // A fresh grab cancels any glide still in flight and reclaims the offset, so the
+            // row answers the pointer immediately instead of finishing a landing nobody wants.
+            // Clearing `settling` disarms the ticker; it retires on its next advance.
+            settling.set(false);
+            settle.set(Transform::IDENTITY);
             // Measured against the box layout gave this row, read through the list rather than
             // from the builder's index: a reorder since the last build makes that stale.
             let centre = drag
@@ -312,10 +411,11 @@ fn gesture(row: GroupDef, drag: Rc<Drag>, label: String) -> GroupDef {
             drag.held.set(Some(label.clone()));
         }
     })
-    // Seeded on the drag's start as well as on every step, because the pointer crosses the drag
-    // threshold before it produces a step. Without this the row sits still through the first few
-    // pixels of a gesture and then jumps to the pointer once the first step lands, which reads as
-    // the row lagging rather than as a drag that just began.
+    // Seeded on the drag's start as well as on every step. The sample that crosses the
+    // threshold reports the start but no step of its own, so without this the row sits
+    // still through the first few pixels of a gesture and then jumps to the pointer once
+    // the first step lands, which reads as the row lagging rather than as a drag that
+    // just began.
     .on_drag_start({
         let drag = drag.clone();
         move |info: &DragInfo| {
@@ -339,12 +439,39 @@ fn gesture(row: GroupDef, drag: Rc<Drag>, label: String) -> GroupDef {
     })
     .on_drag_end({
         let drag = drag.clone();
+        let settle = release.settle.clone();
+        let settling = release.settling.clone();
+        let displayed = release.displayed.clone();
+        let flip = release.flip.clone();
         move |info| {
+            // Captured before the hold clears, while the gates still show the row where the
+            // pointer left it. Seeding the glide from this (rather than from zero) is what
+            // turns the snap into a landing: the first eased frame continues the last held
+            // one instead of jumping home.
+            let from = displayed.get();
+            settle.set(from);
+            settling.set(true);
             drag.held.set(None);
             // Cleared so the follow offset reads exactly zero, which is what releases the row.
             drag.want_centre.set(None);
             // The throw's own velocity, so a flick is thrown rather than stopped dead.
             drag.grab_dy.set_with_velocity(0.0, info.velocity.y);
+            // Skipped only when there is truly nothing to wait for: a sub-pixel offset *and*
+            // a settled FLIP. Otherwise the ticker eases home and holds the FLIP gate shut
+            // until the spring is at rest too, so control hands over with no residual jump.
+            if (from.ty.abs() >= 1.0 || from.tx.abs() >= 1.0)
+                || flip.get() != Transform::IDENTITY
+            {
+                settle.register_ticker(Box::new(GlideTicker {
+                    out: settle.clone(),
+                    settling: settling.clone(),
+                    flip: flip.clone(),
+                    from,
+                    t: 0.0,
+                }));
+            } else {
+                settling.set(false);
+            }
         }
     })
     // A press released below the drag threshold never becomes a drag, so `on_drag_end`
@@ -359,12 +486,12 @@ fn gesture(row: GroupDef, drag: Rc<Drag>, label: String) -> GroupDef {
 
 /// Wires a row's gesture onto it.
 trait PipeGesture {
-    fn pipe_gesture(self, drag: Rc<Drag>, label: String) -> GroupDef;
+    fn pipe_gesture(self, drag: Rc<Drag>, label: String, release: Release) -> GroupDef;
 }
 
 impl PipeGesture for GroupDef {
-    fn pipe_gesture(self, drag: Rc<Drag>, label: String) -> GroupDef {
-        gesture(self, drag, label)
+    fn pipe_gesture(self, drag: Rc<Drag>, label: String, release: Release) -> GroupDef {
+        gesture(self, drag, label, release)
     }
 }
 

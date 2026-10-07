@@ -32,7 +32,7 @@ fn first_run_lines(engine: &Engine) -> Option<usize> {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn collapsed_text_box_still_paints_its_run() {
     let mut engine = Engine::headless(400, 200);
     // The fill sibling claims every pixel of width, so the label's box collapses to zero area.
@@ -65,7 +65,7 @@ fn collapsed_text_box_still_paints_its_run() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn text_survives_shrink_and_grow_cycles() {
     let mut engine = Engine::headless(300, 200);
     engine.mount(
@@ -103,7 +103,7 @@ fn widest_painted_box(engine: &Engine) -> f32 {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn squeezed_box_floors_at_min_content_instead_of_zero() {
     let mut engine = Engine::headless(20, 200);
     // Two competing content-bearing siblings in a 20px row: the shrink path, not the overflow path.
@@ -135,7 +135,7 @@ fn squeezed_box_floors_at_min_content_instead_of_zero() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn min_content_floor_never_inflates_a_box_past_its_desire() {
     let mut engine = Engine::headless(6, 200);
     engine.mount(
@@ -166,9 +166,12 @@ fn min_content_floor_never_inflates_a_box_past_its_desire() {
 }
 
 /// Absolute x of the first painted text run, accumulated from the display list offset stack.
+///
+/// Streams are chunk-local (root offset rebased to zero), so accumulation
+/// starts at the chunk's placement origin.
 fn first_run_x(engine: &Engine) -> Option<f32> {
     for chunk in engine.scene().chunks.iter() {
-        let mut x = 0.0_f32;
+        let mut x = chunk.abs_origin.x;
         let mut stack: Vec<f32> = Vec::new();
         for cmd in chunk.commands.iter() {
             match cmd {
@@ -190,7 +193,7 @@ fn first_run_x(engine: &Engine) -> Option<f32> {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn children_of_a_stacking_context_are_not_offset_twice() {
     let mut engine = Engine::headless(400, 200);
     engine.mount(
@@ -217,7 +220,7 @@ fn children_of_a_stacking_context_are_not_offset_twice() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_clipped_item_may_still_be_crushed_below_its_content() {
     let mut engine = Engine::headless(20, 200);
     engine.mount(
@@ -249,7 +252,7 @@ fn a_clipped_item_may_still_be_crushed_below_its_content() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn offscreen_text_is_still_culled() {
     let mut engine = Engine::headless(200, 200);
     engine.mount(
@@ -270,7 +273,7 @@ fn offscreen_text_is_still_culled() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn degenerate_chunk_still_rasterizes_its_content() {
     let mut renderer = TinySkiaRenderer::new();
     renderer.set_text_context(TextContext::new());
@@ -297,7 +300,7 @@ fn degenerate_chunk_still_rasterizes_its_content() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn empty_text_content_keeps_a_measurable_line_box() {
     let mut config = TextConfig::default();
     config.content = String::new();

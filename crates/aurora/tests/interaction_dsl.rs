@@ -42,7 +42,7 @@ fn click(engine: &mut Engine, raster: &mut HeadlessRaster, x: f32, y: f32) {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_click_reaches_the_node_under_the_pointer() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let clicks = Signal::new(Rc::clone(&runtime), 0u32);
@@ -84,7 +84,7 @@ fn a_click_reaches_the_node_under_the_pointer() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_press_bubbles_to_ancestors_above_the_target() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let inner_hits = Signal::new(Rc::clone(&runtime), 0u32);
@@ -125,7 +125,7 @@ fn a_press_bubbles_to_ancestors_above_the_target() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_decorative_wrapper_does_not_swallow_the_click_inside_it() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let hits = Signal::new(Rc::clone(&runtime), 0u32);
@@ -167,7 +167,7 @@ fn a_decorative_wrapper_does_not_swallow_the_click_inside_it() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn hover_enters_once_and_leaves_when_the_pointer_goes_away() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let entered = Signal::new(Rc::clone(&runtime), 0u32);
@@ -205,7 +205,7 @@ fn hover_enters_once_and_leaves_when_the_pointer_goes_away() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_press_that_moves_past_the_threshold_is_a_drag_not_a_click() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let clicks = Signal::new(Rc::clone(&runtime), 0u32);
@@ -252,8 +252,110 @@ fn a_press_that_moves_past_the_threshold_is_a_drag_not_a_click() {
     );
 }
 
+/// A press that wiggles is a click, not a drag.
+///
+/// Real pointers never sit perfectly still: a click lands 1px off, and some platforms
+/// report any held movement as drag-bearing samples. Neither may produce drag steps —
+/// below the threshold there is no drag to step through — and the press must still
+/// click on release, the way a browser slop region behaves.
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
+fn a_press_that_wiggles_within_the_threshold_stays_a_click() {
+    let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
+    let clicks = Signal::new(Rc::clone(&runtime), 0u32);
+    let steps = Signal::new(Rc::clone(&runtime), 0u32);
+    let starts = Signal::new(Rc::clone(&runtime), 0u32);
+    let (c, s, d) = (clicks.clone(), steps.clone(), starts.clone());
+
+    let mut raster = HeadlessRaster::new();
+    let mut engine = Engine::with_runtime(
+        Rc::clone(&runtime),
+        group()
+            .width(W)
+            .height(H)
+            .fill(Color::WHITE)
+            .children([group()
+                .key("tile")
+                .width(100.0)
+                .height(100.0)
+                .fill(Color::BLACK)
+                .on_click(move |_| c.set(c.get() + 1))
+                .on_drag_start(move |_| d.set(d.get() + 1))
+                .on_drag_step(move |_| s.set(s.get() + 1))
+                .into_element()])
+            .into_element(),
+        400,
+        400,
+    );
+    frame(&mut engine, &mut raster);
+
+    send(&mut engine, &mut raster, 50.0, 50.0, PointerPhase::Down);
+    // A 1px wiggle, delivered both as a plain move and as drag-phase samples, the way
+    // a jittery finger or an eager platform reports it.
+    send(&mut engine, &mut raster, 51.0, 50.0, PointerPhase::Move);
+    send(&mut engine, &mut raster, 51.0, 51.0, PointerPhase::Drag);
+    send(&mut engine, &mut raster, 50.0, 51.0, PointerPhase::Drag);
+    send(&mut engine, &mut raster, 50.0, 50.0, PointerPhase::Up);
+
+    assert_eq!(
+        starts.get(),
+        0,
+        "a 1px wiggle must not start a drag (threshold is {DRAG_THRESHOLD}px)"
+    );
+    assert_eq!(
+        steps.get(),
+        0,
+        "a 1px wiggle must not deliver drag steps"
+    );
+    assert_eq!(clicks.get(), 1, "the wiggled press must still click");
+}
+
+/// A press on content with no drag handlers stays a press, however far it moves.
+///
+/// A drag only exists for draggable content — the web fires `dragstart` solely for
+/// drag sources, and a button that slides under the finger still clicks on release.
+/// Without this, every click that drifts past the threshold dies silently: no click,
+/// and no drag handler observing anything either.
+#[test]
+#[ntest::timeout(5_000)]
+fn a_press_on_click_only_content_clicks_even_past_the_threshold() {
+    let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
+    let clicks = Signal::new(Rc::clone(&runtime), 0u32);
+    let c = clicks.clone();
+
+    let mut raster = HeadlessRaster::new();
+    let mut engine = Engine::with_runtime(
+        Rc::clone(&runtime),
+        group()
+            .width(W)
+            .height(H)
+            .fill(Color::WHITE)
+            .children([group()
+                .key("tile")
+                .width(100.0)
+                .height(100.0)
+                .fill(Color::BLACK)
+                .on_click(move |_| c.set(c.get() + 1))
+                .into_element()])
+            .into_element(),
+        400,
+        400,
+    );
+    frame(&mut engine, &mut raster);
+
+    // The tile is click-only: nothing in its chain handles a drag, so travelling 50px
+    // must not start one — and must not cost it the click. (A sibling test covers the
+    // draggable case, where the same travel does start a drag and suppresses the click.)
+    send(&mut engine, &mut raster, 50.0, 50.0, PointerPhase::Down);
+    send(&mut engine, &mut raster, 100.0, 50.0, PointerPhase::Move);
+    send(&mut engine, &mut raster, 100.0, 50.0, PointerPhase::Drag);
+    send(&mut engine, &mut raster, 100.0, 50.0, PointerPhase::Up);
+
+    assert_eq!(clicks.get(), 1, "the press must still click on release");
+}
+
+#[test]
+#[ntest::timeout(5_000)]
 fn a_drag_keeps_its_capture_after_the_pointer_leaves_the_node() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let steps = Signal::new(Rc::clone(&runtime), 0u32);
@@ -299,7 +401,7 @@ fn a_drag_keeps_its_capture_after_the_pointer_leaves_the_node() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn release_velocity_reflects_the_flick_that_was_actually_made() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let released = Rc::new(RefCell::new(None));
@@ -343,7 +445,7 @@ fn release_velocity_reflects_the_flick_that_was_actually_made() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_double_click_is_reported_as_a_second_click() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let max_count = Signal::new(Rc::clone(&runtime), 0u32);
@@ -380,7 +482,7 @@ fn a_double_click_is_reported_as_a_second_click() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn hit_order_follows_paint_order() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let hits = Signal::new(Rc::clone(&runtime), Vec::<&'static str>::new());
@@ -444,7 +546,7 @@ fn hit_order_follows_paint_order() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_higher_z_index_is_hit_before_a_later_sibling() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let hits = Signal::new(Rc::clone(&runtime), Vec::<&'static str>::new());
@@ -499,7 +601,7 @@ fn a_higher_z_index_is_hit_before_a_later_sibling() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_view_clipped_out_of_its_parent_does_not_swallow_clicks() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let outer_hits = Signal::new(Rc::clone(&runtime), 0u32);
@@ -547,7 +649,7 @@ fn a_view_clipped_out_of_its_parent_does_not_swallow_clicks() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_keyed_node_reports_its_hover_target() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let mut raster = HeadlessRaster::new();
@@ -586,7 +688,7 @@ fn a_keyed_node_reports_its_hover_target() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn handlers_survive_a_remount() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let clicks = Signal::new(Rc::clone(&runtime), 0u32);
@@ -626,7 +728,7 @@ fn handlers_survive_a_remount() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_handler_write_reaches_layout_in_the_same_frame() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let open = Signal::new(Rc::clone(&runtime), false);

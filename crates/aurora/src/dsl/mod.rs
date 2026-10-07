@@ -6,7 +6,7 @@ pub use diff::ChildOp;
 pub use element::Element;
 pub use element_ref::ElementRef;
 pub use flip::{use_flip, use_follow, use_ref, Trigger};
-pub use group::{group, GroupDef};
+pub use group::{group, Behavior, GroupDef};
 pub use image::image;
 pub use reconciler::reconcile;
 pub use svg::svg;

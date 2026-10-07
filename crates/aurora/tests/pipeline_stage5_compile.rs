@@ -5,7 +5,7 @@ use aurora::foundation::*;
 use aurora::runtime::{Engine, FrameReport};
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_5_1_idle_frame_emits_zero_new_commands() {
     let mut engine = Engine::headless(400, 400);
     engine.mount(
@@ -32,7 +32,7 @@ fn test_5_1_idle_frame_emits_zero_new_commands() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_5_2_offscreen_nodes_emit_zero_commands_when_culled() {
     let mut engine = Engine::headless(400, 200);
 
@@ -63,7 +63,7 @@ fn test_5_2_offscreen_nodes_emit_zero_commands_when_culled() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_5_4_offscreen_node_with_shadow_reaching_onscreen_is_compiled() {
     let mut engine = Engine::headless(400, 200);
 

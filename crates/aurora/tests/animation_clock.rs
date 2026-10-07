@@ -55,7 +55,7 @@ fn tween_position_at(fps: f32, simulated_seconds: f32) -> f32 {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_tween_lands_in_the_same_place_at_15fps_as_at_240fps() {
     // 200ms into a 400ms linear tween is exactly halfway.
     let at_15 = tween_position_at(15.0, 0.2);
@@ -72,7 +72,7 @@ fn a_tween_lands_in_the_same_place_at_15fps_as_at_240fps() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_tween_completes_at_the_same_moment_regardless_of_frame_rate() {
     // The visible symptom of frame-rate dependence is not a wrong intermediate value, it is a
     // transition that takes visibly longer on a slow machine.
@@ -97,7 +97,7 @@ fn a_tween_completes_at_the_same_moment_regardless_of_frame_rate() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_slow_clock_stretches_the_animation_without_changing_its_shape() {
     // Slow motion must be the same animation over more frames, not a different one.
     let mut fast = Harness::page(Slide, 400, 200).with_delta(1.0 / 60.0);
@@ -126,7 +126,7 @@ fn a_slow_clock_stretches_the_animation_without_changing_its_shape() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_frozen_clock_holds_a_transition_mid_flight() {
     let mut h = Harness::page(Slide, 400, 200).with_delta(1.0 / 60.0);
     h.steps(2);
@@ -155,7 +155,7 @@ fn a_frozen_clock_holds_a_transition_mid_flight() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn the_debugger_drives_the_engine_clock_from_its_shortcuts() {
     use aurora::app::debug::InspectorMode;
     use aurora::app::debug::VisualDebugger;
@@ -225,7 +225,7 @@ fn the_debugger_drives_the_engine_clock_from_its_shortcuts() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_frozen_transition_can_be_walked_one_frame_at_a_time() {
     // The reason to freeze at all. Without a step, a stopped clock shows one frame forever and
     // there is nothing to inspect.
@@ -267,7 +267,7 @@ fn a_frozen_transition_can_be_walked_one_frame_at_a_time() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_step_is_ignored_while_time_is_already_running() {
     // Otherwise pressing step mid-animation would jump a frame for no visible reason.
     let mut h = Harness::page(Slide, 400, 200).with_delta(1.0 / 60.0);
@@ -287,7 +287,7 @@ fn a_step_is_ignored_while_time_is_already_running() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn the_hud_names_the_rate_only_when_it_is_unusual() {
     use aurora::app::debug_hud::{time_scale_color, time_scale_label};
 
@@ -311,7 +311,7 @@ fn the_hud_names_the_rate_only_when_it_is_unusual() {
 /// freeze in the first place. The hint line is the only place that is discoverable, so it has to
 /// appear exactly when time is not running normally and name the step key.
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn the_time_control_hint_names_the_step_key_while_frozen() {
     use aurora::app::debug_hud::time_control_hint;
 

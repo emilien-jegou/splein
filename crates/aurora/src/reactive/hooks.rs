@@ -4,6 +4,8 @@ use std::any::Any;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
+use rustc_hash::FxHashSet;
+
 use crate::anim::transition::{ControllerHandle, Transition, TransitionCell};
 use crate::reactive::derived::Derived;
 use crate::reactive::readable::Readable;
@@ -34,6 +36,13 @@ pub(crate) struct HookScope {
     next_slot: Cell<usize>,
     /// Anonymous scopes opened directly inside this one, used to name nested components.
     children: Cell<usize>,
+    /// Call-site hook keys already claimed during this build.
+    ///
+    /// Reset per scope entry, so the set answers "was this key used twice in one
+    /// body run" rather than accumulating across rebuilds. Ordinal hooks do not
+    /// consult it; keyed hooks (`use_signal!`) panic on a second claim with the
+    /// file location, turning hook-in-a-loop aliasing into a located error.
+    keyed_used: RefCell<FxHashSet<&'static str>>,
     /// Whether this identity is reproducible, and so whether state filed under it can be
     /// recalled by a later build.
     ///
@@ -125,6 +134,7 @@ impl Cx {
                 instance,
                 next_slot: Cell::new(0),
                 children: Cell::new(0),
+                keyed_used: RefCell::new(FxHashSet::default()),
                 stable,
             })
         });
@@ -238,6 +248,7 @@ pub(crate) fn current_scope() -> Option<HookScope> {
             instance: Rc::clone(&scope.instance),
             next_slot: Cell::new(scope.next_slot.get()),
             children: Cell::new(scope.children.get()),
+            keyed_used: RefCell::new(FxHashSet::default()),
             stable: scope.stable,
         })
     })
@@ -403,6 +414,157 @@ pub fn use_signal<T: Clone + 'static>(initial: T) -> Signal<T> {
         remember(&scope, slot, &out);
     }
     out
+}
+
+/// Allocates a signal keyed by call-site identity rather than call order.
+///
+/// Unlike [`use_signal`], which recalls by ordinal ("the Nth hook that ran"), this
+/// recalls by `key` — so a hook inside a conditional or after an early return keeps
+/// its state even on builds where an earlier hook is skipped. Prefer the
+/// [`use_signal!`] macro, which derives the key from the call site automatically.
+///
+/// Stability still requires a reproducible scope ([`Cx::enter_keyed`]), exactly like
+/// ordinal hooks. A changed type on an existing key panics naming both types,
+/// instead of silently allocating fresh state and resetting the component.
+pub fn use_signal_keyed<T: Clone + 'static>(key: &'static str, initial: T) -> Signal<T> {
+    let Some(scope) = current_scope() else {
+        no_scope()
+    };
+    claim_key(&scope, key);
+    // Recalling from an unreproducible identity could only ever hit by coincidence,
+    // and when it did it would hand a component someone else's state.
+    if scope.stable {
+        if let Some(existing) = recall_keyed::<Signal<T>>(&scope, key) {
+            return existing;
+        }
+    }
+    let out = Signal::new(Rc::clone(&scope.inner.borrow().runtime), initial);
+    if scope.stable {
+        remember_keyed(&scope, key, &out);
+    }
+    out
+}
+
+/// Claims a call-site key for this build, panicking on a second claim.
+///
+/// A keyed hook used twice in one body run — a copy-paste collision, or a hook in
+/// a loop where every iteration shares the call site — would otherwise alias one
+/// slot across two owners. Failing here, naming the key, is the whole point of
+/// keyed identity: aliasing that ordinal hooks suffer silently.
+fn claim_key(scope: &HookScope, key: &'static str) {
+    CURRENT.with(|stack| {
+        let stack = stack.borrow();
+        // The snapshot `current_scope` hands out carries a throwaway set; the claim
+        // has to land on the live scope or the second claim would never see the first.
+        match stack.last() {
+            Some(live) => {
+                debug_assert_eq!(
+                    live.instance, scope.instance,
+                    "the ambient scope changed between current_scope and claim_key"
+                );
+                if !live.keyed_used.borrow_mut().insert(key) {
+                    panic!(
+                        "use_signal!: duplicate hook key `{key}` in one component build; \
+                         keys must be unique per component (rename one, or index hooks \
+                         called in a loop)"
+                    );
+                }
+            }
+            None => {
+                // No live scope (body already returned); record on the snapshot so the
+                // call still has deterministic behavior rather than panicking.
+                if !scope.keyed_used.borrow_mut().insert(key) {
+                    panic!(
+                        "use_signal!: duplicate hook key `{key}` in one component build; \
+                         keys must be unique per component (rename one, or index hooks \
+                         called in a loop)"
+                    );
+                }
+            }
+        }
+    })
+}
+
+/// Returns the signal this instance filed under `key`, if the type still matches.
+///
+/// A type mismatch panics naming both types: under keyed identity a changed hook
+/// signature is an edit to be told about, not a miss to silently reallocate on
+/// (which is what would reset the component without warning).
+fn recall_keyed<T: Clone + 'static>(scope: &HookScope, key: &'static str) -> Option<T> {
+    use crate::reactive::runtime::KeyedSlot;
+    let runtime = Rc::clone(&scope.inner.borrow().runtime);
+    let borrow = runtime.borrow();
+    let slots = borrow.keyed_hook_states.get(&scope.instance)?;
+    let slot: &KeyedSlot = slots.get(key)?;
+    match slot.value.downcast_ref::<T>() {
+        Some(value) => Some(value.clone()),
+        None => panic!(
+            "use_signal!: hook `{key}` changed type (was {}, now {}); \
+             update the hook or rename the key",
+            slot.type_name,
+            std::any::type_name::<T>(),
+        ),
+    }
+}
+
+/// Files a value under this instance's call-site `key`.
+fn remember_keyed<T: Clone + 'static>(scope: &HookScope, key: &'static str, value: &T) {
+    use crate::reactive::runtime::KeyedSlot;
+    let runtime = Rc::clone(&scope.inner.borrow().runtime);
+    let mut borrow = runtime.borrow_mut();
+    let slots = borrow
+        .keyed_hook_states
+        .entry(Rc::clone(&scope.instance))
+        .or_default();
+    slots.insert(
+        key,
+        KeyedSlot {
+            value: Rc::new(value.clone()) as Rc<dyn Any>,
+            type_name: std::any::type_name::<T>(),
+        },
+    );
+}
+
+/// Allocates a signal with call-site identity, safe under conditionals.
+///
+/// `use_signal!(init)` derives the key from `file!():line!()` — collision-proof
+/// across a file, but moving the line resets the hook's state.
+/// `use_signal!("name", init)` uses an explicit name namespaced by file — stable
+/// across moves, but two identical names in one component panic (see below).
+///
+/// Either way the key must be unique per component build: a hook in a loop shares
+/// its call site across iterations and panics naming the key, as does a pasted
+/// duplicate. Use keyed lists for repeated hooks.
+#[macro_export]
+macro_rules! use_signal {
+    ($init:expr) => {
+        $crate::reactive::use_signal_keyed(concat!(file!(), ":", line!()), $init)
+    };
+    ($key:literal, $init:expr) => {
+        $crate::reactive::use_signal_keyed(concat!(file!(), "#", $key), $init)
+    };
+}
+
+/// Creates a named [`Derived`] handle from a plain closure.
+///
+/// The closure reads signals with `.get()` and the runtime auto-tracks every read,
+/// so the derivation recomputes whenever any signal it touched changes. This is
+/// the named-handle counterpart to inline `DynamicProp` closures: use this when
+/// you need to store the derivation in a struct, pass it as a prop, or share it
+/// across multiple binding sites.
+///
+/// ```ignore
+/// let is_held = derived!(move || drag.held.get().as_deref() == Some(label.as_str()));
+/// ```
+///
+/// The closure must be `'static` — clone any captured `String`/`Vec` by hand.
+/// Prefer this over nested `.map().combine()` chains when the derivation reads
+/// more than two signals.
+#[macro_export]
+macro_rules! derived {
+    ($body:expr) => {
+        $crate::reactive::Cx::expect_current().derived($body)
+    };
 }
 
 /// Starts a self-driving playback in the ambient component context.

@@ -16,6 +16,7 @@ pub struct GpuBackend {
     /// Set on construction and resize: the swapchain has no valid contents yet,
     /// so the next present must render even with empty damage.
     needs_present: bool,
+    tag: &'static str,
 }
 
 impl GpuBackend {
@@ -26,11 +27,39 @@ impl GpuBackend {
         height: u32,
         text_ctx: TextContext,
     ) -> Result<Self, BackendError> {
-        let mut renderer = VelloRenderer::new(window, width, height)?;
+        Self::new_inner(window, width, height, text_ctx, false)
+    }
+
+    /// Builds a CPU-staged Vello backend for the given window.
+    ///
+    /// Coarse rasterization runs on the CPU; presentation still goes through
+    /// the wgpu swapchain like [`Self::new`].
+    pub fn new_cpu(
+        window: Arc<Window>,
+        width: u32,
+        height: u32,
+        text_ctx: TextContext,
+    ) -> Result<Self, BackendError> {
+        Self::new_inner(window, width, height, text_ctx, true)
+    }
+
+    fn new_inner(
+        window: Arc<Window>,
+        width: u32,
+        height: u32,
+        text_ctx: TextContext,
+        use_cpu: bool,
+    ) -> Result<Self, BackendError> {
+        let mut renderer = if use_cpu {
+            VelloRenderer::new_cpu(window, width, height)?
+        } else {
+            VelloRenderer::new(window, width, height)?
+        };
         renderer.set_text_context(text_ctx);
         Ok(Self {
             renderer,
             needs_present: true,
+            tag: if use_cpu { "Vello-CPU" } else { "GPU" },
         })
     }
 }
@@ -43,7 +72,7 @@ impl Backend for GpuBackend {
     }
 
     fn tag(&self) -> &'static str {
-        "GPU"
+        self.tag
     }
 
     fn present(&mut self, frame: Present<'_>) -> Result<PresentReport, BackendError> {
@@ -60,8 +89,22 @@ impl Backend for GpuBackend {
             });
         }
         let t_raster = Instant::now();
-        self.renderer
-            .render_frame(frame.scene, frame.surface.background)?;
+        // Union frame damage + extra damage into one culling region.
+        let mut cull = aurora::foundation::DamageRegion::new();
+        for r in frame.damage.rects().iter().chain(frame.extra_damage.iter()) {
+            cull.push(*r);
+        }
+        // Empty (unknown) → full render path inside renderer.
+        let encoded = self
+            .renderer
+            .render_frame(frame.scene, frame.surface.background, &cull)?;
+        tracing::debug!(
+            encoded_chunks = encoded,
+            reused_chunks = self.renderer.last_reused,
+            blit_rects = self.renderer.last_blit_rects,
+            blit_bytes = self.renderer.last_blit_bytes,
+            total = frame.scene.chunks.len()
+        );
         self.needs_present = false;
         Ok(PresentReport {
             raster: t_raster.elapsed(),

@@ -34,6 +34,11 @@ pub fn node_clip_radius(node: &LayoutNode) -> Option<Radius> {
 }
 
 /// Pushes affine transforms, opacity, layers, and clips for a node into the chunk.
+///
+/// When `hoist_root_transform` is set (stacking-context roots only), the node's
+/// own effective transform is recorded into `chunk.placement` instead of being
+/// pushed: placement is what moves when the node animates, so keeping it out
+/// of the stream keeps content reusable across transform-only motion.
 #[inline(always)]
 pub fn enter_node_frame(
     node: &LayoutNode,
@@ -41,6 +46,7 @@ pub fn enter_node_frame(
     x: f32,
     y: f32,
     layer_id: LayerId,
+    hoist_root_transform: bool,
 ) {
     // Clipping and layer bounds follow the render box; the content drawn inside keeps
     // its flow size (see `emit_node_content`), which is what makes a growing box reveal
@@ -56,7 +62,12 @@ pub fn enter_node_frame(
     }
     let transform = node.effective_transform();
     if transform != Transform::IDENTITY {
-        chunk.push(SceneCommand::PushTransform(transform));
+        if hoist_root_transform {
+            // Placement, not content: the consumer applies it around the stream.
+            chunk.placement = transform;
+        } else {
+            chunk.push(SceneCommand::PushTransform(transform));
+        }
     }
     let opacity = node.effective_opacity();
     if opacity < 1.0 {
@@ -71,8 +82,16 @@ pub fn enter_node_frame(
 }
 
 /// Pops active frames, clips, layers, and offsets in reverse order.
+///
+/// Mirrors `enter_node_frame`'s hoist decision so the pop can never disagree
+/// with the push.
 #[inline(always)]
-pub fn exit_node_frame(node: &LayoutNode, chunk: &mut SceneChunk, layer_id: LayerId) {
+pub fn exit_node_frame(
+    node: &LayoutNode,
+    chunk: &mut SceneChunk,
+    layer_id: LayerId,
+    hoist_root_transform: bool,
+) {
     // Asks the same authority `enter_node_frame` asked, so the pop can never disagree with the
     // push and unbalance the clip stack.
     if node_clip_radius(node).is_some() {
@@ -81,7 +100,7 @@ pub fn exit_node_frame(node: &LayoutNode, chunk: &mut SceneChunk, layer_id: Laye
     if node.effective_opacity() < 1.0 {
         chunk.push(SceneCommand::PopOpacity);
     }
-    if node.effective_transform() != Transform::IDENTITY {
+    if node.effective_transform() != Transform::IDENTITY && !hoist_root_transform {
         chunk.push(SceneCommand::PopTransform);
     }
     if node.style.has_layer {

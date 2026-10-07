@@ -118,6 +118,7 @@ pub fn reconcile_group(
     node.style.z_index = props.z_index;
     node.style.is_overlay = def.is_overlay;
     node.style.has_layer = def.has_layer;
+    node.style.hit_test = def.hit_test;
     let node = arena.get_mut(id);
     if let Some(f) = props.fill {
         node.style.appearance.fill = Some(f);

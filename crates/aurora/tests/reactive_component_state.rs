@@ -109,7 +109,7 @@ fn tap(h: &mut Harness, label: &str, times: u32) {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_keyed_row_keeps_its_state_when_the_list_rebuilds() {
     let rt = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let labels = labels_signal(&rt, &["a", "b"]);
@@ -140,7 +140,7 @@ fn a_keyed_row_keeps_its_state_when_the_list_rebuilds() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn after_a_reorder_each_row_keeps_its_own_state() {
     let rt = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let labels = labels_signal(&rt, &["a", "b", "c"]);
@@ -173,7 +173,7 @@ fn after_a_reorder_each_row_keeps_its_own_state() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn removing_and_re_adding_an_item_restores_its_state() {
     let rt = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let labels = labels_signal(&rt, &["a", "b"]);
@@ -199,7 +199,7 @@ fn removing_and_re_adding_an_item_restores_its_state() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn an_unkeyed_list_starts_each_rebuild_from_scratch() {
     // Pinned deliberately. `children_labels` cannot preserve hook state, because nothing
     // tells the allocator which rebuilt row is which instance -- and guessing from position
@@ -223,7 +223,7 @@ fn an_unkeyed_list_starts_each_rebuild_from_scratch() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn two_lists_keeping_separate_state_do_not_share_it() {
     // Identity is per list instance, so the same label in two lists must not collide.
     let rt = Rc::new(RefCell::new(ReactiveRuntime::new()));
@@ -278,7 +278,7 @@ fn two_lists_keeping_separate_state_do_not_share_it() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_component_nested_inside_a_keyed_row_keeps_its_state_too() {
     // The nested component never learns its own key, so its identity has to be derived from
     // the keyed row containing it. If it were not, a rebuild would silently reset the leaf

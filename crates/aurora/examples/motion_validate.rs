@@ -91,7 +91,6 @@ fn row(width: Signal<f32>, expanded: Signal<bool>) -> GroupDef {
 
 /// The action button, which owns its own toggle.
 fn action(width: Signal<f32>, expanded: Signal<bool>) -> GroupDef {
-    let toggle = expanded.clone();
     let state = expanded;
     // The label reads the animated width, not the target. Crossing the midpoint therefore
     // happens partway through the spring, exactly when the box is actually wide enough for the
@@ -107,7 +106,7 @@ fn action(width: Signal<f32>, expanded: Signal<bool>) -> GroupDef {
         .fill(Color::hex(ACCENT))
         .alignment(Alignment::Center)
         .distribution(Distribution::Center)
-        .on_click(move |_| toggle.set(!state.get()))
+        .on_click(move |_| state.update(|open| *open = !*open))
         .children([text(label.map(|w| {
             if w > (COLLAPSED + EXPANDED) * 0.5 {
                 String::from("Validate")

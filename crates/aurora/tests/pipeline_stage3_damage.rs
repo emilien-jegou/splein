@@ -6,7 +6,7 @@ use aurora::reactive::*;
 use aurora::runtime::{Engine, FrameReport};
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_3_1_moved_node_damages_both_old_and_new_positions() {
     let mut engine = Engine::headless(600, 400);
     let offset_x = engine.signal(0.0f32);
@@ -43,7 +43,7 @@ fn test_3_1_moved_node_damages_both_old_and_new_positions() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_3_2_removed_node_populates_removed_rects_and_damages_old_bounds() {
     let mut engine = Engine::headless(400, 400);
     engine.mount(
@@ -67,7 +67,9 @@ fn test_3_2_removed_node_populates_removed_rects_and_damages_old_bounds() {
     );
     assert_eq!(
         diag.spatial.removed_rects[0],
-        ResolvedRect::new(0.0, 0.0, 80.0, 80.0)
+        // Removed bounds carry the 1px AA fringe (LayoutNode::AA_PAD) so the
+        // fringe pixels are cleared, not just the geometric box.
+        ResolvedRect::new(-1.0, -1.0, 82.0, 82.0)
     );
 
     // Frame 3: Verify cleared on next frame
@@ -82,7 +84,7 @@ fn test_3_2_removed_node_populates_removed_rects_and_damages_old_bounds() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_3_3_inserted_node_damages_new_bounds() {
     let mut engine = Engine::headless(400, 400);
     engine.mount(group().width(400.0).height(400.0));
@@ -110,7 +112,7 @@ fn test_3_3_inserted_node_damages_new_bounds() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_3_4_shadow_bounds_reach_farther_in_offset_direction() {
     let mut engine = Engine::headless(500, 500);
     let fill = engine.signal(Color::RED);
@@ -139,7 +141,7 @@ fn test_3_4_shadow_bounds_reach_farther_in_offset_direction() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_3_5_two_layouts_before_one_paint_retains_true_last_painted_origin() {
     let mut engine = Engine::headless(600, 400);
     let offset_x = engine.signal(0.0f32);
@@ -170,7 +172,7 @@ fn test_3_5_two_layouts_before_one_paint_retains_true_last_painted_origin() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_3_8_five_disjoint_changes_cluster_into_at_most_four_rects() {
     let mut engine = Engine::headless(1000, 1000);
     let sigs: Vec<_> = (0..5).map(|_| engine.signal(Color::RED)).collect();

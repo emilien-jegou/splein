@@ -1,8 +1,9 @@
 // Single responsibility: Discrete bounded slice of display list commands.
 
-use crate::foundation::{Point, Radius, ResolvedRect};
+use crate::foundation::{Point, Radius, ResolvedRect, Transform};
 use crate::scene::command::{LayerId, SceneCommand};
 use smallvec::SmallVec;
+use std::rc::Rc;
 
 /// A clip rectangle in absolute screen space, with the radius it was declared with.
 ///
@@ -22,14 +23,36 @@ pub struct InheritedClip {
 pub type InheritedClips = SmallVec<[InheritedClip; 2]>;
 
 /// A discrete, bounded slice of drawing commands belonging to a layout boundary or layer.
+///
+/// Coordinate contract (chunk-local emission):
+/// - `commands` are expressed relative to the chunk origin: the root frame's
+///   offset is rebased to `(0,0)`, so replaying the stream paints the chunk as
+///   if its origin sat at the screen origin.
+/// - `abs_origin` + `placement` locate it: consumers apply
+///   `translate(abs_origin) * placement` around the stream. `placement` is the
+///   stacking-context root's own effective transform, hoisted out of the stream
+///   so a transform-only motion changes placement without touching content.
+/// - `inherited_clips` stay ABSOLUTE: they are placement-time state applied by
+///   the consumer around the placed stream, never baked into commands.
+/// - `bounds` stays ABSOLUTE: spatial index for damage/viewport culling.
+/// - `fresh` tells consumers whether content was recompiled this frame
+///   (`true`) or replayed from cache (`false`).
 #[derive(Clone, Debug, Default)]
 pub struct SceneChunk {
     pub bounds: ResolvedRect,
     pub abs_origin: Point,
-    pub commands: Vec<SceneCommand>,
+    /// Shared command stream: replaying a cached chunk bumps a refcount
+    /// instead of deep-cloning every command each frame. Mutated only while
+    /// compiling a fresh chunk (uniquely owned then); `make_mut` keeps a
+    /// correct copy-on-write fallback if that ever changes.
+    pub commands: Rc<Vec<SceneCommand>>,
     pub layer_id: Option<LayerId>,
     /// Ancestor clips baked into this chunk's command list, kept for cache validation.
     pub inherited_clips: InheritedClips,
+    /// Stacking-root effective transform, hoisted out of the command stream.
+    pub placement: Transform,
+    /// Whether commands were recompiled this frame (vs replayed from cache).
+    pub fresh: bool,
 }
 
 impl SceneChunk {
@@ -37,9 +60,11 @@ impl SceneChunk {
         Self {
             bounds,
             abs_origin,
-            commands: Vec::new(),
+            commands: Rc::new(Vec::new()),
             layer_id: None,
             inherited_clips: InheritedClips::new(),
+            placement: Transform::IDENTITY,
+            fresh: true,
         }
     }
 
@@ -47,15 +72,33 @@ impl SceneChunk {
         Self {
             bounds,
             abs_origin,
-            commands: Vec::new(),
+            commands: Rc::new(Vec::new()),
             layer_id: Some(layer_id),
             inherited_clips: InheritedClips::new(),
+            placement: Transform::IDENTITY,
+            fresh: true,
+        }
+    }
+
+    /// Rebases the root frame offset to chunk-local `(0,0)`.
+    ///
+    /// The first `PushOffset` in the stream is the stacking root's absolute
+    /// origin by construction; nested offsets are already parent-relative.
+    /// Called once at chunk finalization, before caching.
+    pub fn rebase_to_local(&mut self) {
+        let (ox, oy) = (self.abs_origin.x, self.abs_origin.y);
+        for cmd in Rc::make_mut(&mut self.commands).iter_mut() {
+            if let SceneCommand::PushOffset(p) = cmd {
+                p.x -= ox;
+                p.y -= oy;
+                return;
+            }
         }
     }
 
     #[inline(always)]
     pub fn push(&mut self, cmd: SceneCommand) {
-        self.commands.push(cmd);
+        Rc::make_mut(&mut self.commands).push(cmd);
     }
 
     #[inline(always)]

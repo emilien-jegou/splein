@@ -5,7 +5,7 @@ use aurora::foundation::*;
 use aurora::runtime::{Engine, FrameReport};
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_3_9_window_grow_damages_exposed_strip_and_reports_preserved_rect() {
     let mut engine = Engine::headless(200, 200);
     engine.mount(group().width(200.0).height(200.0).fill(Color::BLACK));

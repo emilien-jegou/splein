@@ -76,7 +76,7 @@ fn flick(spring: Spring, rest: f32, home: f32, velocity: Option<f32>) -> (f32, f
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_handed_velocity_makes_the_spring_leave_immediately() {
     let (rest_path, _) = flick(Spring::snappy(), 200.0, 0.0, None);
     let (flick_path, _) = flick(Spring::snappy(), 200.0, 0.0, Some(-2400.0));
@@ -88,7 +88,7 @@ fn a_handed_velocity_makes_the_spring_leave_immediately() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn the_velocity_is_what_carries_an_underdamped_spring_past_its_target() {
     // A critically damped spring converges monotonically no matter how much velocity it is
     // given, so overshoot only distinguishes the two cases under a spring that would
@@ -118,7 +118,7 @@ fn the_velocity_is_what_carries_an_underdamped_spring_past_its_target() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_plain_write_leaves_the_spring_at_rest() {
     let (path, over) = flick(Spring::snappy(), 200.0, 0.0, None);
     assert!(
@@ -132,7 +132,7 @@ fn a_plain_write_leaves_the_spring_at_rest() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn the_hand_off_is_consumed_exactly_once() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let target = Signal::new(Rc::clone(&runtime), 0.0f32);
@@ -158,7 +158,7 @@ fn the_hand_off_is_consumed_exactly_once() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_non_finite_hand_off_cannot_poison_the_simulation() {
     let mut track = ScalarTrack::new(Spring::snappy(), 0.0, 100.0);
     track.adopt_velocity(f32::NAN);
@@ -174,7 +174,7 @@ fn a_non_finite_hand_off_cannot_poison_the_simulation() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_drag_release_hands_its_measured_velocity_to_a_spring() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     // Where the card rests, and the value a release retargets it to.

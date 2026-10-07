@@ -56,7 +56,7 @@ fn row_y(engine: &Engine, label: &str) -> f32 {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_static_list_lays_out_in_order() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let order = Signal::new(Rc::clone(&runtime), vec!["a", "b", "c"]);
@@ -73,7 +73,7 @@ fn a_static_list_lays_out_in_order() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn reordering_moves_the_rows_and_leaves_the_tree_intact() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let order = Signal::new(Rc::clone(&runtime), vec!["a", "b", "c"]);
@@ -119,7 +119,7 @@ fn reordering_moves_the_rows_and_leaves_the_tree_intact() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn an_unchanged_order_costs_nothing() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let order = Signal::new(Rc::clone(&runtime), vec!["a", "b", "c"]);
@@ -136,7 +136,7 @@ fn an_unchanged_order_costs_nothing() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn a_reorder_leaves_the_render_boxes_settling() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let order = Signal::new(Rc::clone(&runtime), vec!["a", "b", "c"]);
@@ -167,7 +167,7 @@ fn a_reorder_leaves_the_render_boxes_settling() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn growing_and_shrinking_a_list_reconciles_the_difference() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let order = Signal::new(Rc::clone(&runtime), vec!["a", "b", "c"]);

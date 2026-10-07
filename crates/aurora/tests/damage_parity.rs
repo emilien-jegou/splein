@@ -82,7 +82,7 @@ fn moving_surface_harness() -> (Harness, Signal<f32>, Signal<f32>) {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn dragging_a_row_repaints_every_pixel_it_vacates() {
     let (mut h, dy, scale) = moving_surface_harness();
     h.step();
@@ -107,7 +107,7 @@ fn dragging_a_row_repaints_every_pixel_it_vacates() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn switching_accordion_panels_repaints_every_pixel_they_vacate() {
     let (mut h, open) = accordion_harness();
 

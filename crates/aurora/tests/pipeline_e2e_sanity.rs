@@ -5,7 +5,7 @@ use aurora::foundation::*;
 use aurora::runtime::{Engine, FrameReport};
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(3_000)]
 fn test_e2e_idle_frame_invariant() {
     let mut engine = Engine::headless(500, 500);
     engine.mount(group().width(500.0).height(500.0).fill(Color::WHITE));
@@ -30,7 +30,7 @@ fn test_e2e_idle_frame_invariant() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(3_000)]
 fn test_e2e_hover_box_with_shadow_recomputes_zero_layout() {
     let mut engine = Engine::headless(400, 400);
     let fill = engine.signal(Color::RED);
@@ -61,7 +61,7 @@ fn test_e2e_hover_box_with_shadow_recomputes_zero_layout() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(3_000)]
 fn test_e2e_counter_tick_inside_boundary_isolates_layout_and_damage() {
     let mut engine = Engine::headless(600, 600);
     let count = engine.signal("1".to_string());
@@ -98,7 +98,7 @@ fn test_e2e_counter_tick_inside_boundary_isolates_layout_and_damage() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(3_000)]
 fn test_e2e_box_in_boxed_re_render_with_absolute_badge() {
     let mut engine = Engine::headless(600, 600);
     let badge_count = engine.signal("3".to_string());

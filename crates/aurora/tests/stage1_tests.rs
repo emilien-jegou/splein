@@ -11,7 +11,7 @@ use aurora::tree::*;
 // =========================================================================
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_paint_mutation_fast_path_skips_layout() {
     let mut engine = Engine::headless(400, 400);
     let color = engine.signal(Color::BLACK);
@@ -36,7 +36,7 @@ fn test_paint_mutation_fast_path_skips_layout() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_no_op_signal_writes_generate_zero_dirty_flags() {
     let mut engine = Engine::headless(400, 400);
     let width = engine.signal(100.0f32);
@@ -60,7 +60,7 @@ fn test_no_op_signal_writes_generate_zero_dirty_flags() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_static_elements_allocate_zero_subscribers() {
     let mut engine = Engine::headless(300, 200);
 
@@ -79,7 +79,7 @@ fn test_static_elements_allocate_zero_subscribers() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_dynamic_branching_resubscription_with_observer_guard() {
     let mut engine = Engine::headless(400, 200);
     let condition = engine.signal(false);
@@ -132,7 +132,7 @@ fn test_dynamic_branching_resubscription_with_observer_guard() {
 // =========================================================================
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_paint_mutation_preserves_layout_caches() {
     let mut engine = Engine::headless(300, 200);
     let opacity = engine.signal(1.0f32);
@@ -154,7 +154,7 @@ fn test_paint_mutation_preserves_layout_caches() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_dirty_flags_orthogonal_operators() {
     let mut flags = DirtyFlags::NONE;
     assert!(flags.is_empty());
@@ -177,7 +177,7 @@ fn test_dirty_flags_orthogonal_operators() {
 // =========================================================================
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_strict_2d_containment_isolates_subtree_layout() {
     let mut engine = Engine::headless(800, 600);
     let child_width = engine.signal(50.0f32);
@@ -203,7 +203,7 @@ fn test_strict_2d_containment_isolates_subtree_layout() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_dimension_mutation_escalates_to_parent_boundary() {
     let mut engine = Engine::headless(500, 500);
     let width = engine.signal(80.0f32);
@@ -229,7 +229,7 @@ fn test_dimension_mutation_escalates_to_parent_boundary() {
 // =========================================================================
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_multiple_independent_boundaries_execute_without_root() {
     let mut engine = Engine::headless(1000, 1000);
     let w1 = engine.signal(40.0f32);
@@ -259,7 +259,7 @@ fn test_multiple_independent_boundaries_execute_without_root() {
 }
 
 #[test]
-#[ntest::timeout(30_000)]
+#[ntest::timeout(5_000)]
 fn test_bulk_update_coalesces_to_root_pass() {
     let mut engine = Engine::headless(800, 800);
 

@@ -99,44 +99,75 @@ fn shape_at_width(
 
     // Prefer the requested family, but always resolve to a family that exists so
     // shaping never panics with cosmic-text's "no default font found".
-    let requested = params.family.map(str::to_string).or_else(|| {
-        if let Some(FontId(id)) = params.font {
-            fs.db()
-                .faces()
-                .nth(id as usize)
-                .and_then(|f| f.families.first().map(|(name, _)| name.clone()))
-        } else {
-            None
+    // Resolution depends only on style inputs (not on the string), so it is
+    // cached per style: 500 labels in one style scan the face database once.
+    let style_key = crate::text::cosmic::ResolvedStyleKey {
+        font: params.font.map(|f| f.0),
+        family: params.family.map(str::to_string),
+        style: style_code,
+        weight: params.weight,
+    };
+    let cached = engine
+        .resolved_styles
+        .lock()
+        .unwrap()
+        .get(&style_key)
+        .cloned();
+    let (family_name, has_exact_face) = match cached {
+        Some(hit) => (hit.family_name, hit.has_exact_face),
+        None => {
+            let requested = style_key.family.clone().or_else(|| {
+                if let Some(FontId(id)) = params.font {
+                    fs.db()
+                        .faces()
+                        .nth(id as usize)
+                        .and_then(|f| f.families.first().map(|(name, _)| name.clone()))
+                } else {
+                    None
+                }
+            });
+            let family_name = match requested {
+                Some(name)
+                    if fs
+                        .db()
+                        .faces()
+                        .any(|f| f.families.iter().any(|(n, _)| n == &name)) =>
+                {
+                    Some(name)
+                }
+                _ => fs
+                    .db()
+                    .faces()
+                    .next()
+                    .and_then(|f| f.families.first().map(|(n, _)| n.clone())),
+            };
+            // cosmic-text only accepts an exact weight face for its default family and has no
+            // variable-axis instancing, so relax to the family default when none matches.
+            let has_exact_face = fs.db().faces().any(|f| {
+                let family_ok = family_name
+                    .as_deref()
+                    .map_or(true, |name| f.families.iter().any(|(n, _)| n == name));
+                family_ok && f.style == style && f.stretch == Stretch::Normal && f.weight.0 == params.weight
+            });
+            // Styles in flight are bounded (fonts x styles x weights actually
+            // used); skip caching past the cap rather than thrashing it.
+            let mut cache = engine.resolved_styles.lock().unwrap();
+            if cache.len() < 256 {
+                cache.insert(
+                    style_key,
+                    crate::text::cosmic::ResolvedStyle {
+                        family_name: family_name.clone(),
+                        has_exact_face,
+                    },
+                );
+            }
+            (family_name, has_exact_face)
         }
-    });
-    let family_name = match requested {
-        Some(name)
-            if fs
-                .db()
-                .faces()
-                .any(|f| f.families.iter().any(|(n, _)| n == &name)) =>
-        {
-            Some(name)
-        }
-        _ => fs
-            .db()
-            .faces()
-            .next()
-            .and_then(|f| f.families.first().map(|(n, _)| n.clone())),
     };
     let family = family_name
         .as_deref()
         .map(Family::Name)
         .unwrap_or(Family::SansSerif);
-
-    // cosmic-text only accepts an exact weight face for its default family and has no
-    // variable-axis instancing, so relax to the family default when none matches.
-    let has_exact_face = fs.db().faces().any(|f| {
-        let family_ok = family_name
-            .as_deref()
-            .map_or(true, |name| f.families.iter().any(|(n, _)| n == name));
-        family_ok && f.style == style && f.stretch == Stretch::Normal && f.weight.0 == params.weight
-    });
     let attrs = if has_exact_face {
         Attrs::new().family(family).weight(weight).style(style)
     } else {
@@ -169,10 +200,13 @@ fn shape_at_width(
         }
     };
     buffer.shape_until_scroll(&mut fs, false);
+    // The font system is no longer needed past shaping: drop it before
+    // line extraction so the remaining locks (glyph maps, buffer pool)
+    // are never stacked inside it.
+    drop(fs);
 
     let (mut lines, max_line_w) = extract_lines(engine, &buffer, safe_spacing, safe_lh, safe_size);
     engine.buffers.lock().unwrap().put(key, buffer);
-    drop(fs);
     // Alignment is baked in against the final wrap width, so the cached layout stays
     // immutable and can be shared as an `Arc` without per-frame glyph mutation.
     if let Some(box_width) = wrap {

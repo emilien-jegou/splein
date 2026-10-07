@@ -28,6 +28,10 @@
 !crates/aurora/tests/**/*
 !crates/aurora/examples/
 !crates/aurora/examples/**/*
+!crates/aurora/benches/
+!crates/aurora/benches/**/*
+!crates/aurora/docs/
+!crates/aurora/docs/**/*
 !crates/aurora/*md
 
 !crates/aurora-tiny-skia/

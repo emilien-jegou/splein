@@ -46,18 +46,15 @@ pub fn Page() -> impl IntoElement {
         Transition::spring(Spring::bouncy()).on(pressed.clone().map(|p| if p { 1.0 } else { 1.0 }));
 
     // Whichever stream owns the current state drives the view; the other sits at 1.0.
+    // Plain closure: reads three signals, subscribes to all three, no .map()/.combine().
     let active = {
         let down = down.clone();
         let up = up.clone();
-        pressed.map(
-            move |is_pressed| {
-                if is_pressed {
-                    down.get()
-                } else {
-                    up.get()
-                }
-            },
-        )
+        derived!(move || if pressed.get() {
+            down.get()
+        } else {
+            up.get()
+        })
     };
 
     page(
@@ -114,7 +111,7 @@ fn button(pressed: Signal<bool>, presses: Signal<u32>, scale: Derived<f32>) -> G
         .on_pointer_down(move |_| down.set(true))
         .on_pointer_up(move |_| up.set(false))
         .on_pointer_leave(move |_| drop.set(false))
-        .on_click(move |info| counted.set(counted.get() + info.click_count as u32))
+        .on_click(move |info| counted.update(|n| *n += info.click_count as u32))
         .children([text("Continue")
             .size(15.0)
             .weight(700)

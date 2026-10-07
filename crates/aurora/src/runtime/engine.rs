@@ -42,6 +42,8 @@ impl Engine {
         width: u32,
         height: u32,
     ) -> Self {
+        // The initial reconcile runs builders, which may read captured signals.
+        let _ambient = crate::reactive::ambient_guard(&runtime);
         let (mut arena, mut router) = (TreeArena::new(), SubscriberRouter::new());
         let root_key = root.key();
         let root_id = reconcile(&runtime, &mut arena, &mut router, None, root);
@@ -162,6 +164,7 @@ impl Engine {
 
     /// Replaces the declarative root node and marks layout dirty.
     pub fn set_root(&mut self, element: Element) {
+        let _ambient = crate::reactive::ambient_guard(&self.runtime());
         let key = element.key();
         let root = reconcile(
             &self.scheduler.runtime,
@@ -179,6 +182,10 @@ impl Engine {
     /// Runs the frame passes, committing bounds and compiling the display list scene.
     #[tracing::instrument(skip_all, fields(w = self.logical_size.0, h = self.logical_size.1))]
     pub fn frame(&mut self) -> FrameReport {
+        // Ambient for everything a frame runs: tickers, effects, post-layout
+        // callbacks, scheduler rebuilds, and component bodies. Nested guards
+        // (dispatch pushes its own below) resolve to the same runtime.
+        let _ambient = crate::reactive::ambient_guard(&self.runtime());
         let (w, h) = self.logical_size;
         self.frame_counter = self.frame_counter.wrapping_add(1);
 
@@ -429,6 +436,17 @@ impl Engine {
     /// Accesses the underlying reactive execution runtime handle.
     pub fn runtime(&self) -> Rc<RefCell<ReactiveRuntime>> {
         Rc::clone(&self.scheduler.runtime)
+    }
+
+    /// Runs `f` with this engine's runtime ambient.
+    ///
+    /// Needed for signal access outside driven regions (frames, dispatch, mounts):
+    /// test assertions, setup writes, event-loop callbacks. Inside driven regions
+    /// the engine pushes its own guard, so this is only for external code — and
+    /// only when another engine was active more recently on this thread.
+    pub fn guard<R>(&self, f: impl FnOnce() -> R) -> R {
+        let _guard = crate::reactive::ambient_guard(&self.runtime());
+        f()
     }
 
     /// Builds a component context bound to this engine's runtime.

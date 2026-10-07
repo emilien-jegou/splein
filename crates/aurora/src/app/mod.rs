@@ -91,7 +91,8 @@ impl AppConfig {
     /// Supplies the constructor for the selected backend.
     ///
     /// The engine crate implements no rasterizer, so the factory comes from a backend
-    /// crate: `aurora_tiny_skia::create_backend` or `aurora_vello::create_backend`.
+    /// crate: `aurora_tiny_skia::create_backend`, `aurora_vello::create_backend`,
+    /// or `aurora_vello::create_cpu_backend` (for `RenderBackend::VelloCpu`).
     pub fn backend_factory(mut self, factory: BackendFactory) -> Self {
         self.backend_factory = Some(factory);
         self
@@ -143,9 +144,10 @@ impl AppConfig {
         });
 
         let backend: Box<dyn Backend> = match self.backend {
-            RenderBackend::Vello => {
+            RenderBackend::Vello | RenderBackend::VelloCpu => {
                 let factory = self.backend_factory.expect(
-                    "no GPU backend factory: pass `aurora_vello::create_backend` \
+                    "no Vello backend factory: pass `aurora_vello::create_backend` \
+                     (or `aurora_vello::create_cpu_backend` for `RenderBackend::VelloCpu`) \
                      via `AppConfig::backend_factory`",
                 );
                 factory(

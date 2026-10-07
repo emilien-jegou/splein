@@ -53,6 +53,12 @@ impl<T> IntoProp<T> for DynamicProp<T> {
     }
 }
 
+impl IntoProp<bool> for bool {
+    fn into_prop(self) -> DynamicProp<bool> {
+        DynamicProp::Static(self)
+    }
+}
+
 impl IntoProp<f32> for f32 {
     fn into_prop(self) -> DynamicProp<f32> {
         DynamicProp::Static(self)
