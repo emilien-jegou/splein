@@ -227,7 +227,21 @@ fn render_rect(
     if let Some(fill) = &a.fill {
         if let Some(paint) = build_paint(fill, op * a.opacity) {
             if matches!(a.radius, Radius::Scalar(rad) if rad <= 0.0) {
-                if let Some(sk) = tiny_skia::Rect::from_xywh(r.x, r.y, r.width, r.height) {
+                // 1px hairlines at fractional positions split coverage over
+                // two rows (full-width faint double line). Snap thin
+                // translation-only rects to integer pixels so they stay crisp.
+                let (mut rx, mut ry, mut rw, mut rh) = (r.x, r.y, r.width, r.height);
+                if !tx.has_skew() && !tx.has_scale() {
+                    if rh <= 1.5 {
+                        ry = ry.round();
+                        rh = rh.round().max(1.0);
+                    }
+                    if rw <= 1.5 {
+                        rx = rx.round();
+                        rw = rw.round().max(1.0);
+                    }
+                }
+                if let Some(sk) = tiny_skia::Rect::from_xywh(rx, ry, rw, rh) {
                     t.fill_rect(sk, &paint, tx, clip);
                 }
             } else {

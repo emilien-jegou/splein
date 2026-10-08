@@ -136,7 +136,68 @@ pub(crate) fn extract_lines(
         }
     }
 
+    // Collapse phantom blank lines: Parley can emit an empty visual line
+    // around explicit breaks, so one `\n` in the source paints as two line
+    // boxes (a double return). Runs of blanks collapse to one, and a
+    // trailing empty line without a trailing newline is dropped. Wrapped
+    // lines (all non-empty) are untouched. Re-stack on kept index so
+    // selection math (`y / line_height`) stays exact; per-line baseline
+    // offsets are preserved via the `baselines` side table.
+    {
+        let ends_with_break = text.ends_with('\n');
+        let mut kept: Vec<ShapedLine> = Vec::with_capacity(lines.len());
+        let mut kept_off: Vec<f32> = Vec::with_capacity(lines.len());
+        let mut prev_empty = false;
+        for line in lines.into_iter() {
+            let empty = line.glyphs.is_empty();
+            // Baseline offset within its uniform box, captured before filter.
+            let base_off = line_off(line_height, &line);
+            if empty {
+                if prev_empty {
+                    continue;
+                }
+                prev_empty = true;
+            } else {
+                prev_empty = false;
+            }
+            kept_off.push(base_off);
+            kept.push(line);
+        }
+        if !ends_with_break {
+            while kept.last().is_some_and(|l| l.glyphs.is_empty()) {
+                kept.pop();
+                kept_off.pop();
+            }
+        }
+        for (idx, (line, off)) in kept.iter_mut().zip(kept_off.iter()).enumerate() {
+            let new_top = idx as f32 * line_height;
+            let old_top = line.baseline - off;
+            let dy = new_top - old_top;
+            if dy != 0.0 {
+                for g in &mut line.glyphs {
+                    g.point.y += dy;
+                }
+            }
+            line.baseline = new_top + off;
+            line.height = line_height;
+        }
+        // Recompute max width after filtering (unchanged for wrapped text).
+        max_line_w = kept.iter().fold(0.0f32, |m, l| m.max(l.width));
+        lines = kept;
+    }
+
     (lines, max_line_w)
+}
+
+/// Offset of `baseline` inside its uniform line box.
+fn line_off(line_height: f32, line: &ShapedLine) -> f32 {
+    let lh = line_height.max(1e-6);
+    let off = line.baseline - (line.baseline / lh).floor() * lh;
+    if off.is_finite() && off >= 0.0 && off <= line_height {
+        off
+    } else {
+        line_height * 0.8
+    }
 }
 
 /// Raster size quantum: 1/64px, as raw bits for cache identity.

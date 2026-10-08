@@ -3,7 +3,7 @@
 use aurora::foundation::{Color, Point};
 use aurora::text::{TextContext, TextLayout};
 use tiny_skia::{
-    FilterQuality, Mask, Pixmap, PixmapMut, PixmapPaint, Point as SkiaPoint, PremultipliedColorU8,
+    FilterQuality, Mask, Pixmap, PixmapMut, PixmapPaint, PremultipliedColorU8,
     Transform,
 };
 
@@ -90,12 +90,12 @@ fn split_phase_y(pos: f32) -> (i32, f32) {
 
 /// Blend two adjacent phase-bin coverages onto a common grid.
 ///
-/// `a` is the bitmap for bin `q` placed at `(ax, ay)`, `b` the bitmap for the
-/// next bin up placed at `(bx, by)` — same origin for bins 0..3, one pixel
-/// right when wrapping from bin 3 to bin 0. Returns the union origin and size;
-/// `out` is resized to hold the blended coverage (`a*w0 + b*w1`, rounded).
-/// Out-of-range reads (empty bitmaps, ragged edges) contribute zero.
+/// Kept for reference / animated cross-fade experiments; the aligned path no
+/// longer blends (it snaps to the nearest bin) because alpha-mixing two
+/// integer placements leaves half-intensity edge tears.
+#[allow(dead_code)]
 fn blend_phase_coverages(
+    // `a` is the bitmap for bin `q` placed at `(ax, ay)`, `b` the bitmap
     a: &[u8],
     aw: u32,
     ah: u32,
@@ -140,16 +140,22 @@ fn blend_phase_coverages(
 }
 
 
-/// Renders glyph runs snapped to the pixel grid for translation-only transforms.
+/// Renders glyph runs for translation-only transforms.
+///
+/// Axis-split phase + exact filtered placement: X rasterizes at its nearest
+/// quarter bin (phase-matched grid-fit stems stay whole, residual <=1/8px),
+/// Y rasterizes frozen at bin 0 (no per-eighth variant swaps re-quantizing
+/// horizontal features mid-motion). Both axes are placed at the exact
+/// fractional pen via bilinear `draw_pixmap`. At integer pens residuals are 0
+/// and output matches the old exact integer blit.
 fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: TextRenderParams) {
-    let pw = pixmap.width();
-    let ph = pixmap.height();
-    let pixels = pixmap.pixels_mut();
-
     let ink_r = (params.color.r * 255.0).round() as u8;
     let ink_g = (params.color.g * 255.0).round() as u8;
     let ink_b = (params.color.b * 255.0).round() as u8;
     let total_opacity = params.opacity * params.color.a;
+    if total_opacity <= 0.0 {
+        return;
+    }
 
     // Coverage-to-alpha tables for this run: small text composites raw
     // coverage (density carries grid-fit stems), display type folds the
@@ -161,119 +167,96 @@ fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: T
         std::array::from_fn(|i| ((i as u32 * opacity_q + 127) / 255) as u8);
     let gamma_lut: [u8; 256] =
         std::array::from_fn(|i| ((GAMMA_LUT[i] as u32 * opacity_q + 127) / 255) as u8);
-    // Mask dimensions hoisted out of the per-pixel loop below.
-    let (clip_w, clip_h) = match params.clip {
-        Some(mask) => (mask.width(), mask.height()),
-        None => (0, 0),
+    let paint = PixmapPaint {
+        opacity: 1.0,
+        quality: FilterQuality::Bilinear,
+        ..Default::default()
     };
 
-    // Reused staging buffers for glyph coverage. `raster_glyph` results are
-    // copied out so blitting never borrows from the cache; `cov10` stages
-    // the upper X endpoint, `blended` the combination.
-    let mut cov00 = Vec::with_capacity(256);
-    let mut cov10 = Vec::with_capacity(256);
-    let mut blended = Vec::new();
+    // Reused staging buffer for glyph coverage, copied out from under the
+    // font-system locks like the transformed path does.
+    let mut cov = Vec::with_capacity(256);
 
     for line in &params.layout.lines {
-        // X cross-fades the two adjacent quarter-pixel bins around the true
-        // pen, so horizontal motion is continuous; Y snaps to the nearest
-        // eighth (single crisp bitmap, 1/8px steps like Chrome/Skia).
-        // Fully blending Y as well softened static text measurably (the Y
-        // fraction is almost never exactly zero), while eighth-pixel Y
-        // steps hide in motion as whole-pixel ones never do.
-        //
-        // Small text composites linear coverage, display type gamma-corrected
-        // (see the LUTs above); the line's own size picks the table.
         let alpha_lut: &[u8; 256] = if line.font_size <= aurora::text::SMALL_TEXT_HINT_CUTOFF_PX {
             &linear_lut
         } else {
             &gamma_lut
         };
         for g in &line.glyphs {
-            let mut pt = SkiaPoint::from_xy(
-                params.origin.x + line.align_offset + g.point.x,
-                params.origin.y + g.point.y,
-            );
-            params.transform.map_point(&mut pt);
-            let (base_x, frac4x) = split_phase(pt.x);
-            let binx = frac4x.floor().min(3.0) as u8;
-            let tx = frac4x - binx as f32;
-            // Y snaps to the nearest eighth (see PHASE_BINS_Y): single crisp
-            // bitmap, 1/8px steps in motion.
-            let (ybase, yfrac8) = split_phase_y(pt.y);
-            let yq = yfrac8.round() as i32;
-            let (base_y, biny) = (
-                ybase + yq.div_euclid(PHASE_BINS_Y as i32),
-                yq.rem_euclid(PHASE_BINS_Y as i32) as u8,
-            );
-            // Upper X bin wraps to bin 0 of the next pixel past 3/4.
-            let binx1 = if binx < 3 { binx + 1 } else { 0 };
-            let shiftx = i32::from(binx == 3);
+            // Layout-space pen; the transform here is translation-only
+            // (caller routes skew/scale elsewhere), so the device pen is the
+            // layout pen plus the transform translation. X picks the nearest
+            // quarter bin, Y stays frozen at bin 0 (see below); placement is
+            // expressed back in layout space so `draw_pixmap` transforms once.
+            let pen_lx = params.origin.x + line.align_offset + g.point.x;
+            let pen_ly = params.origin.y + g.point.y;
+            let (ttx, tty) = (params.transform.tx, params.transform.ty);
+            let dev_x = pen_lx + ttx;
+            let dev_y = pen_ly + tty;
+            // X: nearest quarter bin (wrap bin 4 to bin 0 of the next pixel);
+            // the swash x-offset is baked into the bitmap, placement backs it
+            // out so the filter carries <=1/8px.
+            let (base_x, frac4x) = split_phase(dev_x);
+            let q = (frac4x + 0.5).floor() as i32;
+            let (_snap_x, binx) = if q >= PHASE_BINS as i32 {
+                (base_x + 1, 0u8)
+            } else {
+                (base_x, q.max(0) as u8)
+            };
+            // Y: frozen at bin 0 — one constant bitmap per glyph, the full
+            // fraction rides the filter. Per-eighth variants re-quantize
+            // horizontal features on different frames per letter (morph).
+            let biny = 0u8;
 
-            // Fetch the base corner always; the upper X corner only when
-            // the pen is actually fractional on that axis.
-            let mut p00: Option<(i32, i32, u32, u32)> = None;
+            // Bitmap baked with (binx*0.25, 0); exact placement glides it.
+            // Device origin = exact pen minus baked offset plus bitmap origin,
+            // expressed back in layout space so `draw_pixmap` transforms once.
+            let mut placed: Option<(f32, f32, u32, u32)> = None;
             text_ctx.raster_glyph(
                 g.cache_key,
                 binx | (biny << 2),
                 |img_opt| {
                     if let Some(img) = img_opt {
-                        cov00.clear();
-                        cov00.extend_from_slice(img.data);
-                        p00 = Some((
-                            base_x + img.left,
-                            base_y - img.top,
+                        cov.clear();
+                        cov.extend_from_slice(img.data);
+                        placed = Some((
+                            dev_x - binx as f32 * 0.25 + img.left as f32 - ttx,
+                            dev_y - img.top as f32 - tty,
                             img.width,
                             img.height,
                         ));
                     }
                 },
             );
-            let Some((x00, y00, w00, h00)) = p00 else {
+            let Some((gx, gy, w, h)) = placed else {
                 continue;
             };
-            // Exact X bin hit: single crisp blit, no blend.
-            if tx == 0.0 {
-                blit_glyph(
-                    pixels, pw, ph, &cov00, w00, h00, x00, y00,
-                    ink_r, ink_g, ink_b, &alpha_lut, params.clip, clip_w, clip_h,
-                );
+            if w == 0 || h == 0 || cov.len() < (w * h) as usize {
                 continue;
             }
-            let mut p10: Option<(i32, i32, u32, u32)> = None;
-            text_ctx.raster_glyph(
-                g.cache_key,
-                binx1 | (biny << 2),
-                |img_opt| {
-                    if let Some(img) = img_opt {
-                        cov10.clear();
-                        cov10.extend_from_slice(img.data);
-                        p10 = Some((
-                            base_x + shiftx + img.left,
-                            base_y - img.top,
-                            img.width,
-                            img.height,
-                        ));
-                    }
-                },
-            );
-            let Some((x10, y10, w10, h10)) = p10 else {
-                // Upper variant missing (evicted/oversized): hold the lower
-                // bin for this frame rather than dropping the glyph.
-                blit_glyph(
-                    pixels, pw, ph, &cov00, w00, h00, x00, y00,
-                    ink_r, ink_g, ink_b, &alpha_lut, params.clip, clip_w, clip_h,
-                );
+            let Some(mut glyph) = Pixmap::new(w, h) else {
                 continue;
             };
-            let (ux, uy, uw, uh) = blend_phase_coverages(
-                &cov00, w00, h00, x00, y00, 1.0 - tx,
-                &cov10, w10, h10, x10, y10, tx,
-                &mut blended,
-            );
-            blit_glyph(
-                pixels, pw, ph, &blended, uw, uh, ux, uy,
-                ink_r, ink_g, ink_b, &alpha_lut, params.clip, clip_w, clip_h,
+            for (dst, &c) in glyph.pixels_mut().iter_mut().zip(cov.iter()) {
+                let a = alpha_lut[c as usize];
+                if a == 0 {
+                    continue;
+                }
+                let tint = |ch: u8| ((ch as u32 * a as u32 + 127) / 255) as u8;
+                if let Some(px) =
+                    PremultipliedColorU8::from_rgba(tint(ink_r), tint(ink_g), tint(ink_b), a)
+                {
+                    *dst = px;
+                }
+            }
+            pixmap.draw_pixmap(
+                0,
+                0,
+                glyph.as_ref(),
+                &paint,
+                params.transform.pre_translate(gx, gy),
+                params.clip,
             );
         }
     }
@@ -312,7 +295,12 @@ fn render_text_transformed(
             // is rasterized at the right phase. Matches the aligned path.
             let pen_x = params.origin.x + line.align_offset + g.point.x;
             let (base_x, frac4x) = split_phase(pen_x);
-            let binx = frac4x.floor().min(3.0) as u8;
+            let q = (frac4x + 0.5).floor() as i32;
+            let (snap_x, binx) = if q >= PHASE_BINS as i32 {
+                (base_x + 1, 0u8)
+            } else {
+                (base_x, q.max(0) as u8)
+            };
             let pen_y = params.origin.y + g.point.y;
             let (ybase, yfrac8) = split_phase_y(pen_y);
             let yq = yfrac8.round() as i32;
@@ -326,9 +314,11 @@ fn render_text_transformed(
                 if let Some(img) = img_opt {
                     coverage.clear();
                     coverage.extend_from_slice(img.data);
+                    // Same convention as the aligned path: the swash offset
+                    // is baked into the bitmap, placement is floor + left.
                     placed = Some((
-                        base_x as f32 + binx as f32 * 0.25 + img.left as f32,
-                        base_y as f32 + biny as f32 * 0.125 - img.top as f32,
+                        snap_x as f32 + img.left as f32,
+                        base_y as f32 - img.top as f32,
                         img.width,
                         img.height,
                     ));
@@ -367,6 +357,9 @@ fn render_text_transformed(
     }
 }
 
+/// Integer blit kept for the unit test below; the live aligned path now
+/// places via filtered `draw_pixmap` (Plan B) instead.
+#[allow(dead_code)]
 fn blit_glyph(
     pixels: &mut [PremultipliedColorU8],
     pw: u32,
