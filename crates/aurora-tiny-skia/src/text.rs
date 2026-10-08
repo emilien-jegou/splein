@@ -142,18 +142,20 @@ fn blend_phase_coverages(
 
 /// Renders glyph runs for translation-only transforms.
 ///
-/// Axis-split phase + exact filtered placement: X rasterizes at its nearest
-/// quarter bin (phase-matched grid-fit stems stay whole, residual <=1/8px),
-/// Y rasterizes frozen at bin 0 (no per-eighth variant swaps re-quantizing
-/// horizontal features mid-motion). Both axes are placed at the exact
-/// fractional pen via bilinear `draw_pixmap`. At integer pens residuals are 0
-/// and output matches the old exact integer blit.
+/// Axis-split phase + owned subpixel blend: X rasterizes at its nearest
+/// quarter bin (phase-matched grid-fit stems stay whole), Y rasterizes frozen
+/// at bin 0 (no per-eighth variant swaps re-quantizing horizontal features
+/// mid-motion). The fractional remainder is blended explicitly into the
+/// scratch buffer (bilinear over the coverage alphas) and placed at integer
+/// pixels — no fractional draw call exists anywhere in this path, so no
+/// backend filtering behavior can quantize, snap, or otherwise reshape one
+/// axis differently from the other. At integer pens output matches the old
+/// exact integer blit.
 ///
-/// Cost notes (all output-identical): the ink+tint fold into one
-/// premultiplied table per run (no per-pixel mults), one grow-only scratch
-/// pixmap is reused across glyphs (no per-glyph alloc), coverage is tinted
-/// straight out of the cache handle (no staging copy), and exactly-integral
-/// pens take the integer `blit_glyph` fast path (no tint/filter at all).
+/// Cost notes (all output-identical): alphas fold opacity/gamma once per run,
+/// one grow-only scratch pixmap is reused across glyphs (no per-glyph alloc),
+/// coverage is blended straight out of the cache handle (no staging copy),
+/// and exactly-integral pens take the integer `blit_glyph` fast path.
 fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: TextRenderParams) {
     let ink_r = (params.color.r * 255.0).round() as u8;
     let ink_g = (params.color.g * 255.0).round() as u8;
@@ -173,24 +175,11 @@ fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: T
         std::array::from_fn(|i| ((i as u32 * opacity_q + 127) / 255) as u8);
     let gamma_lut: [u8; 256] =
         std::array::from_fn(|i| ((GAMMA_LUT[i] as u32 * opacity_q + 127) / 255) as u8);
-    // Premultiplied ink tables: `tint(c) = c*a/255 <= a` always holds, so
-    // every non-zero entry validates and the per-pixel loop below is a table
-    // lookup plus store. `None` marks fully transparent coverage.
-    let tint_with = |lut: &[u8; 256]| -> [Option<PremultipliedColorU8>; 256] {
-        std::array::from_fn(|i| {
-            let a = lut[i];
-            if a == 0 {
-                return None;
-            }
-            let tint = |ch: u8| ((ch as u32 * a as u32 + 127) / 255) as u8;
-            PremultipliedColorU8::from_rgba(tint(ink_r), tint(ink_g), tint(ink_b), a)
-        })
-    };
-    let linear_px = tint_with(&linear_lut);
-    let gamma_px = tint_with(&gamma_lut);
     let paint = PixmapPaint {
         opacity: 1.0,
-        quality: FilterQuality::Bilinear,
+        // Nearest: placement below is always integral (fractions are blended
+        // into the scratch by hand), so no backend interpolation is wanted.
+        quality: FilterQuality::Nearest,
         ..Default::default()
     };
     // Mask dimensions hoisted out of the per-glyph path.
@@ -201,7 +190,7 @@ fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: T
 
     // Grow-only scratch glyph pixmap reused across the run: same dims hit the
     // fill path, larger dims reallocate once. Never borrowed across the cache
-    // closure boundary issues below — tinting happens inside the closure off
+    // closure boundary issues below — blending happens inside the closure off
     // the cache handle, drawing happens after it returns.
     let mut scratch: Option<Pixmap> = None;
 
@@ -211,12 +200,6 @@ fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: T
         } else {
             &gamma_lut
         };
-        let px_lut: &[Option<PremultipliedColorU8>; 256] =
-            if line.font_size <= aurora::text::SMALL_TEXT_HINT_CUTOFF_PX {
-                &linear_px
-            } else {
-                &gamma_px
-            };
         for g in &line.glyphs {
             // Layout-space pen; the transform here is translation-only
             // (caller routes skew/scale elsewhere), so the device pen is the
@@ -243,11 +226,12 @@ fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: T
             // horizontal features on different frames per letter (morph).
             let biny = 0u8;
 
-            // Bitmap baked with (binx*0.25, 0); exact placement glides it.
-            // Device origin = exact pen minus baked offset plus bitmap origin,
-            // expressed back in layout space so `draw_pixmap` transforms once.
-            // Exactly-integral pens skip tint + filter via `blit_glyph`.
-            let mut placed: Option<(f32, f32, u32, u32)> = None;
+            // Bitmap baked with (binx*0.25, 0); the exact device origin is
+            // the pen minus baked offset plus bitmap origin. The integer
+            // part places; the fraction is blended explicitly below, so the
+            // draw call below never carries a fraction on either axis.
+            // Exactly-integral pens skip tint + blend via `blit_glyph`.
+            let mut placed: Option<(i32, i32, u32, u32)> = None;
             let mut drawn = false;
             text_ctx.raster_glyph(
                 g.cache_key,
@@ -284,25 +268,65 @@ fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: T
                         drawn = true;
                         return;
                     }
-                    // Tint straight out of the cache handle into the reused
-                    // scratch (no staging copy); draw happens after the
-                    // closure returns and the handle is released.
+                    // Owned bilinear shift of the coverage alphas into the
+                    // reused scratch (no staging copy, no backend filtering):
+                    // dest (i, j) samples source at (i - fx, j - fy), zero
+                    // outside the bitmap. Scratch is one pixel wider/taller
+                    // than the source to hold the shifted footprint.
+                    let ix = gx_exact.floor() as i32;
+                    let iy = gy_exact.floor() as i32;
+                    let (fx, fy) = (gx_exact - ix as f32, gy_exact - iy as f32);
+                    let (sw, sh) = (w + 1, h + 1);
                     let reuse = scratch.as_ref().is_some_and(|s| {
-                        s.width() == w && s.height() == h
+                        s.width() == sw && s.height() == sh
                     });
                     if !reuse {
-                        scratch = Pixmap::new(w, h);
+                        scratch = Pixmap::new(sw, sh);
                     }
                     let Some(s) = scratch.as_mut() else {
                         return;
                     };
                     s.fill(tiny_skia::Color::TRANSPARENT);
-                    for (dst, &c) in s.pixels_mut().iter_mut().zip(img.data.iter()) {
-                        if let Some(px) = px_lut[c as usize] {
-                            *dst = px;
+                    let cov_at = |x: i32, y: i32| -> f32 {
+                        if x < 0 || y < 0 || x >= w as i32 || y >= h as i32 {
+                            0.0
+                        } else {
+                            alpha_lut[img.data[y as usize * w as usize + x as usize] as usize]
+                                as f32
+                        }
+                    };
+                    let dst = s.pixels_mut();
+                    for j in 0..sh as i32 {
+                        let sy = j as f32 - fy;
+                        let y0 = sy.floor() as i32;
+                        let wy = sy - y0 as f32;
+                        for i in 0..sw as i32 {
+                            let sx = i as f32 - fx;
+                            let x0 = sx.floor() as i32;
+                            let wx = sx - x0 as f32;
+                            let a = (cov_at(x0, y0) * (1.0 - wx)
+                                + cov_at(x0 + 1, y0) * wx)
+                                * (1.0 - wy)
+                                + (cov_at(x0, y0 + 1) * (1.0 - wx)
+                                    + cov_at(x0 + 1, y0 + 1) * wx)
+                                    * wy;
+                            let ai = a.round() as u8;
+                            if ai == 0 {
+                                continue;
+                            }
+                            let tint =
+                                |ch: u8| ((ch as u32 * ai as u32 + 127) / 255) as u8;
+                            if let Some(px) = PremultipliedColorU8::from_rgba(
+                                tint(ink_r),
+                                tint(ink_g),
+                                tint(ink_b),
+                                ai,
+                            ) {
+                                dst[j as usize * sw as usize + i as usize] = px;
+                            }
                         }
                     }
-                    placed = Some((gx_exact - ttx, gy_exact - tty, w, h));
+                    placed = Some((ix, iy, sw, sh));
                 },
             );
             if drawn {
@@ -314,12 +338,13 @@ fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: T
             let Some(s) = scratch.as_ref() else {
                 continue;
             };
+            // Integer translate only: the backend performs no interpolation.
             pixmap.draw_pixmap(
                 0,
                 0,
                 s.as_ref(),
                 &paint,
-                params.transform.pre_translate(gx, gy),
+                params.transform.pre_translate(gx as f32 - ttx, gy as f32 - tty),
                 params.clip,
             );
         }

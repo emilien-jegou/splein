@@ -1,7 +1,12 @@
-// Single responsibility: Minimal slow-drift text repro for jitter triage.
+// Single responsibility: Slow-drift text repro for subpixel animation triage.
 //
-// Three identical runs drift very slowly (~0.25px/frame): X only, Y only,
-// X+Y diagonal. Human judges shimmer at the ease-out tail; no test asserts.
+// Four runs drift at ~15px/s (subpixel per frame) to judge animation
+// smoothness: X-only, Y-only and diagonal at 15px (hinted outlines), plus
+// Y-only at 22px (unhinted, above the 16px hint cutoff). The rasterizer uses
+// an axis-split phase policy — X renders at its nearest quarter-pixel bin,
+// Y frozen at bin zero — with the fractional remainder blended explicitly
+// and placed at integer pixels, so motion glides without morphing and rest
+// frames stay crisp. Human judges shimmer; no test asserts.
 
 #[path = "common/mod.rs"]
 mod common;
@@ -51,7 +56,7 @@ pub fn Page() -> impl IntoElement {
     page(
         "TEXT · SMOOTH DRIFT",
         "Slow text repro.",
-        "15px rows (hinted) drift on X, Y, diagonal; 22px row (unhinted) drifts on Y. If only hinted Y morphs, the hinter is the culprit.",
+        "Four runs drift at ~15px/s: X, Y and diagonal at 15px (hinted), Y at 22px (unhinted). Step a frame at a time (F8, then '.') — each press advances 1/8px, so every press should visibly blend, never jump. Rest frames stay pixel-crisp.",
         content(
             group()
                 .direction(Direction::Vertical)
