@@ -148,6 +148,12 @@ fn blend_phase_coverages(
 /// horizontal features mid-motion). Both axes are placed at the exact
 /// fractional pen via bilinear `draw_pixmap`. At integer pens residuals are 0
 /// and output matches the old exact integer blit.
+///
+/// Cost notes (all output-identical): the ink+tint fold into one
+/// premultiplied table per run (no per-pixel mults), one grow-only scratch
+/// pixmap is reused across glyphs (no per-glyph alloc), coverage is tinted
+/// straight out of the cache handle (no staging copy), and exactly-integral
+/// pens take the integer `blit_glyph` fast path (no tint/filter at all).
 fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: TextRenderParams) {
     let ink_r = (params.color.r * 255.0).round() as u8;
     let ink_g = (params.color.g * 255.0).round() as u8;
@@ -167,15 +173,37 @@ fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: T
         std::array::from_fn(|i| ((i as u32 * opacity_q + 127) / 255) as u8);
     let gamma_lut: [u8; 256] =
         std::array::from_fn(|i| ((GAMMA_LUT[i] as u32 * opacity_q + 127) / 255) as u8);
+    // Premultiplied ink tables: `tint(c) = c*a/255 <= a` always holds, so
+    // every non-zero entry validates and the per-pixel loop below is a table
+    // lookup plus store. `None` marks fully transparent coverage.
+    let tint_with = |lut: &[u8; 256]| -> [Option<PremultipliedColorU8>; 256] {
+        std::array::from_fn(|i| {
+            let a = lut[i];
+            if a == 0 {
+                return None;
+            }
+            let tint = |ch: u8| ((ch as u32 * a as u32 + 127) / 255) as u8;
+            PremultipliedColorU8::from_rgba(tint(ink_r), tint(ink_g), tint(ink_b), a)
+        })
+    };
+    let linear_px = tint_with(&linear_lut);
+    let gamma_px = tint_with(&gamma_lut);
     let paint = PixmapPaint {
         opacity: 1.0,
         quality: FilterQuality::Bilinear,
         ..Default::default()
     };
+    // Mask dimensions hoisted out of the per-glyph path.
+    let (clip_w, clip_h) = match params.clip {
+        Some(mask) => (mask.width(), mask.height()),
+        None => (0, 0),
+    };
 
-    // Reused staging buffer for glyph coverage, copied out from under the
-    // font-system locks like the transformed path does.
-    let mut cov = Vec::with_capacity(256);
+    // Grow-only scratch glyph pixmap reused across the run: same dims hit the
+    // fill path, larger dims reallocate once. Never borrowed across the cache
+    // closure boundary issues below — tinting happens inside the closure off
+    // the cache handle, drawing happens after it returns.
+    let mut scratch: Option<Pixmap> = None;
 
     for line in &params.layout.lines {
         let alpha_lut: &[u8; 256] = if line.font_size <= aurora::text::SMALL_TEXT_HINT_CUTOFF_PX {
@@ -183,6 +211,12 @@ fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: T
         } else {
             &gamma_lut
         };
+        let px_lut: &[Option<PremultipliedColorU8>; 256] =
+            if line.font_size <= aurora::text::SMALL_TEXT_HINT_CUTOFF_PX {
+                &linear_px
+            } else {
+                &gamma_px
+            };
         for g in &line.glyphs {
             // Layout-space pen; the transform here is translation-only
             // (caller routes skew/scale elsewhere), so the device pen is the
@@ -212,48 +246,78 @@ fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: T
             // Bitmap baked with (binx*0.25, 0); exact placement glides it.
             // Device origin = exact pen minus baked offset plus bitmap origin,
             // expressed back in layout space so `draw_pixmap` transforms once.
+            // Exactly-integral pens skip tint + filter via `blit_glyph`.
             let mut placed: Option<(f32, f32, u32, u32)> = None;
+            let mut drawn = false;
             text_ctx.raster_glyph(
                 g.cache_key,
                 binx | (biny << 2),
                 |img_opt| {
-                    if let Some(img) = img_opt {
-                        cov.clear();
-                        cov.extend_from_slice(img.data);
-                        placed = Some((
-                            dev_x - binx as f32 * 0.25 + img.left as f32 - ttx,
-                            dev_y - img.top as f32 - tty,
-                            img.width,
-                            img.height,
-                        ));
+                    let Some(img) = img_opt else {
+                        return;
+                    };
+                    let (w, h) = (img.width, img.height);
+                    if w == 0 || h == 0 || img.data.len() < (w * h) as usize {
+                        return;
                     }
+                    let gx_exact = dev_x - binx as f32 * 0.25 + img.left as f32;
+                    let gy_exact = dev_y - img.top as f32;
+                    if gx_exact.fract() == 0.0 && gy_exact.fract() == 0.0 {
+                        let (pw, ph) = (pixmap.width(), pixmap.height());
+                        blit_glyph(
+                            pixmap.pixels_mut(),
+                            pw,
+                            ph,
+                            img.data,
+                            w,
+                            h,
+                            gx_exact as i32,
+                            gy_exact as i32,
+                            ink_r,
+                            ink_g,
+                            ink_b,
+                            alpha_lut,
+                            params.clip,
+                            clip_w,
+                            clip_h,
+                        );
+                        drawn = true;
+                        return;
+                    }
+                    // Tint straight out of the cache handle into the reused
+                    // scratch (no staging copy); draw happens after the
+                    // closure returns and the handle is released.
+                    let reuse = scratch.as_ref().is_some_and(|s| {
+                        s.width() == w && s.height() == h
+                    });
+                    if !reuse {
+                        scratch = Pixmap::new(w, h);
+                    }
+                    let Some(s) = scratch.as_mut() else {
+                        return;
+                    };
+                    s.fill(tiny_skia::Color::TRANSPARENT);
+                    for (dst, &c) in s.pixels_mut().iter_mut().zip(img.data.iter()) {
+                        if let Some(px) = px_lut[c as usize] {
+                            *dst = px;
+                        }
+                    }
+                    placed = Some((gx_exact - ttx, gy_exact - tty, w, h));
                 },
             );
-            let Some((gx, gy, w, h)) = placed else {
-                continue;
-            };
-            if w == 0 || h == 0 || cov.len() < (w * h) as usize {
+            if drawn {
                 continue;
             }
-            let Some(mut glyph) = Pixmap::new(w, h) else {
+            let Some((gx, gy, _w, _h)) = placed else {
                 continue;
             };
-            for (dst, &c) in glyph.pixels_mut().iter_mut().zip(cov.iter()) {
-                let a = alpha_lut[c as usize];
-                if a == 0 {
-                    continue;
-                }
-                let tint = |ch: u8| ((ch as u32 * a as u32 + 127) / 255) as u8;
-                if let Some(px) =
-                    PremultipliedColorU8::from_rgba(tint(ink_r), tint(ink_g), tint(ink_b), a)
-                {
-                    *dst = px;
-                }
-            }
+            let Some(s) = scratch.as_ref() else {
+                continue;
+            };
             pixmap.draw_pixmap(
                 0,
                 0,
-                glyph.as_ref(),
+                s.as_ref(),
                 &paint,
                 params.transform.pre_translate(gx, gy),
                 params.clip,
