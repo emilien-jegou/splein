@@ -2,6 +2,8 @@
 
 use aurora::foundation::{Color, Point};
 use aurora::text::{TextContext, TextLayout};
+use rustc_hash::FxHashMap;
+use std::sync::Arc;
 use tiny_skia::{
     FilterQuality, Mask, Pixmap, PixmapMut, PixmapPaint, PremultipliedColorU8,
     Transform,
@@ -13,6 +15,11 @@ pub struct TextRenderParams<'a> {
     pub origin: Point,
     /// Shaped text layout data.
     pub layout: &'a TextLayout,
+    /// Retained layout handle, enabling the line composite cache below.
+    ///
+    /// `None` disables that cache (per-glyph path only); the transformed
+    /// backend ignores it either way.
+    pub layout_arc: Option<Arc<TextLayout>>,
     /// Text foreground color.
     pub color: Color,
     /// Global opacity multiplier.
@@ -21,6 +28,135 @@ pub struct TextRenderParams<'a> {
     pub transform: Transform,
     /// Clipping mask, if active.
     pub clip: Option<&'a Mask>,
+    /// Retained per-line composited bitmaps for static runs, if enabled.
+    pub line_cache: Option<&'a mut LineCompositeCache>,
+}
+
+/// Identity of one cached composited line: same shaped content, same ink,
+/// same device integer origin. The clip is deliberately excluded — it applies
+/// at draw time, so one entry serves every clip state.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+struct LineKey {
+    /// `Arc::as_ptr` of the retained layout: the entry holds the `Arc`, so
+    /// the address cannot be recycled under a live key.
+    ptr: usize,
+    line: u32,
+    ink: [u8; 3],
+    opacity_q: u32,
+    ox: i32,
+    oy: i32,
+}
+
+/// One composited line bitmap plus its device integer origin.
+struct LineEntry {
+    layout: Arc<TextLayout>,
+    pixmap: Pixmap,
+    used: u64,
+    bytes: usize,
+}
+
+/// Retained per-line composited bitmaps for static text runs.
+///
+/// A static run (integer device origin) composites once and replays with a
+/// single draw; any motion bypasses to the per-glyph glide path without
+/// disturbing the cache, so settling back reuses the entry. Bounded by bytes
+/// (default 8 MiB) with oldest-used eviction; a missed invalidation would
+/// paint stale text, but keys carry layout identity, ink, opacity, and exact
+/// origin, and Clip applies at draw time rather than bake time.
+pub struct LineCompositeCache {
+    entries: FxHashMap<LineKey, LineEntry>,
+    clock: u64,
+    bytes: usize,
+    cap: usize,
+}
+
+/// Default byte budget: ~180 typical body lines resident.
+pub const LINE_CACHE_CAP_BYTES: usize = 8 << 20;
+/// Bound on entry count so eviction scans stay trivial.
+const LINE_CACHE_MAX_ENTRIES: usize = 2048;
+
+impl LineCompositeCache {
+    /// Constructs an empty cache under the default budget.
+    pub fn new() -> Self {
+        Self::with_cap(LINE_CACHE_CAP_BYTES)
+    }
+
+    /// Constructs an empty cache under an explicit byte budget.
+    pub fn with_cap(cap: usize) -> Self {
+        Self {
+            entries: FxHashMap::default(),
+            clock: 0,
+            bytes: 0,
+            cap: cap.max(1),
+        }
+    }
+
+    /// Marks a composited line most-recently-used; true on hit.
+    ///
+    /// Split from [`Self::pixmap`] so the draw below never borrows the cache:
+    /// touch first, release, then read the resident pixmap.
+    fn touch(&mut self, key: &LineKey) -> bool {
+        self.clock += 1;
+        let clock = self.clock;
+        let Some(entry) = self.entries.get_mut(key) else {
+            return false;
+        };
+        // The key carries the pointer and the entry holds the `Arc`: a hit
+        // is the same object, never a recycled address.
+        debug_assert_eq!(Arc::as_ptr(&entry.layout) as usize, key.ptr);
+        entry.used = clock;
+        true
+    }
+
+    /// Accesses the resident pixmap for a key just returned by [`Self::get`].
+    fn pixmap(&self, key: &LineKey) -> Option<&Pixmap> {
+        self.entries.get(key).map(|e| &e.pixmap)
+    }
+
+    /// Stores a freshly composited line, evicting oldest-used past the budget.
+    fn insert(&mut self, key: LineKey, layout: Arc<TextLayout>, pixmap: Pixmap) {
+        let bytes = pixmap.width() as usize * pixmap.height() as usize * 4
+            + std::mem::size_of::<LineEntry>();
+        // Oversized single lines bypass rather than emptying the cache.
+        if bytes > self.cap {
+            return;
+        }
+        self.clock += 1;
+        if let Some(old) = self.entries.remove(&key) {
+            self.bytes = self.bytes.saturating_sub(old.bytes);
+        }
+        self.bytes += bytes;
+        self.entries.insert(
+            key,
+            LineEntry {
+                layout,
+                pixmap,
+                used: self.clock,
+                bytes,
+            },
+        );
+        while self.bytes > self.cap || self.entries.len() > LINE_CACHE_MAX_ENTRIES {
+            let victim = self
+                .entries
+                .iter()
+                .min_by_key(|(_, e)| e.used)
+                .map(|(k, _)| *k);
+            match victim {
+                Some(k) => {
+                    if let Some(old) = self.entries.remove(&k) {
+                        self.bytes = self.bytes.saturating_sub(old.bytes);
+                    }
+                }
+                None => break,
+            }
+        }
+    }
+}
+
+impl Default for LineCompositeCache {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// Renders shaped typography glyph runs directly into a destination pixel buffer.
@@ -188,32 +324,43 @@ fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: T
         None => (0, 0),
     };
 
-    // Grow-only scratch glyph pixmap reused across the run: same dims hit the
-    // fill path, larger dims reallocate once. Never borrowed across the cache
-    // closure boundary issues below — blending happens inside the closure off
-    // the cache handle, drawing happens after it returns.
     let mut scratch: Option<Pixmap> = None;
+    let origin = params.origin;
+    let transform = params.transform;
+    let (ttx, tty) = (transform.tx, transform.ty);
+    let clip = params.clip;
+    let layout: &TextLayout = params.layout;
+    let layout_arc = params.layout_arc;
+    let mut line_cache = params.line_cache;
 
-    for line in &params.layout.lines {
-        let alpha_lut: &[u8; 256] = if line.font_size <= aurora::text::SMALL_TEXT_HINT_CUTOFF_PX {
-            &linear_lut
-        } else {
-            &gamma_lut
-        };
+    // Paints one line's glyphs into `target`. Glyph device positions are
+    // rebased onto integral `space` for the blit fast path and onto `draw`
+    // for the draw call under `tx` with clip `clip_now`: canvas passes
+    // space (0, 0) (tile pixels), draw (ttx, tty) (layout space); the
+    // line-cache path passes the pixmap origin for both with identity and no
+    // clip (the clip applies once, when the composited line is drawn).
+    // Captures only the shaper handle, the shared scratch, and scalars —
+    // never the canvas or the line cache.
+    let mut paint_line = |target: &mut PixmapMut,
+                          line: &aurora::text::ShapedLine,
+                          alpha_lut: &[u8; 256],
+                          space_x: f32,
+                          space_y: f32,
+                          draw_x: f32,
+                          draw_y: f32,
+                          tx: Transform,
+                          clip_now: Option<&Mask>,
+                          clip_now_w: u32,
+                          clip_now_h: u32| {
         for g in &line.glyphs {
-            // Layout-space pen; the transform here is translation-only
-            // (caller routes skew/scale elsewhere), so the device pen is the
-            // layout pen plus the transform translation. X picks the nearest
-            // quarter bin, Y stays frozen at bin 0 (see below); placement is
-            // expressed back in layout space so `draw_pixmap` transforms once.
-            let pen_lx = params.origin.x + line.align_offset + g.point.x;
-            let pen_ly = params.origin.y + g.point.y;
-            let (ttx, tty) = (params.transform.tx, params.transform.ty);
-            let dev_x = pen_lx + ttx;
-            let dev_y = pen_ly + tty;
+            // Device pen = layout pen + canvas translation; positions below
+            // are rebased onto `space`/`draw`, so the same code paints canvas
+            // space and line-local space.
+            let dev_x = origin.x + line.align_offset + g.point.x + ttx;
+            let dev_y = origin.y + g.point.y + tty;
             // X: nearest quarter bin (wrap bin 4 to bin 0 of the next pixel);
             // the swash x-offset is baked into the bitmap, placement backs it
-            // out so the filter carries <=1/8px.
+            // out so the blend carries <=1/8px.
             let (base_x, frac4x) = split_phase(dev_x);
             let q = (frac4x + 0.5).floor() as i32;
             let (_snap_x, binx) = if q >= PHASE_BINS as i32 {
@@ -222,14 +369,14 @@ fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: T
                 (base_x, q.max(0) as u8)
             };
             // Y: frozen at bin 0 — one constant bitmap per glyph, the full
-            // fraction rides the filter. Per-eighth variants re-quantize
+            // fraction rides the blend. Per-eighth variants re-quantize
             // horizontal features on different frames per letter (morph).
             let biny = 0u8;
 
             // Bitmap baked with (binx*0.25, 0); the exact device origin is
             // the pen minus baked offset plus bitmap origin. The integer
-            // part places; the fraction is blended explicitly below, so the
-            // draw call below never carries a fraction on either axis.
+            // part places (rebased onto `sub`); the fraction is blended
+            // explicitly below, so no draw call carries a fraction.
             // Exactly-integral pens skip tint + blend via `blit_glyph`.
             let mut placed: Option<(i32, i32, u32, u32)> = None;
             let mut drawn = false;
@@ -247,23 +394,23 @@ fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: T
                     let gx_exact = dev_x - binx as f32 * 0.25 + img.left as f32;
                     let gy_exact = dev_y - img.top as f32;
                     if gx_exact.fract() == 0.0 && gy_exact.fract() == 0.0 {
-                        let (pw, ph) = (pixmap.width(), pixmap.height());
+                        let (pw, ph) = (target.width(), target.height());
                         blit_glyph(
-                            pixmap.pixels_mut(),
+                            target.pixels_mut(),
                             pw,
                             ph,
                             img.data,
                             w,
                             h,
-                            gx_exact as i32,
-                            gy_exact as i32,
+                            gx_exact as i32 - space_x as i32,
+                            gy_exact as i32 - space_y as i32,
                             ink_r,
                             ink_g,
                             ink_b,
                             alpha_lut,
-                            params.clip,
-                            clip_w,
-                            clip_h,
+                            clip_now,
+                            clip_now_w,
+                            clip_now_h,
                         );
                         drawn = true;
                         return;
@@ -339,15 +486,149 @@ fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: T
                 continue;
             };
             // Integer translate only: the backend performs no interpolation.
-            pixmap.draw_pixmap(
+            target.draw_pixmap(
                 0,
                 0,
                 s.as_ref(),
                 &paint,
-                params.transform.pre_translate(gx as f32 - ttx, gy as f32 - tty),
-                params.clip,
+                tx.pre_translate(gx as f32 - draw_x, gy as f32 - draw_y),
+                clip_now,
             );
         }
+    };
+    for (idx, line) in layout.lines.iter().enumerate() {
+        if line.glyphs.is_empty() {
+            continue;
+        }
+        let alpha_lut: &[u8; 256] = if line.font_size <= aurora::text::SMALL_TEXT_HINT_CUTOFF_PX {
+            &linear_lut
+        } else {
+            &gamma_lut
+        };
+        let dev_lx = origin.x + line.align_offset + ttx;
+        let dev_top = origin.y + tty + idx as f32 * line.height;
+        let integral =
+            dev_lx.fract() == 0.0 && dev_top.fract() == 0.0 && line_cache.is_some();
+        if integral {
+            // Static run at an integer origin: replay or populate the
+            // composited line. Any motion bypasses below without disturbing
+            // the cache, so settling back reuses the entry.
+            let ink = [ink_r, ink_g, ink_b];
+            // Glyph pen cluster in line-local terms; pads cover bitmap
+            // overhang (bearings, italic slant), the 1px blend footprint,
+            // and ascender/descender spill beyond the pen cluster.
+            let size = line.font_size;
+            let (pad_x, pad_t, pad_b) = (
+                (size * 0.25).ceil() as i32 + 2,
+                size.ceil() as i32 + 2,
+                (size * 0.5).ceil() as i32 + 2,
+            );
+            let (mut minx, mut maxx, mut miny, mut maxy) =
+                (f32::INFINITY, f32::NEG_INFINITY, f32::INFINITY, f32::NEG_INFINITY);
+            for g in &line.glyphs {
+                minx = minx.min(g.point.x);
+                maxx = maxx.max(g.point.x + g.advance);
+                miny = miny.min(g.point.y);
+                maxy = maxy.max(g.point.y);
+            }
+            // Line-local box top in layout terms: the uniform stack position.
+            let top_local = idx as f32 * line.height;
+            let ox = (dev_lx + minx).floor() as i32 - pad_x;
+            let oy = (dev_top + (miny - top_local)).floor() as i32 - pad_t;
+            let lsw = ((maxx - minx).ceil() as i32 + 2 * pad_x).max(1) as u32;
+            let lsh = ((maxy - miny).ceil() as i32 + pad_t + pad_b).max(1) as u32;
+            if let (Some(cache), Some(owner)) =
+                (line_cache.as_mut(), layout_arc.as_ref())
+            {
+                let key = LineKey {
+                    ptr: Arc::as_ptr(owner) as usize,
+                    line: idx as u32,
+                    ink,
+                    opacity_q,
+                    ox,
+                    oy,
+                };
+                if cache.touch(&key) {
+                    let entry = cache.pixmap(&key).expect("key just hit");
+                    let (ew, eh) = (entry.width(), entry.height());
+                    debug_assert_eq!((ew, eh), (lsw, lsh));
+                    if (ew, eh) == (lsw, lsh) {
+                        pixmap.draw_pixmap(
+                            0,
+                            0,
+                            entry.as_ref(),
+                            &paint,
+                            transform.pre_translate(
+                                ox as f32 - ttx,
+                                oy as f32 - tty,
+                            ),
+                            clip,
+                        );
+                        continue;
+                    }
+                }
+                // Miss: composite into a fresh pixmap (rare: once per static
+                // configuration), replay it this frame, and retain it.
+                let mut fresh = match Pixmap::new(lsw, lsh) {
+                    Some(p) => p,
+                    None => {
+                        paint_line(
+                            pixmap,
+                            line,
+                            alpha_lut,
+                            0.0,
+                            0.0,
+                            ttx,
+                            tty,
+                            transform,
+                            clip,
+                            clip_w,
+                            clip_h,
+                        );
+                        continue;
+                    }
+                };
+                {
+                    let mut fresh_mut = fresh.as_mut();
+                    paint_line(
+                        &mut fresh_mut,
+                        line,
+                        alpha_lut,
+                        ox as f32,
+                        oy as f32,
+                        ox as f32,
+                        oy as f32,
+                        Transform::identity(),
+                        None,
+                        0,
+                        0,
+                    );
+                }
+                pixmap.draw_pixmap(
+                    0,
+                    0,
+                    fresh.as_ref(),
+                    &paint,
+                    transform.pre_translate(ox as f32 - ttx, oy as f32 - tty),
+                    clip,
+                );
+                cache.insert(key, Arc::clone(owner), fresh);
+                continue;
+            }
+        }
+        paint_line(
+            pixmap,
+            line,
+            alpha_lut,
+            0.0,
+            0.0,
+            ttx,
+            tty,
+            transform,
+            clip,
+            clip_w,
+            clip_h,
+        );
     }
 }
 

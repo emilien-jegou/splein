@@ -21,7 +21,7 @@ pub mod testing;
 pub use cpu_backend::CpuBackend;
 pub use raster::{HeadlessFrame, HeadlessRaster};
 pub use renderer::TinySkiaRenderer;
-pub use text::{render_text, TextRenderParams};
+pub use text::{render_text, LineCompositeCache, TextRenderParams};
 
 use std::sync::Arc;
 use winit::window::Window;

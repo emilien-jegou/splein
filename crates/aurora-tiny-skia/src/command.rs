@@ -10,7 +10,7 @@ use crate::shader::build_paint;
 use crate::shadow::ShadowRasterizer;
 use crate::stroke::render_stroke;
 use crate::svg::SvgCache;
-use crate::text::{render_text, TextRenderParams};
+use crate::text::{render_text, LineCompositeCache, TextRenderParams};
 use aurora::scene::command::SceneCommand;
 use aurora::text::TextContext;
 
@@ -23,6 +23,7 @@ pub struct CommandContext<'a> {
     pub shadow_rasterizer: &'a mut ShadowRasterizer,
     pub tx_stack: &'a mut Vec<SkiaTransform>,
     pub opacity_stack: &'a mut Vec<f32>,
+    pub line_cache: &'a mut LineCompositeCache,
 }
 
 /// Executes a list of scene commands onto a destination scratch pixmap tile.
@@ -139,10 +140,12 @@ pub fn execute_commands(
                     TextRenderParams {
                         origin: *origin,
                         layout,
+                        layout_arc: Some(std::sync::Arc::clone(layout)),
                         color: *color,
                         opacity: cur_op,
                         transform: cur_tx,
                         clip: ctx.clip_stack.current(),
+                        line_cache: Some(&mut *ctx.line_cache),
                     },
                 );
             }

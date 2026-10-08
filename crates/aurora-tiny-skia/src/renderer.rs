@@ -7,6 +7,7 @@ use aurora::render::error::BackendError;
 use crate::clip::ClipStack;
 use crate::command::{execute_commands, CommandContext};
 use crate::image::ImageCache;
+use crate::text::LineCompositeCache;
 use crate::shadow::ShadowRasterizer;
 use crate::svg::SvgCache;
 use aurora::scene::scene::Scene;
@@ -20,6 +21,7 @@ pub struct TinySkiaRenderer {
     svg_cache: SvgCache,
     image_cache: ImageCache,
     shadow_rasterizer: ShadowRasterizer,
+    line_cache: LineCompositeCache,
     tx_stack: Vec<SkiaTransform>,
     opacity_stack: Vec<f32>,
     scratch_pixmap: Option<Pixmap>,
@@ -37,6 +39,7 @@ impl TinySkiaRenderer {
             svg_cache: SvgCache::new(),
             image_cache: ImageCache::new(),
             shadow_rasterizer: ShadowRasterizer::new(),
+            line_cache: LineCompositeCache::new(),
             tx_stack: Vec::with_capacity(32),
             opacity_stack: Vec::with_capacity(32),
             scratch_pixmap: None,
@@ -149,6 +152,7 @@ impl TinySkiaRenderer {
                 shadow_rasterizer: &mut self.shadow_rasterizer,
                 tx_stack: &mut self.tx_stack,
                 opacity_stack: &mut self.opacity_stack,
+                line_cache: &mut self.line_cache,
             };
 
             for chunk in scene.chunks.iter().filter(|c| c.bounds.overlaps(rect)) {
