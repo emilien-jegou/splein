@@ -28,6 +28,9 @@ pub struct CompileResult {
 
 impl CompileResult {
     /// Compiles tree arena state into display list scene chunks.
+    ///
+    /// `caret_visible` is the engine's blink phase: a focused collapsed
+    /// selection paints its caret only while it is on.
     #[tracing::instrument(name = "compile_scene", skip_all)]
     pub fn compile(
         arena: &mut TreeArena,
@@ -36,9 +39,18 @@ impl CompileResult {
         text_ctx: &TextContext,
         damage: &DamageRegion,
         viewport: ResolvedRect,
+        caret_visible: bool,
     ) -> Self {
         let (stacking_contexts_count, new_commands_emitted, cached_chunks_reused, context_bounds) =
-            compile_scene_instrumented(arena, root, scene, text_ctx, damage, viewport);
+            compile_scene_instrumented(
+                arena,
+                root,
+                scene,
+                text_ctx,
+                damage,
+                viewport,
+                caret_visible,
+            );
 
         Self {
             new_commands_emitted,
@@ -57,6 +69,7 @@ pub fn compile_scene_instrumented(
     text_ctx: &TextContext,
     damage: &DamageRegion,
     viewport: ResolvedRect,
+    caret_visible: bool,
 ) -> (usize, usize, usize, Vec<ResolvedRect>) {
     scene.clear();
     let root_z = arena.get(root).style.z_index;
@@ -86,6 +99,7 @@ pub fn compile_scene_instrumented(
         viewport,
         &mut new_commands,
         &mut cached_chunks,
+        caret_visible,
     );
     (
         stacking_contexts,

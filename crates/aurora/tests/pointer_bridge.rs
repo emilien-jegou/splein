@@ -34,6 +34,20 @@ fn button(state: ElementState, button: MouseButton) -> WindowEvent {
     }
 }
 
+/// A page with one selectable text run, keyed for assertions.
+fn selectable_page() -> Element {
+    group()
+        .width(Size::fill())
+        .height(Size::fill())
+        .fill(Color::WHITE)
+        .children([text("hello world")
+            .key("words")
+            .selectable(true)
+            .size(14.0)
+            .color(Color::BLACK)])
+        .into_element()
+}
+
 /// A page with one clickable card whose fill reports how many times it was pressed.
 fn counter_page(taps: Signal<u32>) -> Element {
     let shown = taps.clone();
@@ -269,4 +283,39 @@ fn an_unrelated_window_event_is_ignored() {
     let mut bridge = PointerBridge::new();
     assert!(!bridge.dispatch(&WindowEvent::Focused(true), h.engine()));
     assert!(!tapped(&mut h));
+}
+
+#[test]
+#[ntest::timeout(5_000)]
+fn platform_keys_map_to_selection_keys() {
+    use aurora::app::runner::pointer::map_logical_key;
+    use aurora::input::KeyCode;
+    use winit::keyboard::{Key, NamedKey};
+
+    assert_eq!(map_logical_key(&Key::Named(NamedKey::ArrowLeft)), Some(KeyCode::Left));
+    assert_eq!(map_logical_key(&Key::Named(NamedKey::ArrowRight)), Some(KeyCode::Right));
+    assert_eq!(map_logical_key(&Key::Named(NamedKey::ArrowUp)), Some(KeyCode::Up));
+    assert_eq!(map_logical_key(&Key::Named(NamedKey::ArrowDown)), Some(KeyCode::Down));
+    assert_eq!(map_logical_key(&Key::Named(NamedKey::Home)), Some(KeyCode::Home));
+    assert_eq!(map_logical_key(&Key::Named(NamedKey::End)), Some(KeyCode::End));
+    assert_eq!(map_logical_key(&Key::Named(NamedKey::Escape)), Some(KeyCode::Escape));
+    assert_eq!(
+        map_logical_key(&Key::Character("c".into())),
+        Some(KeyCode::Char('c'))
+    );
+    assert_eq!(map_logical_key(&Key::Named(NamedKey::F1)), None);
+}
+
+#[test]
+#[ntest::timeout(5_000)]
+fn a_key_without_focus_changes_nothing() {
+    let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
+    let mut h = Harness::from_runtime(Rc::clone(&runtime), selectable_page(), 300, 300);
+    h.steps(2);
+    // No press happened, so nothing is focused and the key must not even
+    // ask for a redraw. (A full key event cannot be built in tests — winit's
+    // KeyEvent carries crate-private data — so the queue path is covered by
+    // the engine-level keyboard tests instead.)
+    assert_eq!(h.engine().focused_text(), None);
+    assert_eq!(h.engine().text_selection("words"), None);
 }

@@ -49,8 +49,6 @@ pub struct FrameScheduler {
     pub text_ctx: TextContext,
     pub root: NodeId,
     pub dirty_nodes_this_frame: SmallVec<[NodeId; 16]>,
-    /// Node updates applied outside reactive drainage, awaiting the next frame pass.
-    pub pending_updates: SmallVec<[(NodeId, DirtyFlags); 4]>,
     /// Single frame clock feeding the reactive tickers that drive userland animation.
     pub clock: Clock,
     prev_constraints: Option<Constraints>,
@@ -70,7 +68,6 @@ impl FrameScheduler {
             text_ctx: TextContext::new(),
             root,
             dirty_nodes_this_frame: SmallVec::new(),
-            pending_updates: SmallVec::new(),
             clock: Clock::new(),
             prev_constraints: None,
         }
@@ -84,7 +81,12 @@ impl FrameScheduler {
     ) -> FrameStats {
         self.dirty_nodes_this_frame.clear();
         let mut external_flags = DirtyFlags::NONE;
-        for (node, flags) in std::mem::take(&mut self.pending_updates) {
+        // Every mark since the last commit — reactive bindings and direct
+        // input/engine writes alike — joins the frame's dirty set. Direct
+        // writes (selection highlights, focus flags) bypass the subscriber
+        // drains below, so without this their nodes never reach the damage
+        // plan and paint-only changes never rasterize.
+        for (node, flags) in std::mem::take(&mut self.arena.dirty_outbox) {
             self.dirty_nodes_this_frame.push(node);
             external_flags |= flags;
         }
@@ -186,7 +188,13 @@ impl FrameScheduler {
                 let layout_changed =
                     bindings.update_layout(&mut n.style.width, &mut n.style.height);
                 let text_changed = match n.kind {
-                    NodeKind::Text(ref mut t) => bindings.update_text(&mut t.content),
+                    NodeKind::Text(ref mut t) => {
+                        let changed = bindings.update_text(&mut t.content);
+                        if changed {
+                            n.state.text_selection = None;
+                        }
+                        changed
+                    }
                     _ => false,
                 };
                 let presence_changed = bindings.update_presence(&mut n.state.presence);
@@ -329,6 +337,21 @@ impl FrameScheduler {
             }
         }
         (frame_flags, passes)
+    }
+
+    /// Drops marks recorded while the commit ran.
+    ///
+    /// `commit_frame` consumes the outbox first (external writes: input,
+    /// engine), but the drain, reconciliation, and layout passes mark more
+    /// nodes along the way — and the post-layout paint drain does too. Those
+    /// are already represented: the drains push their nodes explicitly, and
+    /// reconcile-time marks were invisible to the damage plan before the
+    /// outbox existed. Carrying them into the *next* frame would report stale
+    /// MEASURE/LAYOUT in its stats and could schedule spurious layout. Called
+    /// once the post-layout drain has run, so only between-frame writes
+    /// accumulate from here on.
+    pub fn discard_commit_marks(&mut self) {
+        self.arena.dirty_outbox.clear();
     }
 
     fn execute_layout(

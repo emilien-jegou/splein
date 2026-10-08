@@ -15,6 +15,7 @@ pub fn compile_node_hierarchy(
     viewport: ResolvedRect,
     parent_tx: Transform,
     is_stacking_root: bool,
+    caret_visible: bool,
 ) {
     let node = arena.get(id);
     // A stacking context root offsets its chunk from the inherited origin; flow nodes nest locally.
@@ -45,7 +46,7 @@ pub fn compile_node_hierarchy(
         LayerId::from_packed(id.packed()),
         is_stacking_root,
     );
-    emit_node_content(node, chunk, text_ctx);
+    emit_node_content(node, chunk, text_ctx, caret_visible);
 
     let child_count = arena.children(id).len();
     for i in 0..child_count {
@@ -53,7 +54,16 @@ pub fn compile_node_hierarchy(
         let child = arena.get(child_id);
         let creates_context = child.creates_stacking_context();
         if !creates_context {
-            compile_node_hierarchy(arena, child_id, chunk, text_ctx, viewport, own_tx, false);
+            compile_node_hierarchy(
+                arena,
+                child_id,
+                chunk,
+                text_ctx,
+                viewport,
+                own_tx,
+                false,
+                caret_visible,
+            );
         }
     }
 

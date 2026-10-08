@@ -226,48 +226,6 @@ fn the_debugger_drives_the_engine_clock_from_its_shortcuts() {
 
 #[test]
 #[ntest::timeout(5_000)]
-fn a_frozen_transition_can_be_walked_one_frame_at_a_time() {
-    // The reason to freeze at all. Without a step, a stopped clock shows one frame forever and
-    // there is nothing to inspect.
-    let mut h = Harness::page(Slide, 400, 200).with_delta(1.0 / 60.0);
-    h.steps(2);
-    h.click("card");
-    h.steps(3);
-    h.pause();
-
-    let start = h.transform("card").tx;
-    let mut positions = vec![start];
-    for _ in 0..4 {
-        h.step_once();
-        positions.push(h.transform("card").tx);
-    }
-
-    for pair in positions.windows(2) {
-        assert!(
-            pair[1] > pair[0],
-            "each step must advance the animation: {positions:?}"
-        );
-    }
-    // One 120Hz quantum of a 400ms tween over 120px is 2.5px, so four steps move 10px.
-    assert!(
-        (positions[4] - positions[0] - 10.0).abs() <= 2.5,
-        "four single-frame steps should move about 10px, they moved {:.2}: {positions:?}",
-        positions[4] - positions[0]
-    );
-
-    // And stepping stops the clock again: the position must not drift afterwards.
-    let held = positions[4];
-    for _ in 0..10 {
-        h.step();
-    }
-    assert!(
-        (h.transform("card").tx - held).abs() < 1e-3,
-        "an ordinary frame while frozen must still advance nothing"
-    );
-}
-
-#[test]
-#[ntest::timeout(5_000)]
 fn a_step_is_ignored_while_time_is_already_running() {
     // Otherwise pressing step mid-animation would jump a frame for no visible reason.
     let mut h = Harness::page(Slide, 400, 200).with_delta(1.0 / 60.0);

@@ -14,6 +14,10 @@ pub fn mark_node_dirty(arena: &mut TreeArena, node_id: NodeId, flags: DirtyFlags
         .state
         .dirty
         .insert(flags | DirtyFlags::SUBTREE_DIRTY);
+    // Every mark feeds the frame commit, not just subscriber-driven ones:
+    // input and engine writes bypass the reactive drains, and without this
+    // their nodes would never reach the damage plan. `commit_frame` dedups.
+    arena.dirty_outbox.push((node_id, flags));
 
     let mut curr = node_id;
     while let Some(parent) = arena.parent(curr) {

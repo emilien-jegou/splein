@@ -489,6 +489,7 @@ fn shape_labels(ctx: &aurora::text::TextContext, labels: &[String]) {
             overflow: TextOverflow::Clip,
             max_lines: None,
             weight: 400,
+            variations: &[],
             constraints: Constraints::loose(f32::INFINITY, f32::INFINITY),
         }));
     }
@@ -553,6 +554,7 @@ fn bench_text_shaping(c: &mut Criterion) {
                     overflow: TextOverflow::Clip,
                     max_lines: None,
                     weight: 400,
+                    variations: &[],
                     constraints: Constraints::loose(400.0 + wobble, f32::INFINITY),
                 }));
             }
@@ -670,6 +672,158 @@ fn bench_reorder_and_scroll(c: &mut Criterion) {
     cg.finish();
 }
 
+// ---------------------------------------------------------------------------
+// Bench 6b: glyph rasterization, miss vs hit path, body vs title size.
+//
+// Pre-glyph-cache this re-renders every glyph every call (outline scale +
+// hint + zeno + alloc). Post-cache the `hit` functions measure lookup cost.
+// `miss` uses a fresh context per batch so every iteration cold-renders.
+// ---------------------------------------------------------------------------
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+fn bench_glyph_raster(c: &mut Criterion) {
+    use aurora::foundation::Constraints;
+    use aurora::text::{TextConfig, TextContext};
+
+    fn keys_for(size: f32) -> (TextContext, Vec<aurora::text::GlyphKey>) {
+        let ctx = TextContext::new();
+        ctx.load_font(include_bytes!("../../../assets/inter-var.ttf"));
+        // Pangram-ish content with digits/punctuation for distinct glyphs.
+        let content: String = ("The quick brown fox jumps over 0123456789! ".repeat(4)).chars().collect();
+        let cfg = TextConfig {
+            content,
+            size,
+            ..TextConfig::default()
+        };
+        let layout = ctx.shape_config(&cfg, Constraints::UNCONSTRAINED);
+        let keys: Vec<_> = layout
+            .lines
+            .iter()
+            .flat_map(|l| l.glyphs.iter().map(|g| g.cache_key))
+            .collect();
+        assert!(!keys.is_empty());
+        (ctx, keys)
+    }
+
+    let mut group = c.benchmark_group("glyph_raster");
+    for size in [12.0f32, 48.0] {
+        let name = format!("size_{size}px");
+        // Miss path: fresh context per batch => empty caches, full render.
+        // Phases spread over X quarters and Y eighths like real text at
+        // mixed pen positions (x in low 2 bits, y in next 3).
+        let phase = |i: usize| ((i % 4) | (((i / 4) % 8) << 2)) as u8;
+        group.bench_function(format!("{name}_miss"), |b| {
+            b.iter_batched(
+                || keys_for(size),
+                |(ctx, keys)| {
+                    for (i, k) in keys.iter().enumerate() {
+                        ctx.raster_glyph(*k, phase(i), |img| {
+                            black_box(img.map(|g| g.width));
+                        });
+                    }
+                },
+                BatchSize::SmallInput,
+            );
+        });
+        // Hit path: warmed once per phase, then re-requested.
+        let (ctx, keys) = keys_for(size);
+        for (i, k) in keys.iter().enumerate() {
+            ctx.raster_glyph(*k, phase(i), |_| {});
+        }
+        group.bench_function(format!("{name}_hit"), |b| {
+            b.iter(|| {
+                for (i, k) in keys.iter().enumerate() {
+                    ctx.raster_glyph(*k, phase(i), |img| {
+                        black_box(img.map(|g| g.width));
+                    });
+                }
+            });
+        });
+        group.throughput(Throughput::Elements(keys.len() as u64));
+    }
+    group.finish();
+}
+
+// ---------------------------------------------------------------------------
+// Bench 6c: batch shaping — sequential vs scoped-thread shape_many over 64
+// distinct labels (enough misses to cross the parallel threshold).
+// ---------------------------------------------------------------------------
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+fn bench_shape_many(c: &mut Criterion) {
+    use aurora::foundation::Constraints;
+    use aurora::text::shaper::TextShapeParams;
+    use aurora::text::{FontStyle, TextAlign, TextContext, TextOverflow};
+
+    let texts: Vec<String> = (0..64)
+        .map(|i| format!("batch shape many {i:02} with several words"))
+        .collect();
+
+    let mut group = c.benchmark_group("shape_many");
+    group.throughput(Throughput::Elements(64));
+    // Sequential baseline: fresh context per batch so every label misses.
+    group.bench_function("sequential_64_cold", |b| {
+        b.iter_batched(
+            || {
+                let ctx = TextContext::new();
+                ctx.load_font(include_bytes!("../../../assets/inter-var.ttf"));
+                ctx
+            },
+            |ctx| {
+                for t in &texts {
+                    black_box(ctx.shape(TextShapeParams {
+                        text: t,
+                        font: None,
+                        family: None,
+                        style: FontStyle::Normal,
+                        size: 16.0,
+                        line_height: 20.0,
+                        letter_spacing: 0.0,
+                        align: TextAlign::Start,
+                        overflow: TextOverflow::Clip,
+                        max_lines: None,
+                        weight: 400,
+                        variations: &[],
+                        constraints: Constraints::loose(400.0, f32::INFINITY),
+                    }));
+                }
+            },
+            BatchSize::SmallInput,
+        );
+    });
+    // Parallel batch over the same miss pattern.
+    group.bench_function("shape_many_64_cold", |b| {
+        b.iter_batched(
+            || {
+                let ctx = TextContext::new();
+                ctx.load_font(include_bytes!("../../../assets/inter-var.ttf"));
+                ctx
+            },
+            |ctx| {
+                let params: Vec<TextShapeParams<'_>> = texts
+                    .iter()
+                    .map(|t| TextShapeParams {
+                        text: t,
+                        font: None,
+                        family: None,
+                        style: FontStyle::Normal,
+                        size: 16.0,
+                        line_height: 20.0,
+                        letter_spacing: 0.0,
+                        align: TextAlign::Start,
+                        overflow: TextOverflow::Clip,
+                        max_lines: None,
+                        weight: 400,
+                        variations: &[],
+                        constraints: Constraints::loose(400.0, f32::INFINITY),
+                    })
+                    .collect();
+                black_box(ctx.shape_many(&params));
+            },
+            BatchSize::SmallInput,
+        );
+    });
+    group.finish();
+}
+
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 criterion_group!(
     benches,
@@ -679,6 +833,8 @@ criterion_group!(
     bench_layout_1k,
     bench_fan_out_200,
     bench_text_shaping,
+    bench_glyph_raster,
+    bench_shape_many,
     bench_reorder_and_scroll
 );
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]

@@ -79,13 +79,22 @@ impl PointerInput {
 
     /// Drains the queue, returning the state left behind by the last event dispatched.
     ///
-    /// Returns `None` without advancing the clock when nothing is queued, so an idle frame does
-    /// not age gesture history on its own.
+    /// Returns `None` when nothing is queued. Both clocks still advance on an
+    /// empty queue: wall time in particular must observe idle stretches, or
+    /// click bursts never expire on loops that only frame on demand. This ages
+    /// no gesture history on its own — samples are only pushed by real feeds,
+    /// and all windows are relative — it just moves the reference they
+    /// measure against.
     pub fn dispatch(
         &mut self,
-        scheduler: &FrameScheduler,
+        scheduler: &mut FrameScheduler,
         last_delta: f32,
+        wall_delta: f32,
     ) -> Option<PointerOutcome> {
+        // Pointer history advances on the frame's own delta, so a gesture measured in headless
+        // stepping sees exactly the velocity it would in the app.
+        self.router.advance_clock(last_delta);
+        self.router.advance_wall(wall_delta);
         if self.queued.is_empty() {
             return None;
         }
@@ -93,16 +102,15 @@ impl PointerInput {
         // the scheduler's runtime even though frames usually already have.
         // (Called before any frame pass, and standalone in stepping harnesses.)
         let _ambient = crate::reactive::ambient_guard(&scheduler.runtime);
-        // Pointer history advances on the frame's own delta, so a gesture measured in headless
-        // stepping sees exactly the velocity it would in the app.
-        self.router.advance_clock(last_delta);
-        // The arena is borrowed immutably for the whole batch: handlers write signals, and
-        // signals only mark subscribers, so no node can be inserted or removed mid-dispatch.
+        // The arena is borrowed mutably for the whole batch: the router owns
+        // the native text-selection highlight beside handler dispatch, and
+        // handlers write signals (marking subscribers, never inserting nodes
+        // mid-dispatch), so the two cannot invalidate each other.
         let mut last = None;
         for event in self.queued.drain(..) {
             last = Some(
                 self.router
-                    .dispatch(&scheduler.arena, scheduler.root, &event),
+                    .dispatch(&mut scheduler.arena, scheduler.root, &event),
             );
         }
         last

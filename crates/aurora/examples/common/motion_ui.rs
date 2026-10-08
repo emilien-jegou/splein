@@ -39,8 +39,15 @@ pub fn eyebrow(label: &'static str) -> TextDef {
 }
 
 /// Page heading.
+///
+/// Selectable body content: headings carry no handlers, so selecting never
+/// swallows a click.
 pub fn heading(title: &'static str) -> TextDef {
-    text(title).size(24.0).weight(700).color(Color::hex(INK))
+    text(title)
+        .size(24.0)
+        .weight(700)
+        .color(Color::hex(INK))
+        .selectable(true)
 }
 
 /// Muted body copy wrapping inside its container.
@@ -50,6 +57,7 @@ pub fn blurb(copy: &'static str) -> TextDef {
         .line_height(20.0)
         .color(Color::hex(BODY))
         .width(Size::fill())
+        .selectable(true)
 }
 
 /// Label and value stacked with the shared spacing rhythm.

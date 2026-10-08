@@ -5,8 +5,8 @@ use common::ExampleCli;
 
 mod common;
 
-const WIDTH: u32 = 500;
-const HEIGHT: u32 = 482;
+pub const WIDTH: u32 = 500;
+pub const HEIGHT: u32 = 482;
 
 fn main() {
     let cli = ExampleCli::parse(WIDTH, HEIGHT);
@@ -17,7 +17,7 @@ fn main() {
         .run(build_ui);
 }
 
-fn build_ui() -> impl IntoElement {
+pub fn build_ui() -> impl IntoElement {
     group()
         .direction(Direction::Vertical)
         .width(Size::fill())
@@ -50,6 +50,7 @@ fn build_ui() -> impl IntoElement {
                         .alignment(Alignment::Center)
                         .distribution(Distribution::Center)
                         .children([text("Hello")
+                            .selectable(true)
                             .size(16.0)
                             .line_height(20.0)
                             .color(Color::WHITE)]),
@@ -58,6 +59,7 @@ fn build_ui() -> impl IntoElement {
                         .height(45.0)
                         .fill(Color::hex(0x4900FF))
                         .children([text("bottom-right")
+                            .selectable(true)
                             .size(12.0)
                             .line_height(16.0)
                             .color(Color::WHITE)
@@ -73,6 +75,7 @@ fn build_ui() -> impl IntoElement {
                         .distribution(Distribution::Center)
                         .children([text("with radius")
                             .size(12.0)
+                            .selectable(true)
                             .line_height(16.0)
                             .color(Color::WHITE)]),
                 ))])])

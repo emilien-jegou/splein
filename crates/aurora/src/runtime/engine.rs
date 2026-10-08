@@ -7,7 +7,7 @@ use crate::dsl::element::Element;
 use crate::dsl::reconciler::reconcile;
 use crate::dsl::IntoElement;
 use crate::foundation::{Color, DamageRegion, DamageRing, Key, Point, ResolvedRect, Transform};
-use crate::input::{PointerEvent, PointerOutcome};
+use crate::input::{CursorIcon, KeyEvent, PointerEvent, PointerOutcome};
 use crate::reactive::{Cx, ReactiveRuntime, Signal};
 use crate::runtime::diagnostics::EngineDiagnostics;
 use crate::runtime::frame::run_frame_passes;
@@ -16,7 +16,7 @@ use crate::runtime::pointer_input::PointerInput;
 use crate::runtime::scheduler::FrameScheduler;
 use crate::runtime::FrameReport;
 use crate::scene::{LayerId, Scene};
-use crate::text::TextContext;
+use crate::text::{TextContext, TextSelection};
 use crate::tree::{DirtyFlags, NodeId, SubscriberRouter, TreeArena};
 
 /// Single-point facade managing the UI tree, reactive runtime, and scene compilation.
@@ -32,6 +32,15 @@ pub struct Engine {
     /// Pointer routing: hit resolution, press capture, gesture recognition, and the queue
     /// of events waiting for the next frame.
     pointer: PointerInput,
+    /// Key presses waiting for the next frame, drained after pointer events so a
+    /// press that moves focus lands before the key that uses it.
+    queued_keys: Vec<KeyEvent>,
+    /// Last published caret blink phase, so only flips repaint.
+    caret_blink_on: bool,
+    /// Focused caret seen by the last blink poll, to restart blink on change.
+    caret_last_seen: Option<(NodeId, TextSelection)>,
+    /// Animation time the caret last changed; the blink phase counts from here.
+    caret_epoch: f32,
 }
 
 impl Engine {
@@ -60,6 +69,10 @@ impl Engine {
             frame_counter: 0,
             pending_preserved_canvas_rect: None,
             pointer: PointerInput::new(),
+            queued_keys: Vec::new(),
+            caret_blink_on: true,
+            caret_last_seen: None,
+            caret_epoch: 0.0,
         }
     }
 
@@ -189,9 +202,17 @@ impl Engine {
         let (w, h) = self.logical_size;
         self.frame_counter = self.frame_counter.wrapping_add(1);
 
+        // The clock ticks before input dispatch, so queued events advance
+        // against this frame's own deltas: pointer velocity measures the
+        // frame it arrives in, and the click burst sees an idle stretch in
+        // full on the very first frame back rather than one frame late.
+        self.scheduler.clock.tick();
         // Pointer handlers run before any pass so a write they make is picked up by this
         // frame's layout and damage, rather than landing one frame late.
         self.dispatch_queued_events();
+        // The caret blinks on animation time (~2Hz): repaint the focused caret
+        // only when the phase flips, so a static highlight costs no frames.
+        self.poll_caret_blink();
         let frame_damage = self.damage_ring.advance();
         for r in self.pending_damage.rects() {
             frame_damage.push(*r);
@@ -199,6 +220,7 @@ impl Engine {
         self.pending_damage.clear();
 
         let root = self.scheduler.root;
+        let caret_visible = self.caret_blink_on;
         let (stats, diag) = run_frame_passes(
             &mut self.scheduler,
             root,
@@ -208,6 +230,7 @@ impl Engine {
             self.frame_counter,
             frame_damage,
             self.pending_preserved_canvas_rect.take(),
+            caret_visible,
         );
 
         FrameReport {
@@ -215,6 +238,115 @@ impl Engine {
             layers: self.collect_dirtied_layers(),
             diagnostics: diag,
         }
+    }
+
+    /// Queues a key press for dispatch at the start of the next frame.
+    pub fn queue_key_event(&mut self, event: KeyEvent) {
+        self.queued_keys.push(event);
+    }
+
+    /// Cursor shape for the platform: I-beam while hovering selectable text.
+    pub fn cursor_icon(&self) -> CursorIcon {
+        self.pointer
+            .router()
+            .cursor_icon(&self.scheduler.arena)
+    }
+
+    /// Current selection on a keyed text node, if it holds one.
+    pub fn text_selection(&self, key: impl Into<Key>) -> Option<TextSelection> {
+        self.with_arena(|arena, _| {
+            let id = arena.node_for_key(&key.into())?;
+            arena.get(id).state.text_selection
+        })
+    }
+
+    /// Selected substring on a keyed text node, empty when collapsed or absent.
+    pub fn selected_text(&self, key: impl Into<Key>) -> Option<String> {
+        self.with_arena(|arena, _| {
+            let id = arena.node_for_key(&key.into())?;
+            let node = arena.get(id);
+            let text = match &node.kind {
+                crate::tree::NodeKind::Text(t) => t.content.clone(),
+                _ => return None,
+            };
+            let sel = node.state.text_selection?;
+            let (s, e) = sel.normalized();
+            Some(text.get(s..e).unwrap_or("").to_string())
+        })
+    }
+
+    /// Selected substrings across all painted runs, in document order.
+    ///
+    /// Single-run selections yield one entry; cross-run drags yield one entry
+    /// per covered run (edge runs clipped to their sub-range, interior runs
+    /// whole). Empty when nothing is highlighted.
+    pub fn combined_selected_text(&self) -> Vec<String> {
+        self.with_arena(|arena, root| {
+            let mut out = Vec::new();
+            let mut stack = vec![root];
+            // Preorder DFS with reversed pushes keeps document order without
+            // allocating a child list per node.
+            while let Some(id) = stack.pop() {
+                if !arena.is_valid(id) {
+                    continue;
+                }
+                {
+                    let node = arena.get(id);
+                    if let crate::tree::NodeKind::Text(t) = &node.kind {
+                        if t.selectable {
+                            if let Some(sel) = node.state.text_selection {
+                                let (s, e) = sel.normalized();
+                                if e > s {
+                                    out.push(t.content.get(s..e).unwrap_or("").to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+                let children = arena.children(id);
+                for &child in children.iter().rev() {
+                    stack.push(child);
+                }
+            }
+            out
+        })
+    }
+
+    /// Programmatically sets (or clears) a keyed text node's selection.
+    ///
+    /// Offsets snap to character boundaries; the node repaints but never
+    /// re-lays out. Returns false when the key resolves to no text node.
+    pub fn set_text_selection(
+        &mut self,
+        key: impl Into<Key>,
+        selection: Option<TextSelection>,
+    ) -> bool {
+        let id = self.with_arena(|arena, _| arena.node_for_key(&key.into()));
+        let Some(id) = id else { return false };
+        let node = self.scheduler.arena.get(id);
+        if !matches!(&node.kind, crate::tree::NodeKind::Text(_)) {
+            return false;
+        }
+        let node = self.scheduler.arena.get_mut(id);
+        node.state.text_selection = selection;
+        self.scheduler.arena.mark_dirty(id, DirtyFlags::PAINT);
+        true
+    }
+
+    /// Key of the text node owning keyboard focus, if any.
+    pub fn focused_text(&self) -> Option<Key> {
+        self.with_arena(|arena, _| {
+            let id = self.pointer.router().focused()?;
+            if !arena.is_valid(id) {
+                return None;
+            }
+            arena.get(id).key.clone()
+        })
+    }
+
+    /// Last text copied with Ctrl+C, if any (internal clipboard).
+    pub fn clipboard_text(&self) -> Option<String> {
+        self.pointer.router().clipboard().map(str::to_string)
     }
 
     /// Queues a pointer event for dispatch at the start of the next frame.
@@ -264,7 +396,16 @@ impl Engine {
     /// Drains queued pointer events, returning the state left behind by the last one.
     fn dispatch_queued_events(&mut self) -> Option<PointerOutcome> {
         let last_delta = self.scheduler.clock.last_delta();
-        self.pointer.dispatch(&self.scheduler, last_delta)
+        let wall_delta = self.scheduler.clock.wall_delta();
+        let outcome = self.pointer.dispatch(&mut self.scheduler, last_delta, wall_delta);
+        // Keys run after the pointer queue so a press that moves focus lands
+        // before the key that uses it.
+        for key in std::mem::take(&mut self.queued_keys) {
+            self.pointer
+                .router_mut()
+                .dispatch_key(&mut self.scheduler.arena, &key);
+        }
+        outcome
     }
 
     /// Key-based reads of node geometry, in explicit coordinate spaces.
@@ -365,12 +506,69 @@ impl Engine {
 
     /// Whether any animation still wants frames.
     ///
-    /// Now purely a question about reactive tickers: the engine owns no animation of its own, so
-    /// a frame is worth drawing only while a userland ticker is still settling toward a target.
-    /// This is what keeps the redraw loop running for a client-driven transition and lets it
-    /// stop once that transition has settled.
+    /// Reactive tickers, plus one engine-owned case: a focused caret blinks,
+    /// so its frame loop runs until the caret collapses away or blurs. A
+    /// static highlight needs no frames and keeps none alive.
     pub fn has_active_motion(&self) -> bool {
         self.scheduler.runtime.borrow().has_active_tickers()
+            || self
+                .pointer
+                .router()
+                .has_visible_caret(&self.scheduler.arena)
+    }
+
+    /// Blink phase from the last caret activity (~2Hz, frozen with the clock).
+    ///
+    /// Read by [`Self::poll_caret_blink`] and passed to
+    /// [`run_frame_passes`](crate::runtime::frame::run_frame_passes) so the
+    /// caret emits only while the phase is on.
+    fn caret_phase(&self) -> bool {
+        ((self.scheduler.clock.simulated() - self.caret_epoch) * 2.0).floor() as u64 % 2 == 0
+    }
+
+    /// Repaints the focused caret when its blink phase flips.
+    ///
+    /// Only flips dirty the node; idle frames between flips still run (see
+    /// [`Self::has_active_motion`]) but change nothing. Any caret change —
+    /// move, collapse, refocus — restarts the blink visibly on, like a
+    /// browser showing the caret the moment you act.
+    fn poll_caret_blink(&mut self) {
+        let caret = self.pointer.router().focused().and_then(|id| {
+            if !self.scheduler.arena.is_valid(id) {
+                return None;
+            }
+            let sel = self.scheduler.arena.get(id).state.text_selection?;
+            sel.is_collapsed().then_some((id, sel))
+        });
+        // A new or moved caret shows immediately with a full on-period; the
+        // blink resumes after.
+        if caret != self.caret_last_seen {
+            self.caret_last_seen = caret;
+            if caret.is_some() {
+                tracing::debug!(?caret, "caret shown, blink restarted");
+                self.caret_epoch = self.scheduler.clock.simulated();
+                self.caret_blink_on = true;
+                if let Some((focused, _)) = caret {
+                    self.scheduler
+                        .arena
+                        .mark_dirty(focused, DirtyFlags::PAINT);
+                }
+            }
+            return;
+        }
+        if caret.is_some() {
+            let phase = self.caret_phase();
+            if phase != self.caret_blink_on {
+                self.caret_blink_on = phase;
+                if let Some((focused, _)) = caret {
+                    self.scheduler
+                        .arena
+                        .mark_dirty(focused, DirtyFlags::PAINT);
+                }
+            }
+        } else {
+            self.caret_blink_on = true;
+        }
     }
 
     /// A consistent snapshot of every internal counter, for tests and debug tooling.

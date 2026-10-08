@@ -3,8 +3,9 @@
 use crate::foundation::Color;
 use crate::text::align::TextAlign;
 use crate::text::decoration::TextDecoration;
-use crate::text::fonts::{FontId, FontStyle};
+use crate::text::fonts::{FontId, FontStyle, FontVariation};
 use crate::text::overflow::TextOverflow;
+use crate::text::selection::DEFAULT_SELECTION_COLOR;
 
 /// Line height policy: fixed pixels or a multiple of the font size.
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -52,6 +53,8 @@ pub struct TextConfig {
     pub size: f32,
     /// Numerical font weight.
     pub weight: u16,
+    /// Variable-font axis settings applied during shaping.
+    pub variations: Vec<FontVariation>,
     /// Line height policy resolved against the font size.
     pub line_height: LineHeight,
     /// Tracking offset added between characters.
@@ -66,6 +69,14 @@ pub struct TextConfig {
     pub max_lines: Option<u32>,
     /// Text foreground color.
     pub color: Color,
+    /// Whether the run participates in mouse text selection (opt-in).
+    ///
+    /// Selectable text absorbs presses and streams drags natively, so it must
+    /// be enabled deliberately: every label becoming a drag source would break
+    /// click-only parents.
+    pub selectable: bool,
+    /// Highlight painted behind the selected range.
+    pub selection_color: Color,
 }
 
 impl Default for TextConfig {
@@ -77,6 +88,7 @@ impl Default for TextConfig {
             style: FontStyle::Normal,
             size: 14.0,
             weight: 400,
+            variations: Vec::new(),
             line_height: LineHeight::Multiple(1.2),
             letter_spacing: 0.0,
             align: TextAlign::Start,
@@ -84,6 +96,8 @@ impl Default for TextConfig {
             overflow: TextOverflow::Clip,
             max_lines: None,
             color: Color::WHITE,
+            selectable: false,
+            selection_color: DEFAULT_SELECTION_COLOR,
         }
     }
 }

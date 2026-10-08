@@ -2,6 +2,7 @@
 
 mod adapters;
 pub mod backend;
+pub mod clipboard;
 mod frame_flow;
 pub mod pacing;
 pub mod pointer;
@@ -19,11 +20,12 @@ use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::Window;
 
 use crate::app::extension::AppExtension;
+use crate::input::CursorIcon;
 use crate::runtime::Engine;
+use clipboard::OsClipboardSync;
 use frame_flow::present_one;
 use pacing::{compute_jit_wake, compute_target_interval};
 use pointer::PointerBridge;
-
 /// Runs the native window event loop, driving frame updates and presentation.
 #[tracing::instrument(skip_all, fields(fps_limit = ?fps_limit))]
 pub fn run_event_loop(
@@ -40,6 +42,10 @@ pub fn run_event_loop(
     let mut redraw_pending = true;
     let mut avg_compute = Duration::from_millis(2);
     let mut pointer = PointerBridge::new();
+    let mut cursor = CursorIcon::Default;
+    // Copy-out only: readonly Ctrl+C selections reach the OS clipboard here,
+    // in a real window only. Headless engines never construct this path.
+    let mut os_clipboard = OsClipboardSync::new();
 
     let target_interval = compute_target_interval(fps_limit, &window);
     window.request_redraw();
@@ -54,6 +60,16 @@ pub fn run_event_loop(
                 // the engine's hit testing see events in the order they happened.
                 if pointer.dispatch(&win_event, &mut engine) {
                     redraw_pending = true;
+                }
+                // The I-beam follows hover over selectable text; syncing only on
+                // change keeps the platform call out of the hot path.
+                let icon = engine.cursor_icon();
+                if icon != cursor {
+                    cursor = icon;
+                    window.set_cursor_icon(match icon {
+                        CursorIcon::Default => winit::window::CursorIcon::Default,
+                        CursorIcon::Text => winit::window::CursorIcon::Text,
+                    });
                 }
                 if extensions.iter_mut().any(|ext| ext.on_event(&win_event)) {
                     redraw_pending = true;
@@ -78,6 +94,10 @@ pub fn run_event_loop(
                         avg_compute = avg_compute.mul_f32(0.8) + compute_dur.mul_f32(0.2);
                         last_present = Instant::now();
                         redraw_pending = wants_redraw || engine.has_active_motion();
+                        // Key events dispatched inside this frame may have set
+                        // the internal clipboard (Ctrl+C): push on change,
+                        // fail-soft when there is no OS clipboard to take it.
+                        os_clipboard.sync(&engine);
                     }
                     _ => {}
                 }

@@ -5,7 +5,8 @@ use crate::dsl::element::Element;
 use crate::foundation::{Anchor, Color, Key, Margin, Size};
 use crate::reactive::prop::{DynamicProp, IntoProp};
 use crate::text::{
-    FontId, FontStyle, LineHeight, TextAlign, TextConfig, TextDecoration, TextOverflow,
+    FontId, FontStyle, FontVariation, LineHeight, TextAlign, TextConfig, TextDecoration,
+    TextOverflow,
 };
 
 /// Declarative element builder for configured typography nodes.
@@ -24,6 +25,8 @@ pub struct TextDef {
     pub size: f32,
     /// Font weight parameter.
     pub weight: u16,
+    /// Variable-font axis settings applied during shaping.
+    pub variations: Vec<FontVariation>,
     /// Line height policy resolved against the font size.
     pub line_height: LineHeight,
     /// Tracking offset added between characters.
@@ -38,6 +41,10 @@ pub struct TextDef {
     pub max_lines: Option<u32>,
     /// Text foreground color.
     pub color: Color,
+    /// Whether this run participates in mouse text selection.
+    pub selectable: bool,
+    /// Highlight painted behind the selected range.
+    pub selection_color: Color,
     /// Whether layout uses absolute positioning.
     pub is_absolute: bool,
     /// Optional anchoring target for positioning.
@@ -66,6 +73,7 @@ pub fn text<P: IntoProp<String>>(content: P) -> TextDef {
         style: FontStyle::Normal,
         size: 14.0,
         weight: 400,
+        variations: Vec::new(),
         line_height: LineHeight::Multiple(1.2),
         letter_spacing: 0.0,
         align: TextAlign::Start,
@@ -73,6 +81,8 @@ pub fn text<P: IntoProp<String>>(content: P) -> TextDef {
         overflow: TextOverflow::Clip,
         max_lines: None,
         color: Color::WHITE,
+        selectable: false,
+        selection_color: crate::text::DEFAULT_SELECTION_COLOR,
         is_absolute: false,
         anchor: None,
         margin: Margin::ZERO,
@@ -118,6 +128,23 @@ impl TextDef {
     /// Sets numerical font weight.
     pub fn weight(mut self, w: u16) -> Self {
         self.weight = w;
+        self
+    }
+    /// Sets one variable-font axis by 4-character tag (`"wght"`, `"opsz"`, ...).
+    ///
+    /// Unknown tags are ignored so a typo never breaks the builder chain.
+    pub fn font_variation(mut self, tag: &str, value: f32) -> Self {
+        if let Some(setting) = FontVariation::named(tag, value) {
+            self.variations.retain(|v| v.tag != setting.tag);
+            self.variations.push(setting);
+        }
+        self
+    }
+    /// Sets several variable-font axes at once (see [`TextDef::font_variation`]).
+    pub fn font_variations(mut self, settings: &[(&str, f32)]) -> Self {
+        for (tag, value) in settings {
+            self = self.font_variation(tag, *value);
+        }
         self
     }
     /// Sets absolute line height in logical pixels.
@@ -176,6 +203,16 @@ impl TextDef {
         self.color = c;
         self
     }
+    /// Opts this run into mouse text selection (readonly highlight + drag).
+    pub fn selectable(mut self, on: bool) -> Self {
+        self.selectable = on;
+        self
+    }
+    /// Sets the highlight painted behind the selected range.
+    pub fn selection_color(mut self, c: Color) -> Self {
+        self.selection_color = c;
+        self
+    }
     /// Sets surrounding margin offset.
     pub fn margin(mut self, m: Margin) -> Self {
         self.margin = m;
@@ -223,6 +260,7 @@ impl TextDef {
             style: self.style,
             size: self.size,
             weight: self.weight,
+            variations: self.variations.clone(),
             line_height: self.line_height,
             letter_spacing: self.letter_spacing,
             align: self.align,
@@ -230,6 +268,8 @@ impl TextDef {
             overflow: self.overflow,
             max_lines: self.max_lines,
             color: self.color,
+            selectable: self.selectable,
+            selection_color: self.selection_color,
         }
     }
 }

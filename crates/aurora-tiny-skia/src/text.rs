@@ -40,6 +40,106 @@ pub fn render_text(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: TextR
     render_text_aligned(pixmap, text_ctx, params);
 }
 
+/// Display gamma assumed for coverage-to-alpha conversion.
+///
+/// Coverage masks are linear-light fractions, but compositing happens in
+/// sRGB-encoded space. Blending raw coverage as alpha darkens mid-tone fringe
+/// pixels (stems render heavier than specified). The LUT below folds the
+/// transfer function in: `alpha = 1 - (1 - coverage)^(1/gamma)`, so a
+/// half-covered pixel blends to the sRGB encoding of half light instead of
+/// half ink. Monotonic, so threshold tests and bounding boxes are unaffected.
+pub const COVERAGE_GAMMA: f32 = 2.2;
+
+/// Gamma table at full opacity, computed once: 256 `powf` calls per `DrawText`
+/// showed up as a real cost with many small runs on screen, so the curve is
+/// process-wide and each run only folds in its scalar opacity (integer math).
+static GAMMA_LUT: std::sync::LazyLock<[u8; 256]> = std::sync::LazyLock::new(|| {
+    let inv_gamma = 1.0 / COVERAGE_GAMMA;
+    std::array::from_fn(|i| {
+        let linear = 1.0 - (1.0 - i as f32 / 255.0).powf(inv_gamma);
+        (linear * 255.0).round() as u8
+    })
+});
+
+/// Subpixel X phase bins per pixel: the pen quantizes to quarters and the
+/// rasterizer produces one coverage variant per bin (see `raster_glyph`).
+/// Animation cross-fades adjacent bins (see `blend_phase_coverages`), so
+/// horizontal motion stays continuous while every source bitmap is
+/// phase-correct.
+pub const PHASE_BINS: u8 = 4;
+
+/// Subpixel Y phase bins per pixel: baselines snap to the nearest eighth.
+/// Eighth-pixel vertical steps hide in motion as whole-pixel ones never do,
+/// while static text keeps a single crisp bitmap (blending Y measurably
+/// softened it: the Y fraction is almost never exactly zero).
+pub const PHASE_BINS_Y: u8 = 8;
+
+/// Split a pen position into an integer base plus the fractional position
+/// inside the pixel, in quarter-pixel units: `frac4` in [0, 4).
+fn split_phase(pos: f32) -> (i32, f32) {
+    let floor = pos.floor();
+    (floor as i32, (pos - floor) * PHASE_BINS as f32)
+}
+
+/// Split a pen position into an integer base plus the fractional position
+/// inside the pixel, in eighth-pixel units: `frac8` in [0, 8).
+fn split_phase_y(pos: f32) -> (i32, f32) {
+    let floor = pos.floor();
+    (floor as i32, (pos - floor) * PHASE_BINS_Y as f32)
+}
+
+/// Blend two adjacent phase-bin coverages onto a common grid.
+///
+/// `a` is the bitmap for bin `q` placed at `(ax, ay)`, `b` the bitmap for the
+/// next bin up placed at `(bx, by)` — same origin for bins 0..3, one pixel
+/// right when wrapping from bin 3 to bin 0. Returns the union origin and size;
+/// `out` is resized to hold the blended coverage (`a*w0 + b*w1`, rounded).
+/// Out-of-range reads (empty bitmaps, ragged edges) contribute zero.
+fn blend_phase_coverages(
+    a: &[u8],
+    aw: u32,
+    ah: u32,
+    ax: i32,
+    ay: i32,
+    w0: f32,
+    b: &[u8],
+    bw: u32,
+    bh: u32,
+    bx: i32,
+    by: i32,
+    w1: f32,
+    out: &mut Vec<u8>,
+) -> (i32, i32, u32, u32) {
+    let x0 = ax.min(bx);
+    let y0 = ay.min(by);
+    let x1 = (ax + aw as i32).max(bx + bw as i32);
+    let y1 = (ay + ah as i32).max(by + bh as i32);
+    let (w, h) = ((x1 - x0).max(0) as usize, (y1 - y0).max(0) as usize);
+    out.clear();
+    out.resize(w * h, 0);
+    if w == 0 || h == 0 {
+        return (x0, y0, 0, 0);
+    }
+    let at = |data: &[u8], dw: u32, ox: i32, oy: i32, x: usize, y: usize| -> f32 {
+        let lx = x as i32 + x0 - ox;
+        let ly = y as i32 + y0 - oy;
+        if lx < 0 || ly < 0 {
+            return 0.0;
+        }
+        data.get(ly as usize * dw as usize + lx as usize)
+            .copied()
+            .unwrap_or(0) as f32
+    };
+    for y in 0..h {
+        for x in 0..w {
+            let v = at(a, aw, ax, ay, x, y) * w0 + at(b, bw, bx, by, x, y) * w1;
+            out[y * w + x] = v.round().clamp(0.0, 255.0) as u8;
+        }
+    }
+    (x0, y0, w as u32, h as u32)
+}
+
+
 /// Renders glyph runs snapped to the pixel grid for translation-only transforms.
 fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: TextRenderParams) {
     let pw = pixmap.width();
@@ -51,96 +151,138 @@ fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: T
     let ink_b = (params.color.b * 255.0).round() as u8;
     let total_opacity = params.opacity * params.color.a;
 
-    // Coverage-to-alpha table for this run: opacity is constant across the run,
-    // so the per-pixel float multiply + round becomes one table lookup.
-    let alpha_lut: [u8; 256] = std::array::from_fn(|i| (i as f32 * total_opacity).round() as u8);
+    // Coverage-to-alpha tables for this run: small text composites raw
+    // coverage (density carries grid-fit stems), display type folds the
+    // gamma curve in. Threshold mirrors the hinter cutoff in aurora
+    // (`SMALL_TEXT_HINT_CUTOFF_PX`): hinted bitmaps want linear density,
+    // linear outlines want corrected fringes.
+    let opacity_q = (total_opacity.clamp(0.0, 1.0) * 255.0).round() as u32;
+    let linear_lut: [u8; 256] =
+        std::array::from_fn(|i| ((i as u32 * opacity_q + 127) / 255) as u8);
+    let gamma_lut: [u8; 256] =
+        std::array::from_fn(|i| ((GAMMA_LUT[i] as u32 * opacity_q + 127) / 255) as u8);
     // Mask dimensions hoisted out of the per-pixel loop below.
     let (clip_w, clip_h) = match params.clip {
         Some(mask) => (mask.width(), mask.height()),
         None => (0, 0),
     };
 
-    // Reused staging buffer for glyph coverage. `raster_glyph` invokes its
-    // closure while holding the font-system locks, so the bitmap is copied out
-    // and blitted after the locks are released instead of compositing inline.
-    let mut coverage = Vec::with_capacity(256);
-    // Scratch accumulation for fractional blits, resized per glyph below.
-    let mut fractional = Vec::new();
+    // Reused staging buffers for glyph coverage. `raster_glyph` results are
+    // copied out so blitting never borrows from the cache; `cov10` stages
+    // the upper X endpoint, `blended` the combination.
+    let mut cov00 = Vec::with_capacity(256);
+    let mut cov10 = Vec::with_capacity(256);
+    let mut blended = Vec::new();
 
     for line in &params.layout.lines {
+        // X cross-fades the two adjacent quarter-pixel bins around the true
+        // pen, so horizontal motion is continuous; Y snaps to the nearest
+        // eighth (single crisp bitmap, 1/8px steps like Chrome/Skia).
+        // Fully blending Y as well softened static text measurably (the Y
+        // fraction is almost never exactly zero), while eighth-pixel Y
+        // steps hide in motion as whole-pixel ones never do.
+        //
+        // Small text composites linear coverage, display type gamma-corrected
+        // (see the LUTs above); the line's own size picks the table.
+        let alpha_lut: &[u8; 256] = if line.font_size <= aurora::text::SMALL_TEXT_HINT_CUTOFF_PX {
+            &linear_lut
+        } else {
+            &gamma_lut
+        };
         for g in &line.glyphs {
             let mut pt = SkiaPoint::from_xy(
                 params.origin.x + line.align_offset + g.point.x,
                 params.origin.y + g.point.y,
             );
             params.transform.map_point(&mut pt);
-            // Floor, not round: the fractional remainder is carried into the blit
-            // (see below) instead of being discarded.
-            let (base_x, base_y) = (pt.x.floor() as i32, pt.y.floor() as i32);
-            let (fx, fy) = (pt.x - pt.x.floor(), pt.y - pt.y.floor());
+            let (base_x, frac4x) = split_phase(pt.x);
+            let binx = frac4x.floor().min(3.0) as u8;
+            let tx = frac4x - binx as f32;
+            // Y snaps to the nearest eighth (see PHASE_BINS_Y): single crisp
+            // bitmap, 1/8px steps in motion.
+            let (ybase, yfrac8) = split_phase_y(pt.y);
+            let yq = yfrac8.round() as i32;
+            let (base_y, biny) = (
+                ybase + yq.div_euclid(PHASE_BINS_Y as i32),
+                yq.rem_euclid(PHASE_BINS_Y as i32) as u8,
+            );
+            // Upper X bin wraps to bin 0 of the next pixel past 3/4.
+            let binx1 = if binx < 3 { binx + 1 } else { 0 };
+            let shiftx = i32::from(binx == 3);
 
-            let mut placed: Option<(i32, i32, u32, u32)> = None;
-            text_ctx.raster_glyph(g.cache_key, |img_opt| {
-                if let Some(img) = img_opt {
-                    coverage.clear();
-                    coverage.extend_from_slice(img.data);
-                    placed = Some((base_x + img.left, base_y - img.top, img.width, img.height));
-                }
-            });
-
-            if let Some((start_x, start_y, w, h)) = placed {
-                // Exact pixel origins keep the historical fast path bit-identical;
-                // anything fractional distributes coverage instead of rounding it
-                // away (see `blit_glyph_fractional`).
-                if fx == 0.0 && fy == 0.0 {
-                    blit_glyph(
-                        pixels,
-                        pw,
-                        ph,
-                        &coverage,
-                        w,
-                        h,
-                        start_x,
-                        start_y,
-                        ink_r,
-                        ink_g,
-                        ink_b,
-                        &alpha_lut,
-                        params.clip,
-                        clip_w,
-                        clip_h,
-                    );
-                } else {
-                    blit_glyph_fractional(
-                        pixels,
-                        pw,
-                        ph,
-                        &coverage,
-                        w,
-                        h,
-                        start_x,
-                        start_y,
-                        fx,
-                        fy,
-                        ink_r,
-                        ink_g,
-                        ink_b,
-                        &alpha_lut,
-                        params.clip,
-                        clip_w,
-                        clip_h,
-                        &mut fractional,
-                    );
-                }
+            // Fetch the base corner always; the upper X corner only when
+            // the pen is actually fractional on that axis.
+            let mut p00: Option<(i32, i32, u32, u32)> = None;
+            text_ctx.raster_glyph(
+                g.cache_key,
+                binx | (biny << 2),
+                |img_opt| {
+                    if let Some(img) = img_opt {
+                        cov00.clear();
+                        cov00.extend_from_slice(img.data);
+                        p00 = Some((
+                            base_x + img.left,
+                            base_y - img.top,
+                            img.width,
+                            img.height,
+                        ));
+                    }
+                },
+            );
+            let Some((x00, y00, w00, h00)) = p00 else {
+                continue;
+            };
+            // Exact X bin hit: single crisp blit, no blend.
+            if tx == 0.0 {
+                blit_glyph(
+                    pixels, pw, ph, &cov00, w00, h00, x00, y00,
+                    ink_r, ink_g, ink_b, &alpha_lut, params.clip, clip_w, clip_h,
+                );
+                continue;
             }
+            let mut p10: Option<(i32, i32, u32, u32)> = None;
+            text_ctx.raster_glyph(
+                g.cache_key,
+                binx1 | (biny << 2),
+                |img_opt| {
+                    if let Some(img) = img_opt {
+                        cov10.clear();
+                        cov10.extend_from_slice(img.data);
+                        p10 = Some((
+                            base_x + shiftx + img.left,
+                            base_y - img.top,
+                            img.width,
+                            img.height,
+                        ));
+                    }
+                },
+            );
+            let Some((x10, y10, w10, h10)) = p10 else {
+                // Upper variant missing (evicted/oversized): hold the lower
+                // bin for this frame rather than dropping the glyph.
+                blit_glyph(
+                    pixels, pw, ph, &cov00, w00, h00, x00, y00,
+                    ink_r, ink_g, ink_b, &alpha_lut, params.clip, clip_w, clip_h,
+                );
+                continue;
+            };
+            let (ux, uy, uw, uh) = blend_phase_coverages(
+                &cov00, w00, h00, x00, y00, 1.0 - tx,
+                &cov10, w10, h10, x10, y10, tx,
+                &mut blended,
+            );
+            blit_glyph(
+                pixels, pw, ph, &blended, uw, uh, ux, uy,
+                ink_r, ink_g, ink_b, &alpha_lut, params.clip, clip_w, clip_h,
+            );
         }
     }
 }
 
 /// Renders glyph runs through the backend so rotation and scale shape the
 /// glyphs themselves. Each glyph becomes a tinted coverage pixmap drawn with
-/// the full transform from its fractional origin: the engine carries origin +
-/// transform, tiny-skia does the filtering and clipping.
+/// the full transform from its quarter-snapped origin: the engine carries
+/// origin + transform, tiny-skia does the filtering and clipping.
 fn render_text_transformed(
     pixmap: &mut PixmapMut,
     text_ctx: &TextContext,
@@ -165,18 +307,28 @@ fn render_text_transformed(
 
     for line in &params.layout.lines {
         for g in &line.glyphs {
-            // Fractional origin: no pixel-grid snap on this path.
-            let base_x = params.origin.x + line.align_offset + g.point.x;
-            let base_y = params.origin.y + g.point.y;
+            // Phase-matched bitmap per axis (X quarters, Y eighths): the
+            // residual the backend filters is tiny, and the coverage itself
+            // is rasterized at the right phase. Matches the aligned path.
+            let pen_x = params.origin.x + line.align_offset + g.point.x;
+            let (base_x, frac4x) = split_phase(pen_x);
+            let binx = frac4x.floor().min(3.0) as u8;
+            let pen_y = params.origin.y + g.point.y;
+            let (ybase, yfrac8) = split_phase_y(pen_y);
+            let yq = yfrac8.round() as i32;
+            let (base_y, biny) = (
+                ybase + yq.div_euclid(PHASE_BINS_Y as i32),
+                yq.rem_euclid(PHASE_BINS_Y as i32) as u8,
+            );
 
             let mut placed: Option<(f32, f32, u32, u32)> = None;
-            text_ctx.raster_glyph(g.cache_key, |img_opt| {
+            text_ctx.raster_glyph(g.cache_key, binx | (biny << 2), |img_opt| {
                 if let Some(img) = img_opt {
                     coverage.clear();
                     coverage.extend_from_slice(img.data);
                     placed = Some((
-                        base_x + img.left as f32,
-                        base_y - img.top as f32,
+                        base_x as f32 + binx as f32 * 0.25 + img.left as f32,
+                        base_y as f32 + biny as f32 * 0.125 - img.top as f32,
                         img.width,
                         img.height,
                     ));
@@ -269,98 +421,6 @@ fn blit_glyph(
         }
     }
 }
-
-/// Blits glyph coverage at a fractional pixel offset.
-///
-/// The integer path above rounds the glyph origin, so an animation sweeping a
-/// translation moves text in whole-pixel steps — and worse, each glyph's
-/// fractional remainder differs (advances accumulate fractionally), so glyphs
-/// pop across pixel boundaries at different times and the spacing visibly
-/// boils. This distributes each coverage texel across its neighbours by the
-/// fractional remainder instead: the run glides smoothly, and total ink is
-/// conserved (the four weights sum to one), so nothing brightens or dims
-/// mid-flight. This is the standard subpixel-positioning approximation —
-/// shifting resampled coverage rather than re-rasterizing per offset — and it
-/// keeps the cached integer-raster glyph bitmaps untouched.
-#[allow(clippy::too_many_arguments)]
-fn blit_glyph_fractional(
-    pixels: &mut [PremultipliedColorU8],
-    pw: u32,
-    ph: u32,
-    data: &[u8],
-    gw: u32,
-    gh: u32,
-    x: i32,
-    y: i32,
-    fx: f32,
-    fy: f32,
-    r: u8,
-    g: u8,
-    b: u8,
-    alpha_lut: &[u8; 256],
-    clip: Option<&Mask>,
-    clip_w: u32,
-    clip_h: u32,
-    scratch: &mut Vec<f32>,
-) {
-    let (w, h) = (gw as usize, gh as usize);
-    debug_assert!(data.len() >= w * h, "glyph coverage smaller than its bitmap");
-    // One extra row and column: a shifted texel spills over both far edges.
-    let (sw, sh) = (w + 1, h + 1);
-    scratch.clear();
-    scratch.resize(sw * sh, 0.0);
-
-    let (wx0, wy0) = (1.0 - fx, 1.0 - fy);
-    for row in 0..h {
-        for col in 0..w {
-            let c = data[row * w + col] as f32;
-            if c == 0.0 {
-                continue;
-            }
-            let base = row * sw + col;
-            // Weights sum to one per texel, so shifting conserves ink exactly
-            // (up to the final rounding, shared with the integer path).
-            scratch[base] += c * wx0 * wy0;
-            scratch[base + 1] += c * fx * wy0;
-            scratch[base + sw] += c * wx0 * fy;
-            scratch[base + sw + 1] += c * fx * fy;
-        }
-    }
-
-    for row in 0..sh {
-        let target_y = y + row as i32;
-        if target_y < 0 || target_y >= ph as i32 {
-            continue;
-        }
-        for col in 0..sw {
-            let target_x = x + col as i32;
-            if target_x < 0 || target_x >= pw as i32 {
-                continue;
-            }
-            let covered = scratch[row * sw + col].round().clamp(0.0, 255.0) as usize;
-            let mut alpha = alpha_lut[covered];
-            if let Some(mask) = clip {
-                let tx = target_x as u32;
-                let ty = target_y as u32;
-                if tx >= clip_w || ty >= clip_h {
-                    continue;
-                }
-                // Modulate by the mask instead of thresholding so clipped
-                // glyph edges fade like every other primitive.
-                let coverage = mask.data()[(ty * clip_w + tx) as usize] as f32 / 255.0;
-                alpha = (alpha as f32 * coverage).round() as u8;
-            }
-
-            if alpha == 0 {
-                continue;
-            }
-
-            let idx = (target_y as usize * pw as usize) + target_x as usize;
-            blend_source_over(&mut pixels[idx], r, g, b, alpha);
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -373,136 +433,79 @@ mod tests {
         Pixmap::new(w, h).expect("test pixmap allocates")
     }
 
-    /// Zero fractions must reproduce the integer path exactly: the fast path
-    /// stays bit-identical by construction, and this locks it in.
+    /// Phase split covers the pixel exactly once: base plus fraction
+    /// reconstructs the pen, fraction in [0, 4).
     #[test]
-    fn zero_fractions_match_the_integer_blit() {
-        let data: Vec<u8> = (0..20).map(|i| (i * 37 % 256) as u8).collect();
-        let lut = identity_lut();
-
-        let mut a = blank(16, 16);
-        blit_glyph(
-            a.pixels_mut(),
-            16,
-            16,
-            &data,
-            5,
-            4,
-            3,
-            2,
-            255,
-            255,
-            255,
-            &lut,
-            None,
-            0,
-            0,
-        );
-
-        let mut scratch = Vec::new();
-        let mut b = blank(16, 16);
-        blit_glyph_fractional(
-            b.pixels_mut(),
-            16,
-            16,
-            &data,
-            5,
-            4,
-            3,
-            2,
-            0.0,
-            0.0,
-            255,
-            255,
-            255,
-            &lut,
-            None,
-            0,
-            0,
-            &mut scratch,
-        );
-
-        assert_eq!(a.pixels(), b.pixels());
+    fn split_phase_covers_the_pixel() {
+        assert_eq!(split_phase(4.0), (4, 0.0));
+        assert_eq!(split_phase(4.5), (4, 2.0));
+        let (base, frac4) = split_phase(-0.1);
+        assert_eq!(base, -1);
+        assert!((frac4 - 3.6).abs() < 1e-6, "frac4 = {frac4}");
+        for hundredths in -200..200 {
+            let pos = hundredths as f32 / 100.0;
+            let (b, f) = split_phase(pos);
+            assert!((0.0..4.0).contains(&f), "pos {pos}: frac4 {f}");
+            assert!(
+                ((b as f32 + f / 4.0) - pos).abs() < 1e-6,
+                "pos {pos} reconstructs"
+            );
+        }
     }
 
-    /// A half-pixel shift must split ink evenly, conserving the total: this is
-    /// what turns per-pixel popping into a smooth glide.
+    /// Blend endpoints: weight 1.0 reproduces the first bitmap, 0.0 the
+    /// second, and the union origin covers both placements.
     #[test]
-    fn half_pixel_shift_splits_ink_evenly() {
+    fn blend_endpoints_reproduce_inputs() {
+        let mut out = Vec::new();
+        // t = 0 → a verbatim (b placed one right, must not leak in).
+        let (x, y, w, h) = blend_phase_coverages(
+            &[200], 1, 1, 5, 5, 1.0,
+            &[100], 1, 1, 6, 5, 0.0,
+            &mut out,
+        );
+        assert_eq!((x, y, w, h), (5, 5, 2, 1));
+        assert_eq!(out, vec![200, 0]);
+        // t = 1 → b verbatim.
+        let (x, y, w, h) = blend_phase_coverages(
+            &[200], 1, 1, 5, 5, 0.0,
+            &[100], 1, 1, 6, 5, 1.0,
+            &mut out,
+        );
+        assert_eq!((x, y, w, h), (5, 5, 2, 1));
+        assert_eq!(out, vec![0, 100]);
+    }
+
+    /// Blend midpoint: overlapping texels average, ragged edges contribute
+    /// zero outside their own bitmap (wrap case: bin 3 at base, bin 0 at
+    /// base + 1).
+    #[test]
+    fn blend_midpoint_averages_overlap() {
+        let mut out = Vec::new();
+        let (x, y, w, h) = blend_phase_coverages(
+            &[200, 200], 2, 1, 5, 5, 0.5,
+            &[100, 100], 2, 1, 6, 5, 0.5,
+            &mut out,
+        );
+        assert_eq!((x, y, w, h), (5, 5, 3, 1));
+        assert_eq!(out, vec![100, 150, 50]);
+    }
+
+
+    /// Integer blit sanity: full-coverage texel lands opaque ink, zero stays.
+    #[test]
+    fn integer_blit_paints_coverage_verbatim() {
         let lut = identity_lut();
-        let mut scratch = Vec::new();
-        let mut canvas = blank(16, 16);
-        blit_glyph_fractional(
+        let mut canvas = blank(8, 8);
+        blit_glyph(
             canvas.pixels_mut(),
-            16,
-            16,
-            &[255],
-            1,
-            1,
-            4,
-            4,
-            0.5,
-            0.0,
-            255,
-            255,
-            255,
-            &lut,
-            None,
-            0,
-            0,
-            &mut scratch,
-        );
-
-        let at = |x: usize, y: usize| canvas.pixels()[y * 16 + x].alpha();
-        assert_eq!(at(4, 4), 128);
-        assert_eq!(at(5, 4), 128);
-        assert_eq!(at(4, 4) as u32 + at(5, 4) as u32, 256);
-    }
-
-    /// Shifting must conserve ink across a whole glyph: the sum of blended
-    /// alpha is identical at integer and fractional origins (up to rounding),
-    /// so text neither brightens nor dims mid-animation.
-    #[test]
-    fn fractional_shift_conserves_total_ink() {
-        let data: Vec<u8> = (0..48).map(|i| (i * 53 % 256) as u8).collect();
-        let lut = identity_lut();
-
-        let total = |pixels: &[PremultipliedColorU8]| -> u32 {
-            pixels.iter().map(|p| p.alpha() as u32).sum()
-        };
-
-        let mut a = blank(24, 24);
-        blit_glyph(
-            a.pixels_mut(),
-            24,
-            24,
-            &data,
             8,
-            6,
-            5,
-            5,
-            255,
-            255,
-            255,
-            &lut,
-            None,
-            0,
-            0,
-        );
-
-        let mut scratch = Vec::new();
-        let mut b = blank(24, 24);
-        blit_glyph_fractional(
-            b.pixels_mut(),
-            24,
-            24,
-            &data,
             8,
-            6,
-            5,
-            5,
-            0.37,
-            0.71,
+            &[255, 0],
+            2,
+            1,
+            3,
+            2,
             255,
             255,
             255,
@@ -510,15 +513,11 @@ mod tests {
             None,
             0,
             0,
-            &mut scratch,
         );
-
-        let (ta, tb) = (total(a.pixels()), total(b.pixels()));
-        let diff = ta.abs_diff(tb);
-        assert!(
-            diff * 100 <= ta * 2,
-            "ink must be conserved within rounding: integer sum {ta}, shifted sum {tb}"
-        );
+        let at = |x: usize, y: usize| canvas.pixels()[y * 8 + x].alpha();
+        assert_eq!(at(3, 2), 255);
+        assert_eq!(at(4, 2), 0);
+        assert_eq!(at(2, 2), 0);
     }
 }
 

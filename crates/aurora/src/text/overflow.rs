@@ -13,6 +13,11 @@ pub enum TextOverflow {
     Ellipsis,
 }
 
+/// Upper bound on word-backoff re-shapes: each pass drops at least one word,
+/// so this caps pathological multi-shape loops while staying far above any
+/// realistic word count on one line.
+const MAX_BACKOFF_SHAPES: usize = 8;
+
 /// Clamps an already-shaped layout to `max_lines`, ending the last line with an ellipsis.
 ///
 /// Walks the visible last line's glyph clusters backwards, preferring a word boundary, so
@@ -21,7 +26,7 @@ pub fn truncate_to_lines(
     params: &TextShapeParams,
     full: TextLayout,
     max_lines: usize,
-    shape: impl Fn(&str) -> TextLayout,
+    mut shape: impl FnMut(&str) -> TextLayout,
 ) -> TextLayout {
     if max_lines == 0 || full.lines.len() <= max_lines {
         return full;
@@ -39,10 +44,16 @@ pub fn truncate_to_lines(
 
     let last = &full.lines[max_lines - 1];
     let bytes = params.text.as_bytes();
+    // Running prefix widths: one O(g) pass instead of re-summing the prefix
+    // on every shrink step.
+    let mut prefix = Vec::with_capacity(last.glyphs.len() + 1);
+    prefix.push(0.0f32);
+    for g in &last.glyphs {
+        prefix.push(prefix.last().copied().unwrap_or(0.0) + g.advance);
+    }
     let mut keep = last.glyphs.len();
     while keep > 0 {
-        let kept: f32 = last.glyphs[..keep].iter().map(|g| g.advance).sum();
-        if kept + ellipsis_w <= available + 0.01 {
+        if prefix[keep] + ellipsis_w <= available + 0.01 {
             break;
         }
         keep -= 1;
@@ -71,13 +82,18 @@ pub fn truncate_to_lines(
     let mut text: String = params.text[..end_byte].trim_end().to_string();
     text.push('\u{2026}');
     let mut layout = shape(&text);
-    // Guard against shaping surprises: keep backing off whole words until it fits.
-    while layout.lines.len() > max_lines {
+    // Guard against shaping surprises: keep backing off whole words until it
+    // fits, bounded so a pathological breaker cannot loop reshaping forever.
+    // Each pass drops at least one word, so the bound only bites when the
+    // breaker disagrees with the advance sums above.
+    let mut backoffs = 0;
+    while layout.lines.len() > max_lines && backoffs < MAX_BACKOFF_SHAPES {
         match text[..text.len() - 1].rfind(char::is_whitespace) {
             Some(cut) => {
                 text.truncate(cut);
                 text.push('\u{2026}');
                 layout = shape(&text);
+                backoffs += 1;
             }
             None => break,
         }

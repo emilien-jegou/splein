@@ -17,6 +17,7 @@ pub fn compile_stacking_context(
     viewport: ResolvedRect,
     new_commands: &mut usize,
     cached_chunks: &mut usize,
+    caret_visible: bool,
 ) {
     let node_state = &arena.get(ctx.node_id).state;
     let is_clean = !node_state.dirty.contains(DirtyFlags::SUBTREE_DIRTY);
@@ -61,6 +62,7 @@ pub fn compile_stacking_context(
             viewport,
             new_commands,
             cached_chunks,
+            caret_visible,
         );
     }
 
@@ -80,6 +82,7 @@ pub fn compile_stacking_context(
         viewport,
         Transform::from_translation(ctx.abs_origin.x, ctx.abs_origin.y),
         true,
+        caret_visible,
     );
 
     // Rebase to chunk-local: the root offset becomes (0,0), placement travels
@@ -103,6 +106,7 @@ pub fn compile_stacking_context(
             viewport,
             new_commands,
             cached_chunks,
+            caret_visible,
         );
     }
 }

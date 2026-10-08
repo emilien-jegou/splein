@@ -134,7 +134,16 @@ impl AppConfig {
         let cx = Cx::new(Rc::clone(&runtime));
         let root = cx.enter(root_fn).into_element();
 
-        let mut engine = Engine::with_runtime(Rc::clone(&runtime), root, self.width, self.height);
+        // The engine, the backend surface, and pointer input all run in
+        // physical pixels (the viewport is later kept from `Resized`, which
+        // winit also reports physically). Seeding the physical size here —
+        // rather than waiting for the first `Resized`, which may arrive after
+        // the first press — keeps input aimed from the very first frame on
+        // HiDPI displays. At scale 1 this is a no-op.
+        let physical = window.inner_size();
+        let (pw, ph) = (physical.width.max(1), physical.height.max(1));
+
+        let mut engine = Engine::with_runtime(Rc::clone(&runtime), root, pw, ph);
         engine.set_background(self.background);
         for f in &self.fonts {
             engine.load_font(f);
@@ -152,8 +161,8 @@ impl AppConfig {
                 );
                 factory(
                     Arc::clone(&window),
-                    self.width,
-                    self.height,
+                    pw,
+                    ph,
                     engine.text_context(),
                 )
                 .expect("Vello backend init failed")
@@ -165,8 +174,8 @@ impl AppConfig {
                 );
                 factory(
                     window.clone(),
-                    self.width,
-                    self.height,
+                    pw,
+                    ph,
                     engine.text_context(),
                 )
                 .expect("CPU backend init failed")

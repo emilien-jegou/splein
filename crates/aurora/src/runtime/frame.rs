@@ -22,16 +22,18 @@ pub fn run_frame_passes(
     frame_counter: u64,
     frame_damage: &mut DamageRegion,
     preserved: Option<ResolvedRect>,
+    caret_visible: bool,
 ) -> (crate::runtime::FrameStats, FrameDiagnostics) {
     let t_start = std::time::Instant::now();
 
+    // The clock already ticked in `Engine::frame`, before input dispatch, so
+    // queued gestures measure against this frame's own delta. Ticking again
+    // here would consume a second delta per frame and starve forced test
+    // deltas one frame early.
+    //
     // One clock feeds everything time-driven this frame: the reactive tickers that drive
     // userland animation.
     let t_react0 = std::time::Instant::now();
-    scheduler.clock.tick();
-    // Animation integrates on a fixed grid rather than on whatever the frame measured, so a
-    // transition lands in the same place at 30fps as at 144fps. The measured delta still
-    // drives the pointer clock below, which is wall-clock rather than simulated.
     let (steps, step) = scheduler.clock.animation_steps();
     for _ in 0..steps {
         crate::reactive::tick(&scheduler.runtime, step);
@@ -88,6 +90,11 @@ pub fn run_frame_passes(
     // destination for one frame before jumping back to animate.
     let (paint_flags, paint_passes) = scheduler.drain_paint_after_layout();
     let _ = paint_flags;
+    // Marks recorded while the commit ran (drain, reconcile, layout, and the
+    // paint drain above) are already represented through explicit pushes; only
+    // between-frame writes may accumulate from here on. See
+    // `FrameScheduler::discard_commit_marks`.
+    scheduler.discard_commit_marks();
 
     let t1 = std::time::Instant::now();
     let removed = scheduler.arena.drain_removed_damage();
@@ -118,6 +125,7 @@ pub fn run_frame_passes(
             &scheduler.text_ctx,
             frame_damage,
             viewport,
+            caret_visible,
         )
     };
     let t_compile = t2.elapsed();

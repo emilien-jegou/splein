@@ -110,7 +110,15 @@ pub fn exit_node_frame(
 }
 
 /// Emits shadows, rect fills/strokes, shaped text, or custom primitives into the active chunk.
-pub fn emit_node_content(node: &LayoutNode, chunk: &mut SceneChunk, text_ctx: &TextContext) {
+///
+/// `caret_visible` is the engine's blink phase; the caret paints only while it
+/// is on (and the node is focused with a collapsed selection).
+pub fn emit_node_content(
+    node: &LayoutNode,
+    chunk: &mut SceneChunk,
+    text_ctx: &TextContext,
+    caret_visible: bool,
+) {
     // A node that declares itself a clipping boundary owns its render box as a *surface*:
     // the card the user sees growing must paint up to the edge that is visibly moving, not
     // stop at its settled height while its own contents reveal past it. A node that is only
@@ -164,7 +172,12 @@ pub fn emit_node_content(node: &LayoutNode, chunk: &mut SceneChunk, text_ctx: &T
                 node.style.width.is_fit(),
                 node.resolved_rect.width,
             );
-            t.emit(&layout, chunk);
+            t.emit(
+                &layout,
+                chunk,
+                node.state.text_selection,
+                node.state.text_focused && caret_visible,
+            );
         }
         NodeKind::Custom(p) => {
             p.paint(&mut PaintContext::new(chunk), flow_rect);

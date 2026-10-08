@@ -2,10 +2,11 @@
 
 use winit::event::Modifiers;
 use winit::event::{ElementState, MouseButton, WindowEvent};
+use winit::keyboard::{Key, NamedKey};
 use winit::keyboard::ModifiersKeyState;
 
 use crate::foundation::Point;
-use crate::input::{PointerButton, PointerEvent, PointerPhase};
+use crate::input::{KeyCode, KeyEvent, PointerButton, PointerEvent, PointerPhase};
 use crate::runtime::Engine;
 
 /// Bridges a platform's window events to the engine's pointer vocabulary.
@@ -112,6 +113,30 @@ impl PointerBridge {
                 // screen has changed yet, so this does not ask for a redraw.
                 false
             }
+            WindowEvent::KeyboardInput { event, .. } => {
+                // Releases carry no editing intent; auto-repeats arrive as presses.
+                if event.state != ElementState::Pressed {
+                    return false;
+                }
+                let Some(code) = map_logical_key(&event.logical_key) else {
+                    return false;
+                };
+                // Keys only edit a focused selection; without one nothing can
+                // change, so this asks for no redraw either.
+                if engine.focused_text().is_none() {
+                    return false;
+                }
+                let modifiers = self.modifiers;
+                engine.queue_key_event(KeyEvent {
+                    code,
+                    shift: down(modifiers.lshift_state()) || down(modifiers.rshift_state()),
+                    alt: down(modifiers.lalt_state()) || down(modifiers.ralt_state()),
+                    ctrl: down(modifiers.lcontrol_state()) || down(modifiers.rcontrol_state()),
+                    meta: down(modifiers.lsuper_state()) || down(modifiers.rsuper_state()),
+                    repeat: event.repeat,
+                });
+                true
+            }
             WindowEvent::CursorLeft { .. } => {
                 self.position = None;
                 // Leaving the window mid-drag must not strand a capture on the view that was
@@ -145,6 +170,27 @@ impl PointerBridge {
 /// kind of platform detail that silently breaks shortcuts.
 fn down(state: ModifiersKeyState) -> bool {
     state == ModifiersKeyState::Pressed
+}
+
+/// Maps a platform logical key to the engine's selection vocabulary.
+///
+/// Pure so tests can cover it without constructing a full window event
+/// (winit's `KeyEvent` carries crate-private platform data).
+pub fn map_logical_key(key: &Key) -> Option<KeyCode> {
+    match key {
+        Key::Named(named) => match named {
+            NamedKey::ArrowLeft => Some(KeyCode::Left),
+            NamedKey::ArrowRight => Some(KeyCode::Right),
+            NamedKey::ArrowUp => Some(KeyCode::Up),
+            NamedKey::ArrowDown => Some(KeyCode::Down),
+            NamedKey::Home => Some(KeyCode::Home),
+            NamedKey::End => Some(KeyCode::End),
+            NamedKey::Escape => Some(KeyCode::Escape),
+            _ => None,
+        },
+        Key::Character(text) => text.chars().next().map(KeyCode::Char),
+        _ => None,
+    }
 }
 
 /// Converts a physical position into the engine's window coordinate space.

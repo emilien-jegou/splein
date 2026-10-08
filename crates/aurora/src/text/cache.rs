@@ -36,6 +36,7 @@ struct StyleKey {
     style: FontStyle,
     size_bits: u32,
     weight: u16,
+    variations: Vec<([u8; 4], u32)>,
     line_height_bits: u32,
     letter_spacing_bits: u32,
     align: TextAlign,
@@ -58,6 +59,11 @@ impl StyleKey {
             style: params.style,
             size_bits: quantize_bits(params.size),
             weight: params.weight,
+            variations: params
+                .variations
+                .iter()
+                .map(|v| (v.tag, v.value.to_bits()))
+                .collect(),
             line_height_bits: quantize_bits(params.line_height),
             letter_spacing_bits: quantize_bits(params.letter_spacing),
             align: params.align,
@@ -180,6 +186,7 @@ mod tests {
             overflow: TextOverflow::Clip,
             max_lines: None,
             weight: 400,
+            variations: &[],
             constraints: Constraints::loose(max_width, f32::INFINITY),
         }
     }

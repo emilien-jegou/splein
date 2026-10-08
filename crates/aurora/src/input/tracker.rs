@@ -57,6 +57,13 @@ pub struct PointerTracker {
     since_click: f32,
     /// Engine time of the most recent sample.
     last_sample_at: f32,
+    /// Wall time of the most recent sample, for burst expiry.
+    ///
+    /// The engine clock is clamped and scaled for animation, so after an idle
+    /// stretch it can never report the gap that actually passed. The burst
+    /// would then never expire in an on-demand frame loop and every click
+    /// past the second would select a paragraph. Wall time has no clamp.
+    last_wall_at: f32,
     history: Vec<Sample>,
 }
 
@@ -90,6 +97,26 @@ impl PointerTracker {
     #[inline]
     pub fn is_dragging(&self) -> bool {
         self.dragging
+    }
+
+    /// Clicks completed in the current burst (0 on a first press).
+    ///
+    /// The router reads this on `Down` to latch selection granularity before
+    /// the release: 0 is a caret press, 1 a word press, 2+ a paragraph press.
+    #[inline]
+    pub fn burst_count(&self) -> u32 {
+        self.clicks
+    }
+
+    /// Drops the current burst, so the next press counts as a first click.
+    ///
+    /// The router calls this when a press lands on a different target than
+    /// the previous one: multi-click counts are per target (a button press
+    /// must not turn the next text press into a word select), and the timeout
+    /// alone cannot tell targets apart.
+    #[inline]
+    pub fn reset_burst(&mut self) {
+        self.clicks = 0;
     }
 
     /// Whether releasing now would deliver a click.
@@ -136,13 +163,19 @@ impl PointerTracker {
         }
     }
 
-    /// Folds one pointer sample into the tracker at engine time `at`, returning what changed.
-    pub fn feed(&mut self, event: &PointerEvent, at: f32) -> TrackerChange {
+    /// Folds one pointer sample into the tracker at engine time `at` and wall
+    /// time `wall_now`, returning what changed.
+    ///
+    /// Engine time drives velocity; wall time expires the click burst. They
+    /// differ whenever frames run on demand: engine time clamps idle gaps for
+    /// animation stability, wall time reports them in full.
+    pub fn feed(&mut self, event: &PointerEvent, at: f32, wall_now: f32) -> TrackerChange {
         // A burst expires on its own so a slow second click is a fresh single click.
-        if self.clicks > 0 && at - self.last_sample_at > CLICK_BURST_SECS {
+        if self.clicks > 0 && wall_now - self.last_wall_at > CLICK_BURST_SECS {
             self.clicks = 0;
         }
         self.last_sample_at = at;
+        self.last_wall_at = wall_now;
         self.cursor = Some(event.position);
         self.push_sample(event.position, at);
 
@@ -173,6 +206,11 @@ impl PointerTracker {
                         // Movement disqualifies the press as a click, so releasing after a
                         // drag cannot also fire one.
                         self.click_armed = false;
+                        // A drag also breaks the click burst: the press never
+                        // completed as a click, so the next press must start
+                        // fresh instead of inheriting a stale double-click
+                        // count and selecting a word or a paragraph.
+                        self.clicks = 0;
                         self.last = event.position;
                         return TrackerChange::DragStarted;
                     }
@@ -196,7 +234,9 @@ impl PointerTracker {
                 self.capture = None;
                 self.last = event.position;
                 if self.click_armed {
-                    self.clicks = self.clicks.saturating_add(1).min(2);
+                    // Capped at triple: single caret, double word, triple paragraph.
+                    // Further presses in the burst hold the paragraph selection.
+                    self.clicks = self.clicks.saturating_add(1).min(3);
                     self.since_click = 0.0;
                     self.click_armed = false;
                     return TrackerChange::Released { click: self.clicks };
@@ -247,6 +287,7 @@ impl Default for PointerTracker {
             clicks: 0,
             since_click: 0.0,
             last_sample_at: 0.0,
+            last_wall_at: 0.0,
             history: Vec::new(),
         }
     }

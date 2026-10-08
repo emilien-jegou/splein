@@ -2,7 +2,7 @@
 
 use crate::foundation::Constraints;
 use crate::text::align::TextAlign;
-use crate::text::fonts::{FontId, FontStyle};
+use crate::text::fonts::{FontId, FontStyle, FontVariation};
 use crate::text::layout::TextLayout;
 use crate::text::overflow::TextOverflow;
 
@@ -31,6 +31,8 @@ pub struct TextShapeParams<'a> {
     pub max_lines: Option<u32>,
     /// Numeric font weight.
     pub weight: u16,
+    /// Variable-font axis settings applied as Parley `FontVariations`.
+    pub variations: &'a [FontVariation],
     /// Layout constraints for line wrapping and bounding.
     pub constraints: Constraints,
 }

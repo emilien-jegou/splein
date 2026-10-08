@@ -215,6 +215,7 @@ fn emit_label(
         overflow: crate::text::TextOverflow::Clip,
         max_lines: None,
         color,
+        ..crate::text::TextConfig::default()
     };
     let layout = text_ctx.shape_config(&cfg, crate::foundation::Constraints::loose(80.0, 16.0));
     chunk.push(SceneCommand::DrawText {

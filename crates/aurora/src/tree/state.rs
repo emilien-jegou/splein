@@ -3,6 +3,7 @@
 use crate::foundation::{LayoutPresence, ResolvedRect, Transform};
 use crate::input::handlers::NodeHandlers;
 use crate::scene::SceneChunk;
+use crate::text::selection::{SelectionGranularity, TextSelection};
 use crate::text::TextLayout;
 use crate::tree::binding::NodeBindings;
 use crate::tree::cache::LayoutCache;
@@ -48,6 +49,19 @@ pub struct NodeState {
     pub declared_transform: Transform,
     /// Layout footprint this node presents to its parent.
     pub presence: LayoutPresence,
+    /// Ephemeral mouse selection for selectable text (readonly MVP).
+    ///
+    /// Owned by the engine's pointer router, not by reconciliation: a drag
+    /// writes it per sample and only dirties paint, never layout. Cleared when
+    /// the content changes or a press lands elsewhere.
+    pub text_selection: Option<TextSelection>,
+    /// Whether this node owns keyboard focus for selection editing.
+    ///
+    /// Only a focused collapsed selection paints a caret; blur hides it while
+    /// keeping the range for the selection API.
+    pub text_focused: bool,
+    /// Click-count granularity latched for the active selection gesture.
+    pub selection_granularity: SelectionGranularity,
     /// Keys of the children this node last reconciled.
     ///
     /// A node whose children come from reactive state is re-reconciled only when this

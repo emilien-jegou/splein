@@ -24,6 +24,16 @@ pub struct TreeArena {
     pub removed_damage: Vec<ResolvedRect>,
     /// Stable key index used to reach retained nodes across frames.
     keys: KeyRegistry,
+    /// Every node marked dirty since the last frame commit, with its flags.
+    ///
+    /// Input and engine writes mark arena flags directly, bypassing the
+    /// reactive drains — without this outbox their nodes never reached
+    /// `dirty_nodes_this_frame`, so the damage plan walked an empty list on
+    /// input-only frames and paint-only highlights never rasterized (state
+    /// set, scene recompiled, pixels unchanged). `commit_frame` drains this
+    /// alongside the reactive mutations and dedups. Entries for nodes
+    /// removed mid-commit are skipped by validity checks downstream.
+    pub dirty_outbox: SmallVec<[(NodeId, DirtyFlags); 8]>,
 }
 
 impl TreeArena {
@@ -34,6 +44,7 @@ impl TreeArena {
             free_indices: Vec::new(),
             removed_damage: Vec::new(),
             keys: KeyRegistry::new(),
+            dirty_outbox: SmallVec::new(),
         }
     }
 

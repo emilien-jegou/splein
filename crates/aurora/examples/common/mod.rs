@@ -157,6 +157,9 @@ impl ExampleCli {
         }
     }
     /// Initializes Tracy profiling layer and stdout logger.
+    ///
+    /// Honors `RUST_LOG` (e.g. `RUST_LOG=aurora::input=debug` to watch text
+    /// selection press/drag/release decisions); defaults to info level.
     pub fn init_telemetry(&self) {
         #[cfg(feature = "tracy")]
         {
@@ -164,9 +167,10 @@ impl ExampleCli {
             use tracing_subscriber::util::SubscriberInitExt;
             use tracing_subscriber::Layer;
 
-            let fmt_layer = tracing_subscriber::fmt::layer()
-                .with_target(false)
-                .with_filter(tracing_subscriber::filter::LevelFilter::INFO);
+            let fmt_layer = tracing_subscriber::fmt::layer().with_target(false).with_filter(
+                tracing_subscriber::EnvFilter::try_from_default_env()
+                    .unwrap_or_else(|_| "info".parse().expect("info parses")),
+            );
 
             let _ = tracing_subscriber::registry()
                 .with(fmt_layer)
@@ -178,7 +182,10 @@ impl ExampleCli {
         #[cfg(not(feature = "tracy"))]
         {
             tracing_subscriber::fmt()
-                .with_max_level(tracing::Level::INFO)
+                .with_env_filter(
+                    tracing_subscriber::EnvFilter::try_from_default_env()
+                        .unwrap_or_else(|_| "info".parse().expect("info parses")),
+                )
                 .with_target(false)
                 .init();
         }

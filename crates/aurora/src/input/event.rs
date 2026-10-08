@@ -72,3 +72,13 @@ pub struct ClickInfo {
 pub struct HoverInfo {
     pub position: Point,
 }
+
+/// Pointer cursor shape the engine asks the platform for.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub enum CursorIcon {
+    /// The ordinary arrow.
+    #[default]
+    Default,
+    /// The I-beam over selectable text.
+    Text,
+}

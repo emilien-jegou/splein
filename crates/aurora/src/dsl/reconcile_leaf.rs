@@ -43,8 +43,19 @@ pub fn reconcile_text(
         || node_ref.style.width != def.width.unwrap_or(Size::Fit)
         || node_ref.style.height != def.height.unwrap_or(Size::Fit);
 
+    // Stale byte offsets would highlight the wrong text after an edit, and a
+    // node that stops being selectable keeps no highlight at all.
+    let clear_selection = match &node_ref.kind {
+        NodeKind::Text(old) => old.content != config.content || !config.selectable,
+        _ => true,
+    };
+
     if changed {
         arena.mark_dirty(id, DirtyFlags::MEASURE | DirtyFlags::LAYOUT);
+    }
+    if clear_selection {
+        let node = arena.get_mut(id);
+        node.state.text_selection = None;
     }
 
     let effective_z = if def.z_index != 0 {

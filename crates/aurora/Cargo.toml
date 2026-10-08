@@ -7,18 +7,26 @@ description = "Layout Engine"
 license = "GPL-3.0"
 
 [features]
-default = []
+default = ["os-clipboard"]
 tracy = ["dep:tracy-client", "dep:tracing-tracy"]
+# Pushes Ctrl+C selections to the OS clipboard in real windows (arboard).
+# Opt out (`--no-default-features`) for display-less builds; the engine keeps
+# its internal clipboard either way and headless use never touches the OS.
+os-clipboard = ["dep:arboard"]
 
 [dependencies]
-cosmic-text = { version = "0.12", default-features = false, features = ["std", "swash"] }
+parley = { version = "0.11", default-features = false, features = ["std"] }
+swash = { version = "0.2" }
 tiny-skia = "0.11"
 winit = { version = "0.29", default-features = false, features = ["rwh_06", "x11", "wayland"] }
 resvg = "0.42"
-sys-locale = "0.3.2"
 rustc-hash = "2.1.3"
 smallvec = "1.16.1"
 bon = "3.3"
+unicode-segmentation = "1.12"
+# Optional: OS clipboard push for real windows only (see `os-clipboard`
+# feature). Text-only, no image handling; Wayland via data-control.
+arboard = { version = "3", default-features = false, features = ["wayland-data-control"], optional = true }
 
 # Attribute macros (#[component])
 aurora-macros = { path = "../aurora-macros", version = "0.0.1-rc.1" }

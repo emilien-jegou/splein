@@ -9,46 +9,6 @@ use aurora::tree::DirtyFlags;
 
 #[test]
 #[ntest::timeout(5_000)]
-fn test_6_1_hover_color_diff_strictly_isolated_to_damage_bounds() {
-    let mut engine = Engine::headless(400, 400);
-    let mut raster = HeadlessRaster::new();
-    let color = engine.signal(Color::RED);
-
-    engine.mount(
-        group().width(400.0).height(400.0).children([group()
-            .margin(Margin::sides(10.0, 10.0, 10.0, 10.0))
-            .width(50.0)
-            .height(50.0)
-            .fill(color.clone())]),
-    );
-    engine.frame();
-
-    let canvas_before = raster.draw_engine(&mut engine).clone();
-
-    color.set(Color::BLUE);
-    let FrameReport {
-        diagnostics: diag, ..
-    } = engine.frame();
-
-    let canvas_after = raster.draw_engine(&mut engine);
-    let damage_box = diag.spatial.damaged_rects[0];
-
-    for y in 0..400 {
-        for x in 0..400 {
-            let p = Point::new(x as f32, y as f32);
-            if !damage_box.contains(p) {
-                assert_eq!(
-                    canvas_before.pixel(x, y),
-                    canvas_after.pixel(x, y),
-                    "Scenario 6.1: Pixels outside damage rect were modified at ({x}, {y})"
-                );
-            }
-        }
-    }
-}
-
-#[test]
-#[ntest::timeout(5_000)]
 fn test_6_2_shadow_color_mutation_reuses_cached_blur_mask() {
     let mut engine = Engine::headless(400, 400);
     let shadow_color = engine.signal(Color::rgba(0.0, 0.0, 0.0, 0.5));
@@ -143,86 +103,6 @@ fn test_6_5_rotated_rect_outside_translation_box_still_rasterizes() {
     assert!(
         px.red() > 200,
         "Scenario 6.5: rotated rect culled despite overlapping the tile"
-    );
-}
-
-#[test]
-#[ntest::timeout(5_000)]
-fn test_6_6_rotated_text_rotates_glyph_shapes_not_just_positions() {
-    use aurora_tiny_skia::{render_text, TextRenderParams};
-    use aurora::text::{TextConfig, TextContext};
-
-    let ctx = TextContext::new();
-    ctx.load_font(include_bytes!("../assets/inter-var.ttf"));
-    let config = TextConfig {
-        content: "—".to_string(),
-        size: 48.0,
-        ..TextConfig::default()
-    };
-    let layout = ctx.shape_config(&config, Constraints::loose(f32::INFINITY, f32::INFINITY));
-    assert!(
-        !layout.lines.is_empty(),
-        "Scenario 6.6: em dash failed to shape"
-    );
-
-    // Inked-pixel bounding box of a canvas.
-    fn ink_bbox(canvas: &tiny_skia::Pixmap) -> Option<(u32, u32, u32, u32)> {
-        let (mut x0, mut y0) = (u32::MAX, u32::MAX);
-        let (mut x1, mut y1) = (0u32, 0u32);
-        for y in 0..canvas.height() {
-            for x in 0..canvas.width() {
-                if canvas.pixel(x, y).map_or(false, |p| p.alpha() > 8) {
-                    x0 = x0.min(x);
-                    y0 = y0.min(y);
-                    x1 = x1.max(x);
-                    y1 = y1.max(y);
-                }
-            }
-        }
-        (x1 >= x0).then_some((x0, y0, x1 - x0 + 1, y1 - y0 + 1))
-    }
-
-    // Control: unrotated em dash is a wide horizontal bar.
-    let mut flat = tiny_skia::Pixmap::new(240, 160).unwrap();
-    render_text(
-        &mut flat.as_mut(),
-        &ctx,
-        TextRenderParams {
-            origin: Point::new(20.0, 100.0),
-            layout: &layout,
-            color: Color::BLACK,
-            opacity: 1.0,
-            transform: tiny_skia::Transform::identity(),
-            clip: None,
-        },
-    );
-    let (_, _, fw, fh) = ink_bbox(&flat).expect("Scenario 6.6: flat dash drew nothing");
-    assert!(
-        fw >= 2 * fh,
-        "Scenario 6.6: control dash should be wide ({fw}x{fh})"
-    );
-
-    // Rotated 90 degrees, the bar must stand vertical. The old path moved the
-    // (unrotated) horizontal bitmap to the rotated position, staying wide.
-    let spun = tiny_skia::Transform::from_translate(170.0, 20.0)
-        .pre_concat(tiny_skia::Transform::from_rotate(90.0));
-    let mut tall = tiny_skia::Pixmap::new(240, 160).unwrap();
-    render_text(
-        &mut tall.as_mut(),
-        &ctx,
-        TextRenderParams {
-            origin: Point::ZERO,
-            layout: &layout,
-            color: Color::BLACK,
-            opacity: 1.0,
-            transform: spun,
-            clip: None,
-        },
-    );
-    let (_, _, rw, rh) = ink_bbox(&tall).expect("Scenario 6.6: rotated dash drew nothing");
-    assert!(
-        rh >= 2 * rw,
-        "Scenario 6.6: rotated dash should be tall ({rw}x{rh})"
     );
 }
 

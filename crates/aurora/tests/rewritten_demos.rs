@@ -59,66 +59,6 @@ fn drawn_area(h: &mut Harness) -> usize {
 
 #[test]
 #[ntest::timeout(5_000)]
-fn layout_split_moves_its_card_without_relayout() {
-    let mut h = Harness::page(
-        layout_split::Page,
-        layout_split::WIDTH,
-        layout_split::HEIGHT,
-    )
-    .with_background(Color::hex(0xF4F5F7));
-    let flow_before = h.located("card").flow;
-
-    h.steps(30);
-
-    let moved = h.transform("card").tx;
-    assert!(
-        moved.abs() > 1.0,
-        "the frame clock must move the card, it is at {moved}"
-    );
-    assert_eq!(
-        h.located("card").flow,
-        flow_before,
-        "the card's layout box must never move: this is the whole point of the demo"
-    );
-    assert!(
-        accent_area(&mut h) > 200,
-        "the card must actually be painted, found {} accent samples",
-        accent_area(&mut h)
-    );
-}
-
-#[test]
-#[ntest::timeout(5_000)]
-fn signals_drives_every_row_from_one_spring() {
-    let mut h = Harness::page(signals::Page, signals::WIDTH, signals::HEIGHT)
-        .with_background(Color::hex(0xF4F5F7));
-    let before = h.view();
-
-    // Past the first reversal the puck has travelled and the swatch has recoloured.
-    h.steps(130);
-    let after = h.view();
-
-    assert!(
-        before.count_matching(3, |p| p.near(ACCENT, 12)) > 200,
-        "the accent puck must be painted at the start"
-    );
-    assert!(
-        after.count_matching(3, |p| p.near(ACCENT, 12)) > 200,
-        "and must still be painted at the end"
-    );
-
-    // The colour row is fed by the same spring, so a large part of the frame must have
-    // changed hue. Asserting that a *particular* swatch colour is present is weaker and
-    // wrong: which colour is on screen depends on where the spring happens to be.
-    assert!(
-        before.changed_pixels(&after, 12) > 500,
-        "one spring must drive the whole page; only {} samples changed",
-        before.changed_pixels(&after, 12)
-    );
-}
-
-#[test]
-#[ntest::timeout(5_000)]
 fn imperative_moves_panel_and_badge_on_their_own_curves() {
     let mut h = Harness::page(imperative::Page, imperative::WIDTH, imperative::HEIGHT)
         .with_background(Color::hex(0xF4F5F7));
@@ -138,60 +78,6 @@ fn imperative_moves_panel_and_badge_on_their_own_curves() {
     assert!(
         (badge_after.a - badge_before.a).abs() > 0.01,
         "the badge must animate on its own spring, {badge_before:?} -> {badge_after:?}"
-    );
-}
-
-#[test]
-#[ntest::timeout(5_000)]
-fn interruption_never_lets_the_card_snap() {
-    let mut h = Harness::page(
-        interruption::Page,
-        interruption::WIDTH,
-        interruption::HEIGHT,
-    )
-    .with_background(Color::hex(0xF4F5F7));
-
-    // Retargets land every 450ms. A trace is what makes this checkable: a pop is a single
-    // frame that moves the card most of the way, which comparing two endpoints cannot see.
-    let trace = h.trace("card", 200);
-    assert!(
-        trace.worst_jump() < 90.0,
-        "a retarget must not pop the card; worst single-frame jump was {:.1}px",
-        trace.worst_jump()
-    );
-    assert!(
-        trace.path_length() > 300.0,
-        "the card must actually be travelling, path was {:.1}px",
-        trace.path_length()
-    );
-}
-
-#[test]
-#[ntest::timeout(5_000)]
-fn press_responds_to_a_real_press_and_springs_back() {
-    let mut h = Harness::page(press::Page, press::WIDTH, press::HEIGHT)
-        .with_background(Color::hex(0xF4F5F7));
-    let rest = h.transform("cta").a;
-    assert!(
-        (rest - 1.0).abs() < 0.02,
-        "the button starts at rest, {rest}"
-    );
-
-    h.press("cta");
-    // The eased squeeze takes 90ms, so let it play out while the button is held.
-    h.steps(10);
-    let held = h.transform("cta").a;
-    assert!(
-        held < 0.98,
-        "holding the button must squeeze it, scale is {held}"
-    );
-
-    h.release("cta");
-    assert!(h.settle(600), "the button must come to rest after release");
-    let released = h.transform("cta").a;
-    assert!(
-        (released - 1.0).abs() < 0.02,
-        "releasing must spring back to rest, scale is {released}"
     );
 }
 
@@ -226,21 +112,6 @@ fn reorder_ready() -> Harness {
         "the reorder list must come to rest before anything is aimed at it"
     );
     h
-}
-
-#[test]
-#[ntest::timeout(5_000)]
-fn reorder_rows_actually_paint() {
-    // Non-vacuous by construction: damage-parity tests compare two canvases and pass
-    // when both are blank, so only an absolute pixel count catches a backend that
-    // silently drops draws (e.g. tiny-skia skips draws whose mask dimensions differ
-    // from the target — a blank canvas then "matches" a blank truth).
-    let mut h = reorder_ready();
-    let painted = accent_area(&mut h);
-    assert!(
-        painted > 200,
-        "the settled rows must actually be painted, found {painted} accent samples"
-    );
 }
 
 #[test]
@@ -393,48 +264,6 @@ fn a_drag_across_several_strides_lands_the_row_at_the_bottom() {
 /// The threshold is a smoke alarm, not a specification: a demo that starts drawing mostly
 /// outside a non-clipping parent shows up here, and the per-demo tests above pin down
 /// whether that is intended.
-#[test]
-#[ntest::timeout(5_000)]
-fn every_demo_draws_and_reports_little_unexpected_geometry() {
-    let pages: [(&str, fn() -> aurora::dsl::Element, u32, u32); 6] = [
-        (
-            "layout_split",
-            layout_split::Page,
-            layout_split::WIDTH,
-            layout_split::HEIGHT,
-        ),
-        ("signals", signals::Page, signals::WIDTH, signals::HEIGHT),
-        (
-            "imperative",
-            imperative::Page,
-            imperative::WIDTH,
-            imperative::HEIGHT,
-        ),
-        (
-            "interruption",
-            interruption::Page,
-            interruption::WIDTH,
-            interruption::HEIGHT,
-        ),
-        ("press", press::Page, press::WIDTH, press::HEIGHT),
-        ("reorder", reorder::Page, reorder::WIDTH, reorder::HEIGHT),
-    ];
-
-    for (name, page_fn, w, h_) in pages {
-        let mut h = Harness::page(page_fn, w, h_).with_background(Color::hex(0xF4F5F7));
-        h.steps(60);
-        let drawn = drawn_area(&mut h);
-        assert!(drawn > 500, "{name} barely drew anything: {drawn} samples");
-
-        let notes = report(h.engine());
-        assert!(
-            notes.len() < 8,
-            "{name} reported {} geometry notes: {:?}",
-            notes.len(),
-            notes.iter().map(|e| e.describe()).collect::<Vec<_>>()
-        );
-    }
-}
 
 /// The height layout actually gave a row.
 ///

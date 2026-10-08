@@ -34,7 +34,32 @@ impl SurfacePresenter {
             return;
         }
 
+        // Escape hatch for compositors where partial damage misbehaves: skips
+        // the damage upload entirely and presents the whole viewport.
+        // Diagnostic use (`AURORA_FULL_PRESENT=1`): if a missing highlight
+        // appears with this set, the partial path is at fault, not the scene.
+        // Read once: presenting runs per frame and must not pay an env lookup.
+        static FULL_PRESENT: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        if *FULL_PRESENT.get_or_init(|| std::env::var_os("AURORA_FULL_PRESENT").is_some()) {
+            Self::present_viewport()
+                .pixmap(pixmap)
+                .buffer(buffer)
+                .active_w(active_w)
+                .active_h(active_h)
+                .post_process(post_process)
+                .call();
+            return;
+        }
+
         let age = buffer.age();
+        tracing::debug!(
+            age,
+            damage_rects = damage.rects().len(),
+            extra = extra_damage.len(),
+            active_w,
+            active_h,
+            "presenting damaged"
+        );
         if age == 0 {
             Self::present_viewport()
                 .pixmap(pixmap)

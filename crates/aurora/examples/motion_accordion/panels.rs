@@ -105,7 +105,7 @@ fn item(
         .stroke(Stroke::inside(1.0, hairline()))
         .children((
             header(index, title, is_open.clone(), open.clone()),
-            panel_body(copy, is_open),
+            panel_body(index, copy, is_open),
         ))
 }
 
@@ -146,7 +146,11 @@ fn header(
 ///
 /// The fade is keyed to *this* item rather than to whether anything is open, so a closed
 /// item cannot be left visible by a sibling opening.
-fn panel_body(copy: &'static str, is_open: Derived<bool>) -> impl IntoElement {
+///
+/// The copy is selectable body text: press-drag highlights it natively. The header title
+/// above deliberately stays plain — it owns the open/close click, and a selectable title
+/// would turn every drifted press into a drag and swallow the toggle.
+fn panel_body(index: usize, copy: &'static str, is_open: Derived<bool>) -> impl IntoElement {
     // The copy fades on the same clock as the box, so it never appears before the reveal.
     let reveal =
         Transition::ease(180.ms(), Ease::OutCubic)
@@ -162,6 +166,8 @@ fn panel_body(copy: &'static str, is_open: Derived<bool>) -> impl IntoElement {
         .margin(Margin::sides(0.0, 20.0, BODY_PAD, 20.0))
         .opacity(reveal)
         .children([text(copy)
+            .key(format!("copy-{index}"))
+            .selectable(true)
             .size(13.0)
             .line_height(COPY_LINE)
             .color(Color::hex(BODY))

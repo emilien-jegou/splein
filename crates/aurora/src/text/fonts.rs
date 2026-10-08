@@ -1,4 +1,4 @@
-// Font identifiers and font data management for cosmic-text.
+// Font identifiers and font data management for the Parley text pipeline.
 
 use std::sync::Arc;
 
@@ -30,5 +30,39 @@ impl FontData {
             name: name.into(),
             bytes: Arc::new(bytes),
         }
+    }
+}
+
+/// A single variable-font axis setting: 4-byte OpenType tag plus value.
+///
+/// Tags are raw 4-byte arrays (`*b"wght"`, `*b"opsz"`, `*b"wdth"`); use
+/// [`FontVariation::named`] for the common `&str` form.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct FontVariation {
+    /// Raw 4-byte OpenType axis tag.
+    pub tag: [u8; 4],
+    /// Axis value in font design units.
+    pub value: f32,
+}
+
+impl FontVariation {
+    /// Builds a setting from a 4-character axis name (`"wght"`, `"opsz"`, ...).
+    ///
+    /// Returns `None` when the name is not exactly 4 ASCII characters.
+    pub fn named(tag: &str, value: f32) -> Option<Self> {
+        let bytes = tag.as_bytes();
+        if bytes.len() == 4 && bytes.is_ascii() {
+            Some(Self {
+                tag: [bytes[0], bytes[1], bytes[2], bytes[3]],
+                value,
+            })
+        } else {
+            None
+        }
+    }
+
+    /// Converts to the Parley setting consumed by the shaper.
+    pub(crate) fn to_parley(self) -> parley::FontVariation {
+        parley::FontVariation::new(parley::setting::Tag::from_bytes(self.tag), self.value)
     }
 }

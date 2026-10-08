@@ -14,7 +14,7 @@ pub use crate::foundation::{
     Alignment, Anchor, Color, Direction, Distribution, Fill, Gap, LayoutPresence, Margin, Radius,
     RenderDriver, Shadow, ShadowKind, Size, Stroke, StrokeAlign, Transform,
 };
-pub use crate::input::{ClickInfo, DragInfo, HitTest, HoverInfo, PointerButton, PointerEvent, PointerPhase, Propagation};
+pub use crate::input::{ClickInfo, CursorIcon, DragInfo, HitTest, HoverInfo, KeyCode, KeyEvent, PointerButton, PointerEvent, PointerPhase, Propagation};
 pub use crate::reactive::{
     ambient_guard, batch, computed, use_frame_clock, use_interval, use_interval_toggle,
     use_playback, use_signal, use_signal_keyed, use_timeout, AmbientGuard, Cx, Derived, Effect,
@@ -28,7 +28,10 @@ pub use crate::derived;
 pub use crate::render::RenderBackend;
 pub use crate::runtime::{Engine, FrameDiagnostics, FrameReport};
 pub use crate::scene::vector::VectorGraphic;
-pub use crate::text::{FontStyle, LineHeight, TextAlign, TextDecoration, TextOverflow};
+pub use crate::text::{
+    FontStyle, LineHeight, SelectionGranularity, TextAlign, TextDecoration, TextOverflow,
+    TextSelection,
+};
 pub use crate::tree::Primitive;
 /// Attribute macro marking a function as a component that runs inside the hook scope.
 pub use aurora_macros::component;

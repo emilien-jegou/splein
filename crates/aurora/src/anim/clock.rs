@@ -30,6 +30,14 @@ pub struct Clock {
     previous: Instant,
     forced: Option<f32>,
     last: f32,
+    /// Wall time since the previous tick: unclamped and unscaled.
+    ///
+    /// Animation clamps (`MAX_DELTA_SECS`) and scales its deltas, which is
+    /// correct for springs but fatal for gesture timeouts: after an idle
+    /// stretch the next frame reports at most 0.1s no matter how long the
+    /// user was actually away, so anything measured against `last` (like the
+    /// double-click burst) can never expire in an on-demand frame loop.
+    wall: f32,
     scale: f32,
     /// Total animation time simulated so far, in seconds.
     ///
@@ -62,6 +70,7 @@ impl Clock {
             previous: Instant::now(),
             forced: None,
             last: 0.0,
+            wall: 0.0,
             scale: 1.0,
             simulated: 0.0,
             step_requests: 0,
@@ -94,10 +103,18 @@ impl Clock {
         let now = Instant::now();
         let measured = (now - self.previous).as_secs_f32();
         self.previous = now;
-        let dt = match self.forced.take() {
-            Some(dt) => dt.max(0.0),
-            None => measured.min(MAX_DELTA_SECS),
+        // Forced deltas are honoured in full (headless steps mean what they
+        // say); measured ones clamp for animation stability.
+        let (raw, dt) = match self.forced.take() {
+            Some(dt) => {
+                let dt = dt.max(0.0);
+                (dt, dt)
+            }
+            None => (measured, measured.min(MAX_DELTA_SECS)),
         };
+        // Wall time is the raw gap: no clamp (idle stretches count in full)
+        // and no scale (a double-click is 0.4 real seconds even in slow motion).
+        self.wall = raw;
         let scaled = dt * self.scale;
         self.last = scaled;
         scaled
@@ -174,6 +191,16 @@ impl Clock {
     #[inline(always)]
     pub fn last_delta(&self) -> f32 {
         self.last
+    }
+
+    /// Wall time since the previous tick: unclamped and unscaled.
+    ///
+    /// What gesture timeouts (click bursts) advance against. Unlike
+    /// [`Self::last_delta`], an idle stretch reports in full here, so a burst
+    /// still expires when frames only run on demand.
+    #[inline(always)]
+    pub fn wall_delta(&self) -> f32 {
+        self.wall
     }
 }
 
