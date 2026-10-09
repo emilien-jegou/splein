@@ -74,7 +74,7 @@ pub fn compute_intrinsic(
     // 2. O(1) Cache Hit (0 tracing overhead)
     if let Some(cached) = arena
         .get(node_id)
-        .state
+        .state.core
         .cache
         .get_intrinsic(&effective_constraints)
     {
@@ -92,7 +92,7 @@ pub fn compute_intrinsic_with_constraints(
     constraints: Constraints,
     text_ctx: &TextContext,
 ) -> IntrinsicSize {
-    if let Some(cached) = arena.get(node_id).state.cache.get_intrinsic(&constraints) {
+    if let Some(cached) = arena.get(node_id).state.core.cache.get_intrinsic(&constraints) {
         return cached;
     }
     measure_intrinsic_uncached(arena, node_id, constraints, text_ctx)
@@ -109,7 +109,7 @@ fn measure_intrinsic_uncached(
         let intrinsic = measure_group_intrinsic(arena, node_id, constraints, text_ctx);
         arena
             .get_mut(node_id)
-            .state
+            .state.core
             .cache
             .store_intrinsic(constraints, intrinsic);
         return intrinsic;
@@ -127,11 +127,11 @@ fn measure_intrinsic_uncached(
 
     let target_node = arena.get_mut(node_id);
     target_node
-        .state
+        .state.core
         .cache
         .store_intrinsic(constraints, intrinsic);
     if let Some(layout) = shaped_layout {
-        target_node.state.cached_text_layout = Some(layout);
+        target_node.state.text.cached_text_layout = Some(layout);
     }
 
     intrinsic
@@ -150,7 +150,7 @@ pub fn fit_text_run_to_width(
 ) {
     let config = match &arena.get(id).kind {
         NodeKind::Text(config) => {
-            let cached = arena.get(id).state.cached_text_layout.as_deref();
+            let cached = arena.get(id).state.text.cached_text_layout.as_deref();
             if !crate::text::TextConfig::needs_refit(cached, width) {
                 return;
             }
@@ -159,7 +159,7 @@ pub fn fit_text_run_to_width(
         _ => return,
     };
     let layout = config.refit(text_ctx, width);
-    arena.get_mut(id).state.cached_text_layout = Some(layout);
+    arena.get_mut(id).state.text.cached_text_layout = Some(layout);
 }
 
 /// Derives desired width and height for a child in O(1) without subtree recursion when fixed.
@@ -172,7 +172,7 @@ pub fn compute_child_desired(
     text_ctx: &TextContext,
 ) -> DesiredSize {
     // A node presenting no footprint measures to nothing on either axis.
-    if arena.get(child_id).state.presence == LayoutPresence::Absent {
+    if arena.get(child_id).state.core.presence == LayoutPresence::Absent {
         return DesiredSize {
             width: 0.0,
             height: 0.0,

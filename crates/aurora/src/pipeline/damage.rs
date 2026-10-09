@@ -112,7 +112,7 @@ fn resolve_spatial_and_damage(
         .appearance
         .light_override
         .unwrap_or(inherited_light);
-    arena.get_mut(id).state.resolved_light = ambient;
+    arena.get_mut(id).state.core.resolved_light = ambient;
 
     let node_abs = node_tx.transform_point(Point::new(0.0, 0.0));
     // Unclipped occupancy drives damage: a node leaving its clip must still clear its old pixels.
@@ -139,18 +139,18 @@ fn resolve_spatial_and_damage(
     let flow_bounds = arena.get(id).compute_flow_bounds(&node_tx, active_clip);
 
     let node = arena.get_mut(id);
-    let old_bounds = node.state.last_painted_bounds;
-    let old_flow = node.state.last_painted_flow;
+    let old_bounds = node.state.paint.last_painted_bounds;
+    let old_flow = node.state.paint.last_painted_flow;
     let is_text_mutation = matches!(node.kind, NodeKind::Text(_))
-        && (node.state.dirty.contains(DirtyFlags::MEASURE)
-            || node.state.dirty.contains(DirtyFlags::LAYOUT));
+        && (node.state.core.dirty.contains(DirtyFlags::MEASURE)
+            || node.state.core.dirty.contains(DirtyFlags::LAYOUT));
 
     if let Some(old) = old_bounds {
         // Either the box moved or the interior re-flowed: both vacate pixels.
         if old != full_bounds || old_flow != Some(flow_bounds) {
             damage.push(old);
             damage.push(full_bounds);
-        } else if node.state.dirty.contains(DirtyFlags::PAINT) || is_text_mutation {
+        } else if node.state.core.dirty.contains(DirtyFlags::PAINT) || is_text_mutation {
             let damage_target = if child_count > 0 {
                 subtree_bounds
             } else {
@@ -162,6 +162,6 @@ fn resolve_spatial_and_damage(
         damage.push(full_bounds);
     }
 
-    node.state.subtree_bounds = subtree_bounds;
+    node.state.paint.subtree_bounds = subtree_bounds;
     subtree_bounds
 }

@@ -204,7 +204,7 @@ impl PointerRouter {
     pub fn has_visible_caret(&self, arena: &TreeArena) -> bool {
         match self.focused {
             Some(id) if arena.is_valid(id) => {
-                arena.get(id).state.text_selection.is_some_and(|s| s.is_collapsed())
+                arena.get(id).state.text.text_selection.is_some_and(|s| s.is_collapsed())
             }
             _ => false,
         }
@@ -310,7 +310,7 @@ impl PointerRouter {
                     // Selectable text is natively draggable (selection drag needs
                     // no app-declared handlers).
                     let draggable = self.press_chain.iter().any(|id| {
-                        arena.get(*id).state.handlers.handles_drag()
+                        arena.get(*id).state.input.handlers.handles_drag()
                             || selectable_text(&*arena, *id)
                     });
                     self.tracker.set_drag_enabled(draggable);
@@ -885,13 +885,13 @@ impl PointerRouter {
         }
         if let Some(old) = self.focused.take() {
             if arena.is_valid(old) {
-                arena.get_mut(old).state.text_focused = false;
+                arena.get_mut(old).state.input.text_focused = false;
                 arena.mark_dirty(old, DirtyFlags::PAINT);
             }
         }
         self.focused = node;
         if let Some(n) = node {
-            arena.get_mut(n).state.text_focused = true;
+            arena.get_mut(n).state.input.text_focused = true;
             arena.mark_dirty(n, DirtyFlags::PAINT);
         }
         self.key_goal_x = None;
@@ -912,7 +912,7 @@ impl PointerRouter {
         let (content, layout) = match &arena.get(node).kind {
             NodeKind::Text(t) => (
                 t.content.clone(),
-                arena.get(node).state.cached_text_layout.clone(),
+                arena.get(node).state.text.cached_text_layout.clone(),
             ),
             _ => return false,
         };
@@ -1095,7 +1095,7 @@ impl PointerRouter {
                 NodeKind::Text(t) => t.content.clone(),
                 _ => return None,
             };
-            let sel = arena.get(node).state.text_selection?;
+            let sel = arena.get(node).state.text.text_selection?;
             let (s, e) = sel.normalized();
             return (e > s).then(|| content.get(s..e).unwrap_or("").to_string());
         };
@@ -1112,7 +1112,7 @@ impl PointerRouter {
                 NodeKind::Text(t) => t.content.clone(),
                 _ => continue,
             };
-            let Some(sel) = arena.get(id).state.text_selection else {
+            let Some(sel) = arena.get(id).state.text.text_selection else {
                 continue;
             };
             let (s, e) = sel.normalized();
@@ -1334,8 +1334,8 @@ fn paint_cross_selection(
         if sel.is_collapsed() {
             // Keep the caret stored (focus/blink) without a highlight.
             if arena.is_valid(id) {
-                arena.get_mut(id).state.text_selection = Some(sel);
-                arena.get_mut(id).state.selection_granularity = gran;
+                arena.get_mut(id).state.text.text_selection = Some(sel);
+                arena.get_mut(id).state.text.selection_granularity = gran;
                 arena.mark_dirty(id, DirtyFlags::PAINT);
             }
             return vec![id];
@@ -1372,7 +1372,7 @@ fn current_selection(arena: &TreeArena, node: NodeId) -> Option<TextSelection> {
     if !arena.is_valid(node) {
         return None;
     }
-    arena.get(node).state.text_selection
+    arena.get(node).state.text.text_selection
 }
 
 /// Maps a window point to a caret offset in a text node.
@@ -1384,7 +1384,7 @@ fn caret_for(arena: &TreeArena, node: NodeId, position: Point) -> Option<usize> 
     let node_ref = arena.get(node);
     let (layout, content) = match &node_ref.kind {
         NodeKind::Text(t) => (
-            node_ref.state.cached_text_layout.clone()?,
+            node_ref.state.text.cached_text_layout.clone()?,
             t.content.as_str(),
         ),
         _ => return None,
@@ -1422,8 +1422,8 @@ fn apply_selection(
     if text_is_empty(arena, node) {
         return;
     }
-    arena.get_mut(node).state.text_selection = Some(selection);
-    arena.get_mut(node).state.selection_granularity = granularity;
+    arena.get_mut(node).state.text.text_selection = Some(selection);
+    arena.get_mut(node).state.text.selection_granularity = granularity;
     arena.mark_dirty(node, DirtyFlags::PAINT);
 }
 
@@ -1432,8 +1432,8 @@ fn clear_selection(arena: &mut TreeArena, node: NodeId) {
     if !arena.is_valid(node) {
         return;
     }
-    if arena.get(node).state.text_selection.is_some() {
-        arena.get_mut(node).state.text_selection = None;
+    if arena.get(node).state.text.text_selection.is_some() {
+        arena.get_mut(node).state.text.text_selection = None;
         arena.mark_dirty(node, DirtyFlags::PAINT);
     }
 }
@@ -1442,7 +1442,7 @@ fn clear_selection(arena: &mut TreeArena, node: NodeId) {
 /// it is Opaque dead space that must not ghost through to nodes beneath.
 #[inline]
 fn absorbs(arena: &TreeArena, id: NodeId) -> bool {
-    !arena.get(id).state.handlers.is_empty()
+    !arena.get(id).state.input.handlers.is_empty()
         || arena.get(id).style.hit_test == HitTest::Opaque
         || selectable_text(arena, id)
 }
@@ -1450,7 +1450,7 @@ fn absorbs(arena: &TreeArena, id: NodeId) -> bool {
 /// Whether a node has handlers to fire (vs. absorbing silently as Opaque space).
 #[inline]
 fn absorbs_handlers_only(arena: &TreeArena, id: NodeId) -> bool {
-    !arena.get(id).state.handlers.is_empty()
+    !arena.get(id).state.input.handlers.is_empty()
 }
 
 /// Invokes one handler slot on a node, if it has one.
@@ -1466,7 +1466,7 @@ fn fire(
     if !arena.is_valid(id) {
         return (false, false);
     }
-    match arena.get(id).state.handlers.get() {
+    match arena.get(id).state.input.handlers.get() {
         Some(handlers) => {
             let propagation = invoke(handlers);
             (true, propagation == Propagation::Stop)

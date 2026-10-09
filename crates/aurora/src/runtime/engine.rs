@@ -256,7 +256,7 @@ impl Engine {
     pub fn text_selection(&self, key: impl Into<Key>) -> Option<TextSelection> {
         self.with_arena(|arena, _| {
             let id = arena.node_for_key(&key.into())?;
-            arena.get(id).state.text_selection
+            arena.get(id).state.text.text_selection
         })
     }
 
@@ -269,7 +269,7 @@ impl Engine {
                 crate::tree::NodeKind::Text(t) => t.content.clone(),
                 _ => return None,
             };
-            let sel = node.state.text_selection?;
+            let sel = node.state.text.text_selection?;
             let (s, e) = sel.normalized();
             Some(text.get(s..e).unwrap_or("").to_string())
         })
@@ -294,7 +294,7 @@ impl Engine {
                     let node = arena.get(id);
                     if let crate::tree::NodeKind::Text(t) = &node.kind {
                         if t.selectable {
-                            if let Some(sel) = node.state.text_selection {
+                            if let Some(sel) = node.state.text.text_selection {
                                 let (s, e) = sel.normalized();
                                 if e > s {
                                     out.push(t.content.get(s..e).unwrap_or("").to_string());
@@ -328,7 +328,7 @@ impl Engine {
             return false;
         }
         let node = self.scheduler.arena.get_mut(id);
-        node.state.text_selection = selection;
+        node.state.text.text_selection = selection;
         self.scheduler.arena.mark_dirty(id, DirtyFlags::PAINT);
         true
     }
@@ -537,7 +537,7 @@ impl Engine {
             if !self.scheduler.arena.is_valid(id) {
                 return None;
             }
-            let sel = self.scheduler.arena.get(id).state.text_selection?;
+            let sel = self.scheduler.arena.get(id).state.text.text_selection?;
             sel.is_collapsed().then_some((id, sel))
         });
         // A new or moved caret shows immediately with a full on-period; the

@@ -18,14 +18,14 @@ pub fn compute_min_size(
     axis: Direction,
     text_ctx: &TextContext,
 ) -> f32 {
-    if let Some(cached) = cached_min_size(&arena.get(id).state.cache, axis) {
+    if let Some(cached) = cached_min_size(&arena.get(id).state.core.cache, axis) {
         return cached;
     }
 
     let measured = measure_min_size(arena, id, axis, text_ctx).max(0.0);
     match axis {
-        Direction::Horizontal => arena.get_mut(id).state.cache.min_inline = Some(measured),
-        Direction::Vertical => arena.get_mut(id).state.cache.min_block = Some(measured),
+        Direction::Horizontal => arena.get_mut(id).state.core.cache.min_inline = Some(measured),
+        Direction::Vertical => arena.get_mut(id).state.core.cache.min_block = Some(measured),
     }
     measured
 }
@@ -82,7 +82,7 @@ fn min_group_size(
         .copied()
         .filter(|child| {
             !arena.get(*child).style.is_absolute
-                && arena.get(*child).state.presence.occupies_space()
+                && arena.get(*child).state.core.presence.occupies_space()
         })
         .collect();
     if flow.is_empty() {

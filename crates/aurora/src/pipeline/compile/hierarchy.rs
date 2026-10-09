@@ -75,7 +75,7 @@ pub fn compile_node_hierarchy(
         is_stacking_root,
     );
     node_mut
-        .state
+        .state.core
         .dirty
         .remove(DirtyFlags::PAINT | DirtyFlags::SUBTREE_DIRTY);
 }

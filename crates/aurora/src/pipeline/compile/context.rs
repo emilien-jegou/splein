@@ -20,11 +20,12 @@ pub fn compile_stacking_context(
     caret_visible: bool,
 ) {
     let node_state = &arena.get(ctx.node_id).state;
-    let is_clean = !node_state.dirty.contains(DirtyFlags::SUBTREE_DIRTY);
+    let is_clean = !node_state.core.dirty.contains(DirtyFlags::SUBTREE_DIRTY);
 
     // A chunk replayed from cache carries the ancestor clips it was compiled with, so a
     // parent whose box moved or resized invalidates it even when this subtree is clean.
     let clips_match = node_state
+        .scene
         .retained_chunk
         .as_ref()
         .is_some_and(|c| c.inherited_clips == ctx.inherited_clips);
@@ -35,15 +36,15 @@ pub fn compile_stacking_context(
     // byte-identical commands because pixels got dirty is the conflation
     // this branch exists to prevent.
     if is_clean && clips_match {
-        if let Some(cached) = &node_state.retained_chunk {
+        if let Some(cached) = &node_state.scene.retained_chunk {
             // Content is origin-relative, so any origin replays. Cull and
             // emit with the LIVE subtree bounds (recomputed by the damage
             // pass just before compile), never the retained ones, which
             // describe where the chunk was last frame.
-            if node_state.subtree_bounds.overlaps(&viewport) {
+            if node_state.paint.subtree_bounds.overlaps(&viewport) {
                 let mut replay = cached.clone();
                 replay.abs_origin = ctx.abs_origin;
-                replay.bounds = node_state.subtree_bounds;
+                replay.bounds = node_state.paint.subtree_bounds;
                 replay.fresh = false;
                 scene.push_chunk(replay);
                 *cached_chunks += 1;
@@ -66,7 +67,7 @@ pub fn compile_stacking_context(
         );
     }
 
-    let mut chunk = SceneChunk::new(arena.get(ctx.node_id).state.subtree_bounds, ctx.abs_origin);
+    let mut chunk = SceneChunk::new(arena.get(ctx.node_id).state.paint.subtree_bounds, ctx.abs_origin);
     let cmd_start = chunk.commands.len();
 
     // Placement-time clips, not content: the chunk stream is origin-relative,
@@ -91,7 +92,7 @@ pub fn compile_stacking_context(
     chunk.fresh = true;
     *new_commands += chunk.commands.len() - cmd_start;
 
-    arena.get_mut(ctx.node_id).state.retained_chunk = Some(chunk.clone());
+    arena.get_mut(ctx.node_id).state.scene.retained_chunk = Some(chunk.clone());
     if chunk.bounds.overlaps(&viewport) {
         scene.push_chunk(chunk);
     }

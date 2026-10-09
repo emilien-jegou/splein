@@ -100,7 +100,7 @@ impl FrameScheduler {
             .sort_unstable_by_key(|n| n.index);
         self.dirty_nodes_this_frame.dedup();
 
-        let root_dirty = self.arena.get(self.root).state.dirty;
+        let root_dirty = self.arena.get(self.root).state.core.dirty;
         let root_needs_layout =
             root_dirty.contains(DirtyFlags::LAYOUT) || root_dirty.contains(DirtyFlags::MEASURE);
         frame_flags |= root_dirty;
@@ -174,7 +174,7 @@ impl FrameScheduler {
         flags: DirtyFlags,
         sub: SubscriberId,
     ) -> Option<DirtyFlags> {
-        let bindings = self.arena.get(node).state.bindings.clone();
+        let bindings = self.arena.get(node).state.core.bindings.clone();
         let mut effective = DirtyFlags::NONE;
         let mut pending_children: Option<(Vec<crate::dsl::element::Element>, Vec<Option<Key>>)> =
             None;
@@ -191,13 +191,13 @@ impl FrameScheduler {
                     NodeKind::Text(ref mut t) => {
                         let changed = bindings.update_text(&mut t.content);
                         if changed {
-                            n.state.text_selection = None;
+                            n.state.text.text_selection = None;
                         }
                         changed
                     }
                     _ => false,
                 };
-                let presence_changed = bindings.update_presence(&mut n.state.presence);
+                let presence_changed = bindings.update_presence(&mut n.state.core.presence);
 
                 if layout_changed || text_changed || presence_changed {
                     effective.insert(flags & (DirtyFlags::MEASURE | DirtyFlags::LAYOUT));
@@ -229,7 +229,7 @@ impl FrameScheduler {
             if flags.contains(DirtyFlags::PAINT) {
                 let n = self.arena.get_mut(node);
                 let tx_changed =
-                    bindings.update_transform(n.state.declared_transform, &mut n.transform);
+                    bindings.update_transform(n.state.core.declared_transform, &mut n.transform);
                 let paint_changed = bindings.update_paint(
                     &mut n.style.appearance.fill,
                     &mut n.style.appearance.opacity,
@@ -246,14 +246,14 @@ impl FrameScheduler {
         // Reconciliation writes styles and marks nodes, so it runs with no observer
         // installed rather than being attributed to the subscriber that triggered it.
         if let Some((spec, keys)) = pending_children {
-            if keys != self.arena.get(node).state.child_keys {
+            if keys != self.arena.get(node).state.core.child_keys {
                 let runtime = Rc::clone(&self.runtime);
                 let arena = &mut self.arena;
                 let router = &mut self.router;
                 crate::dsl::reconcile_children::reconcile_children(
                     &runtime, arena, router, node, spec,
                 );
-                arena.get_mut(node).state.child_keys = keys;
+                arena.get_mut(node).state.core.child_keys = keys;
                 // Reordering moves every sibling, so this subtree re-lays out and repaints
                 // even though nothing about the node's own style changed.
                 arena.mark_dirty(node, DirtyFlags::MEASURE | DirtyFlags::LAYOUT);
@@ -398,7 +398,7 @@ impl FrameScheduler {
             }
             let node = self.arena.get(boundary);
             if node.is_layout_boundary() {
-                let constraints = node.state.cache.last_constraints.unwrap_or_else(|| {
+                let constraints = node.state.core.cache.last_constraints.unwrap_or_else(|| {
                     let (w, h) = match (node.style.width, node.style.height) {
                         (aurora_foundation::Size::Fixed(w), aurora_foundation::Size::Fixed(h)) => {
                             (w, h)

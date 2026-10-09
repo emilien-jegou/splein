@@ -23,5 +23,5 @@ pub use kind::{NodeKind, Primitive};
 pub use node::{LayoutNode, PaintLayer, OVERLAY_Z_FLOOR};
 pub use registry::KeyRegistry;
 pub use router::SubscriberRouter;
-pub use state::NodeState;
+pub use state::{CoreState, InputState, NodeState, PaintState, SceneState, TextState};
 pub use style::NodeStyle;

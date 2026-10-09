@@ -17,11 +17,11 @@ pub fn collect_layout_boundaries(
             if !arena.is_valid(id) {
                 return false;
             }
-            let d = arena.get(id).state.dirty;
+            let d = arena.get(id).state.core.dirty;
             d.contains(DirtyFlags::LAYOUT) || d.contains(DirtyFlags::MEASURE)
         })
         .map(|&id| {
-            let is_dim = arena.get(id).state.bindings.has_dimension_bindings();
+            let is_dim = arena.get(id).state.core.bindings.has_dimension_bindings();
             let origin = if is_dim {
                 arena.parent(id).unwrap_or(id)
             } else {

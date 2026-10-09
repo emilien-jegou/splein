@@ -149,7 +149,7 @@ pub fn emit_node_content(
             rect: surface_rect,
             radius: node.style.appearance.radius,
             shadow: s.clone(),
-            light: node.state.resolved_light,
+            light: node.state.core.resolved_light,
         });
     }
 
@@ -169,15 +169,15 @@ pub fn emit_node_content(
         NodeKind::Text(t) => {
             let layout = t.resolve_paint_layout(
                 text_ctx,
-                node.state.cached_text_layout.clone(),
+                node.state.text.cached_text_layout.clone(),
                 node.style.width.is_fit(),
                 node.resolved_rect.width,
             );
             t.emit(
                 &layout,
                 chunk,
-                node.state.text_selection,
-                node.state.text_focused && caret_visible,
+                node.state.text.text_selection,
+                node.state.input.text_focused && caret_visible,
             );
         }
         NodeKind::Custom(p) => {

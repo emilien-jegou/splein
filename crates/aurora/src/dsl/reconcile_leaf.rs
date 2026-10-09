@@ -30,7 +30,7 @@ pub fn reconcile_text(
         text: def.content.dynamic_closure(),
         ..Default::default()
     };
-    arena.get_mut(id).state.bindings = NodeBindings::from_store(store);
+    arena.get_mut(id).state.core.bindings = NodeBindings::from_store(store);
 
     let content = evaluate_prop(&Some(def.content.clone()), m_sub, runtime).unwrap_or_default();
     let config = def.to_config(content);
@@ -55,7 +55,7 @@ pub fn reconcile_text(
     }
     if clear_selection {
         let node = arena.get_mut(id);
-        node.state.text_selection = None;
+        node.state.text.text_selection = None;
     }
 
     let effective_z = if def.z_index != 0 {
@@ -88,7 +88,7 @@ pub fn reconcile_custom(
 ) -> NodeId {
     let id = existing.unwrap_or_else(|| arena.insert(LayoutNode::default()));
     clean_orphaned_children(runtime, arena, router, id);
-    arena.get_mut(id).state.bindings = NodeBindings::default();
+    arena.get_mut(id).state.core.bindings = NodeBindings::default();
 
     let effective_z = if def.z_index != 0 {
         def.z_index

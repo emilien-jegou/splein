@@ -37,7 +37,7 @@ pub fn layout_node_with_text(
     result: &mut LayoutResult,
     parent_abs: Point,
 ) {
-    let dirty = arena.get(node_id).state.dirty;
+    let dirty = arena.get(node_id).state.core.dirty;
     // A dirty descendant must still be visited: the cache only describes this node's own size,
     // and boundary resolution can land here even when this node was never marked dirty.
     let needs_full_pass = dirty.contains(DirtyFlags::LAYOUT)
@@ -45,7 +45,7 @@ pub fn layout_node_with_text(
         || dirty.contains(DirtyFlags::SUBTREE_DIRTY);
 
     if !needs_full_pass {
-        if let Some(cached) = arena.get(node_id).state.cache.get_layout(&constraints) {
+        if let Some(cached) = arena.get(node_id).state.core.cache.get_layout(&constraints) {
             let prev = arena.get(node_id).resolved_rect;
             let final_rect = ResolvedRect::new(prev.x, prev.y, cached.width, cached.height);
             arena.get_mut(node_id).resolved_rect = final_rect;
@@ -89,7 +89,7 @@ fn perform_node_layout(
     for &child in children {
         if arena.get(child).style.is_absolute {
             absolute.push(child);
-        } else if arena.get(child).state.presence.occupies_space() {
+        } else if arena.get(child).state.core.presence.occupies_space() {
             normal.push(child);
         } else {
             collapsed.push(child);
@@ -331,9 +331,9 @@ fn perform_node_layout(
     let root = arena.get_mut(node_id);
     root.resolved_rect = final_rect;
     root.absolute_rect = abs_rect;
-    root.state.cache.store_layout(constraints, final_rect);
-    root.state.dirty.remove(DirtyFlags::LAYOUT);
-    root.state.dirty.remove(DirtyFlags::MEASURE);
+    root.state.core.cache.store_layout(constraints, final_rect);
+    root.state.core.dirty.remove(DirtyFlags::LAYOUT);
+    root.state.core.dirty.remove(DirtyFlags::MEASURE);
 
     result.record_recomputed(abs_rect);
     if is_boundary && !is_root {

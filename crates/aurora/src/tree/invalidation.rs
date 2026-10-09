@@ -11,7 +11,7 @@ pub fn mark_node_dirty(arena: &mut TreeArena, node_id: NodeId, flags: DirtyFlags
     }
     arena
         .get_mut(node_id)
-        .state
+        .state.core
         .dirty
         .insert(flags | DirtyFlags::SUBTREE_DIRTY);
     // Every mark feeds the frame commit, not just subscriber-driven ones:
@@ -22,18 +22,18 @@ pub fn mark_node_dirty(arena: &mut TreeArena, node_id: NodeId, flags: DirtyFlags
     let mut curr = node_id;
     while let Some(parent) = arena.parent(curr) {
         let p = arena.get_mut(parent);
-        if p.state.dirty.contains(DirtyFlags::SUBTREE_DIRTY) {
+        if p.state.core.dirty.contains(DirtyFlags::SUBTREE_DIRTY) {
             break;
         }
-        p.state.dirty.insert(DirtyFlags::SUBTREE_DIRTY);
+        p.state.core.dirty.insert(DirtyFlags::SUBTREE_DIRTY);
         curr = parent;
     }
 
     if flags.contains(DirtyFlags::MEASURE) {
-        arena.get_mut(node_id).state.cache.clear();
+        arena.get_mut(node_id).state.core.cache.clear();
         propagate_upward(arena, node_id);
     } else if flags.contains(DirtyFlags::LAYOUT) {
-        arena.get_mut(node_id).state.cache.clear_layout();
+        arena.get_mut(node_id).state.core.cache.clear_layout();
     }
 }
 
@@ -49,20 +49,20 @@ fn propagate_upward(arena: &mut TreeArena, node_id: NodeId) {
 
         let p_mut = arena.get_mut(parent);
         p_mut
-            .state
+            .state.core
             .dirty
             .insert(DirtyFlags::LAYOUT | DirtyFlags::SUBTREE_DIRTY);
-        p_mut.state.cache.clear_layout();
+        p_mut.state.core.cache.clear_layout();
         // Min-content floors depend on descendants even when the ancestor has a definite size.
-        p_mut.state.cache.clear_min_sizes();
+        p_mut.state.core.cache.clear_min_sizes();
 
         if is_boundary {
             break;
         }
 
         if is_fit {
-            p_mut.state.dirty.insert(DirtyFlags::MEASURE);
-            p_mut.state.cache.clear_intrinsic();
+            p_mut.state.core.dirty.insert(DirtyFlags::MEASURE);
+            p_mut.state.core.cache.clear_intrinsic();
             current = parent;
         } else {
             break;

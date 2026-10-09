@@ -1,6 +1,10 @@
-// Single responsibility: Retained invalidation bitflags, layout caches, and dynamic bindings.
+// Single responsibility: Retained per-node state, grouped by owning domain.
+//
+// `NodeState` used to be one flat bag of fields from five domains, so every pass touched
+// every other pass's state through the same struct. The groups below draw the ownership
+// lines the crate split follows: each group moves to its domain crate with the code that
+// reads and writes it, while the tree keeps the arena and the hierarchy.
 
-use aurora_foundation::{LayoutPresence, ResolvedRect, Transform};
 use crate::input::handlers::NodeHandlers;
 use crate::scene::SceneChunk;
 use crate::text::selection::{SelectionGranularity, TextSelection};
@@ -8,22 +12,81 @@ use crate::text::TextLayout;
 use crate::tree::binding::NodeBindings;
 use crate::tree::cache::LayoutCache;
 use crate::tree::flags::DirtyFlags;
+use aurora_foundation::{Key, LayoutPresence, LightEnvironment, ResolvedRect, Transform};
 use std::sync::Arc;
 
-/// Internal engine runtime state attached to a retained arena node.
+/// Invalidation flags, layout caches, bindings, and identity: owned by the tree itself.
 #[derive(Default, Clone)]
-pub struct NodeState {
+pub struct CoreState {
     /// Active invalidation flags for this node.
     pub dirty: DirtyFlags,
     /// Cached layout calculations.
     pub cache: LayoutCache,
     /// Dynamic property bindings.
     pub bindings: NodeBindings,
+    /// The transform this node was *declared* with, before pose components are folded in.
+    ///
+    /// `Node::transform` holds the composed value, so the declared part has to be kept
+    /// separately: the reactive update path recomposes on every bound pose change and needs
+    /// the declared transform to fold the pose into, not a value that already contains it.
+    pub declared_transform: Transform,
+    /// Layout footprint this node presents to its parent.
+    pub presence: LayoutPresence,
+    /// Keys of the children this node last reconciled.
+    ///
+    /// A node whose children come from reactive state is re-reconciled only when this
+    /// sequence actually differs, so an unchanged list costs one comparison per frame.
+    pub child_keys: Vec<Option<Key>>,
+    /// Ambient light resolved for this node during the damage traversal:
+    /// the nearest ancestor override wins, else the global default.
+    ///
+    /// Written outside reconciliation (which never sees it, so overrides
+    /// never dirty unaffected nodes) and read by paint, bounds, and hit
+    /// testing. Stale at most until the next damage walk, which always
+    /// precedes the paint that consumes it.
+    pub resolved_light: LightEnvironment,
+}
+
+/// Pointer interaction state: owned by the input domain.
+#[derive(Default, Clone)]
+pub struct InputState {
     /// Pointer interaction handlers declared by this node.
     ///
     /// Kept beside the bindings because both are per-node closures that survive
     /// reconciliation behind one pointer clone.
     pub handlers: NodeHandlers,
+    /// Whether this node owns keyboard focus for selection editing.
+    ///
+    /// Only a focused collapsed selection paints a caret; blur hides it while
+    /// keeping the range for the selection API.
+    pub text_focused: bool,
+}
+
+/// Shaped text and selection state: owned by the text domain.
+#[derive(Default, Clone)]
+pub struct TextState {
+    /// Pre-shaped text layout retained from layout pass (zero mutex locks during paint).
+    pub cached_text_layout: Option<Arc<TextLayout>>,
+    /// Ephemeral mouse selection for selectable text (readonly MVP).
+    ///
+    /// Owned by the engine's pointer router, not by reconciliation: a drag
+    /// writes it per sample and only dirties paint, never layout. Cleared when
+    /// the content changes or a press lands elsewhere.
+    pub text_selection: Option<TextSelection>,
+    /// Click-count granularity latched for the active selection gesture.
+    pub selection_granularity: SelectionGranularity,
+}
+
+/// Retained paint output: owned by the scene domain.
+#[derive(Default, Clone)]
+pub struct SceneState {
+    /// Retained Display List chunk for this node's stacking context (O(1) compile bypass).
+    pub retained_chunk: Option<SceneChunk>,
+}
+
+/// Committed paint bounds: owned by the pipeline domain.
+#[derive(Default, Clone)]
+pub struct PaintState {
     /// Absolute screen-space bounding box committed during the last paint pass.
     ///
     /// Covers the union of where the box was drawn and where its content was laid out,
@@ -37,42 +100,14 @@ pub struct NodeState {
     pub last_painted_flow: Option<ResolvedRect>,
     /// Bounding box enclosing this node and all of its visual descendants.
     pub subtree_bounds: ResolvedRect,
-    /// Pre-shaped text layout retained from layout pass (zero mutex locks during paint).
-    pub cached_text_layout: Option<Arc<TextLayout>>,
-    /// Retained Display List chunk for this node's stacking context (O(1) compile bypass).
-    pub retained_chunk: Option<SceneChunk>,
-    /// The transform this node was *declared* with, before pose components are folded in.
-    ///
-    /// `Node::transform` holds the composed value, so the declared part has to be kept
-    /// separately: the reactive update path recomposes on every bound pose change and needs
-    /// the declared transform to fold the pose into, not a value that already contains it.
-    pub declared_transform: Transform,
-    /// Layout footprint this node presents to its parent.
-    pub presence: LayoutPresence,
-    /// Ephemeral mouse selection for selectable text (readonly MVP).
-    ///
-    /// Owned by the engine's pointer router, not by reconciliation: a drag
-    /// writes it per sample and only dirties paint, never layout. Cleared when
-    /// the content changes or a press lands elsewhere.
-    pub text_selection: Option<TextSelection>,
-    /// Whether this node owns keyboard focus for selection editing.
-    ///
-    /// Only a focused collapsed selection paints a caret; blur hides it while
-    /// keeping the range for the selection API.
-    pub text_focused: bool,
-    /// Click-count granularity latched for the active selection gesture.
-    pub selection_granularity: SelectionGranularity,
-    /// Keys of the children this node last reconciled.
-    ///
-    /// A node whose children come from reactive state is re-reconciled only when this
-    /// sequence actually differs, so an unchanged list costs one comparison per frame.
-    pub child_keys: Vec<Option<aurora_foundation::Key>>,
-    /// Ambient light resolved for this node during the damage traversal:
-    /// the nearest ancestor override wins, else the global default.
-    ///
-    /// Written outside reconciliation (which never sees it, so overrides
-    /// never dirty unaffected nodes) and read by paint, bounds, and hit
-    /// testing. Stale at most until the next damage walk, which always
-    /// precedes the paint that consumes it.
-    pub resolved_light: aurora_foundation::LightEnvironment,
+}
+
+/// Internal engine runtime state attached to a retained arena node.
+#[derive(Default, Clone)]
+pub struct NodeState {
+    pub core: CoreState,
+    pub input: InputState,
+    pub text: TextState,
+    pub scene: SceneState,
+    pub paint: PaintState,
 }

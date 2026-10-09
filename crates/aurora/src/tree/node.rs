@@ -229,7 +229,7 @@ impl LayoutNode {
         let mut bounds = ResolvedRect::ZERO;
         if let Some(shadow) = &self.style.appearance.shadow {
             for layer in shadow.layers() {
-                let (ox, oy) = shadow.layer_offset(&self.state.resolved_light, layer);
+                let (ox, oy) = shadow.layer_offset(&self.state.core.resolved_light, layer);
                 let pad = shadow.layer_pad(layer);
                 bounds = bounds.union(&Self::project(
                     tx,
@@ -284,7 +284,7 @@ impl LayoutNode {
 
         if let Some(shadow) = &self.style.appearance.shadow {
             for layer in shadow.layers() {
-                let (ox, oy) = shadow.layer_offset(&self.state.resolved_light, layer);
+                let (ox, oy) = shadow.layer_offset(&self.state.core.resolved_light, layer);
                 let pad = shadow.layer_pad(layer);
                 let shadow_rect = Self::project(
                     tx,

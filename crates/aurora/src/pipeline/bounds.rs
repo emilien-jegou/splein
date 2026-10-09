@@ -53,8 +53,8 @@ fn commit_node_painted_bounds(
     // record detects an interior re-flow that happens without the box moving.
     let flow_bounds = node.compute_flow_bounds(&tx, active_clip);
     let node = arena.get_mut(id);
-    node.state.last_painted_bounds = Some(visual_bounds);
-    node.state.last_painted_flow = Some(flow_bounds);
+    node.state.paint.last_painted_bounds = Some(visual_bounds);
+    node.state.paint.last_painted_flow = Some(flow_bounds);
 
     let child_count = arena.children(id).len();
     for i in 0..child_count {

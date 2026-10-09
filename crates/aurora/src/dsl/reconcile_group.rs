@@ -79,8 +79,8 @@ pub fn reconcile_group(
     // replaces wholesale, and both are stored behind one pointer clone.
     let handlers = NodeHandlers::from_store(def.handlers);
     let node = arena.get_mut(id);
-    node.state.bindings = bindings;
-    node.state.handlers = handlers;
+    node.state.core.bindings = bindings;
+    node.state.input.handlers = handlers;
 
     if change.layout {
         arena.mark_dirty(id, DirtyFlags::MEASURE | DirtyFlags::LAYOUT);
@@ -99,7 +99,7 @@ pub fn reconcile_group(
     let node = arena.get_mut(id);
     node.kind = NodeKind::Group;
     if let Some(presence) = props.presence {
-        node.state.presence = presence;
+        node.state.core.presence = presence;
     }
     if let Some(w) = props.width {
         node.style.width = w;
@@ -109,7 +109,7 @@ pub fn reconcile_group(
     }
     // Persist the declared half separately: the reactive path recomposes from it, and the
     // composed value cannot be decomposed back out.
-    node.state.declared_transform = props.declared_transform;
+    node.state.core.declared_transform = props.declared_transform;
     node.transform = props.transform;
     node.style.layout = def.layout;
     node.style.margin = def.margin;
@@ -161,7 +161,7 @@ pub fn reconcile_group(
 
     reconcile_children(runtime, arena, router, id, children);
     if def.children_builder.is_some() {
-        arena.get_mut(id).state.child_keys = child_keys;
+        arena.get_mut(id).state.core.child_keys = child_keys;
     }
     id
 }
@@ -271,7 +271,7 @@ impl ChangeSet {
     /// Compares freshly resolved properties against the node's retained state.
     fn detect(prev: &LayoutNode, def: &GroupDef, props: &ResolvedProps) -> Self {
         let presence_changed =
-            props.presence.is_some() && props.presence != Some(prev.state.presence);
+            props.presence.is_some() && props.presence != Some(prev.state.core.presence);
         let layout = (props.width.is_some() && props.width != Some(prev.style.width))
             || (props.height.is_some() && props.height != Some(prev.style.height))
             || prev.style.layout != def.layout

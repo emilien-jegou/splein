@@ -95,7 +95,7 @@ fn layout(engine: &Engine) -> Arc<TextLayout> {
         let id = arena.node_for_key(&Key::from("t")).expect("text node");
         arena
             .get(id)
-            .state
+            .state.text
             .cached_text_layout
             .clone()
             .expect("shaped layout")
@@ -105,7 +105,7 @@ fn layout(engine: &Engine) -> Arc<TextLayout> {
 fn selection(engine: &Engine) -> Option<TextSelection> {
     engine.with_arena(|arena, _| {
         let id = arena.node_for_key(&Key::from("t")).expect("text node");
-        arena.get(id).state.text_selection
+        arena.get(id).state.text.text_selection
     })
 }
 
@@ -368,7 +368,7 @@ fn accordion_selection(h: &mut Harness, key: &str) -> Option<TextSelection> {
         let id = arena
             .node_for_key(&Key::from(key.to_string()))
             .expect("copy node");
-        arena.get(id).state.text_selection
+        arena.get(id).state.text.text_selection
     })
 }
 
@@ -909,7 +909,7 @@ fn burst_resets_when_the_press_changes_target() {
             let p = arena.node_absolute_point(id);
             let h = arena
                 .get(id)
-                .state
+                .state.text
                 .cached_text_layout
                 .clone()
                 .unwrap()
@@ -1084,7 +1084,7 @@ fn accordion_top_text_is_selectable() {
                 if t.content.contains("One panel open") {
                     let p = arena.node_absolute_point(id);
                     let h = node
-                        .state
+                        .state.text
                         .cached_text_layout
                         .clone()
                         .map(|l| l.lines[0].height)
@@ -1122,7 +1122,7 @@ fn accordion_top_text_is_selectable() {
             let node = arena.get(id);
             if let aurora::tree::NodeKind::Text(t) = &node.kind {
                 if t.content.contains("One panel open") {
-                    return node.state.text_selection;
+                    return node.state.text.text_selection;
                 }
             }
             stack.extend(arena.children(id).iter().copied());
@@ -1314,7 +1314,7 @@ fn run_point(engine: &Engine, key: &str) -> Point {
         let p = arena.node_absolute_point(id);
         let layout = arena
             .get(id)
-            .state
+            .state.text
             .cached_text_layout
             .clone()
             .expect("shaped");
@@ -1329,7 +1329,7 @@ fn run_end(engine: &Engine, key: &str) -> Point {
         let p = arena.node_absolute_point(id);
         let layout = arena
             .get(id)
-            .state
+            .state.text
             .cached_text_layout
             .clone()
             .expect("shaped");

@@ -19,7 +19,7 @@ pub fn measure_group_intrinsic(
         .iter()
         .copied()
         .filter(|&id| {
-            !arena.get(id).style.is_absolute && arena.get(id).state.presence.occupies_space()
+            !arena.get(id).style.is_absolute && arena.get(id).state.core.presence.occupies_space()
         })
         .collect();
 
