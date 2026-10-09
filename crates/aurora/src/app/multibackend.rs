@@ -131,6 +131,7 @@ pub struct MultiBackendConfig {
     title: String,
     width: u32,
     height: u32,
+    fullscreen: bool,
     fonts: Vec<Vec<u8>>,
     background: Color,
     initial: RenderBackend,
@@ -150,6 +151,11 @@ impl MultiBackendConfig {
     pub fn size(mut self, w: u32, h: u32) -> Self {
         self.width = w;
         self.height = h;
+        self
+    }
+    /// Borderless fullscreen on the current monitor (gallery launcher).
+    pub fn fullscreen(mut self, on: bool) -> Self {
+        self.fullscreen = on;
         self
     }
     pub fn font(mut self, _name: &str, bytes: &[u8]) -> Self {
@@ -203,6 +209,7 @@ impl MultiBackend {
             title: "Aurora Multi-Backend".into(),
             width: 800,
             height: 600,
+            fullscreen: false,
             fonts: Vec::new(),
             background: Color::WHITE,
             initial: RenderBackend::TinySkia,
@@ -260,6 +267,7 @@ fn ensure_surface(
     title: &str,
     width: u32,
     height: u32,
+    fullscreen: bool,
     event_loop: &winit::event_loop::EventLoopWindowTarget<()>,
     factories: &MultiBackendFactories,
     text_ctx: &crate::text::TextContext,
@@ -280,6 +288,9 @@ fn ensure_surface(
                 backend_display_name(BACKEND_ORDER[slot])
             ))
             .with_inner_size(winit::dpi::LogicalSize::new(width, height))
+            .with_fullscreen(
+                fullscreen.then(|| winit::window::Fullscreen::Borderless(None)),
+            )
             .with_resizable(true)
             .with_position(winit::dpi::LogicalPosition::new(
                 80.0 + slot as f64 * 60.0,
@@ -348,11 +359,11 @@ fn run_multi<E: IntoElement, F: Fn() -> E + 'static>(config: MultiBackendConfig,
 
     match mode {
         DisplayMode::Single(i) => {
-            ensure_surface(i, &config.title, config.width, config.height, &event_loop, &config.factories, &text_ctx, &mut surfaces, &mut failed);
+            ensure_surface(i, &config.title, config.width, config.height, config.fullscreen, &event_loop, &config.factories, &text_ctx, &mut surfaces, &mut failed);
         }
         DisplayMode::Combine => {
             for slot in 0..BACKEND_ORDER.len() {
-                ensure_surface(slot, &config.title, config.width, config.height, &event_loop, &config.factories, &text_ctx, &mut surfaces, &mut failed);
+                ensure_surface(slot, &config.title, config.width, config.height, config.fullscreen, &event_loop, &config.factories, &text_ctx, &mut surfaces, &mut failed);
             }
         }
     }
@@ -373,6 +384,7 @@ fn run_multi<E: IntoElement, F: Fn() -> E + 'static>(config: MultiBackendConfig,
     let factories = config.factories;
     let title = config.title.clone();
     let (cfg_w, cfg_h) = (config.width, config.height);
+    let fullscreen = config.fullscreen;
     let _fps_limit = config.fps_limit;
 
     event_loop
@@ -384,6 +396,12 @@ fn run_multi<E: IntoElement, F: Fn() -> E + 'static>(config: MultiBackendConfig,
                     .map(|(k, _)| *k);
                 let Some(slot) = slot else { return };
                 if let WindowEvent::KeyboardInput { event: key, .. } = &event {
+                    if key.state == ElementState::Pressed
+                        && key.logical_key == Key::Named(NamedKey::Escape)
+                    {
+                        elwt.exit();
+                        return;
+                    }
                     let switch = key.state == ElementState::Pressed
                         && handle_switch_key(&key.logical_key, mode).is_some();
                     if switch {
@@ -392,7 +410,7 @@ fn run_multi<E: IntoElement, F: Fn() -> E + 'static>(config: MultiBackendConfig,
                         match mode {
                             DisplayMode::Single(i) => {
                                 let tc = engine.text_context();
-                                ensure_surface(i, &title, cfg_w, cfg_h, elwt, &factories, &tc, &mut surfaces, &mut failed);
+                                ensure_surface(i, &title, cfg_w, cfg_h, fullscreen, elwt, &factories, &tc, &mut surfaces, &mut failed);
                                 if let Some(s) = surfaces.get(&i) {
                                     s.window.request_redraw();
                                     s.window.focus_window();
@@ -402,7 +420,7 @@ fn run_multi<E: IntoElement, F: Fn() -> E + 'static>(config: MultiBackendConfig,
                             DisplayMode::Combine => {
                                 let tc = engine.text_context();
                                 for s in 0..BACKEND_ORDER.len() {
-                                    ensure_surface(s, &title, cfg_w, cfg_h, elwt, &factories, &tc, &mut surfaces, &mut failed);
+                                    ensure_surface(s, &title, cfg_w, cfg_h, fullscreen, elwt, &factories, &tc, &mut surfaces, &mut failed);
                                 }
                                 for s in surfaces.values() {
                                     s.window.request_redraw();

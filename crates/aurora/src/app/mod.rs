@@ -107,6 +107,7 @@ pub struct AppConfig {
     title: String,
     width: u32,
     height: u32,
+    fullscreen: bool,
     fonts: Vec<Vec<u8>>,
     background: Color,
     backend: RenderBackend,
@@ -126,6 +127,7 @@ impl App {
             title: "Aurora Application".into(),
             width: 800,
             height: 600,
+            fullscreen: false,
             fonts: Vec::new(),
             background: Color::WHITE,
             backend: RenderBackend::default(),
@@ -145,6 +147,11 @@ impl AppConfig {
     pub fn size(mut self, w: u32, h: u32) -> Self {
         self.width = w;
         self.height = h;
+        self
+    }
+    /// Borderless fullscreen on the current monitor (gallery launcher).
+    pub fn fullscreen(mut self, on: bool) -> Self {
+        self.fullscreen = on;
         self
     }
     pub fn font(mut self, _name: &str, bytes: &[u8]) -> Self {
@@ -190,6 +197,10 @@ impl AppConfig {
             WindowBuilder::new()
                 .with_title(&self.title)
                 .with_inner_size(winit::dpi::LogicalSize::new(self.width, self.height))
+                .with_fullscreen(
+                    self.fullscreen
+                        .then(|| winit::window::Fullscreen::Borderless(None)),
+                )
                 .with_resizable(true)
                 .build(&event_loop)
                 .unwrap(),

@@ -15,8 +15,9 @@ pub use pacing::FpsLimit;
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use winit::event::{Event, WindowEvent};
+use winit::event::{ElementState, Event, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
+use winit::keyboard::NamedKey;
 use winit::window::Window;
 
 use crate::app::extension::AppExtension;
@@ -76,6 +77,14 @@ pub fn run_event_loop(
                 }
                 match win_event {
                     WindowEvent::CloseRequested => elwt.exit(),
+                    WindowEvent::KeyboardInput { event: key, .. }
+                        if key.state == ElementState::Pressed
+                            && key.logical_key == winit::keyboard::Key::Named(NamedKey::Escape) =>
+                    {
+                        // Demos exit on Esc: the gallery launcher relies on this to
+                        // get back to the menu when a child demo closes itself.
+                        elwt.exit()
+                    }
                     WindowEvent::Resized(size) => {
                         pending_resize = Some((size.width.max(1), size.height.max(1)));
                         redraw_pending = true;
