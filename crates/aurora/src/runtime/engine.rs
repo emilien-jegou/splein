@@ -180,6 +180,18 @@ impl Engine {
             .push(ResolvedRect::new(0.0, 0.0, nw as f32, nh as f32));
     }
 
+    /// Marks the full viewport damaged on the next frame without resizing.
+    ///
+    /// For presentation backends with retained canvases (a fresh backend
+    /// after an engine/backend swap, a reconfigured surface): their pixels
+    /// are undefined, so the next frame must repaint everything rather than
+    /// only the incremental damage ring. Idempotent and cheap (one frame).
+    pub fn request_full_repaint(&mut self) {
+        let (w, h) = self.logical_size;
+        self.pending_damage
+            .push(ResolvedRect::new(0.0, 0.0, w as f32, h as f32));
+    }
+
     /// Replaces the declarative root node and marks layout dirty.
     ///
     /// A panicking rebuild does not propagate either: the old root is kept,

@@ -244,7 +244,7 @@ fn boot_menu(ctx: &BootCtx) -> BootedDemo {
     let state = ctx.menu.clone().expect("menu boot needs menu state");
     BootedDemo {
         root: mount_root(ctx, || MenuPage(ctx.demos.clone(), state.clone())),
-        background: 0x0B0F16.into(),
+        background: Color::BLACK,
         extensions: vec![],
     }
 }
@@ -270,48 +270,51 @@ pub fn run_demo(cli: ExampleCli, id: &'static str) {
     .run_switchable(all(), menu_def(), id);
 }
 
-/// Grub-style menu: two columns of rows, hover highlights, click launches.
+/// Grub-style menu: black screen, centered white text, keyboard navigable.
+/// The highlighted row inverts (white block, black text). Mouse works too.
 #[component]
 pub fn MenuPage(demos: Vec<DemoMeta>, state: MenuState) -> impl IntoElement {
     let half = demos.len().div_ceil(2);
     let left = menu_column(&demos, &state, 0, half);
     let right = menu_column(&demos, &state, half, demos.len());
+    let pend = state.pending.clone();
     view! {
-        <Shell
-            eyebrow_label="SWITCHER · ALL DEMOS"
-            title="Pick a demo. Live."
-            copy="↑↓ moves · Enter opens · click opens · Esc back. F6 toggles quad combine, F7 cycles engines, all in this window."
+        <Group
+            direction="vertical"
+            width="fill"
+            height="fill"
+            fill={Color::BLACK}
+            alignment="center"
+            distribution="center"
+            gap={8.0}
         >
-            <Content>
-                <Group direction="vertical" width="fill" height="fill" gap={12.0}>
-                    <Group
-                        direction="horizontal"
-                        width={140.0}
-                        height={36.0}
-                        radius={10.0}
-                        fill={CHIP}
-                        alignment="center"
-                        distribution="center"
-                        on:click={{
-                            let pend = state.pending.clone();
-                            move |_: &ClickInfo| pend.set(Some(MenuAction::Back))
-                        }}
-                    >
-                        <Text size={12.0} weight={700u16} color={Color::WHITE}>
-                            {"<- back (Esc)"}
-                        </Text>
-                    </Group>
-                    <Group direction="horizontal" width="fill" height="fill" gap={12.0}>
-                        <Group direction="vertical" width="fill" height="fill" gap={8.0}>
-                            {left}
-                        </Group>
-                        <Group direction="vertical" width="fill" height="fill" gap={8.0}>
-                            {right}
-                        </Group>
-                    </Group>
+            <Text size={20.0} weight={700u16} color={Color::WHITE}>
+                "AURORA — SELECT DEMO"
+            </Text>
+            <Text size={12.0} color={0x888888}>
+                "up/down navigate · enter select · esc back"
+            </Text>
+            <Group direction="horizontal" gap={32.0} alignment="center">
+                <Group direction="vertical" gap={4.0}>
+                    {left}
                 </Group>
-            </Content>
-        </Shell>
+                <Group direction="vertical" gap={4.0}>
+                    {right}
+                </Group>
+            </Group>
+            <Group
+                width={200.0}
+                height={30.0}
+                radius={6.0}
+                alignment="center"
+                distribution="center"
+                on:click={{
+                    move |_: &ClickInfo| pend.set(Some(MenuAction::Back))
+                }}
+            >
+                <Text size={13.0} color={0x888888}>{"< back (esc)"}</Text>
+            </Group>
+        </Group>
     }
 }
 
@@ -324,36 +327,45 @@ fn menu_column(
     demos[from..to]
         .iter()
         .enumerate()
-        .map(|(k, demo)| {
-            let idx = from + k;
-            let hov = state.selected.clone();
-            let pend = state.pending.clone();
-            let title = demo.title;
-            let bg = state.selected.clone().map(move |s| {
-                if s == idx { Color::hex(0xE4E9F5) } else { Color::hex(SURFACE) }
-            });
-            let launch = move |_: &ClickInfo| {
-                pend.set(Some(MenuAction::Launch(idx)));
-            };
-            view! {
-                <Group
-                    direction="horizontal"
-                    width="fill"
-                    height={44.0}
-                    radius={12.0}
-                    fill={bg}
-                    stroke={Stroke::inside(1.0, hairline())}
-                    alignment="center"
-                    gap={12.0}
-                    margin={Margin::x(12.0)}
-                    on:click={launch}
-                    on:pointer-enter={{
-                        move |_: &HoverInfo| hov.set(idx)
-                    }}
-                >
-                    <Text size={13.0} weight={700u16} color={INK}>{title}</Text>
-                </Group>
-            }
-        })
+        .map(|(k, demo)| menu_row(demo.title, from + k, state))
         .collect()
+}
+
+/// One grub row: white text, inverted block when highlighted.
+///
+/// Text ink is not a reactive prop, so the row carries twin labels and
+/// flips visibility (the same pattern as conditional panels elsewhere).
+fn menu_row(title: &'static str, idx: usize, state: &MenuState) -> Element {
+    let hov = state.selected.clone();
+    let pend = state.pending.clone();
+    let bg = state.selected.clone().map(move |s| {
+        if s == idx { Color::WHITE } else { Color::BLACK }
+    });
+    let is_sel = state.selected.clone().map(move |s| s == idx);
+    let is_dim = state.selected.clone().map(move |s| s != idx);
+    let launch = move |_: &ClickInfo| {
+        pend.set(Some(MenuAction::Launch(idx)));
+    };
+    view! {
+        <Group
+            direction="horizontal"
+            width={440.0}
+            height={30.0}
+            radius={6.0}
+            fill={bg}
+            alignment="center"
+            distribution="center"
+            on:click={launch}
+            on:pointer-enter={{
+                move |_: &HoverInfo| hov.set(idx)
+            }}
+        >
+            <Group direction="horizontal" visible={is_dim} alignment="center" distribution="center">
+                <Text size={14.0} weight={700u16} color={Color::WHITE}>{title}</Text>
+            </Group>
+            <Group direction="horizontal" visible={is_sel} alignment="center" distribution="center">
+                <Text size={14.0} weight={700u16} color={Color::BLACK}>{title}</Text>
+            </Group>
+        </Group>
+    }
 }

@@ -10,9 +10,10 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use winit::event::{ElementState, Event, WindowEvent};
-use winit::event_loop::EventLoopBuilder;
+use winit::event_loop::{ControlFlow, EventLoopBuilder};
 use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowBuilder};
 
@@ -23,6 +24,7 @@ use crate::app::multibackend::{
 use crate::app::runner::backend::{Backend, BackendFactory};
 use crate::app::runner::clipboard::OsClipboardSync;
 use crate::app::runner::frame_flow::present_one;
+use crate::app::runner::pacing::{compute_jit_wake, compute_target_interval};
 use crate::app::runner::pointer::PointerBridge;
 use crate::app::VisualDebugger;
 use crate::dsl::element::Element;
@@ -168,6 +170,15 @@ fn build_engine(
         Engine::with_runtime(Rc::clone(&ctx.runtime), booted.root, ctx.engine_w, ctx.engine_h);
     engine.set_background(booted.background);
     engine.load_font(include_bytes!("../../assets/inter-var.ttf"));
+    // Fresh engines always repaint fully on frame one: retained backend
+    // canvases (same backend, new scene) must not show the old demo, and
+    // fresh backend canvases are undefined memory.
+    engine.request_full_repaint();
+    tracing::debug!(
+        demo = demo.id,
+        has_font = engine.text_context().font_data(0).is_some(),
+        "engine booted"
+    );
     let proxy = proxy.clone();
     engine.runtime().borrow_mut().set_on_dirty(move || {
         let _ = proxy.send_event(());
@@ -306,6 +317,13 @@ fn run_switchable_loop(
     let mut os_clipboard = OsClipboardSync::new();
     let factories: [Option<BackendFactory>; 4] = config.factories;
     let quad_factory: Option<BackendFactory> = config.quad_factory;
+    // Frame pacing (mirrors the single-window runner): without it the loop
+    // spins unthrottled whenever motion is active and the FPS readout
+    // counts empty frames (the "9000fps" bug).
+    let target_interval = compute_target_interval(config.fps_limit, &window);
+    let mut redraw_pending = true;
+    let mut last_present = Instant::now();
+    let mut avg_compute = Duration::from_millis(2);
 
     event_loop
         .run(move |event, elwt| match event {
@@ -345,6 +363,8 @@ fn run_switchable_loop(
                                         tc,
                                         "unquad for menu",
                                     );
+                                    // Fresh canvas, live scene: repaint all.
+                                    engine.request_full_repaint();
                                 }
                                 let physical = window.inner_size();
                                 let prev = (physical.width.max(1), physical.height.max(1));
@@ -463,6 +483,7 @@ fn run_switchable_loop(
                                         ) {
                                             Ok(b) => {
                                                 backend = Some(b);
+                                                engine.request_full_repaint();
                                                 let _ = window.request_inner_size(
                                                     winit::dpi::LogicalSize::new(
                                                         ew * 2,
@@ -493,6 +514,7 @@ fn run_switchable_loop(
                                             tc,
                                             "quad fallback",
                                         );
+                                        engine.request_full_repaint();
                                     }
                                 } else {
                                     let tc = engine.text_context();
@@ -506,6 +528,7 @@ fn run_switchable_loop(
                                         tc,
                                         "unquad",
                                     );
+                                    engine.request_full_repaint();
                                     let _ = window.request_inner_size(
                                         winit::dpi::LogicalSize::new(ew, eh),
                                     );
@@ -534,6 +557,10 @@ fn run_switchable_loop(
                                     tc,
                                     "engine cycle",
                                 );
+                                // Fresh canvas, live scene: repaint all, or
+                                // the new backend uploads incremental damage
+                                // from an undefined canvas (black tiles).
+                                engine.request_full_repaint();
                                 tracing::info!(
                                     engine = backend_display_name(
                                         BACKEND_ORDER[slot]
@@ -548,6 +575,7 @@ fn run_switchable_loop(
                     }
                 }
                 if pointer.dispatch(&event, &mut engine) {
+                    redraw_pending = true;
                     window.request_redraw();
                 }
                 let icon = engine.cursor_icon();
@@ -559,6 +587,7 @@ fn run_switchable_loop(
                     });
                 }
                 if extensions.iter_mut().any(|ext| ext.on_event(&event)) {
+                    redraw_pending = true;
                     window.request_redraw();
                 }
                 match event {
@@ -579,6 +608,7 @@ fn run_switchable_loop(
                         } else {
                             pending_resize = Some((w, h));
                         }
+                        redraw_pending = true;
                         window.request_redraw();
                     }
                     WindowEvent::RedrawRequested => {
@@ -643,24 +673,43 @@ fn run_switchable_loop(
                         for ext in extensions.iter_mut() {
                             wants_redraw |= ext.on_update(&mut engine);
                         }
-                        present_one(
+                        let compute_dur = present_one(
                             &mut engine,
                             &mut **backend.as_mut().expect("backend present"),
                             &mut extensions,
                             pending_resize.take(),
                         );
+                        avg_compute =
+                            avg_compute.mul_f32(0.8) + compute_dur.mul_f32(0.2);
+                        last_present = Instant::now();
                         os_clipboard.sync(&engine);
-                        if wants_redraw || engine.has_active_motion() {
-                            window.request_redraw();
-                        }
+                        redraw_pending = wants_redraw || engine.has_active_motion();
                     }
                     _ => {}
                 }
             }
             Event::UserEvent(()) => {
+                redraw_pending = true;
                 window.request_redraw();
             }
-            Event::AboutToWait => {}
+            Event::AboutToWait => {
+                if redraw_pending {
+                    if let Some(interval) = target_interval {
+                        let wake = compute_jit_wake(last_present, interval, avg_compute);
+                        if Instant::now() >= wake {
+                            window.request_redraw();
+                        } else {
+                            elwt.set_control_flow(ControlFlow::WaitUntil(wake));
+                        }
+                    } else {
+                        window.request_redraw();
+                    }
+                } else {
+                    elwt.set_control_flow(ControlFlow::WaitUntil(
+                        Instant::now() + Duration::from_millis(500),
+                    ));
+                }
+            }
             _ => {}
         })
         .expect("Event loop execution failed");

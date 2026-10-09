@@ -417,6 +417,10 @@ fn run_multi<E: IntoElement, F: Fn() -> E + 'static>(config: MultiBackendConfig,
     let mut cursor = CursorIcon::Default;
     let mut os_clipboard = OsClipboardSync::new();
     let mut last_stats_log = Instant::now();
+    // Fresh window canvases hold undefined pixels: the first frame presented
+    // to a different surface than the previous one repaints fully, or only
+    // incremental damage reaches the new canvas (black tiles).
+    let mut last_presented_slot: Option<usize> = None;
     let mut extensions = config.extensions;
     let factories = config.factories;
     let quad_factory = config.quad_factory;
@@ -500,6 +504,10 @@ fn run_multi<E: IntoElement, F: Fn() -> E + 'static>(config: MultiBackendConfig,
                         // scene to the requesting surface. Combine mode is one
                         // quad window now, so there is no fan-out: one frame,
                         // four quarter-size rasters, one present.
+                        if last_presented_slot != Some(slot) {
+                            engine.request_full_repaint();
+                            last_presented_slot = Some(slot);
+                        }
                         let mut wants_redraw = need_redraw;
                         for ext in extensions.iter_mut() {
                             wants_redraw |= ext.on_update(&mut engine);
