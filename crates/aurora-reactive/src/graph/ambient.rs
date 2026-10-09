@@ -11,7 +11,7 @@
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
 
-use crate::runtime::ReactiveRuntime;
+use crate::graph::runtime::ReactiveRuntime;
 
 thread_local! {
     /// Driven regions, innermost last. Pushed by [`AmbientGuard`], popped on drop.

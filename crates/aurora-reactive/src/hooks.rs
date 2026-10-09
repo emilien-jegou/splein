@@ -6,12 +6,12 @@ use std::rc::Rc;
 
 use rustc_hash::FxHashSet;
 
-use crate::transition::{ControllerHandle, Transition, TransitionCell};
-use crate::derived::Derived;
-use crate::readable::Readable;
-use crate::runtime::ReactiveRuntime;
-use crate::signal::Signal;
-use crate::ticker::Ticker;
+use crate::anim::transition::{ControllerHandle, Transition, TransitionCell};
+use crate::graph::derived::Derived;
+use crate::graph::readable::Readable;
+use crate::graph::runtime::ReactiveRuntime;
+use crate::graph::signal::Signal;
+use crate::graph::ticker::Ticker;
 
 thread_local! {
     /// Context stack every component body runs inside, so hooks need no plumbing.
@@ -518,7 +518,7 @@ fn claim_key(scope: &HookScope, key: &'static str) {
 /// signature is an edit to be told about, not a miss to silently reallocate on
 /// (which is what would reset the component without warning).
 fn recall_keyed<T: Clone + 'static>(scope: &HookScope, key: &'static str) -> Option<T> {
-    use crate::runtime::KeyedSlot;
+    use crate::graph::runtime::KeyedSlot;
     let runtime = Rc::clone(&scope.inner.borrow().runtime);
     let borrow = runtime.borrow();
     let slots = borrow.keyed_hook_states.get(&scope.instance)?;
@@ -536,7 +536,7 @@ fn recall_keyed<T: Clone + 'static>(scope: &HookScope, key: &'static str) -> Opt
 
 /// Files a value under this instance's call-site `key`.
 fn remember_keyed<T: Clone + 'static>(scope: &HookScope, key: &'static str, value: &T) {
-    use crate::runtime::KeyedSlot;
+    use crate::graph::runtime::KeyedSlot;
     let runtime = Rc::clone(&scope.inner.borrow().runtime);
     let mut borrow = runtime.borrow_mut();
     let slots = borrow

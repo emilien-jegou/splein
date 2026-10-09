@@ -1,8 +1,8 @@
 // Reactive effect observer executing upon dependency changes.
 
-use crate::id::SubscriberId;
-use crate::observer::Observer;
-use crate::runtime::ReactiveRuntime;
+use crate::graph::id::SubscriberId;
+use crate::graph::observer::Observer;
+use crate::graph::runtime::ReactiveRuntime;
 use std::cell::RefCell;
 use std::rc::Rc;
 

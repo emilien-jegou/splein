@@ -1,9 +1,9 @@
 // Single responsibility: Bridge impls letting foundation values be used as dynamic props.
 
 use aurora_foundation::{Color, Fill, LayoutPresence, Radius, Shadow, Size, Transform};
-use crate::derived::Derived;
-use crate::prop::{DynamicProp, IntoProp};
-use crate::signal::Signal;
+use crate::graph::derived::Derived;
+use crate::graph::prop::{DynamicProp, IntoProp};
+use crate::graph::signal::Signal;
 
 impl IntoProp<Size> for Size {
     fn into_prop(self) -> DynamicProp<Size> {

@@ -3,10 +3,10 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::derived::Derived;
-use crate::runtime::ReactiveRuntime;
-use crate::signal::Signal;
-use crate::ticker::Ticker;
+use crate::graph::derived::Derived;
+use crate::graph::runtime::ReactiveRuntime;
+use crate::graph::signal::Signal;
+use crate::graph::ticker::Ticker;
 
 /// Read-only view of a reactive value.
 ///

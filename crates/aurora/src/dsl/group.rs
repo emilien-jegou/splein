@@ -7,8 +7,8 @@ use crate::dsl::element::{Element, IntoChildList};
 use crate::dsl::element_ref::ElementRef;
 use aurora_foundation::*;
 use crate::input::{ClickInfo, DragInfo, HandlerSet, HitTest, HoverInfo, PointerEvent, Propagation};
-use aurora_reactive::prop::{DynamicProp, IntoProp};
-use aurora_reactive::readable::Readable;
+use aurora_reactive::graph::prop::{DynamicProp, IntoProp};
+use aurora_reactive::graph::readable::Readable;
 
 /// Declarative flex container builder with reactive properties and styling modifiers.
 pub struct GroupDef {

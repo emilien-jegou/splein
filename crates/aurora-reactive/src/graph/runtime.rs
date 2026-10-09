@@ -1,9 +1,9 @@
 // Single responsibility: Reactive signal dependency graph, batches, and notification dispatch.
 
 use aurora_foundation::snapshot::GeometrySnapshot;
-use crate::id::{SignalId, SubscriberId};
-use crate::observer::Observer;
-use crate::ticker::{Ticker, TickerRegistry};
+use crate::graph::id::{SignalId, SubscriberId};
+use crate::graph::observer::Observer;
+use crate::graph::ticker::{Ticker, TickerRegistry};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::any::Any;
 use std::cell::RefCell;

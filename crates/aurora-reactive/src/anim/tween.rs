@@ -1,6 +1,6 @@
 // Single responsibility: Duration-bounded interpolation between two values under an easing curve.
 
-use crate::ease::Ease;
+use crate::anim::ease::Ease;
 
 /// Tolerance applied when deciding a tween has run its course, relative to its duration.
 ///

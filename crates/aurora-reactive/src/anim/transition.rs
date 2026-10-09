@@ -3,14 +3,14 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use crate::ease::Ease;
-use crate::spring::Spring;
-use crate::track::ScalarTrack;
-use crate::tween::Tween;
-use crate::readable::Readable;
-use crate::runtime::ReactiveRuntime;
-use crate::signal::Signal;
-use crate::ticker::Ticker;
+use crate::anim::ease::Ease;
+use crate::anim::spring::Spring;
+use crate::anim::track::ScalarTrack;
+use crate::anim::tween::Tween;
+use crate::graph::readable::Readable;
+use crate::graph::runtime::ReactiveRuntime;
+use crate::graph::signal::Signal;
+use crate::graph::ticker::Ticker;
 
 /// How a playback runs once it reaches its target.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]

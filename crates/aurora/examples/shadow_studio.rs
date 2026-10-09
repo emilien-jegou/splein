@@ -9,7 +9,7 @@
 mod common;
 
 use aurora::prelude::*;
-use aurora::reactive::prop::DynamicProp;
+use aurora::reactive::DynamicProp;
 use aurora::reactive::ReactiveRuntime;
 use common::ExampleCli;
 use std::cell::RefCell;

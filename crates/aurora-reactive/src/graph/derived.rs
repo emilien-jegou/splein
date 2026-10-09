@@ -1,9 +1,9 @@
 // Single responsibility: Memoized derived computation with clean resource deallocation on Drop.
 
-use crate::id::SignalId;
-use crate::observer::Observer;
-use crate::readable::Readable;
-use crate::runtime::ReactiveRuntime;
+use crate::graph::id::SignalId;
+use crate::graph::observer::Observer;
+use crate::graph::readable::Readable;
+use crate::graph::runtime::ReactiveRuntime;
 use std::cell::RefCell;
 use rustc_hash::FxHashSet;
 use std::rc::Rc;

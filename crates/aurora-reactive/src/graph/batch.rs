@@ -1,6 +1,6 @@
 // Single responsibility: Panic-safe RAII transactional batch scopes.
 
-use crate::derived::drain_deferred_disposals;
+use crate::graph::derived::drain_deferred_disposals;
 use crate::ReactiveRuntime;
 use std::cell::RefCell;
 use std::rc::Rc;

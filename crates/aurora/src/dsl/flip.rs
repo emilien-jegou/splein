@@ -3,12 +3,12 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use aurora_reactive::spring::Spring;
-use aurora_reactive::track::ScalarTrack;
+use aurora_reactive::anim::spring::Spring;
+use aurora_reactive::anim::track::ScalarTrack;
 use crate::dsl::element_ref::ElementRef;
 use aurora_foundation::{Point, Transform};
 use aurora_reactive::hooks::{current_scope, next_slot, no_scope, recall_value, remember_value};
-use aurora_reactive::ticker::Ticker;
+use aurora_reactive::graph::ticker::Ticker;
 use aurora_reactive::ReactiveRuntime;
 use aurora_reactive::{Effect, Readable, Signal};
 

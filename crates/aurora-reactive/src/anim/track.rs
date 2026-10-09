@@ -1,6 +1,6 @@
 // Single responsibility: Spring tracks settling scalars and rectangles toward a moving target.
 
-use crate::spring::{stable_substeps, Spring};
+use crate::anim::spring::{stable_substeps, Spring};
 
 /// Position error below which a channel counts as at rest.
 const POSITION_EPSILON: f32 = 0.005;
