@@ -68,6 +68,24 @@ pub enum SceneCommand {
     },
 }
 
+impl SceneCommand {
+    /// Whether this command paints pixels, as opposed to chunk framing.
+    ///
+    /// Push/Pop state commands are per-chunk overhead, not work: a culled
+    /// subtree must move this count by zero, so "commands emitted" counts
+    /// only drawing commands.
+    pub fn is_drawing(&self) -> bool {
+        matches!(
+            self,
+            SceneCommand::DrawRect { .. }
+                | SceneCommand::DrawImage { .. }
+                | SceneCommand::DrawSvg { .. }
+                | SceneCommand::DrawShadow { .. }
+                | SceneCommand::DrawText { .. }
+        )
+    }
+}
+
 /// Content hash of a chunk-local command stream, for cross-frame encode reuse.
 ///
 /// Placement-independent by construction: the root offset is rebased to

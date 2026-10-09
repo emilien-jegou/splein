@@ -90,7 +90,12 @@ pub fn compile_stacking_context(
     // in `abs_origin` + `placement` instead of the stream.
     chunk.rebase_to_local();
     chunk.fresh = true;
-    *new_commands += chunk.commands.len() - cmd_start;
+    // Drawing commands only: chunk framing (push/pop state) is per-chunk overhead,
+    // not work, and must not move when a subtree is culled.
+    *new_commands += chunk.commands[cmd_start..]
+        .iter()
+        .filter(|c| c.is_drawing())
+        .count();
 
     arena.get_mut(ctx.node_id).state.scene.retained_chunk = Some(chunk.clone());
     if chunk.bounds.overlaps(&viewport) {
