@@ -214,8 +214,12 @@ impl TextDef {
         self
     }
     /// Sets surrounding margin offset.
+    /// Merges a margin: nonzero sides of `m` win, the rest is kept.
+    ///
+    /// Chained calls compose (`.margin(left(..)).margin(top(..))`), which is the
+    /// only reading under which the per-side constructors make sense.
     pub fn margin(mut self, m: Margin) -> Self {
-        self.margin = m;
+        self.margin = self.margin.merged(m);
         self
     }
     /// Sets the layout width sizing intent.

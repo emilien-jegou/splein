@@ -45,8 +45,12 @@ impl CustomDef {
         self.height = Some(Size::Fixed(h));
         self
     }
+    /// Merges a margin: nonzero sides of `m` win, the rest is kept.
+    ///
+    /// Chained calls compose (`.margin(left(..)).margin(top(..))`), which is the
+    /// only reading under which the per-side constructors make sense.
     pub fn margin(mut self, m: Margin) -> Self {
-        self.margin = m;
+        self.margin = self.margin.merged(m);
         self
     }
     pub fn anchor(mut self, a: Anchor) -> Self {

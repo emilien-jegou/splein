@@ -99,6 +99,29 @@ impl Margin {
         }
     }
 
+    /// Field-wise merge for chained `.margin()` builders.
+    ///
+    /// Nonzero sides of `over` win; zero sides keep `self`. This is what lets
+    /// `.margin(Margin::left(300.0)).margin(Margin::top(200.0))` compose instead
+    /// of the second call silently discarding the first: the per-side
+    /// constructors only make sense when they accumulate.
+    pub const fn merged(self, over: Self) -> Self {
+        Self {
+            top: if over.top != 0.0 { over.top } else { self.top },
+            right: if over.right != 0.0 {
+                over.right
+            } else {
+                self.right
+            },
+            bottom: if over.bottom != 0.0 {
+                over.bottom
+            } else {
+                self.bottom
+            },
+            left: if over.left != 0.0 { over.left } else { self.left },
+        }
+    }
+
     /// Returns the combined left and right margin.
     pub fn horizontal(&self) -> f32 {
         self.left + self.right
