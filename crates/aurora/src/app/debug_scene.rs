@@ -1,7 +1,7 @@
 // Single responsibility: Emits display list overlay chunks for GPU compute rasterizers.
 
 use crate::app::debug::InspectorMode;
-use crate::app::debug_hud::{time_control_hint, time_scale_label};
+use crate::app::debug_hud::{keybind_hint, time_control_hint, time_scale_label};
 use crate::app::debug_layout::hud_panel;
 use crate::foundation::{Appearance, Color, Fill, Point, ResolvedRect, Stroke};
 use crate::runtime::FrameDiagnostics;
@@ -84,6 +84,7 @@ pub fn emit_hud_overlay(
     chunk: &mut SceneChunk,
     is_idle: bool,
     fps: u32,
+    avg_fps_5s: f32,
     backend_name: &str,
     diag: &FrameDiagnostics,
     mode: InspectorMode,
@@ -127,7 +128,10 @@ pub fn emit_hud_overlay(
     let (fps_str, ms_str) = if is_idle {
         ("IDLE".into(), "0.0MS".into())
     } else {
-        (format!("{}FPS", fps.min(9999)), format!("{:.1}MS", ms_val))
+        (
+            format!("{}FPS AVG5:{:.0}", fps.min(9999), avg_fps_5s),
+            format!("{:.1}MS", ms_val),
+        )
     };
 
     emit_label(
@@ -158,7 +162,7 @@ pub fn emit_hud_overlay(
         Color::hex(0x22C55E),
         text_ctx,
     );
-    emit_label(chunk, &ms_str, Point::new(220.0, 20.0), ms_color, text_ctx);
+    emit_label(chunk, &ms_str, Point::new(300.0, 20.0), ms_color, text_ctx);
     // Only drawn when time is not running normally, so its presence is the whole message.
     if let Some(label) = time_scale_label(time_scale) {
         let color = if time_scale <= 1e-4 {
@@ -187,11 +191,19 @@ pub fn emit_hud_overlay(
     }
 
     // 5. Frame Budget Headroom Line
-    let bar_w = ((total_us as f32 / 16_666.0).min(1.0) * 286.0).max(6.0);
+    let bar_w = ((total_us as f32 / 16_666.0).min(1.0) * 536.0).max(6.0);
     chunk.push(SceneCommand::DrawRect {
         rect: ResolvedRect::new(20.0, 40.0, bar_w, 3.0),
         appearance: Appearance::EMPTY.with_fill(Fill::solid(ms_color)),
     });
+    // 6. Always-on keybind strip.
+    emit_label(
+        chunk,
+        keybind_hint(),
+        Point::new(20.0, 56.0),
+        Color::hex(0x64748B),
+        text_ctx,
+    );
 }
 
 fn emit_label(
@@ -217,7 +229,7 @@ fn emit_label(
         color,
         ..crate::text::TextConfig::default()
     };
-    let layout = text_ctx.shape_config(&cfg, crate::foundation::Constraints::loose(80.0, 16.0));
+    let layout = text_ctx.shape_config(&cfg, crate::foundation::Constraints::loose(520.0, 16.0));
     chunk.push(SceneCommand::DrawText {
         origin,
         layout,

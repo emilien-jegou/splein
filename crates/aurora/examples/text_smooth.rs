@@ -26,7 +26,7 @@ fn main() {
     let cli = ExampleCli::parse(WIDTH, HEIGHT);
     cli.init_telemetry();
 
-    cli.app_config("Aurora — Text smooth drift repro")
+    cli.app_config_multi("Aurora — Text smooth drift repro")
         .font("Inter", include_bytes!("../assets/inter-var.ttf"))
         .background(PAGE)
         .run(Page);

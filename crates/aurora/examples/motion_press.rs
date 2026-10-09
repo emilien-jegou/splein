@@ -18,7 +18,7 @@ fn main() {
     let cli = ExampleCli::parse(WIDTH, HEIGHT);
     cli.init_telemetry();
 
-    cli.app_config("Aurora — Web 01 · Press feedback")
+    cli.app_config_multi("Aurora — Web 01 · Press feedback")
         .font("Inter", include_bytes!("../assets/inter-var.ttf"))
         .background(PAGE)
         .run(Page);

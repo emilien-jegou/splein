@@ -20,7 +20,7 @@ fn main() {
     let cli = ExampleCli::parse(WIDTH, HEIGHT);
     cli.init_telemetry();
 
-    cli.app_config("Aurora — Motion 01 · Layout vs compositor transform")
+    cli.app_config_multi("Aurora — Motion 01 · Layout vs compositor transform")
         .font("Inter", include_bytes!("../assets/inter-var.ttf"))
         .background(PAGE)
         .run(Page);

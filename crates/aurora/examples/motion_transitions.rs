@@ -17,7 +17,7 @@ fn main() {
     let cli = ExampleCli::parse(WIDTH, HEIGHT);
     cli.init_telemetry();
 
-    cli.app_config("Aurora — Motion 02 · Signal transitions")
+    cli.app_config_multi("Aurora — Motion 02 · Signal transitions")
         .font("Inter", include_bytes!("../assets/inter-var.ttf"))
         .background(PAGE)
         .run(Page);

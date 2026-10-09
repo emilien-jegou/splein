@@ -50,7 +50,7 @@ fn main() {
 
     let ticker = MissionControlTicker::new(time_sig.clone(), counter_sig.clone());
 
-    cli.app_config("Aurora — Mission Control Engine Showcase")
+    cli.app_config_multi("Aurora — Mission Control Engine Showcase")
         .font("Inter", include_bytes!("../assets/inter-var.ttf"))
         .background(0x06090F)
         .runtime(runtime)

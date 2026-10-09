@@ -134,7 +134,7 @@ fn main() {
         color_signal.clone(),
     );
 
-    cli.app_config("Aurora — DVD Bounce Screensaver")
+    cli.app_config_multi("Aurora — DVD Bounce Screensaver")
         .font("Inter", include_bytes!("../assets/inter-var.ttf"))
         .runtime(runtime)
         .extension(driver)

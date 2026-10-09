@@ -116,7 +116,7 @@ fn main() {
     let cli = ExampleCli::parse(DEFAULT_WIDTH, DEFAULT_HEIGHT);
     cli.init_telemetry();
 
-    cli.app_config("Aurora — Shadow Lab")
+    cli.app_config_multi("Aurora — Shadow Lab")
         .font("Inter", include_bytes!("../assets/inter-var.ttf"))
         .background(PANEL_BG)
         .run(build_ui);

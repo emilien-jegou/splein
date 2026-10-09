@@ -1,6 +1,7 @@
 // Single responsibility: Visual inspector state and telemetry store for the debugger extension.
 
 use std::cell::Cell;
+use std::collections::VecDeque;
 use std::time::Instant;
 use winit::event::WindowEvent;
 
@@ -54,6 +55,8 @@ pub struct VisualDebugger {
     viewport: ResolvedRect,
     last_frame_instant: Option<Instant>,
     smoothed_fps: f32,
+    /// Presented-frame timestamps within the last 5s, for average-FPS stats.
+    fps_window: VecDeque<Instant>,
     is_idle: bool,
     prev_show_hud: bool,
     prev_mode: InspectorMode,
@@ -84,6 +87,7 @@ impl Default for VisualDebugger {
             viewport: ResolvedRect::ZERO,
             last_frame_instant: None,
             smoothed_fps: 60.0,
+            fps_window: VecDeque::with_capacity(600),
             is_idle: true,
             prev_show_hud: true,
             prev_mode: InspectorMode::Off,
@@ -111,6 +115,19 @@ impl VisualDebugger {
     /// in two rates that quietly fight each other on the next frame.
     pub fn set_time_scale(&mut self, scale: f32) {
         self.time_scale = scale.max(0.0);
+    }
+
+    /// Average presented FPS over the trailing 5-second window.
+    pub fn avg_fps_5s(&self) -> f32 {
+        let now = Instant::now();
+        let cutoff = now - std::time::Duration::from_secs(5);
+        let n = self.fps_window.iter().filter(|t| **t >= cutoff).count();
+        if n < 2 {
+            return self.smoothed_fps;
+        }
+        let oldest = self.fps_window.iter().find(|t| **t >= cutoff).copied().unwrap_or(now);
+        let dt = (now - oldest).as_secs_f32().max(0.5);
+        (n as f32 / dt).min(9999.0)
     }
 
     /// Writes the presented pixels to `/tmp/aurora-frame-N.png`.
@@ -236,6 +253,17 @@ impl AppExtension for VisualDebugger {
             self.is_idle = true;
         }
         self.last_frame_instant = Some(now);
+        self.fps_window.push_back(now);
+        while self.fps_window.len() > 1200 {
+            self.fps_window.pop_front();
+        }
+        while let Some(front) = self.fps_window.front() {
+            if now.duration_since(*front) > std::time::Duration::from_secs(6) {
+                self.fps_window.pop_front();
+            } else {
+                break;
+            }
+        }
         self.worker.send(diag.clone());
     }
 
@@ -323,6 +351,7 @@ impl AppExtension for VisualDebugger {
                     chunk,
                     self.is_idle,
                     self.smoothed_fps.round() as u32,
+                    self.avg_fps_5s(),
                     caps.backend,
                     &self.last_diag,
                     self.mode,
@@ -346,6 +375,7 @@ impl AppExtension for VisualDebugger {
                 buf,
                 self.is_idle,
                 self.smoothed_fps.round() as u32,
+                self.avg_fps_5s(),
                 &self.backend_name,
                 &self.last_diag,
                 self.mode,

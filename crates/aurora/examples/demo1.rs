@@ -11,7 +11,7 @@ pub const HEIGHT: u32 = 482;
 fn main() {
     let cli = ExampleCli::parse(WIDTH, HEIGHT);
     cli.init_telemetry();
-    cli.app_config("Aurora — Demo 3 (Optype Font Manager)")
+    cli.app_config_multi("Aurora — Demo 3 (Optype Font Manager)")
         .font("Inter", include_bytes!("../assets/inter-var.ttf"))
         .background(Color::WHITE)
         .run(build_ui);

@@ -46,12 +46,18 @@ pub fn time_scale_color(scale: f32) -> u32 {
     }
 }
 
+/// Always-on keybind strip for the demo runner (switch/combine + time controls).
+pub fn keybind_hint() -> &'static str {
+    "1-4 ENGINE  TAB CYCLE  C COMBINE  H HUD  F8 FREEZE  . STEP  [ ] SPEED  F9/F11/F12 VIEW  S CAP"
+}
+
 /// Renders HUD diagnostic telemetry panel with active backend name and metrics breakdown.
 #[allow(clippy::too_many_arguments)]
 pub fn draw_hud_panel(
     buffer: &mut [u32],
     is_idle: bool,
     display_fps: u32,
+    avg_fps_5s: f32,
     backend_tag: &str,
     diag: &FrameDiagnostics,
     mode: InspectorMode,
@@ -59,7 +65,7 @@ pub fn draw_hud_panel(
     stride: usize,
     height: usize,
 ) {
-    let hud_rect = ResolvedRect::new(12.0, 12.0, 310.0, 48.0);
+    let hud_rect = ResolvedRect::new(12.0, 12.0, 560.0, 64.0);
     draw_tint(buffer, &hud_rect, 0x000F172A, 240, stride, height);
     draw_wireframe(buffer, &hud_rect, 0x00334155, 1, stride, height);
 
@@ -102,19 +108,22 @@ pub fn draw_hud_panel(
         ("IDLE".into(), "0.0MS".into())
     } else {
         (
-            format!("{}FPS", display_fps.min(9999)),
+            format!("{}FPS AVG5:{:.0}", display_fps.min(9999), avg_fps_5s),
             format!("{:.1}MS", ms_val),
         )
     };
 
-    // Row 1: Backend Badge (GPU / CPU) + Mode + FPS + Compute Time
-    let is_gpu = backend_tag.contains("GPU");
-    let badge_color = if is_gpu { 0x0010B981 } else { 0x0038BDF8 };
+    // Row 1: Backend Badge + Mode + FPS (+5s avg) + Compute Time
+    let badge_color = match backend_tag {
+        "vello-gpu" | "wgpu" => 0x0010B981,
+        "vello-cpu" => 0x00F59E0B,
+        _ => 0x0038BDF8,
+    };
     draw_text_scaled(buffer, backend_tag, 38, 20, 2, badge_color, stride, height);
-    draw_text_scaled(buffer, "|", 70, 20, 2, 0x00475569, stride, height);
-    draw_text_scaled(buffer, mode_name, 82, 20, 2, 0x0094A3B8, stride, height);
-    draw_text_scaled(buffer, &fps_str, 126, 20, 2, 0x0022C55E, stride, height);
-    draw_text_scaled(buffer, &ms_str, 220, 20, 2, color, stride, height);
+    draw_text_scaled(buffer, "|", 150, 20, 2, 0x00475569, stride, height);
+    draw_text_scaled(buffer, mode_name, 162, 20, 2, 0x0094A3B8, stride, height);
+    draw_text_scaled(buffer, &fps_str, 206, 20, 2, 0x0022C55E, stride, height);
+    draw_text_scaled(buffer, &ms_str, 430, 20, 2, color, stride, height);
 
     if let Some(label) = time_scale_label(time_scale) {
         draw_text_scaled(
@@ -137,7 +146,7 @@ pub fn draw_hud_panel(
     } else {
         0x00EF4444
     };
-    let bar_w = ((total_us as f32 / 16_666.0).min(1.0) * 286.0).max(6.0);
+    let bar_w = ((total_us as f32 / 16_666.0).min(1.0) * 536.0).max(6.0);
     draw_tint(
         buffer,
         &ResolvedRect::new(20.0, 40.0, bar_w, 3.0),
@@ -152,4 +161,6 @@ pub fn draw_hud_panel(
     if let Some(hint) = time_control_hint(time_scale) {
         draw_text_scaled(buffer, hint, 20, 48, 1, 0x0094A3B8, stride, height);
     }
+    // Row 3: always-on keybind strip for engine switch / combine.
+    draw_text_scaled(buffer, keybind_hint(), 20, 58, 1, 0x0064748B, stride, height);
 }

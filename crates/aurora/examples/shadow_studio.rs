@@ -224,7 +224,7 @@ fn main() {
         })
     };
 
-    cli.app_config("Aurora — Shadow Studio")
+    cli.app_config_multi("Aurora — Shadow Studio")
         .font("Inter", include_bytes!("../assets/inter-var.ttf"))
         .background(0xE8E6E1)
         .runtime(Rc::clone(&runtime))

@@ -43,7 +43,7 @@ fn main() {
     let cli = ExampleCli::parse(WIDTH, HEIGHT);
     cli.init_telemetry();
 
-    cli.app_config("Aurora — Web 04 · Drag to reorder")
+    cli.app_config_multi("Aurora — Web 04 · Drag to reorder")
         .font("Inter", include_bytes!("../assets/inter-var.ttf"))
         .background(PAGE)
         .run(Page);

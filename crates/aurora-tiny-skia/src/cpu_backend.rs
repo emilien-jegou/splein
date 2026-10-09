@@ -55,7 +55,7 @@ impl Backend for CpuBackend {
     }
 
     fn tag(&self) -> &'static str {
-        "CPU"
+        "tiny-skia"
     }
 
     fn supports_scanline(&self) -> bool {

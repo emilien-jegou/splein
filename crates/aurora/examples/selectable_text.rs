@@ -16,7 +16,7 @@ const LOREM: &str = "Drag across this paragraph to select it. \
 fn main() {
     let cli = ExampleCli::parse(WIDTH, HEIGHT);
     cli.init_telemetry();
-    cli.app_config("Aurora — Selectable Text")
+    cli.app_config_multi("Aurora — Selectable Text")
         .font("Inter", include_bytes!("../assets/inter-var.ttf"))
         .background(Color::WHITE)
         .run(build_ui);

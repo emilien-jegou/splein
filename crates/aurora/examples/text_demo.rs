@@ -17,7 +17,7 @@ const ELLIPSIS: &str = "The dock is a compact floating control that sits above t
 fn main() {
     let cli = ExampleCli::parse(WIDTH, HEIGHT);
     cli.init_telemetry();
-    cli.app_config("Aurora — Text Layout")
+    cli.app_config_multi("Aurora — Text Layout")
         .font("Inter", include_bytes!("../assets/inter-var.ttf"))
         .background(0x0B1020)
         .run(build_ui);

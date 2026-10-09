@@ -38,6 +38,8 @@ pub struct ExampleCli {
     pub show_hud: bool,
     /// Frame rate pacing limit policy.
     pub fps_limit: FpsLimit,
+    /// Boot with all backends live side-by-side.
+    pub combine: bool,
 }
 
 /// Maps a user-supplied engine name to a [`RenderBackend`].
@@ -77,6 +79,7 @@ impl ExampleCli {
             println!("│ --cpu / --skia     Use TinySkia CPU Rasterizer (Def.)  │");
             println!("│ --fps <N>          Cap target FPS (e.g. 144, 240, 360) │");
             println!("│ --uncapped         Disable frame pacer (max benchmark) │");
+            println!("│ --combine          Boot all 4 backends side-by-side   │");
             println!("│ --no-hud           Disable the on-screen HUD panel     │");
             println!("│ --width <pixels>   Set custom window width             │");
             println!("│ --height <pixels>  Set custom window height            │");
@@ -140,6 +143,7 @@ impl ExampleCli {
         }
 
         let show_hud = !args.iter().any(|a| a == "--no-hud");
+        let combine = args.iter().any(|a| a == "--combine");
 
         let engine_name = match backend {
             RenderBackend::TinySkia => "tiny-skia",
@@ -158,6 +162,7 @@ impl ExampleCli {
             height,
             show_hud,
             fps_limit,
+            combine,
         }
     }
     /// Initializes Tracy profiling layer and stdout logger.
@@ -193,6 +198,39 @@ impl ExampleCli {
                 .with_target(false)
                 .init();
         }
+    }
+
+    /// Pre-configures a `MultiBackendConfig` with all four raster backends.
+    ///
+    /// One shared engine/reactive state, one window per backend. `1-4` select,
+    /// `Tab` cycles, `C` toggles combine mode. The CLI positional/flags pick
+    /// the focused backend; `--combine` boots with all four live.
+    pub fn app_config_multi(&self, title: &str) -> aurora::app::multibackend::MultiBackendConfig {
+        use aurora::app::multibackend::MultiBackend;
+        let mut debugger = VisualDebugger::new();
+        debugger.show_hud = self.show_hud;
+
+        MultiBackend::config([
+            Some(aurora_tiny_skia::create_backend),
+            Some(aurora_vello::create_backend),
+            Some(aurora_vello::create_cpu_backend),
+            Some(aurora_wgpu::create_backend),
+        ])
+        .title(format!(
+            "{title} [1-4 engine | Tab cycle | C combine | {}]",
+            match self.backend {
+                RenderBackend::TinySkia => "tiny-skia",
+                RenderBackend::Vello => "vello-gpu",
+                RenderBackend::VelloCpu => "vello-cpu",
+                RenderBackend::Wgpu => "wgpu",
+            }
+        ))
+        .size(self.width, self.height)
+        .initial(self.backend)
+        .combine(self.combine)
+        .show_hud(self.show_hud)
+        .fps_limit(self.fps_limit)
+        .extension(debugger)
     }
 
     /// Pre-configures an `AppConfig` builder with parsed CLI parameters.

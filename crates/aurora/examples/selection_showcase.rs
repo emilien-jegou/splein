@@ -110,7 +110,7 @@ fn main() {
     let mut debugger = VisualDebugger::new();
     debugger.show_hud = cli.show_hud;
 
-    cli.app_config("Aurora — Text · Selection showcase")
+    cli.app_config_multi("Aurora — Text · Selection showcase")
         .font("Inter", include_bytes!("../assets/inter-var.ttf"))
         .background(PAGE)
         .runtime(runtime)

@@ -78,12 +78,14 @@ pub mod debug_overlay;
 pub mod debug_scene;
 pub mod debug_toggle;
 pub mod extension;
+pub mod multibackend;
 pub mod painter;
 pub mod runner;
 pub mod telemetry;
 
 pub use debug::{InspectorMode, VisualDebugger};
 pub use extension::{AppExtension, OverlayCaps};
+pub use multibackend::{backend_display_name, BackendStats, DisplayMode, MultiBackend, BACKEND_ORDER};
 pub use painter::OverlayPainter;
 pub use runner::FpsLimit;
 

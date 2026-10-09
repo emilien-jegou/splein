@@ -59,7 +59,7 @@ impl GpuBackend {
         Ok(Self {
             renderer,
             needs_present: true,
-            tag: if use_cpu { "Vello-CPU" } else { "GPU" },
+            tag: if use_cpu { "vello-cpu" } else { "vello-gpu" },
         })
     }
 }
