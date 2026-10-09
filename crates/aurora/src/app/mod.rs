@@ -226,11 +226,15 @@ impl AppConfig {
         });
 
         let backend: Box<dyn Backend> = match self.backend {
-            RenderBackend::Vello | RenderBackend::VelloCpu => {
+            RenderBackend::Vello | RenderBackend::VelloCpu | RenderBackend::Wgpu => {
+                let want = match self.backend {
+                    RenderBackend::Vello => "aurora_vello::create_backend",
+                    RenderBackend::VelloCpu => "aurora_vello::create_cpu_backend",
+                    _ => "aurora_wgpu::create_backend",
+                };
                 let factory = self.backend_factory.expect(
-                    "no Vello backend factory: pass `aurora_vello::create_backend` \
-                     (or `aurora_vello::create_cpu_backend` for `RenderBackend::VelloCpu`) \
-                     via `AppConfig::backend_factory`",
+                    "no GPU backend factory: pass the matching create_backend via \
+                     `AppConfig::backend_factory`",
                 );
                 factory(
                     Arc::clone(&window),
@@ -238,7 +242,7 @@ impl AppConfig {
                     ph,
                     engine.text_context(),
                 )
-                .expect("Vello backend init failed")
+                .unwrap_or_else(|e| panic!("{want} backend init failed: {e:?}"))
             }
             RenderBackend::TinySkia => {
                 let factory = self.backend_factory.expect(

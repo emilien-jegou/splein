@@ -36,23 +36,33 @@ pub fn compile_stacking_context(
     // described by the conditions below (docs/retention.md §4). Recompiling
     // byte-identical commands because pixels got dirty is the conflation
     // this branch exists to prevent.
-    if is_clean && clips_match {
-        if let Some(cached) = &node_state.scene.retained_chunk {
-            // Content is origin-relative, so any origin replays. Cull and
-            // emit with the LIVE subtree bounds (recomputed by the damage
-            // pass just before compile), never the retained ones, which
-            // describe where the chunk was last frame.
-            if node_state.paint.subtree_bounds.overlaps(&viewport) {
+    //
+    // A replayed own chunk must NOT skip the negative_z/positive_z
+    // recursion below: stacking descendants live in separate chunks that
+    // only those loops emit. Returning early here drops them from the
+    // frame's scene entirely — harmless for retained-canvas damage-tile
+    // rendering (stale pixels persist), but a hole for any backend that
+    // repaints the scene (fullscreen shade, or clear-on-full-damage).
+    let replay = if is_clean && clips_match {
+        node_state
+            .scene
+            .retained_chunk
+            .as_ref()
+            .map(|cached| {
+                // Content is origin-relative, so any origin replays. Cull and
+                // emit with the LIVE subtree bounds (recomputed by the damage
+                // pass just before compile), never the retained ones, which
+                // describe where the chunk was last frame.
                 let mut replay = cached.clone();
                 replay.abs_origin = ctx.abs_origin;
                 replay.bounds = node_state.paint.subtree_bounds;
                 replay.fresh = false;
-                scene.push_chunk(replay);
-                *cached_chunks += 1;
-                return;
-            }
-        }
-    }
+                replay
+            })
+            .filter(|replay| replay.bounds.overlaps(&viewport))
+    } else {
+        None
+    };
 
     for neg in &ctx.negative_z {
         compile_stacking_context(
@@ -68,39 +78,50 @@ pub fn compile_stacking_context(
         );
     }
 
-    let mut chunk = SceneChunk::new(arena.get(ctx.node_id).state.paint.subtree_bounds, ctx.abs_origin);
-    let cmd_start = chunk.commands.len();
+    match replay {
+        Some(replay) => {
+            scene.push_chunk(replay);
+            *cached_chunks += 1;
+        }
+        None => {
+            let mut chunk = SceneChunk::new(
+                arena.get(ctx.node_id).state.paint.subtree_bounds,
+                ctx.abs_origin,
+            );
+            let cmd_start = chunk.commands.len();
 
-    // Placement-time clips, not content: the chunk stream is origin-relative,
-    // so ancestor clips are stored absolute and applied by the consumer around
-    // the placed stream. This is what lets a moved chunk reuse its encoding.
-    chunk.inherited_clips = ctx.inherited_clips.clone();
+            // Placement-time clips, not content: the chunk stream is origin-relative,
+            // so ancestor clips are stored absolute and applied by the consumer around
+            // the placed stream. This is what lets a moved chunk reuse its encoding.
+            chunk.inherited_clips = ctx.inherited_clips.clone();
 
-    compile_node_hierarchy(
-        arena,
-        ctx.node_id,
-        &mut chunk,
-        text_ctx,
-        viewport,
-        Transform::from_translation(ctx.abs_origin.x, ctx.abs_origin.y),
-        true,
-        caret_visible,
-    );
+            compile_node_hierarchy(
+                arena,
+                ctx.node_id,
+                &mut chunk,
+                text_ctx,
+                viewport,
+                Transform::from_translation(ctx.abs_origin.x, ctx.abs_origin.y),
+                true,
+                caret_visible,
+            );
 
-    // Rebase to chunk-local: the root offset becomes (0,0), placement travels
-    // in `abs_origin` + `placement` instead of the stream.
-    chunk.rebase_to_local();
-    chunk.fresh = true;
-    // Drawing commands only: chunk framing (push/pop state) is per-chunk overhead,
-    // not work, and must not move when a subtree is culled.
-    *new_commands += chunk.commands[cmd_start..]
-        .iter()
-        .filter(|c| c.is_drawing())
-        .count();
+            // Rebase to chunk-local: the root offset becomes (0,0), placement travels
+            // in `abs_origin` + `placement` instead of the stream.
+            chunk.rebase_to_local();
+            chunk.fresh = true;
+            // Drawing commands only: chunk framing (push/pop state) is per-chunk overhead,
+            // not work, and must not move when a subtree is culled.
+            *new_commands += chunk.commands[cmd_start..]
+                .iter()
+                .filter(|c| c.is_drawing())
+                .count();
 
-    arena.get_mut(ctx.node_id).state.scene.retained_chunk = Some(chunk.clone());
-    if chunk.bounds.overlaps(&viewport) {
-        scene.push_chunk(chunk);
+            arena.get_mut(ctx.node_id).state.scene.retained_chunk = Some(chunk.clone());
+            if chunk.bounds.overlaps(&viewport) {
+                scene.push_chunk(chunk);
+            }
+        }
     }
 
     for pos in &ctx.positive_z {

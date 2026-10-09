@@ -84,17 +84,24 @@ impl GpuContext {
         let device = Arc::new(device);
         let queue = Arc::new(queue);
         let caps = surface.get_capabilities(&adapter);
+        if caps.formats.is_empty() {
+            return Err("GPU surface exposes no texture formats".to_string());
+        }
 
-        // Vello 0.2 is gamma-agnostic: scene bytes are composited as-is and the
-        // blit to the surface is a raw copy with no conversion. The surface must
-        // therefore be sRGB-encoded, or the compositor shows shifted colors
-        // (a linear float surface was previously picked here, washing colors out).
+        // Gamma-agnostic 2D compositing: scene bytes are sRGB-encoded and
+        // must reach the compositor unmodified. Writing to an `*Srgb`
+        // surface would hardware-encode linear->sRGB on store (double
+        // gamma: 128 displays as ~188), so prefer plain Unorm formats and
+        // raw-copy blit. Only if no Unorm format exists, take sRGB and let
+        // the blit decode first so the hardware re-encode nets identity
+        // (same ordering as egui_wgpu and vello's own util).
         let format = [
-            TextureFormat::Bgra8UnormSrgb,
-            TextureFormat::Rgba8UnormSrgb,
+            TextureFormat::Bgra8Unorm,
+            TextureFormat::Rgba8Unorm,
         ]
         .into_iter()
         .find(|f| caps.formats.contains(f))
+        .or_else(|| caps.formats.iter().copied().find(|f| !f.is_srgb()))
         .or_else(|| caps.formats.iter().copied().find(|f| f.is_srgb()))
         .unwrap_or(
             caps.formats
@@ -102,6 +109,12 @@ impl GpuContext {
                 .copied()
                 .unwrap_or(TextureFormat::Bgra8Unorm),
         );
+        if format.is_srgb() {
+            tracing::warn!(
+                ?format,
+                "no Unorm swapchain format available; blit will decode so the HW re-encode nets identity",
+            );
+        }
 
         // Mailbox first for tear-free lowest latency, then strict vsync. Immediate
         // tears, which reads as flicker on anything that moves — a UI toolkit must

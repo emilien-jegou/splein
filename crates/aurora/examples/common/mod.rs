@@ -51,6 +51,7 @@ fn parse_engine_name(raw: &str) -> Option<RenderBackend> {
         "tiny-skia" | "tinyskia" | "skia" | "cpu" => Some(RenderBackend::TinySkia),
         "vello" | "vello-gpu" | "gpu" => Some(RenderBackend::Vello),
         "vello-cpu" | "cpu-vello" | "vellocpu" => Some(RenderBackend::VelloCpu),
+        "wgpu" | "raw-wgpu" | "rawgpu" => Some(RenderBackend::Wgpu),
         _ => None,
     }
 }
@@ -70,7 +71,7 @@ impl ExampleCli {
             println!("│                AURORA EXAMPLE RUNNER                   │");
             println!("├────────────────────────────────────────────────────────┤");
             println!("│ [engine]             tiny-skia (default) | vello |     │");
-            println!("│                      vello-cpu                         │");
+            println!("│                      vello-cpu | wgpu                 │");
             println!("│ --gpu / --vello    Use Vello GPU Compute (Metal/VK/D3D)│");
             println!("│ --vello-cpu        Use Vello with CPU-staged coarse    │");
             println!("│ --cpu / --skia     Use TinySkia CPU Rasterizer (Def.)  │");
@@ -96,6 +97,8 @@ impl ExampleCli {
                 .any(|a| a == "--gpu" || a == "--vello" || a == "--vello-gpu")
             {
                 backend = RenderBackend::Vello;
+            } else if args.iter().any(|a| a == "--wgpu" || a == "--raw-wgpu") {
+                backend = RenderBackend::Wgpu;
             } else if args.iter().any(|a| {
                 a == "--vello-cpu" || a == "--vello_cpu" || a == "--cpu-vello"
             }) {
@@ -142,6 +145,7 @@ impl ExampleCli {
             RenderBackend::TinySkia => "tiny-skia",
             RenderBackend::Vello => "vello",
             RenderBackend::VelloCpu => "vello-cpu",
+            RenderBackend::Wgpu => "wgpu",
         };
         println!(
             "⚡ Backend: {} | Resolution: {}x{} | FPS: {:?} | HUD: {}",
@@ -209,6 +213,9 @@ impl ExampleCli {
             RenderBackend::Vello => config.backend_factory(aurora_vello::create_backend),
             RenderBackend::VelloCpu => {
                 config.backend_factory(aurora_vello::create_cpu_backend)
+            }
+            RenderBackend::Wgpu => {
+                config.backend_factory(aurora_wgpu::create_backend)
             }
         }
     }

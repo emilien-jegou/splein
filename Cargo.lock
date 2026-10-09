@@ -181,6 +181,7 @@ dependencies = [
  "aurora-macros",
  "aurora-tiny-skia",
  "aurora-vello",
+ "aurora-wgpu",
  "bon",
  "ntest",
  "parley",
@@ -254,6 +255,20 @@ dependencies = [
  "smithay-client-toolkit 0.19.2",
  "tracing",
  "wayland-client",
+]
+
+[[package]]
+name = "aurora-wgpu"
+version = "0.0.1-rc.1"
+dependencies = [
+ "aurora",
+ "bytemuck",
+ "pollster",
+ "resvg",
+ "rustc-hash 2.1.3",
+ "tracing",
+ "wgpu",
+ "winit",
 ]
 
 [[package]]

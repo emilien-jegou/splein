@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/splein", "crates/aurora", "crates/aurora/macros", "crates/aurora-tiny-skia", "crates/aurora-vello", "crates/aurora-wayland", "crates/aurora/benches/bench_suite"]
+members = ["crates/splein", "crates/aurora", "crates/aurora/macros", "crates/aurora-tiny-skia", "crates/aurora-vello", "crates/aurora-wayland", "crates/aurora-wgpu", "crates/aurora/benches/bench_suite"]
 
 [workspace.dependencies]
 smithay-client-toolkit = { version = "0.19", default-features = false }

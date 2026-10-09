@@ -123,21 +123,40 @@ fn create_blit_pipeline(
     const SHADERS: &str = r#"
         @vertex
         fn vs_main(@builtin(vertex_index) ix: u32) -> @builtin(position) vec4<f32> {
-            var vertex = vec2(-1.0, 1.0);
+            var vertex = vec2<f32>(-1.0, 1.0);
             switch ix {
-                case 1u: { vertex = vec2(-1.0, -1.0); }
-                case 2u, 4u: { vertex = vec2(1.0, -1.0); }
-                case 5u: { vertex = vec2(1.0, 1.0); }
+                case 1u: { vertex = vec2<f32>(-1.0, -1.0); }
+                case 2u, 4u: { vertex = vec2<f32>(1.0, -1.0); }
+                case 5u: { vertex = vec2<f32>(1.0, 1.0); }
                 default: {}
             }
             return vec4(vertex, 0.0, 1.0);
         }
+        // Raw copy: shader vec4(r,g,b,a) addresses logical channels and the
+        // surface format describes memory layout, so no manual R/B swizzle
+        // is needed (or correct) for BGRA targets.
+        //
+        // Transfer: scene bytes are already sRGB-encoded. On a plain Unorm
+        // surface the copy below is exact (no hardware conversion). Only
+        // when forced onto an sRGB surface (see context format fallback),
+        // SRGB_DECODE applies the EOTF first so the hardware OETF on store
+        // nets back to identity instead of double-encoding.
+        override SRGB_DECODE: bool = false;
         @group(0) @binding(0)
         var fine_output: texture_2d<f32>;
+        fn srgb_eotf(c: vec3<f32>) -> vec3<f32> {
+            let lo = c / 12.92;
+            let hi = pow((c + vec3<f32>(0.055)) / vec3<f32>(1.055), vec3<f32>(2.4));
+            return select(hi, lo, c <= vec3<f32>(0.04045));
+        }
         @fragment
         fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
             let rgba_sep = textureLoad(fine_output, vec2<i32>(pos.xy), 0);
-            return vec4(rgba_sep.rgb * rgba_sep.a, rgba_sep.a);
+            var rgb = rgba_sep.rgb * rgba_sep.a;
+            if (SRGB_DECODE) {
+                rgb = srgb_eotf(rgb);
+            }
+            return vec4(rgb, rgba_sep.a);
         }
     "#;
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -175,7 +194,13 @@ fn create_blit_pipeline(
         fragment: Some(wgpu::FragmentState {
             module: &shader,
             entry_point: "fs_main",
-            compilation_options: Default::default(),
+            compilation_options: wgpu::PipelineCompilationOptions {
+                constants: &std::collections::HashMap::from([(
+                    "SRGB_DECODE".to_string(),
+                    if surface_format.is_srgb() { 1.0 } else { 0.0 },
+                )]),
+                ..Default::default()
+            },
             targets: &[Some(wgpu::ColorTargetState {
                 format: surface_format,
                 blend: None,

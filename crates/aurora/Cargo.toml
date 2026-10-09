@@ -41,6 +41,7 @@ tracing-tracy = { version = "0.12", features = ["enable"], optional = true }
 ntest = "0.9"
 aurora-tiny-skia = { path = "../aurora-tiny-skia", version = "0.0.1-rc.1" }
 aurora-vello = { path = "../aurora-vello", version = "0.0.1-rc.1" }
+aurora-wgpu = { path = "../aurora-wgpu", version = "0.0.1-rc.1" }
 
 [profile.release]
 debug = true

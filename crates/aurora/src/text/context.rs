@@ -9,12 +9,24 @@ use crate::text::glyph_cache::{CachedBitmap, GlyphBitmapCache, GlyphCacheBudget,
 use crate::text::layout::TextLayout;
 use crate::text::min_content;
 use crate::text::shaper::{TextShapeParams, TextShaper};
+use rustc_hash::FxHasher;
+use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex};
 use swash::scale::{Render, ScaleContext, Source, StrikeWith};
 
 /// Size at or below which outlines rasterize hinted: grid-fit stems carry
 /// small UI text, while display type above it stays linear and smooth.
 pub const SMALL_TEXT_HINT_CUTOFF_PX: f32 = 16.0;
+
+/// Quantizes a device scale factor for raster identity: 1/16 steps over
+/// [0.5, 4.0], with near-unity scales snapping to exactly 1.0 so the
+/// scale-aware path shares cache slots with the unscaled path.
+pub fn quantize_raster_scale(scale: f32) -> f32 {
+    if !scale.is_finite() || (scale - 1.0).abs() < 1e-4 {
+        return 1.0;
+    }
+    ((scale * 16.0).round() / 16.0).clamp(0.5, 4.0)
+}
 
 /// Rasterized pixel buffer and metrics for an individual glyph.
 pub struct GlyphBitmap<'a> {
@@ -215,11 +227,48 @@ impl TextContext {
         phase: u8,
         f: impl FnOnce(Option<GlyphBitmap>) -> R,
     ) -> R {
+        self.raster_inner(key, key, phase, 1.0, f)
+    }
+
+    /// Rasterizes a glyph at `size * quantize_raster_scale(scale)`, for
+    /// device-pixel coverage on HiDPI displays.
+    ///
+    /// Bitmaps land in distinct cache slots derived from the scale, so the
+    /// unscaled path (and every existing caller, e.g. tiny-skia) is
+    /// untouched. Returned metrics are in *scaled* pixels: divide bearings
+    /// and dimensions by [`quantize_raster_scale(scale)`] to recover layout
+    /// units. Near-unity scales delegate to [`Self::raster_glyph`] exactly
+    /// (shared slot, shared bitmap).
+    pub fn raster_glyph_scaled<R>(
+        &self,
+        key: GlyphKey,
+        phase: u8,
+        scale: f32,
+        f: impl FnOnce(Option<GlyphBitmap>) -> R,
+    ) -> R {
+        let sq = quantize_raster_scale(scale);
+        if sq == 1.0 {
+            return self.raster_glyph(key, phase, f);
+        }
+        let mut h = FxHasher::default();
+        key.0.hash(&mut h);
+        ((sq * 16.0).round() as u16).hash(&mut h);
+        self.raster_inner(GlyphKey(h.finish()), key, phase, sq, f)
+    }
+
+    fn raster_inner<R>(
+        &self,
+        cache_key: GlyphKey,
+        map_key: GlyphKey,
+        phase: u8,
+        size_mul: f32,
+        f: impl FnOnce(Option<GlyphBitmap>) -> R,
+    ) -> R {
         // 2 bits of X phase, 3 bits of Y; out-of-range callers wrap instead
         // of panicking. Normalize once so cache, render, and store agree.
         let phase = phase & 0x1F;
         let (px, py) = (phase & 3, (phase >> 2) & 7);
-        if let Some(cached) = self.bitmaps.get(&key, phase) {
+        if let Some(cached) = self.bitmaps.get(&cache_key, phase) {
             return f(Some(GlyphBitmap {
                 left: cached.left,
                 top: cached.top,
@@ -229,13 +278,13 @@ impl TextContext {
             }));
         }
 
-        let rk = self.engine.key_map.lock().unwrap().get(&key).cloned();
+        let rk = self.engine.key_map.lock().unwrap().get(&map_key).cloned();
         let Some(rk) = rk else {
             self.bitmaps.note_miss();
             return f(None);
         };
 
-        let size = f32::from_bits(rk.size_bits);
+        let size = f32::from_bits(rk.size_bits) * size_mul;
         let mut scaler = self.scaler.lock().unwrap();
         let Some(font) = swash::FontRef::from_index(rk.font.data.data(), rk.font.index as usize) else {
             drop(scaler);
@@ -280,11 +329,11 @@ impl TextContext {
             ),
             _ => (CachedBitmap::new(0, 0, 0, 0, Vec::new()), false),
         };
-        self.bitmaps.store(key, phase, bitmap);
+        self.bitmaps.store(cache_key, phase, bitmap);
         // Borrow back out of the cache so hit and miss paths hand the closure
         // identically-owned data. Oversized entries bypass the cache: fall
         // back to the freshly rendered image itself.
-        match self.bitmaps.get(&key, phase) {
+        match self.bitmaps.get(&cache_key, phase) {
             Some(cached) => f(Some(GlyphBitmap {
                 left: cached.left,
                 top: cached.top,
@@ -318,3 +367,4 @@ impl Default for TextContext {
         Self::new()
     }
 }
+

@@ -85,7 +85,7 @@ pub mod shaper;
 pub use align::TextAlign;
 pub use cache::ShapedTextCache;
 pub use config::{LineHeight, TextConfig};
-pub use context::{GlyphBitmap, TextContext, SMALL_TEXT_HINT_CUTOFF_PX};
+pub use context::{GlyphBitmap, TextContext, SMALL_TEXT_HINT_CUTOFF_PX, quantize_raster_scale};
 pub use decoration::TextDecoration;
 pub use engine::ParleyEngine;
 pub use fonts::{FontData, FontId, FontStyle, FontVariation};

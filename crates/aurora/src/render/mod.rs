@@ -9,7 +9,8 @@
 //! - **Here**: [`RenderBackend`] (which painter to use), [`BackendError`], plus shared
 //!   kernels — [`blur`] (box-blur with shadow falloff), [`stroke_geometry`],
 //!   [`swizzle_rgba_to_bgra`].
-//! - **Elsewhere**: `aurora-tiny-skia` (CPU) and `aurora-vello` (GPU) implement the actual
+//! - **Elsewhere**: `aurora-tiny-skia` (CPU), `aurora-vello` (GPU compute) and
+//!   `aurora-wgpu` (raw GPU) implement the actual
 //!   rasterizers behind a factory fn you hand to
 //!   [`AppConfig::backend_factory`](crate::app::AppConfig::backend_factory).
 //!
@@ -66,4 +67,10 @@ pub enum RenderBackend {
     /// [`RenderBackend::TinySkia`] is SIMD and damage-tiled. For an actually
     /// fast CPU rasterizer, use TinySkia.
     VelloCpu,
+    /// Raw wgpu backend with analytical shaders (`aurora-wgpu` crate).
+    ///
+    /// Traditional quad-based renderer with custom WGSL shaders instead of
+    /// Vello's compute rasterizer. Shadows evaluate blur analytically in
+    /// the fragment shader (zero CPU pixel work, zero cache thrash).
+    Wgpu,
 }
