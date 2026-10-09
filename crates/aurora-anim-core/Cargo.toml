@@ -7,3 +7,6 @@ description = "Aurora UI engine: aurora-anim-core (split from aurora facade)"
 license = "GPL-3.0"
 
 [dependencies]
+
+[dev-dependencies]
+ntest = "0.9"

@@ -1,8 +1,7 @@
 // Single responsibility: Convenient top-level re-exports for declarative application authoring.
 
-pub use crate::anim::{
-    ControllerHandle, Ease, Millis, PlayState, Repeat, Spring, Transition, Tween,
-};
+pub use aurora_anim_core::{Ease, Millis, Spring, Tween};
+pub use crate::anim::{ControllerHandle, PlayState, Repeat, Transition};
 pub use crate::app::{App, AppConfig, AppExtension, FpsLimit, OverlayCaps, OverlayPainter};
 // `component` is the #[component] attribute macro re-exported below, so the hand-written
 // `dsl::component` function is deliberately left out of the prelude: one name cannot be both.

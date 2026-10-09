@@ -4,7 +4,7 @@ use smallvec::SmallVec;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::anim::clock::Clock;
+use aurora_anim_core::clock::Clock;
 use aurora_foundation::{Constraints, Key, Point};
 use crate::layout::{layout_node_with_text, LayoutResult};
 use crate::reactive::{Observer, ReactiveRuntime, SubscriberId};

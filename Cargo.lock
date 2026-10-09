@@ -178,6 +178,7 @@ name = "aurora"
 version = "0.0.1-rc.1"
 dependencies = [
  "arboard",
+ "aurora-anim-core",
  "aurora-foundation",
  "aurora-macros",
  "aurora-tiny-skia",
@@ -205,6 +206,9 @@ version = "0.0.1-rc.1"
 [[package]]
 name = "aurora-anim-core"
 version = "0.0.1-rc.1"
+dependencies = [
+ "ntest",
+]
 
 [[package]]
 name = "aurora-app"

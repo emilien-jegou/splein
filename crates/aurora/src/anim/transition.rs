@@ -3,10 +3,10 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use crate::anim::ease::Ease;
-use crate::anim::spring::Spring;
-use crate::anim::track::ScalarTrack;
-use crate::anim::tween::Tween;
+use aurora_anim_core::ease::Ease;
+use aurora_anim_core::spring::Spring;
+use aurora_anim_core::track::ScalarTrack;
+use aurora_anim_core::tween::Tween;
 use crate::reactive::readable::Readable;
 use crate::reactive::runtime::ReactiveRuntime;
 use crate::reactive::signal::Signal;
