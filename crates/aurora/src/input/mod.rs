@@ -5,6 +5,7 @@ pub mod handlers;
 pub mod hit;
 pub mod keyboard;
 pub mod router;
+pub mod selection;
 pub mod tracker;
 
 pub use event::{ClickInfo, CursorIcon, DragInfo, HoverInfo, PointerButton, PointerEvent, PointerPhase};
