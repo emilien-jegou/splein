@@ -43,18 +43,13 @@ pub fn chunk_reusable(
 
 /// Per-frame antialiasing selection.
 ///
-/// `Area` is analytic high quality but the most expensive coarse work; `Msaa8`
-/// is measurably cheaper on rect/text/shadow UI. Vector paths (SVG) need
-/// analytic coverage, so any `DrawSvg` in the visible set forces `Area`.
+/// `Area` is analytic high quality and the best-in-class choice for UI:
+/// every curve and glyph edge gets exact coverage instead of MSAA sample
+/// patterns. It is the most expensive coarse work, but quality outranks
+/// cost here — rect/text/shadow UI all render through it uniformly.
 pub fn aa_for_chunks<'a>(chunks: impl Iterator<Item = &'a SceneChunk>) -> AaConfig {
-    for chunk in chunks {
-        for cmd in chunk.commands.iter() {
-            if matches!(cmd, aurora::scene::SceneCommand::DrawSvg { .. }) {
-                return AaConfig::Area;
-            }
-        }
-    }
-    AaConfig::Msaa8
+    let _ = chunks;
+    AaConfig::Area
 }
 
 /// Placement affine for a chunk: translation to its origin composed with the
@@ -652,7 +647,7 @@ mod tests {
     }
 
     #[test]
-    fn rect_ui_selects_msaa8() {
+    fn rect_ui_selects_area() {
         let mut c = SceneChunk::new(
             ResolvedRect::new(0.0, 0.0, 100.0, 40.0),
             Point::new(0.0, 0.0),
@@ -661,7 +656,7 @@ mod tests {
         let chunks = vec![c];
         assert!(matches!(
             aa_for_chunks(chunks.iter()),
-            AaConfig::Msaa8
+            AaConfig::Area
         ));
     }
 }

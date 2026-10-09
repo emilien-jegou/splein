@@ -66,7 +66,20 @@ impl VelloImageCache {
     }
 }
 
-/// Emits an entire sequence of scene commands into the target Vello compute scene.
+/// Snaps a pure-translation affine to device pixels.
+///
+/// Fractional translations fringe every axis-aligned edge (coverage splits
+/// across two pixel rows); rounding the translation keeps straight borders
+/// crisp. Scaled/rotated/skewed transforms pass through — fractional
+/// coverage is correct there and motion smoothness outranks static snap.
+fn snap_affine_translation(tx: Affine) -> Affine {
+    let [a, b, c, d, e, f] = tx.as_coeffs();
+    if a == 1.0 && b == 0.0 && c == 0.0 && d == 1.0 {
+        Affine::new([a, b, c, d, e.round(), f.round()])
+    } else {
+        tx
+    }
+}
 #[builder]
 pub fn compile_vello_chunk(
     commands: &[SceneCommand],
@@ -134,6 +147,10 @@ pub fn compile_vello_chunk(
                 shadow_cache.draw(scene, rect, *radius, shadow, light, cur_tx);
             }
             SceneCommand::DrawRect { rect, appearance } => {
+                // Device-snapped translation: same rationale as the tiny-skia
+                // snap — straight edges stay crisp, curves keep analytic Area
+                // coverage on integral placement.
+                let cur_tx = snap_affine_translation(cur_tx);
                 let shape = build_kurbo_rounded_rect(rect, appearance.radius);
                 if let Some(fill) = &appearance.fill {
                     if let Some(brush) = build_vello_brush(fill, appearance.opacity) {

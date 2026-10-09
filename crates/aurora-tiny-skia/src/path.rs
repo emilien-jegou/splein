@@ -1,7 +1,25 @@
 // Single responsibility: TinySkia path generation for W3C-compliant clamped rounded rectangles.
 
 use aurora::foundation::{Radius, ResolvedRect};
-use tiny_skia::{Path, PathBuilder, Rect};
+use tiny_skia::{Path, PathBuilder, Rect, Transform};
+
+/// Snaps a rect's placement to device pixels under translation-only
+/// transforms: shifts the rect by the fractional part of the transform
+/// translation so effective edges land on integer pixels and symmetric AA
+/// replaces one-sided gray fringes. Scaled/skewed transforms and sizes pass
+/// through untouched (fractional coverage is correct there, and motion
+/// smoothness outranks static crispness under animation).
+pub fn snap_rect_to_device(rect: &ResolvedRect, tx: Transform) -> ResolvedRect {
+    if tx.has_skew() || tx.has_scale() {
+        return *rect;
+    }
+    let dx = tx.tx.round() - tx.tx;
+    let dy = tx.ty.round() - tx.ty;
+    if dx == 0.0 && dy == 0.0 {
+        return *rect;
+    }
+    ResolvedRect::new(rect.x + dx, rect.y + dy, rect.width, rect.height)
+}
 
 /// Builds rounded rectangle path with strict W3C Bézier radius clamping supporting per-corner radii.
 pub fn build_rounded_path(rect: &ResolvedRect, radius: Radius) -> Path {

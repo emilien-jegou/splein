@@ -39,8 +39,15 @@ impl ClipStack {
         }
 
         let mut mask = Mask::new(mask_w.max(1), mask_h.max(1)).expect("Mask allocation failed");
-        let path = build_rounded_path(rect, radius);
-        mask.fill_path(&path, FillRule::Winding, false, transform);
+        // Same device snap as draws: a snapped border under an unsnapped
+        // mask would be clipped up to half a pixel off its true edge.
+        let snapped = crate::path::snap_rect_to_device(rect, transform);
+        let path = build_rounded_path(&snapped, radius);
+        // AA mask: the draw paints beneath use AA coverage (`Paint::default`),
+        // so an aliased clip would scissor smooth border/text edges into
+        // stair-steps wherever any clip is active (page/layer clips are the
+        // common case, not the exception).
+        mask.fill_path(&path, FillRule::Winding, true, transform);
 
         if let Some(prev) = self.masks.iter().rev().find_map(|m| m.as_ref()) {
             let prev_data = prev.data();

@@ -105,6 +105,21 @@ impl TextContext {
         self.font_blobs.lock().unwrap().get(index).cloned()
     }
 
+    /// Resolved variable-font instance behind an opaque glyph key, as raw
+    /// normalized coordinates (F2Dot14 bits, one per axis).
+    ///
+    /// GPU vector paths (Vello `draw_glyphs`) need this per run: the blob
+    /// alone always resolves to the default instance, so weight/width
+    /// variations would silently render as Regular without it.
+    pub fn glyph_coords(&self, key: GlyphKey) -> Option<Vec<i16>> {
+        self.engine
+            .key_map
+            .lock()
+            .unwrap()
+            .get(&key)
+            .map(|rk| rk.coords.clone())
+    }
+
     /// Shapes a text string into multi-line glyph runs under given constraints.
     pub fn shape(&self, params: TextShapeParams) -> Arc<TextLayout> {
         if let Some(cached) = self.cache.get(&params) {

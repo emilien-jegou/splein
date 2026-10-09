@@ -231,11 +231,14 @@ fn render_rect(
     }
     if let Some(fill) = &a.fill {
         if let Some(paint) = build_paint(fill, op * a.opacity) {
+            // Device snap first: translation-only fractional offsets fringe
+            // every edge; then the hairline rule below keeps thin rects >=1px.
+            let sr = crate::path::snap_rect_to_device(r, tx);
             if matches!(a.radius, Radius::Scalar(rad) if rad <= 0.0) {
                 // 1px hairlines at fractional positions split coverage over
                 // two rows (full-width faint double line). Snap thin
                 // translation-only rects to integer pixels so they stay crisp.
-                let (mut rx, mut ry, mut rw, mut rh) = (r.x, r.y, r.width, r.height);
+                let (mut rx, mut ry, mut rw, mut rh) = (sr.x, sr.y, sr.width, sr.height);
                 if !tx.has_skew() && !tx.has_scale() {
                     if rh <= 1.5 {
                         ry = ry.round();
@@ -251,7 +254,7 @@ fn render_rect(
                 }
             } else {
                 t.fill_path(
-                    &build_rounded_path(r, a.radius),
+                    &build_rounded_path(&sr, a.radius),
                     &paint,
                     FillRule::Winding,
                     tx,
@@ -261,6 +264,7 @@ fn render_rect(
         }
     }
     if let Some(stroke) = &a.stroke {
-        render_stroke(t, r, a.radius, stroke, op * a.opacity, tx, clip);
+        let sr = crate::path::snap_rect_to_device(r, tx);
+        render_stroke(t, &sr, a.radius, stroke, op * a.opacity, tx, clip);
     }
 }

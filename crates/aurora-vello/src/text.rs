@@ -44,8 +44,20 @@ impl VelloGlyphCache {
             let mut start = 0;
             while start < line.glyphs.len() {
                 let blob = line.glyphs[start].font_blob;
+                // Variable-font instance of the run head. The blob alone
+                // resolves to the default instance, so runs must also split
+                // on coords or every weight renders as Regular.
+                let head_coords = text_ctx
+                    .glyph_coords(line.glyphs[start].cache_key)
+                    .unwrap_or_default();
                 let mut end = start + 1;
-                while end < line.glyphs.len() && line.glyphs[end].font_blob == blob {
+                while end < line.glyphs.len()
+                    && line.glyphs[end].font_blob == blob
+                    && text_ctx
+                        .glyph_coords(line.glyphs[end].cache_key)
+                        .unwrap_or_default()
+                        == head_coords
+                {
                     end += 1;
                 }
 
@@ -60,9 +72,15 @@ impl VelloGlyphCache {
                         y: g.point.y,
                     });
 
+                    // F2Dot14 bits <-> i16: swash/parley coords map 1:1.
+                    let coords: Vec<vello::skrifa::instance::NormalizedCoord> = head_coords
+                        .iter()
+                        .map(|&raw| vello::skrifa::instance::NormalizedCoord::from_bits(raw))
+                        .collect();
                     scene
                         .draw_glyphs(peniko_font)
                         .font_size(line.font_size)
+                        .normalized_coords(&coords)
                         .transform(base_tx)
                         .brush(&brush)
                         .draw(VelloFillRule::NonZero, glyphs);
