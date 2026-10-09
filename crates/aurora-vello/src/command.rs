@@ -129,8 +129,9 @@ pub fn compile_vello_chunk(
                 rect,
                 radius,
                 shadow,
+                light,
             } => {
-                shadow_cache.draw(scene, rect, *radius, shadow, cur_tx);
+                shadow_cache.draw(scene, rect, *radius, shadow, light, cur_tx);
             }
             SceneCommand::DrawRect { rect, appearance } => {
                 let shape = build_kurbo_rounded_rect(rect, appearance.radius);

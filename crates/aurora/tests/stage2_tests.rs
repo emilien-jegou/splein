@@ -157,13 +157,13 @@ fn test_visual_bounds_expansion_for_strokes_and_outer_shadows() {
     // Add outside stroke of 4px
     node.style.appearance.stroke = Some(Stroke::outside(4.0, Color::BLACK));
 
-    // Add outer drop shadow with blur=3.0, spread=2.0 (kernel pad = 2 + 3*3 = 11px)
-    node.style.appearance.shadows = vec![Shadow::outer(
+    // Add outer drop shadow with blur=3.0 (kernel pad = max(extent, 3*softness))
+    node.style.appearance.shadow = Some(Shadow::web_like(
         0.0,
         5.0,
         3.0,
         Color::rgba(0.0, 0.0, 0.0, 0.5),
-    )];
+    ));
 
     let abs_pos = Point::new(100.0, 200.0);
     let tx = Transform::from_translation(abs_pos.x, abs_pos.y);
@@ -434,12 +434,12 @@ fn test_shadow_blur_fringe_damage_expansion_and_cleanup() {
                     .width(100.0)
                     .height(100.0)
                     .fill(Color::BLACK)
-                    .shadows([Shadow::outer(
+                    .shadow(Shadow::web_like(
                         0.0,
                         10.0,
                         10.0,
                         Color::rgba(0.0, 0.0, 0.0, 0.5),
-                    )]),
+                    )),
             ]),
     );
     engine.frame();

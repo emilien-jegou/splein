@@ -11,8 +11,9 @@ pub use crate::dsl::{
     IntoElement, TextDef,
 };
 pub use crate::foundation::{
-    Alignment, Anchor, Color, Direction, Distribution, Fill, Gap, LayoutPresence, Margin, Radius,
-    RenderDriver, Shadow, ShadowKind, Size, Stroke, StrokeAlign, Transform,
+    Alignment, Anchor, BlendMode, Color, Direction, Distribution, FalloffCurve, Fill, Gap,
+    IntoShadow, LayoutPresence, LightEnvironment, Margin, Radius, RenderDriver, Shadow,
+    ShadowOffset, ShadowShape, Size, Stroke, StrokeAlign, Transform,
 };
 pub use crate::input::{ClickInfo, CursorIcon, DragInfo, HitTest, HoverInfo, KeyCode, KeyEvent, PointerButton, PointerEvent, PointerPhase, Propagation};
 pub use crate::reactive::{

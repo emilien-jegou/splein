@@ -1,6 +1,6 @@
 // Single responsibility: Retained arena node aggregating style, geometry, and runtime state.
 
-use crate::foundation::{Key, Point, ResolvedRect, ShadowKind, Size, StrokeAlign, Transform};
+use crate::foundation::{Key, Point, ResolvedRect, Shadow, Size, StrokeAlign, Transform};
 use crate::tree::kind::NodeKind;
 use crate::tree::state::NodeState;
 use crate::tree::style::NodeStyle;
@@ -224,21 +224,21 @@ impl LayoutNode {
         }
     }
 
-    /// Bounds contributed by outer shadows around a box at this node's own origin.
+    /// Bounds contributed by the shadow around a box at this node's own origin.
     fn shadow_bounds(&self, tx: &Transform, box_rect: ResolvedRect) -> ResolvedRect {
         let mut bounds = ResolvedRect::ZERO;
-        for shadow in &self.style.appearance.shadows {
-            if shadow.kind != ShadowKind::Outer {
-                continue;
+        if let Some(shadow) = &self.style.appearance.shadow {
+            for layer in shadow.layers() {
+                let (ox, oy) = shadow.layer_offset(&self.style.appearance.light, layer);
+                let pad = Shadow::layer_pad(layer);
+                bounds = bounds.union(&Self::project(
+                    tx,
+                    box_rect.x + ox - pad,
+                    box_rect.y + oy - pad,
+                    box_rect.width + 2.0 * pad,
+                    box_rect.height + 2.0 * pad,
+                ));
             }
-            let pad = shadow.spread + 3.0 * shadow.blur;
-            bounds = bounds.union(&Self::project(
-                tx,
-                box_rect.x + shadow.offset_x - pad,
-                box_rect.y + shadow.offset_y - pad,
-                box_rect.width + 2.0 * pad,
-                box_rect.height + 2.0 * pad,
-            ));
         }
         bounds
     }
@@ -270,13 +270,14 @@ impl LayoutNode {
             h + 2.0 * stroke_pad,
         );
 
-        for shadow in &self.style.appearance.shadows {
-            if shadow.kind == ShadowKind::Outer {
-                let pad = shadow.spread + 3.0 * shadow.blur;
+        if let Some(shadow) = &self.style.appearance.shadow {
+            for layer in shadow.layers() {
+                let (ox, oy) = shadow.layer_offset(&self.style.appearance.light, layer);
+                let pad = Shadow::layer_pad(layer);
                 let shadow_rect = Self::project(
                     tx,
-                    shadow.offset_x - pad,
-                    shadow.offset_y - pad,
+                    ox - pad,
+                    oy - pad,
                     w + 2.0 * pad,
                     h + 2.0 * pad,
                 );

@@ -83,12 +83,14 @@ pub fn execute_commands(
                 rect,
                 radius,
                 shadow,
+                light,
             } => {
                 ctx.shadow_rasterizer.render(
                     target,
                     rect,
                     *radius,
                     shadow,
+                    light,
                     cur_op,
                     cur_tx,
                     ctx.clip_stack.current(),

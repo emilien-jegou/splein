@@ -144,11 +144,12 @@ pub fn emit_node_content(
         node.resolved_rect.height,
     );
 
-    for s in &node.style.appearance.shadows {
+    if let Some(s) = &node.style.appearance.shadow {
         chunk.push(SceneCommand::DrawShadow {
             rect: surface_rect,
             radius: node.style.appearance.radius,
-            shadow: *s,
+            shadow: s.clone(),
+            light: node.style.appearance.light,
         });
     }
 

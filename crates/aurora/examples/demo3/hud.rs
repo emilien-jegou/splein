@@ -10,12 +10,12 @@ pub fn render_floating_hud() -> impl IntoElement {
         .radius(Radius::max())
         .fill(Color::hex(0x0A0A0A))
         .stroke(Stroke::inside(1.0, Color::white_alpha(0.15)))
-        .shadows([Shadow::outer(
+        .shadow(Shadow::web_like(
             0.0,
             25.0,
             50.0,
             Color::rgba(0.0, 0.0, 0.0, 0.25),
-        )])
+        ))
         .anchor(Anchor::Bottom)
         .margin(Margin::bottom(12.0))
         .overlay(true)

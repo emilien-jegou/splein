@@ -12,7 +12,7 @@ pub struct DynamicBindings {
     pub opacity: Option<Rc<dyn Fn() -> f32>>,
     pub text: Option<Rc<dyn Fn() -> String>>,
     pub transform: Option<Rc<dyn Fn() -> Transform>>,
-    pub shadows: Option<Rc<dyn Fn() -> Vec<Shadow>>>,
+    pub shadow: Option<Rc<dyn Fn() -> Option<Shadow>>>,
     pub presence: Option<Rc<dyn Fn() -> LayoutPresence>>,
     /// Stacking order evaluator, when the node declares a dynamic one.
     pub z_index: Option<Rc<dyn Fn() -> i32>>,
@@ -219,12 +219,12 @@ impl NodeBindings {
         }
     }
 
-    /// Re-evaluates bound fill, opacity, and shadows, returning true if any changed.
+    /// Re-evaluates bound fill, opacity, and shadow, returning true if any changed.
     pub fn update_paint(
         &self,
         fill: &mut Option<Fill>,
         opacity: &mut f32,
-        shadows: &mut Vec<Shadow>,
+        shadow: &mut Option<Shadow>,
     ) -> bool {
         let b = match &self.inner {
             Some(b) => b,
@@ -245,10 +245,10 @@ impl NodeBindings {
                 changed = true;
             }
         }
-        if let Some(s) = &b.shadows {
+        if let Some(s) = &b.shadow {
             let fresh = s();
-            if *shadows != fresh {
-                *shadows = fresh;
+            if *shadow != fresh {
+                *shadow = fresh;
                 changed = true;
             }
         }

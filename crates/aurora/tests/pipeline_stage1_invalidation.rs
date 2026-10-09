@@ -36,7 +36,7 @@ fn test_1_2_opacity_and_shadow_color_are_paint_only() {
     let opacity = engine.signal(1.0f32);
     let shadow_color = engine.signal(Color::rgba(0.0, 0.0, 0.0, 0.5));
     let sc = shadow_color.clone();
-    let dyn_shadow = computed(move || Shadow::outer(0.0, 4.0, 6.0, sc.get()));
+    let dyn_shadow = computed(move || Shadow::web_like(0.0, 4.0, 6.0, sc.get()));
 
     engine.mount(
         group()

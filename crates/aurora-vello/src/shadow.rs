@@ -1,15 +1,18 @@
-// Single responsibility: Analytical 9-patch blurred drop shadow rasterization and caching for Vello.
+// Single responsibility: Layered elevation-based shadow rasterization and caching for Vello.
 
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
 use vello::kurbo::{Affine, Rect as KurboRect};
 use vello::peniko::{
-    Blob, Brush, Fill as VelloFillRule, Format as PenikoFormat, Image as PenikoImage,
+    Blob, BlendMode, Brush, Compose, Fill as VelloFillRule, Format as PenikoFormat,
+    Image as PenikoImage, Mix,
 };
 use vello::Scene as VelloScene;
 
-use aurora::foundation::{Radius, ResolvedRect, Shadow, ShadowKind};
-use aurora::render::blur::box_blur_alpha;
+use aurora::foundation::{
+    BlendMode as ShadowBlend, LightEnvironment, Radius, ResolvedRect, Shadow,
+};
+use aurora::render::blur::box_blur_alpha_with_falloff;
 use crate::shader::to_vello_color;
 
 const MAX_CACHED_SHADOWS: usize = 64;
@@ -17,8 +20,9 @@ const MAX_CACHED_SHADOWS: usize = 64;
 #[derive(Copy, Clone, Hash, PartialEq, Eq)]
 struct ShadowKey {
     radius_bits: u32,
-    blur_bits: u32,
-    spread_bits: u32,
+    softness_bits: u32,
+    extent_bits: u32,
+    falloff_tag: u8,
     color_bits: u32,
 }
 
@@ -29,7 +33,7 @@ struct ShadowPatch {
     cs: f64,
 }
 
-/// Retained 9-patch texture cache for soft blurred drop shadows in Vello.
+/// Retained 9-patch texture cache for layered soft shadows in Vello.
 #[derive(Default)]
 pub struct VelloShadowCache {
     cache: FxHashMap<ShadowKey, ShadowPatch>,
@@ -43,18 +47,24 @@ impl VelloShadowCache {
         }
     }
 
-    /// Draws analytical 9-patch blurred drop shadows transformed through the affine stack.
+    /// Draws layered 9-patch shadows transformed through the affine stack.
+    ///
+    /// `Multiply` layers are wrapped in a multiply-composite layer since
+    /// `draw_image` carries no per-draw blend mode in Vello 0.2.
     pub fn draw(
         &mut self,
         scene: &mut VelloScene,
         rect: &ResolvedRect,
         radius: Radius,
         shadow: &Shadow,
+        light: &LightEnvironment,
         tx: Affine,
     ) {
-        if shadow.blur <= 0.0 && shadow.offset_x == 0.0 && shadow.offset_y == 0.0
-            || shadow.kind == ShadowKind::Inset
-        {
+        if shadow.layers().is_empty() {
+            return;
+        }
+        let intensity = light.intensity;
+        if intensity <= 0.0 {
             return;
         }
 
@@ -64,40 +74,89 @@ impl VelloShadowCache {
             Radius::Corners { .. } => radius.resolve(rect.width, rect.height),
         };
 
-        let blur_r = shadow.blur.max(0.5);
-        let kernel_pad = (shadow.spread + 3.0 * blur_r).ceil();
+        // Largest extent first so tighter layers paint over softer ones.
+        let mut order: Vec<usize> = (0..shadow.layers().len()).collect();
+        order.sort_by(|&a, &b| {
+            shadow.layers()[b]
+                .extent
+                .partial_cmp(&shadow.layers()[a].extent)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
-        let key = ShadowKey {
-            radius_bits: r_scalar.to_bits(),
-            blur_bits: blur_r.to_bits(),
-            spread_bits: shadow.spread.to_bits(),
-            color_bits: (shadow.color.r.to_bits()
-                ^ shadow.color.g.to_bits()
-                ^ shadow.color.b.to_bits()
-                ^ shadow.color.a.to_bits()),
-        };
-
-        if !self.cache.contains_key(&key) {
-            if self.cache.len() >= MAX_CACHED_SHADOWS {
-                if let Some(&first) = self.cache.keys().next() {
-                    self.cache.remove(&first);
-                }
+        for i in order {
+            let layer = &shadow.layers()[i];
+            let layer_alpha = (intensity * shadow.color.a * layer.opacity).clamp(0.0, 1.0);
+            if layer_alpha <= 0.0 || layer.extent <= 0.0 {
+                continue;
             }
-            let patch = Self::generate_patch(r_scalar, blur_r, kernel_pad, shadow);
-            self.cache.insert(key, patch);
+            let (offset_x, offset_y) = shadow.layer_offset(light, layer);
+            let blur_r = layer.softness.max(0.5);
+            let pad = Shadow::layer_pad(layer);
+
+            let key = ShadowKey {
+                radius_bits: r_scalar.to_bits(),
+                softness_bits: blur_r.to_bits(),
+                extent_bits: pad.to_bits(),
+                falloff_tag: layer.falloff.tag(),
+                color_bits: (shadow.color.r.to_bits()
+                    ^ shadow.color.g.to_bits()
+                    ^ shadow.color.b.to_bits()),
+            };
+
+            if !self.cache.contains_key(&key) {
+                if self.cache.len() >= MAX_CACHED_SHADOWS {
+                    if let Some(&first) = self.cache.keys().next() {
+                        self.cache.remove(&first);
+                    }
+                }
+                let mut tinted = shadow.color;
+                tinted.a = 1.0;
+                let lut = layer.falloff.lut();
+                let patch = Self::generate_patch(r_scalar, blur_r, pad, &lut, &tinted);
+                self.cache.insert(key, patch);
+            }
+
+            let p = self.cache.get(&key).unwrap();
+            let (ox, oy) = (
+                (rect.x + offset_x - pad) as f64,
+                (rect.y + offset_y - pad) as f64,
+            );
+            let (total_w, total_h) = (
+                (rect.width + 2.0 * pad) as f64,
+                (rect.height + 2.0 * pad) as f64,
+            );
+            let cs = p.cs;
+
+            // Per-draw opacity does not exist on draw_image/fill in Vello
+            // 0.2, so every layer paints at full texture alpha inside an
+            // opacity layer; multiply additionally swaps the composite mode.
+            let layer_rect = KurboRect::new(ox, oy, ox + total_w, oy + total_h);
+            let mode = match shadow.blend {
+                ShadowBlend::Normal => BlendMode::default(),
+                ShadowBlend::Multiply => BlendMode::new(Mix::Multiply, Compose::SrcOver),
+            };
+            scene.push_layer(mode, layer_alpha, tx, &layer_rect);
+            self.draw_patch(
+                scene, p, ox, oy, total_w, total_h, cs, shadow, 1.0, tx,
+            );
+            scene.pop_layer();
         }
+    }
 
-        let p = self.cache.get(&key).unwrap();
-        let (ox, oy) = (
-            (rect.x + shadow.offset_x - kernel_pad) as f64,
-            (rect.y + shadow.offset_y - kernel_pad) as f64,
-        );
-        let (total_w, total_h) = (
-            (rect.width + 2.0 * kernel_pad) as f64,
-            (rect.height + 2.0 * kernel_pad) as f64,
-        );
-        let cs = p.cs;
-
+    #[allow(clippy::too_many_arguments)]
+    fn draw_patch(
+        &self,
+        scene: &mut VelloScene,
+        p: &ShadowPatch,
+        ox: f64,
+        oy: f64,
+        total_w: f64,
+        total_h: f64,
+        cs: f64,
+        shadow: &Shadow,
+        alpha: f32,
+        tx: Affine,
+    ) {
         // 4 Corners
         scene.draw_image(p.corner.as_ref(), tx * Affine::translate((ox, oy)));
         scene.draw_image(
@@ -147,14 +206,20 @@ impl VelloShadowCache {
             scene.fill(
                 VelloFillRule::NonZero,
                 tx,
-                &Brush::Solid(to_vello_color(shadow.color, 1.0)),
+                &Brush::Solid(to_vello_color(shadow.color, alpha)),
                 None,
                 &center_rect,
             );
         }
     }
 
-    fn generate_patch(radius: f32, blur: f32, pad: f32, shadow: &Shadow) -> ShadowPatch {
+    fn generate_patch(
+        radius: f32,
+        softness: f32,
+        pad: f32,
+        falloff_lut: &[u8; 256],
+        color: &aurora::foundation::Color,
+    ) -> ShadowPatch {
         let cs = ((radius + pad).ceil() as usize).max(4);
         let dim = cs * 2;
         let buf_len = dim * dim;
@@ -168,16 +233,17 @@ impl VelloShadowCache {
                 }
             }
         }
-        box_blur_alpha(&a, &mut b, &mut temp, dim, dim, blur.round() as usize);
+        box_blur_alpha_with_falloff(&a, &mut b, &mut temp, dim, dim, softness.round() as usize, falloff_lut);
 
-        let (cr, cg, cb, ca) = (
-            (shadow.color.r * 255.0).round() as u32,
-            (shadow.color.g * 255.0).round() as u32,
-            (shadow.color.b * 255.0).round() as u32,
-            shadow.color.a.clamp(0.0, 1.0),
+        // Textures bake the tint at full alpha; per-layer alpha rides on
+        // the enclosing opacity layer so corners, edges, and center agree.
+        let (cr, cg, cb) = (
+            (color.r * 255.0).round() as u32,
+            (color.g * 255.0).round() as u32,
+            (color.b * 255.0).round() as u32,
         );
         let to_rgba = |alpha: u8| -> [u8; 4] {
-            let a = ((alpha as f32 * ca).round() as u32).min(255);
+            let a = alpha as u32;
             [
                 ((cr * a + 128) >> 8) as u8,
                 ((cg * a + 128) >> 8) as u8,

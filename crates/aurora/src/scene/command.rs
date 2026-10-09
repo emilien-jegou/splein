@@ -1,8 +1,8 @@
 // Single responsibility: Backend-agnostic display list drawing commands.
 
 use crate::foundation::{
-    Appearance, Color, Fill, Point, Radius, ResolvedRect, Shadow, ShadowKind, StrokeAlign,
-    Transform,
+    Appearance, BlendMode, Color, Fill, LightEnvironment, Point, Radius, ResolvedRect, Shadow,
+    ShadowOffset, ShadowShape, StrokeAlign, Transform,
 };
 use crate::scene::image::ImageSource;
 use crate::scene::vector::VectorGraphic;
@@ -59,6 +59,7 @@ pub enum SceneCommand {
         rect: ResolvedRect,
         radius: Radius,
         shadow: Shadow,
+        light: LightEnvironment,
     },
     DrawText {
         origin: Point,
@@ -129,11 +130,13 @@ pub fn hash_commands(commands: &[SceneCommand]) -> u64 {
                 rect,
                 radius,
                 shadow,
+                light,
             } => {
                 13u8.hash(&mut h);
                 rect_bits(rect).hash(&mut h);
                 radius_bits(radius).hash(&mut h);
                 shadow_bits(shadow).hash(&mut h);
+                light_bits(light).hash(&mut h);
             }
             SceneCommand::DrawText {
                 origin,
@@ -199,19 +202,53 @@ fn radius_bits(r: &Radius) -> Vec<u32> {
 }
 
 fn shadow_bits(s: &Shadow) -> Vec<u32> {
-    vec![
-        match s.kind {
-            ShadowKind::Outer => 0,
-            ShadowKind::Inset => 1,
+    let mut v = vec![
+        s.elevation.to_bits(),
+        match s.offset {
+            ShadowOffset::Elevation => 0,
+            ShadowOffset::Explicit { .. } => 1,
         },
-        s.offset_x.to_bits(),
-        s.offset_y.to_bits(),
-        s.blur.to_bits(),
-        s.spread.to_bits(),
+        match s.offset {
+            ShadowOffset::Elevation => 0,
+            ShadowOffset::Explicit { offset_x, .. } => offset_x.to_bits(),
+        },
+        match s.offset {
+            ShadowOffset::Elevation => 0,
+            ShadowOffset::Explicit { offset_y, .. } => offset_y.to_bits(),
+        },
+        match s.blend {
+            BlendMode::Normal => 0,
+            BlendMode::Multiply => 1,
+        },
+        match s.shape {
+            ShadowShape::Box => 0,
+            ShadowShape::Alpha => 1,
+        },
+        s.layers().len() as u32,
+    ];
+    for l in s.layers() {
+        v.push(l.falloff.tag() as u32);
+        v.push(l.softness.to_bits());
+        v.push(l.extent.to_bits());
+        v.push(l.opacity.to_bits());
+        match l.offset {
+            None => v.push(0),
+            Some((x, y)) => {
+                v.push(1);
+                v.push(x.to_bits());
+                v.push(y.to_bits());
+            }
+        }
+    }
+    v.into_iter().chain(color_bits(&s.color)).collect()
+}
+
+fn light_bits(l: &LightEnvironment) -> [u32; 3] {
+    [
+        l.azimuth.to_bits(),
+        l.altitude.to_bits(),
+        l.intensity.to_bits(),
     ]
-    .into_iter()
-    .chain(color_bits(&s.color))
-    .collect()
 }
 
 fn fill_bits(f: &Fill) -> Vec<u32> {
@@ -261,10 +298,14 @@ fn appearance_bits(a: &Appearance) -> Vec<u32> {
         }
     }
     v.extend(radius_bits(&a.radius));
-    v.push(a.shadows.len() as u32);
-    for s in &a.shadows {
-        v.extend(shadow_bits(s));
+    match &a.shadow {
+        None => v.push(0),
+        Some(s) => {
+            v.push(1);
+            v.extend(shadow_bits(s));
+        }
     }
+    v.extend(light_bits(&a.light));
     v
 }
 

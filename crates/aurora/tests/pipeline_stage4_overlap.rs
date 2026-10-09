@@ -49,12 +49,12 @@ fn test_4_3_repetitive_damage_repaints_do_not_progressively_darken() {
 
     engine.mount(group().width(400.0).height(400.0).children([
         group().width(200.0).height(200.0).fill(fill_a.clone()),
-        group().width(100.0).height(100.0).shadows([Shadow::outer(
+        group().width(100.0).height(100.0).shadow(Shadow::web_like(
             0.0,
             10.0,
             5.0,
             Color::rgba(0.0, 0.0, 0.0, 0.5),
-        )]),
+        )),
     ]));
     engine.frame();
 

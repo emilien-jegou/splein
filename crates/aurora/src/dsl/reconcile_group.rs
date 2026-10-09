@@ -7,6 +7,7 @@ use crate::foundation::{Fill, LayoutPresence, Shadow, Size, Transform};
 use crate::input::handlers::NodeHandlers;
 use crate::reactive::id::SubscriberId;
 use crate::reactive::observer::Observer;
+use crate::reactive::prop::DynamicProp;
 use crate::reactive::ReactiveRuntime;
 use crate::tree::binding::{resolve_z_index, DynamicBindings, NodeBindings, PoseBindings};
 use crate::tree::SubscriberRouter;
@@ -33,7 +34,7 @@ pub fn reconcile_group(
         || def.children_builder.is_some();
     let has_dyn_paint = def.fill.as_ref().is_some_and(|p| p.is_dynamic())
         || def.opacity.as_ref().is_some_and(|p| p.is_dynamic())
-        || def.dynamic_shadow.as_ref().is_some_and(|p| p.is_dynamic())
+        || def.shadow.as_ref().is_some_and(|p| p.is_dynamic())
         || def.transform.as_ref().is_some_and(|p| p.is_dynamic())
         || def.z_index.as_ref().is_some_and(|p| p.is_dynamic())
         || def.x.as_ref().is_some_and(|p| p.is_dynamic())
@@ -51,11 +52,11 @@ pub fn reconcile_group(
         opacity: def.opacity.as_ref().and_then(|p| p.dynamic_closure()),
         transform: def.transform.as_ref().and_then(|p| p.dynamic_closure()),
 
-        shadows: def
-            .dynamic_shadow
+        shadow: def
+            .shadow
             .as_ref()
             .and_then(|p| p.dynamic_closure())
-            .map(|s| Rc::new(move || vec![s()]) as _),
+            .map(|s| Rc::new(move || Some(s())) as _),
         text: None,
         presence: def.presence.as_ref().and_then(|p| p.dynamic_closure()),
         z_index: def.z_index.as_ref().and_then(|p| p.dynamic_closure()),
@@ -127,7 +128,8 @@ pub fn reconcile_group(
         node.style.appearance.opacity = op;
     }
     node.style.appearance.stroke = def.stroke;
-    node.style.appearance.shadows = props.shadows.clone();
+    node.style.appearance.shadow = props.shadow.clone();
+    node.style.appearance.light = def.light;
     node.style.appearance.radius = def.radius;
 
     // A node either declares its children statically or builds them from reactive state.
@@ -194,8 +196,8 @@ struct ResolvedProps {
     transform: Transform,
     fill: Option<Fill>,
     opacity: Option<f32>,
-    /// Static shadows plus any dynamic one, which is the list the node actually paints.
-    shadows: Vec<Shadow>,
+    /// Static or dynamic shadow the node actually paints.
+    shadow: Option<Shadow>,
     /// Effective stacking order, absoluteness folded in, read under the paint observer when
     /// dynamic so a signal change repaints.
     z_index: i32,
@@ -232,10 +234,11 @@ impl ResolvedProps {
         });
         let declared_transform = declared.unwrap_or(Transform::IDENTITY);
 
-        let mut shadows = def.shadows.clone();
-        if let Some(dynamic) = evaluate_prop(&def.dynamic_shadow, p_sub, runtime) {
-            shadows.push(dynamic);
-        }
+        let shadow = match &def.shadow {
+            Some(DynamicProp::Static(s)) => Some(s.clone()),
+            Some(DynamicProp::Dynamic(_)) => evaluate_prop(&def.shadow, p_sub, runtime),
+            None => None,
+        };
 
         Self {
             width,
@@ -245,7 +248,7 @@ impl ResolvedProps {
             transform: NodeBindings::compose_with_declared(declared_transform, composed_pose),
             fill: evaluate_prop(&def.fill, p_sub, runtime).flatten(),
             opacity: evaluate_prop(&def.opacity, p_sub, runtime),
-            shadows,
+            shadow,
             z_index: resolve_z_index(
                 evaluate_prop(&def.z_index, p_sub, runtime),
                 def.is_absolute,
@@ -278,7 +281,8 @@ impl ChangeSet {
         let app = &prev.style.appearance;
         let paint = app.fill != props.fill
             || (props.opacity.is_some() && props.opacity != Some(app.opacity))
-            || app.shadows != props.shadows
+            || app.shadow != props.shadow
+            || app.light != def.light
             || app.stroke != def.stroke
             || app.radius != def.radius
             // Stacking is paint-class: a new z reorders paint (and hit testing, which mirrors

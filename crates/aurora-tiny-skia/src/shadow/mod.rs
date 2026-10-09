@@ -1,18 +1,24 @@
-// Single responsibility: Outer and inset shadow rasterization orchestrator with LRU 9-patch caching.
+// Single responsibility: Layered elevation-based shadow rasterization with LRU 9-patch caching.
 
 pub mod direct;
 pub mod patch;
 
+#[cfg(test)]
+mod tests;
+
 use rustc_hash::FxHashMap;
 use tiny_skia::{Mask, PixmapMut, Transform};
 
-use aurora::foundation::{Radius, ResolvedRect, Shadow, ShadowKind};
+use aurora::foundation::{LightEnvironment, Radius, ResolvedRect, Shadow};
 use direct::render_direct_blur;
-use patch::{blit_9patch, generate_patch, ShadowPatch, ShadowPatchKey};
+use patch::{blit_9patch, generate_patch, layer_geometry, ShadowPatch, ShadowPatchKey};
 
 const MAX_SHADOW_PATCHES: usize = 64;
 
 /// Software shadow rasterizer caching 9-patch blurred corner templates.
+///
+/// Renders each [`Shadow`] layer back-to-front (largest extent first) with
+/// its own falloff LUT, compositing with the shadow's blend mode.
 pub struct ShadowRasterizer {
     scratch_a: Vec<u8>,
     scratch_b: Vec<u8>,
@@ -31,21 +37,22 @@ impl ShadowRasterizer {
         }
     }
 
-    /// Renders analytical soft drop shadow or direct blurred inset shadow.
+    /// Renders analytical soft shadows or direct blurred fallbacks per layer.
     pub fn render(
         &mut self,
         pixmap: &mut PixmapMut,
         rect: &ResolvedRect,
         radius: Radius,
         shadow: &Shadow,
+        light: &LightEnvironment,
         opacity: f32,
         transform: Transform,
         clip: Option<&Mask>,
     ) {
-        if shadow.blur <= 0.0 && shadow.offset_x == 0.0 && shadow.offset_y == 0.0 {
+        if shadow.layers().is_empty() {
             return;
         }
-        let total_opacity = opacity * shadow.color.a;
+        let total_opacity = opacity * light.intensity;
         if total_opacity <= 0.0 {
             return;
         }
@@ -56,61 +63,97 @@ impl ShadowRasterizer {
             Radius::Corners { .. } => radius.resolve(rect.width, rect.height),
         };
 
-        let blur_r = shadow.blur.max(0.5);
-        let kernel_pad = (shadow.spread + 3.0 * blur_r).ceil() as usize;
-        let corner_size = (r_scalar.ceil() as usize) + kernel_pad;
-        let patch_dim = corner_size * 2;
+        // Largest extent first so tighter layers paint over softer ones.
+        let mut order: Vec<usize> = (0..shadow.layers().len()).collect();
+        order.sort_by(|&a, &b| {
+            shadow.layers()[b]
+                .extent
+                .partial_cmp(&shadow.layers()[a].extent)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
-        // The 9-patch blit only applies the translation components of the
-        // transform, so skewed (rotated) shadows fall back to the direct path,
-        // which composites the blurred shape through the full transform.
-        let is_too_small = rect.width < (patch_dim as f32)
-            || rect.height < (patch_dim as f32)
-            || shadow.kind == ShadowKind::Inset
-            || transform.has_skew();
-        if is_too_small {
-            render_direct_blur(
-                &mut self.scratch_a,
-                &mut self.scratch_b,
-                &mut self.scratch_temp,
+        for i in order {
+            let layer = &shadow.layers()[i];
+            let layer_opacity = total_opacity * shadow.color.a * layer.opacity;
+            if layer_opacity <= 0.0 || layer.extent <= 0.0 {
+                continue;
+            }
+            let (offset_x, offset_y) = shadow.layer_offset(light, layer);
+            let blur_r = layer.softness.max(0.5);
+            let pad = Shadow::layer_pad(layer);
+            // Slice past the inward blur support (see layer_geometry).
+            let (kernel_pad, corner_size, patch_dim) = layer_geometry(r_scalar, layer);
+
+            // The 9-patch blit only applies the translation components of the
+            // transform, so skewed (rotated) shadows fall back to the direct path,
+            // which composites the blurred shape through the full transform.
+            let is_too_small = rect.width < (patch_dim as f32)
+                || rect.height < (patch_dim as f32)
+                || transform.has_skew();
+            if is_too_small {
+                render_direct_blur(
+                    &mut self.scratch_a,
+                    &mut self.scratch_b,
+                    &mut self.scratch_temp,
+                    pixmap,
+                    rect,
+                    r_scalar,
+                    offset_x,
+                    offset_y,
+                    blur_r,
+                    pad,
+                    &layer.falloff.lut(),
+                    shadow.color,
+                    layer_opacity,
+                    shadow.blend,
+                    transform,
+                    clip,
+                );
+                continue;
+            }
+
+            let key = ShadowPatchKey {
+                radius_bits: r_scalar.to_bits(),
+                blur_bits: blur_r.to_bits(),
+                extent_bits: pad.to_bits(),
+                falloff_tag: layer.falloff.tag(),
+            };
+
+            if !self.patch_cache.contains_key(&key) {
+                if self.patch_cache.len() >= MAX_SHADOW_PATCHES {
+                    if let Some(&oldest) = self.patch_cache.keys().next() {
+                        self.patch_cache.remove(&oldest);
+                    }
+                }
+                let patch = generate_patch(
+                    &mut self.scratch_a,
+                    &mut self.scratch_b,
+                    &mut self.scratch_temp,
+                    r_scalar,
+                    blur_r,
+                    &layer.falloff.lut(),
+                    kernel_pad,
+                    corner_size,
+                    patch_dim,
+                );
+                self.patch_cache.insert(key, patch);
+            }
+
+            let patch = self.patch_cache.get(&key).unwrap();
+            blit_9patch(
                 pixmap,
                 rect,
-                r_scalar,
-                shadow,
-                total_opacity,
+                offset_x,
+                offset_y,
+                pad,
+                shadow.color,
+                layer_opacity,
+                shadow.blend,
                 transform,
+                patch,
                 clip,
             );
-            return;
         }
-
-        let key = ShadowPatchKey {
-            radius_bits: r_scalar.to_bits(),
-            blur_bits: blur_r.to_bits(),
-            spread_bits: shadow.spread.to_bits(),
-        };
-
-        if !self.patch_cache.contains_key(&key) {
-            if self.patch_cache.len() >= MAX_SHADOW_PATCHES {
-                if let Some(&oldest) = self.patch_cache.keys().next() {
-                    self.patch_cache.remove(&oldest);
-                }
-            }
-            let patch = generate_patch(
-                &mut self.scratch_a,
-                &mut self.scratch_b,
-                &mut self.scratch_temp,
-                r_scalar,
-                blur_r,
-                kernel_pad,
-                corner_size,
-                patch_dim,
-            );
-            self.patch_cache.insert(key, patch);
-        }
-
-        let patch = self.patch_cache.get(&key).unwrap();
-        blit_9patch(pixmap, rect, shadow, total_opacity, transform, patch, clip);
     }
 }
 

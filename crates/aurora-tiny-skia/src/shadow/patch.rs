@@ -1,14 +1,31 @@
 // Single responsibility: 9-patch soft shadow kernel generation and clipped raster blitting.
 
-use aurora::foundation::{ResolvedRect, Shadow};
-use aurora::render::blur::box_blur_alpha;
+use aurora::foundation::{BlendMode, Color, ResolvedRect, Shadow, ShadowLayer};
+use aurora::render::blur::box_blur_alpha_with_falloff;
 use tiny_skia::{Mask, PixmapMut, Transform};
+
+/// Slice geometry for one layer: `(kernel_pad, corner_size, patch_dim)`.
+///
+/// Single source of truth shared by the renderer and the harness. The
+/// corner slice extends past the inward blur support (`+2k`) so every
+/// strip/center seam reads plateau on both sides; without the extension
+/// the seam juxtaposes a still-ramping profile against the flat center
+/// and draws as a dark square outline.
+pub fn layer_geometry(radius: f32, layer: &ShadowLayer) -> (usize, usize, usize) {
+    let pad = Shadow::layer_pad(layer).ceil() as usize;
+    // Same kernel the patch generator rounds to: `blur.round() as usize`
+    // with `blur = softness.max(0.5)`, which is always >= 1.
+    let kernel_int = layer.softness.max(0.5).round() as usize;
+    let cs = radius.ceil().max(0.0) as usize + pad + 2 * kernel_int;
+    (pad, cs, cs * 2)
+}
 
 #[derive(Copy, Clone, Hash, PartialEq, Eq)]
 pub struct ShadowPatchKey {
     pub radius_bits: u32,
     pub blur_bits: u32,
-    pub spread_bits: u32,
+    pub extent_bits: u32,
+    pub falloff_tag: u8,
 }
 
 pub struct ShadowPatch {
@@ -23,6 +40,7 @@ pub fn generate_patch(
     scratch_temp: &mut Vec<u8>,
     radius: f32,
     blur: f32,
+    falloff_lut: &[u8; 256],
     kernel_pad: usize,
     corner_size: usize,
     patch_dim: usize,
@@ -34,44 +52,36 @@ pub fn generate_patch(
     scratch_a.fill(0);
     scratch_b.fill(0);
 
-    let r_int = radius.ceil() as usize;
-    let inner_size = if r_int == 0 {
-        corner_size.saturating_sub(kernel_pad).max(1) * 2
-    } else {
-        2 * r_int
-    };
+    // The occluder is drawn as infinite edge runs (solid quadrant) with the
+    // corner arc cut out — never as a finite tip. A tip narrower than the
+    // blur window dilutes to a ghost (peak ~ (2r/2blur)^2) while the solid
+    // center fill keeps full opacity, which reads as a flat square slab.
+    // Infinite runs hold the 255 plateau at any blur radius, matching Vello.
+    let p = kernel_pad as f32;
+    let c = p + radius.max(0.0);
 
-    for y in 0..inner_size {
-        for x in 0..inner_size {
-            let inside = if radius <= 0.0 {
-                true
-            } else {
-                let dx = r_int.abs_diff(x);
-                let dy = if y < r_int {
-                    r_int - y
-                } else if y >= inner_size.saturating_sub(r_int) {
-                    y - inner_size.saturating_sub(r_int)
-                } else {
-                    0
-                };
-                (dx * dx + dy * dy) as f32 <= radius * radius
-            };
+    for y in 0..patch_dim {
+        for x in 0..patch_dim {
+            let (fx, fy) = (x as f32, y as f32);
+            let inside = fx >= p
+                && fy >= p
+                && (fx >= c
+                    || fy >= c
+                    || (fx - c) * (fx - c) + (fy - c) * (fy - c) <= radius * radius);
             if inside {
-                let idx = (kernel_pad + y) * patch_dim + (kernel_pad + x);
-                if idx < scratch_a.len() {
-                    scratch_a[idx] = 255;
-                }
+                scratch_a[y * patch_dim + x] = 255;
             }
         }
     }
 
-    box_blur_alpha(
+    box_blur_alpha_with_falloff(
         scratch_a,
         scratch_b,
         scratch_temp,
         patch_dim,
         patch_dim,
         blur.round() as usize,
+        falloff_lut,
     );
     ShadowPatch {
         mask: scratch_b.clone(),
@@ -83,27 +93,30 @@ pub fn generate_patch(
 pub fn blit_9patch(
     pixmap: &mut PixmapMut,
     rect: &ResolvedRect,
-    shadow: &Shadow,
+    offset_x: f32,
+    offset_y: f32,
+    pad: f32,
+    color: Color,
     opacity: f32,
+    blend: BlendMode,
     transform: Transform,
     patch: &ShadowPatch,
     clip: Option<&Mask>,
 ) {
     let (canvas_w, canvas_h) = (pixmap.width() as i32, pixmap.height() as i32);
-    let c = shadow.color;
     let (tint_r, tint_g, tint_b) = (
-        (c.r * 255.0).round() as u32,
-        (c.g * 255.0).round() as u32,
-        (c.b * 255.0).round() as u32,
+        (color.r * 255.0).round() as u32,
+        (color.g * 255.0).round() as u32,
+        (color.b * 255.0).round() as u32,
     );
-    let alpha_scale = ((opacity * c.a * 256.0).round() as u32).min(256);
+    let alpha_scale = ((opacity * 256.0).round() as u32).min(256);
     if alpha_scale == 0 {
         return;
     }
 
-    let kernel_pad = (shadow.spread + 3.0 * shadow.blur).ceil();
-    let origin_x = (rect.x + shadow.offset_x - kernel_pad + transform.tx).round() as i32;
-    let origin_y = (rect.y + shadow.offset_y - kernel_pad + transform.ty).round() as i32;
+    let kernel_pad = pad.ceil();
+    let origin_x = (rect.x + offset_x - kernel_pad + transform.tx).round() as i32;
+    let origin_y = (rect.y + offset_y - kernel_pad + transform.ty).round() as i32;
     let (cs, pd) = (patch.corner_size as i32, patch.patch_dim);
     let (total_w, total_h) = (
         (rect.width + 2.0 * kernel_pad).round() as i32,
@@ -123,6 +136,7 @@ pub fn blit_9patch(
         r: u32,
         g: u32,
         b: u32,
+        blend: BlendMode,
         clip: Option<&Mask>,
     ) {
         if x < 0 || y < 0 || x >= cw || y >= ch || alpha == 0 {
@@ -148,26 +162,51 @@ pub fn blit_9patch(
         }
         let idx = ((y * cw + x) * 4) as usize;
         let inv_a = 255 - a;
-        dst[idx] = ((r * a + dst[idx] as u32 * inv_a + 128) >> 8) as u8;
-        dst[idx + 1] = ((g * a + dst[idx + 1] as u32 * inv_a + 128) >> 8) as u8;
-        dst[idx + 2] = ((b * a + dst[idx + 2] as u32 * inv_a + 128) >> 8) as u8;
+        match blend {
+            BlendMode::Normal => {
+                dst[idx] = ((r * a + dst[idx] as u32 * inv_a + 128) >> 8) as u8;
+                dst[idx + 1] = ((g * a + dst[idx + 1] as u32 * inv_a + 128) >> 8) as u8;
+                dst[idx + 2] = ((b * a + dst[idx + 2] as u32 * inv_a + 128) >> 8) as u8;
+            }
+            BlendMode::Multiply => {
+                // Subtractive: tinted product replaces source-over lerp so the
+                // shadow deepens the surface instead of washing it toward grey.
+                let (d0, d1, d2) = (dst[idx] as u32, dst[idx + 1] as u32, dst[idx + 2] as u32);
+                let (m0, m1, m2) = (
+                    (r * d0 + 128) >> 8,
+                    (g * d1 + 128) >> 8,
+                    (b * d2 + 128) >> 8,
+                );
+                dst[idx] = ((m0 * a + d0 * inv_a + 128) >> 8) as u8;
+                dst[idx + 1] = ((m1 * a + d1 * inv_a + 128) >> 8) as u8;
+                dst[idx + 2] = ((m2 * a + d2 * inv_a + 128) >> 8) as u8;
+            }
+        }
         dst[idx + 3] = (a + ((dst[idx + 3] as u32 * inv_a + 128) >> 8)).min(255) as u8;
     }
 
+    // Corner sampling mirrors within the [0..cs] notch block: the patch is
+    // only diagonally symmetric (infinite runs are NOT center-symmetric),
+    // so the far quadrants must be read mirrored, never forward. Forward
+    // reads land in solid run-interior and paint square mass.
     for y in 0..cs {
-        let (row_top, row_bot) = (y as usize * pd, (patch.corner_size + y as usize) * pd);
+        let row_top = y as usize * pd;
+        let row_top_mir = (cs - 1 - y) as usize * pd;
         for x in 0..cs {
+            let col_l = x as usize;
+            let col_r = (cs - 1 - x) as usize;
             blend_pixel(
                 dst_data,
                 canvas_w,
                 canvas_h,
                 origin_x + x,
                 origin_y + y,
-                patch.mask[row_top + x as usize],
+                patch.mask[row_top + col_l],
                 alpha_scale,
                 tint_r,
                 tint_g,
                 tint_b,
+                blend,
                 clip,
             );
             blend_pixel(
@@ -176,11 +215,12 @@ pub fn blit_9patch(
                 canvas_h,
                 origin_x + total_w - cs + x,
                 origin_y + y,
-                patch.mask[row_top + patch.corner_size + x as usize],
+                patch.mask[row_top + col_r],
                 alpha_scale,
                 tint_r,
                 tint_g,
                 tint_b,
+                blend,
                 clip,
             );
             blend_pixel(
@@ -189,11 +229,12 @@ pub fn blit_9patch(
                 canvas_h,
                 origin_x + x,
                 origin_y + total_h - cs + y,
-                patch.mask[row_bot + x as usize],
+                patch.mask[row_top_mir + col_l],
                 alpha_scale,
                 tint_r,
                 tint_g,
                 tint_b,
+                blend,
                 clip,
             );
             blend_pixel(
@@ -202,11 +243,12 @@ pub fn blit_9patch(
                 canvas_h,
                 origin_x + total_w - cs + x,
                 origin_y + total_h - cs + y,
-                patch.mask[row_bot + patch.corner_size + x as usize],
+                patch.mask[row_top_mir + col_r],
                 alpha_scale,
                 tint_r,
                 tint_g,
                 tint_b,
+                blend,
                 clip,
             );
         }
@@ -217,7 +259,7 @@ pub fn blit_9patch(
         for y in 0..cs {
             let (top_a, bot_a) = (
                 patch.mask[y as usize * pd + cs as usize],
-                patch.mask[(patch.corner_size + y as usize) * pd + cs as usize],
+                patch.mask[(cs - 1 - y) as usize * pd + cs as usize],
             );
             for x in 0..edge_w {
                 blend_pixel(
@@ -231,6 +273,7 @@ pub fn blit_9patch(
                     tint_r,
                     tint_g,
                     tint_b,
+                    blend,
                     clip,
                 );
                 blend_pixel(
@@ -244,44 +287,77 @@ pub fn blit_9patch(
                     tint_r,
                     tint_g,
                     tint_b,
+                    blend,
                     clip,
                 );
             }
         }
     }
+    // Transpose of the top/bottom case: the side strips are `cs` pixels wide,
+    // sampling the center-row profile (the straight-edge falloff), stretched
+    // vertically. A single column here would leave the middle of both sides
+    // hollow — and asymmetrically so, since the center-column sample hits
+    // full coverage while the far-column sample hits empty blur.
     let edge_h = total_h - 2 * cs;
     if edge_h > 0 {
-        let (left_a, right_a) = (
-            patch.mask[patch.corner_size * pd],
-            patch.mask[patch.corner_size * pd + patch.corner_size],
-        );
+        for x in 0..cs {
+            let (left_a, right_a) = (
+                patch.mask[patch.corner_size as usize * pd + x as usize],
+                patch.mask[patch.corner_size as usize * pd + (cs - 1 - x) as usize],
+            );
+            for y in 0..edge_h {
+                blend_pixel(
+                    dst_data,
+                    canvas_w,
+                    canvas_h,
+                    origin_x + x,
+                    origin_y + cs + y,
+                    left_a,
+                    alpha_scale,
+                    tint_r,
+                    tint_g,
+                    tint_b,
+                    blend,
+                    clip,
+                );
+                blend_pixel(
+                    dst_data,
+                    canvas_w,
+                    canvas_h,
+                    origin_x + total_w - cs + x,
+                    origin_y + cs + y,
+                    right_a,
+                    alpha_scale,
+                    tint_r,
+                    tint_g,
+                    tint_b,
+                    blend,
+                    clip,
+                );
+            }
+        }
+    }
+
+    // Solid umbra: the strips meet at the corners but never cover the middle,
+    // which peeks out from under the card on offset shadows. Matches Vello.
+    if edge_w > 0 && edge_h > 0 {
         for y in 0..edge_h {
-            blend_pixel(
-                dst_data,
-                canvas_w,
-                canvas_h,
-                origin_x,
-                origin_y + cs + y,
-                left_a,
-                alpha_scale,
-                tint_r,
-                tint_g,
-                tint_b,
-                clip,
-            );
-            blend_pixel(
-                dst_data,
-                canvas_w,
-                canvas_h,
-                origin_x + total_w - cs,
-                origin_y + cs + y,
-                right_a,
-                alpha_scale,
-                tint_r,
-                tint_g,
-                tint_b,
-                clip,
-            );
+            for x in 0..edge_w {
+                blend_pixel(
+                    dst_data,
+                    canvas_w,
+                    canvas_h,
+                    origin_x + cs + x,
+                    origin_y + cs + y,
+                    255,
+                    alpha_scale,
+                    tint_r,
+                    tint_g,
+                    tint_b,
+                    blend,
+                    clip,
+                );
+            }
         }
     }
 }

@@ -171,12 +171,12 @@ fn btn_active(icon: &Arc<VectorGraphic>, k: &'static str) -> impl IntoElement {
         .height(42.0)
         .radius(8.0)
         .fill(Color::hex_alpha(0x57FA58, 0.13))
-        .shadows([Shadow::inset(
+        .shadow(Shadow::web_like(
             0.0,
             2.0,
             3.0,
             Color::hex_alpha(0x54F554, 0.18),
-        )])
+        ))
         .alignment(Alignment::Center)
         .distribution(Distribution::Center)
         .children((

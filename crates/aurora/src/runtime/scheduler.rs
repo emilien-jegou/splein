@@ -233,7 +233,7 @@ impl FrameScheduler {
                 let paint_changed = bindings.update_paint(
                     &mut n.style.appearance.fill,
                     &mut n.style.appearance.opacity,
-                    &mut n.style.appearance.shadows,
+                    &mut n.style.appearance.shadow,
                 );
                 // Stacking rides the paint path: it reorders paint without touching layout.
                 let z_changed =

@@ -22,11 +22,11 @@ pub struct GroupDef {
     pub y: Option<DynamicProp<f32>>,
     pub scale: Option<DynamicProp<f32>>,
     pub rotate_degrees: Option<DynamicProp<f32>>,
-    pub dynamic_shadow: Option<DynamicProp<Shadow>>,
+    pub shadow: Option<DynamicProp<Shadow>>,
+    pub light: LightEnvironment,
     pub layout: LayoutConfig,
     pub margin: Margin,
     pub stroke: Option<Stroke>,
-    pub shadows: Vec<Shadow>,
     pub radius: Radius,
     pub clip: bool,
     pub is_absolute: bool,
@@ -64,11 +64,11 @@ pub fn group() -> GroupDef {
         y: None,
         scale: None,
         rotate_degrees: None,
-        dynamic_shadow: None,
+        shadow: None,
+        light: LightEnvironment::DEFAULT,
         layout: LayoutConfig::default(),
         margin: Margin::ZERO,
         stroke: None,
-        shadows: Vec::new(),
         radius: Radius::ZERO,
         clip: false,
         is_absolute: false,
@@ -148,8 +148,22 @@ impl GroupDef {
         self.rotate_degrees = Some(DynamicProp::Dynamic(Rc::new(move || source.read())));
         self
     }
+    /// Static shadow: accepts an elevation, an `(elevation, color)` pair,
+    /// a [`Shadow::web_like`] value, or a fully built [`Shadow`].
+    pub fn shadow<S: IntoShadow>(mut self, s: S) -> Self {
+        self.shadow = Some(DynamicProp::Static(s.into_shadow()));
+        self
+    }
+
+    /// Reactive shadow, re-evaluated when its signals change.
     pub fn dynamic_shadow<P: IntoProp<Shadow>>(mut self, s: P) -> Self {
-        self.dynamic_shadow = Some(s.into_prop());
+        self.shadow = Some(s.into_prop());
+        self
+    }
+
+    /// Per-node light override for elevation-based shadows.
+    pub fn light(mut self, light: LightEnvironment) -> Self {
+        self.light = light;
         self
     }
 
@@ -160,10 +174,6 @@ impl GroupDef {
 
     pub fn stroke(mut self, s: Stroke) -> Self {
         self.stroke = Some(s);
-        self
-    }
-    pub fn shadows<I: IntoIterator<Item = Shadow>>(mut self, s: I) -> Self {
-        self.shadows.extend(s);
         self
     }
     pub fn radius<R: Into<Radius>>(mut self, r: R) -> Self {

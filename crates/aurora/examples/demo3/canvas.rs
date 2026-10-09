@@ -118,12 +118,12 @@ fn render_toolbar(icons: &AppIcons) -> impl IntoElement {
                         .height(28.0)
                         .radius(Radius::max())
                         .fill(Color::WHITE)
-                        .shadows([Shadow::outer(
+                        .shadow(Shadow::web_like(
                             0.0,
                             1.0,
                             3.0,
                             Color::hex_alpha(0x000000, 0.1),
-                        )])
+                        ))
                         .alignment(Alignment::Center)
                         .distribution(Distribution::Center)
                         .children([text("Grid")

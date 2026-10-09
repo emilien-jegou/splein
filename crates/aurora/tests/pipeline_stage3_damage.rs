@@ -123,7 +123,7 @@ fn test_3_4_shadow_bounds_reach_farther_in_offset_direction() {
             .width(50.0)
             .height(50.0)
             .fill(fill.clone())
-            .shadows([Shadow::outer(0.0, 4.0, 12.0, Color::BLACK)])]),
+            .shadow(Shadow::web_like(0.0, 4.0, 12.0, Color::BLACK))]),
     );
     engine.frame();
 

@@ -75,12 +75,12 @@ fn panel_card() -> GroupDef {
         .height(Size::fill())
         .radius(14.0)
         .fill(Color::hex(ACCENT))
-        .shadows([Shadow::outer(
+        .shadow(Shadow::web_like(
             0.0,
             10.0,
             30.0,
             Color::hex_alpha(ACCENT, 0.30),
-        )])
+        ))
         .alignment(Alignment::Center)
         .distribution(Distribution::Center)
         .gap(6.0)
