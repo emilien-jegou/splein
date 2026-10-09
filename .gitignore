@@ -43,6 +43,35 @@
 !crates/aurora-wayland/
 !crates/aurora-wayland/**/*
 
+!crates/aurora-foundation/
+!crates/aurora-foundation/**/*
+!crates/aurora-reactive/
+!crates/aurora-reactive/**/*
+!crates/aurora-anim-core/
+!crates/aurora-anim-core/**/*
+!crates/aurora-anim/
+!crates/aurora-anim/**/*
+!crates/aurora-text/
+!crates/aurora-text/**/*
+!crates/aurora-tree/
+!crates/aurora-tree/**/*
+!crates/aurora-scene/
+!crates/aurora-scene/**/*
+!crates/aurora-layout/
+!crates/aurora-layout/**/*
+!crates/aurora-input/
+!crates/aurora-input/**/*
+!crates/aurora-pipeline/
+!crates/aurora-pipeline/**/*
+!crates/aurora-dsl/
+!crates/aurora-dsl/**/*
+!crates/aurora-render/
+!crates/aurora-render/**/*
+!crates/aurora-runtime/
+!crates/aurora-runtime/**/*
+!crates/aurora-app/
+!crates/aurora-app/**/*
+
 !docs/
 !docs/**/*
 
