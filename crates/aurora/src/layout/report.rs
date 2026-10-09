@@ -24,9 +24,26 @@ impl LayoutResult {
         Self::default()
     }
 
+    /// Marks that layout calculation ran this frame, without attributing it to a node.
+    ///
+    /// The root always recomputes on window resize, so reporting it would drown the
+    /// signal this report exists for ("what below the root recomputed"). Callers skip
+    /// the root's own box and call this instead.
+    #[inline]
+    pub fn mark_laid_out(&mut self) {
+        self.laid_out = true;
+    }
+
     /// Records a node as recomputed in screen coordinates.
+    ///
+    /// Keeps only outermost boxes: a node that recomputed subsumes its descendants'
+    /// reports (children perform before their parent records, so the parent arrives
+    /// last and evicts what it contains). Strict containment only — identical boxes
+    /// are all kept, so same-geometry siblings never collapse into one.
     #[inline]
     pub fn record_recomputed(&mut self, screen_rect: ResolvedRect) {
+        self.recomputed_nodes
+            .retain(|r| !(rect_contains(screen_rect, *r) && screen_rect != *r));
         self.recomputed_nodes.push(screen_rect);
         self.total_nodes += 1;
         self.laid_out = true;
@@ -44,4 +61,12 @@ impl LayoutResult {
     pub fn record_boundary(&mut self, screen_rect: ResolvedRect) {
         self.boundary_nodes.push(screen_rect);
     }
+}
+
+/// Whether `outer` strictly contains `inner` as axis-aligned boxes.
+fn rect_contains(outer: ResolvedRect, inner: ResolvedRect) -> bool {
+    outer.x <= inner.x
+        && outer.y <= inner.y
+        && outer.x + outer.width >= inner.x + inner.width
+        && outer.y + outer.height >= inner.y + inner.height
 }

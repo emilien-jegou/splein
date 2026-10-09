@@ -335,7 +335,13 @@ fn perform_node_layout(
     root.state.core.dirty.remove(DirtyFlags::LAYOUT);
     root.state.core.dirty.remove(DirtyFlags::MEASURE);
 
-    result.record_recomputed(abs_rect);
+    if is_root {
+        // The root recomputes on every window resize; attributing it would drown the
+        // "what below the root recomputed" signal, so only the flag is kept.
+        result.mark_laid_out();
+    } else {
+        result.record_recomputed(abs_rect);
+    }
     if is_boundary && !is_root {
         result.record_boundary(abs_rect);
     }
@@ -373,6 +379,11 @@ fn resolve_node_bounds(
 }
 
 /// Resolves one axis: a tight bound is already final, so intent must not be re-applied.
+///
+/// NOTE: this makes fixed-size nodes track tight bounds (a fixed root stretches with
+/// the window; stage2 2.2 depends on it). A fixed root that outgrows nothing must not
+/// repaint preserved pixels — that is the damage pass's job (growth emits exposed
+/// bands, not the union), not layout's.
 fn resolve_axis(size: Size, bound: f32, is_tight: bool) -> f32 {
     if is_tight {
         return if bound.is_finite() {
