@@ -17,7 +17,8 @@ use crate::runtime::scheduler::FrameScheduler;
 use crate::runtime::FrameReport;
 use crate::scene::{LayerId, Scene};
 use aurora_text::{TextContext, TextSelection};
-use crate::tree::{DirtyFlags, NodeId, SubscriberRouter, TreeArena};
+use aurora_tree::{DirtyFlags, NodeId, SubscriberRouter};
+use crate::tree::{TreeArena};
 
 /// Single-point facade managing the UI tree, reactive runtime, and scene compilation.
 pub struct Engine {

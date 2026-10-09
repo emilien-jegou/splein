@@ -9,7 +9,7 @@ use crate::runtime::{
     SpatialDiagnostics,
 };
 use crate::scene::Scene;
-use crate::tree::NodeId;
+use aurora_tree::NodeId;
 
 /// Decomposes `rect` minus `cut` into up to four non-overlapping bands.
 ///

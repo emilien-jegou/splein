@@ -33,6 +33,7 @@ aurora-anim-core = { path = "../aurora-anim-core", version = "0.0.1-rc.1" }
 aurora-reactive = { path = "../aurora-reactive", version = "0.0.1-rc.1" }
 aurora-scene = { path = "../aurora-scene", version = "0.0.1-rc.1" }
 aurora-text = { path = "../aurora-text", version = "0.0.1-rc.1" }
+aurora-tree = { path = "../aurora-tree", version = "0.0.1-rc.1" }
 
 # Tracing
 tracing = "0.1"

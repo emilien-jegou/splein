@@ -5,7 +5,8 @@ use crate::pipeline::compile::hierarchy::compile_node_hierarchy;
 use crate::pipeline::compile::stacking::StackingContext;
 use crate::scene::{Scene, SceneChunk};
 use aurora_text::TextContext;
-use crate::tree::{DirtyFlags, TreeArena};
+use aurora_tree::{DirtyFlags};
+use crate::tree::{TreeArena};
 
 /// Recursively compiles hierarchical stacking contexts in strict painter's z-order.
 pub fn compile_stacking_context(

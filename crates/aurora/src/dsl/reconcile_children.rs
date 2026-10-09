@@ -5,8 +5,9 @@ use crate::dsl::diff::{diff_children, ChildOp};
 use crate::dsl::element::Element;
 use crate::dsl::reconciler::reconcile;
 use aurora_reactive::ReactiveRuntime;
-use crate::tree::SubscriberRouter;
-use crate::tree::{NodeId, TreeArena};
+use aurora_tree::SubscriberRouter;
+use aurora_tree::{NodeId};
+use crate::tree::{TreeArena};
 use std::cell::RefCell;
 use std::rc::Rc;
 

@@ -2,7 +2,8 @@
 
 use aurora_foundation::{Point, ResolvedRect, Transform};
 use crate::scene::chunk::InheritedClip;
-use crate::tree::{NodeId, TreeArena};
+use aurora_tree::{NodeId};
+use crate::tree::{TreeArena};
 use smallvec::SmallVec;
 
 /// Hierarchical stacking context partitioning nodes by z-index and overlay status.

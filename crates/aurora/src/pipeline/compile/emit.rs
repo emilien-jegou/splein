@@ -3,7 +3,8 @@
 use aurora_foundation::{Point, Radius, ResolvedRect, Transform};
 use crate::scene::{LayerId, PaintContext, SceneChunk, SceneCommand};
 use aurora_text::TextContext;
-use crate::tree::{LayoutNode, NodeKind};
+use aurora_tree::{NodeKind};
+use crate::tree::{LayoutNode};
 
 /// The corner radius of the single clip a node imposes on its content, or `None` when it clips
 /// nothing at all.

@@ -4,8 +4,9 @@ use smallvec::SmallVec;
 
 use aurora_foundation::{Direction, Gap};
 use aurora_text::TextContext;
-use crate::tree::cache::LayoutCache;
-use crate::tree::{NodeId, NodeKind, TreeArena};
+use aurora_tree::cache::LayoutCache;
+use aurora_tree::{NodeId, NodeKind};
+use crate::tree::{TreeArena};
 
 /// Smallest main-axis size a node can be shrunk to before its own content is crushed.
 ///

@@ -12,7 +12,8 @@ use aurora_text::selection::{
     offset_at_visual_line, snap_to_boundary, word_bounds, word_edge, SelectionGranularity,
     TextSelection,
 };
-use crate::tree::{DirtyFlags, NodeId, NodeKind, TreeArena};
+use aurora_tree::{DirtyFlags, NodeId, NodeKind};
+use crate::tree::{TreeArena};
 
 /// Resolved pointer state for a frame, after dispatch.
 #[derive(Default, Debug)]

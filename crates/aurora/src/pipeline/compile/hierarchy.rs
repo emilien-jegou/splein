@@ -4,7 +4,8 @@ use aurora_foundation::{Point, ResolvedRect, Transform};
 use crate::pipeline::compile::emit::{emit_node_content, enter_node_frame, exit_node_frame};
 use crate::scene::{LayerId, SceneChunk};
 use aurora_text::TextContext;
-use crate::tree::{DirtyFlags, NodeId, TreeArena};
+use aurora_tree::{DirtyFlags, NodeId};
+use crate::tree::{TreeArena};
 
 /// Recursively traverses a node hierarchy and emits commands into the current scene chunk.
 pub fn compile_node_hierarchy(

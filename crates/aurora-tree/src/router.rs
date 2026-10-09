@@ -4,8 +4,8 @@ use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 
 use aurora_reactive::{ReactiveRuntime, SubscriberId};
-use crate::tree::flags::DirtyFlags;
-use crate::tree::id::NodeId;
+use crate::flags::DirtyFlags;
+use crate::id::NodeId;
 
 /// Manages subscriber allocation and invalidation routing for arena nodes.
 #[derive(Default)]

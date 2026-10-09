@@ -5,8 +5,9 @@ use crate::dsl::reconcile_group::reconcile_group;
 use crate::dsl::reconcile_leaf::{reconcile_custom, reconcile_text};
 use aurora_reactive::prop::DynamicProp;
 use aurora_reactive::{Observer, ReactiveRuntime, SubscriberId};
-use crate::tree::SubscriberRouter;
-use crate::tree::{NodeId, TreeArena};
+use aurora_tree::SubscriberRouter;
+use aurora_tree::{NodeId};
+use crate::tree::{TreeArena};
 use std::cell::RefCell;
 use std::rc::Rc;
 

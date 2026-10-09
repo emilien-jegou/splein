@@ -10,8 +10,9 @@ use aurora_reactive::observer::Observer;
 use aurora_reactive::prop::DynamicProp;
 use aurora_reactive::ReactiveRuntime;
 use crate::tree::binding::{resolve_z_index, DynamicBindings, NodeBindings, PoseBindings};
-use crate::tree::SubscriberRouter;
-use crate::tree::{DirtyFlags, LayoutNode, NodeId, NodeKind, TreeArena};
+use aurora_tree::SubscriberRouter;
+use aurora_tree::{DirtyFlags, NodeId, NodeKind};
+use crate::tree::{LayoutNode, TreeArena};
 use std::cell::RefCell;
 use std::rc::Rc;
 

@@ -4,7 +4,7 @@ use crate::dsl::custom::{custom, CustomDef};
 use aurora_foundation::{Constraints, IntrinsicSize, ResolvedRect};
 use crate::scene::context::PaintContext;
 use crate::scene::vector::VectorGraphic;
-use crate::tree::Primitive;
+use aurora_tree::Primitive;
 
 struct SvgPrimitive {
     graphic: VectorGraphic,

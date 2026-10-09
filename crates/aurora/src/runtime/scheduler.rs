@@ -10,7 +10,8 @@ use crate::layout::{layout_node_with_text, LayoutResult};
 use aurora_reactive::{Observer, ReactiveRuntime, SubscriberId};
 use crate::runtime::boundary::{collect_layout_boundaries, prune_nested_boundaries};
 use aurora_text::TextContext;
-use crate::tree::{DirtyFlags, NodeId, NodeKind, SubscriberRouter, TreeArena};
+use aurora_tree::{DirtyFlags, NodeId, NodeKind, SubscriberRouter};
+use crate::tree::{TreeArena};
 
 /// Execution summary of reactive updates and layout recalculations.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]

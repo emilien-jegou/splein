@@ -1,27 +1,17 @@
-// Single responsibility: Retained tree arena, node models, styles, and invalidation flags.
+// Single responsibility: Retained tree arena and node models; primitives re-exported from aurora-tree.
 
 pub mod arena;
 pub mod binding;
-pub mod cache;
-pub mod flags;
-pub mod id;
 pub mod invalidation;
-pub mod kind;
 pub mod node;
-pub mod registry;
-pub mod router;
 pub mod state;
-pub mod style;
 
 pub use arena::TreeArena;
+pub use aurora_tree::{
+    cache, flags, id, kind, registry, router, style, DirtyFlags, KeyRegistry, LayoutCache,
+    NodeId, NodeKind, NodeStyle, Primitive, SubscriberRouter,
+};
 pub use binding::NodeBindings;
-pub use cache::LayoutCache;
-pub use flags::DirtyFlags;
-pub use id::NodeId;
 pub use invalidation::mark_node_dirty;
-pub use kind::{NodeKind, Primitive};
 pub use node::{LayoutNode, PaintLayer, OVERLAY_Z_FLOOR};
-pub use registry::KeyRegistry;
-pub use router::SubscriberRouter;
 pub use state::{CoreState, InputState, NodeState, PaintState, SceneState, TextState};
-pub use style::NodeStyle;

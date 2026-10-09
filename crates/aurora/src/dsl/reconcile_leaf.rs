@@ -7,8 +7,9 @@ use crate::dsl::text::TextDef;
 use aurora_foundation::Size;
 use aurora_reactive::ReactiveRuntime;
 use crate::tree::binding::{DynamicBindings, NodeBindings};
-use crate::tree::SubscriberRouter;
-use crate::tree::{DirtyFlags, LayoutNode, NodeId, NodeKind, TreeArena};
+use aurora_tree::SubscriberRouter;
+use aurora_tree::{DirtyFlags, NodeId, NodeKind};
+use crate::tree::{LayoutNode, TreeArena};
 use std::cell::RefCell;
 use std::rc::Rc;
 

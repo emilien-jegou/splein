@@ -32,6 +32,6 @@ pub use aurora_text::{
     FontStyle, LineHeight, SelectionGranularity, TextAlign, TextDecoration, TextOverflow,
     TextSelection,
 };
-pub use crate::tree::Primitive;
+pub use aurora_tree::Primitive;
 /// Attribute macro marking a function as a component that runs inside the hook scope.
 pub use aurora_macros::component;
