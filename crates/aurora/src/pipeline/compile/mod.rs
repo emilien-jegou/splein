@@ -8,7 +8,7 @@ pub mod stacking;
 use aurora_foundation::{DamageRegion, Point, ResolvedRect};
 use crate::scene::chunk::InheritedClips;
 use crate::scene::Scene;
-use crate::text::TextContext;
+use aurora_text::TextContext;
 use crate::tree::{NodeId, TreeArena};
 use context::compile_stacking_context;
 use stacking::{build_stacking_tree, StackingContext};

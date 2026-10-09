@@ -3,12 +3,12 @@
 use std::cell::RefCell;
 
 use aurora_foundation::{Constraints, IntrinsicSize};
-use crate::text::align::apply_alignment;
-use crate::text::engine::ParleyEngine;
-use crate::text::fonts::FontStyle;
-use crate::text::layout::TextLayout;
-use crate::text::runs::extract_lines;
-use crate::text::shaper::TextShapeParams;
+use crate::align::apply_alignment;
+use crate::engine::ParleyEngine;
+use crate::fonts::FontStyle;
+use crate::layout::TextLayout;
+use crate::runs::extract_lines;
+use crate::shaper::TextShapeParams;
 use parley::{
     FontFamily, FontStyle as ParleyStyle, FontWeight, Layout, LayoutContext, LineHeight,
     OverflowWrap, StyleProperty,

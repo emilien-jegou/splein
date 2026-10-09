@@ -1,6 +1,6 @@
 // Single responsibility: Min-content inline width of a shaped run, its widest unbreakable segment.
 
-use crate::text::glyph::ShapedLine;
+use crate::glyph::ShapedLine;
 use smallvec::SmallVec;
 
 /// Widest whitespace-delimited segment of `text`, summed from the glyphs of an unbounded run.

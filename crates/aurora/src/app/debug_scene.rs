@@ -6,7 +6,7 @@ use crate::app::debug_layout::hud_panel;
 use aurora_foundation::{Appearance, Color, Fill, Point, ResolvedRect, Stroke};
 use crate::runtime::FrameDiagnostics;
 use crate::scene::{SceneChunk, SceneCommand};
-use crate::text::TextContext;
+use aurora_text::TextContext;
 
 /// Emits inspector mode visual cues directly into an overlay scene chunk for GPU backends.
 pub fn emit_inspector_overlay(
@@ -201,21 +201,21 @@ fn emit_label(
     color: Color,
     text_ctx: &TextContext,
 ) {
-    let cfg = crate::text::TextConfig {
+    let cfg = aurora_text::TextConfig {
         content: content.into(),
         font_id: None,
         family: None,
-        style: crate::text::FontStyle::Normal,
+        style: aurora_text::FontStyle::Normal,
         size: 11.0,
         weight: 700,
-        line_height: crate::text::LineHeight::Absolute(14.0),
+        line_height: aurora_text::LineHeight::Absolute(14.0),
         letter_spacing: 0.0,
-        align: crate::text::TextAlign::Start,
-        decoration: crate::text::TextDecoration::NONE,
-        overflow: crate::text::TextOverflow::Clip,
+        align: aurora_text::TextAlign::Start,
+        decoration: aurora_text::TextDecoration::NONE,
+        overflow: aurora_text::TextOverflow::Clip,
         max_lines: None,
         color,
-        ..crate::text::TextConfig::default()
+        ..aurora_text::TextConfig::default()
     };
     let layout = text_ctx.shape_config(&cfg, aurora_foundation::Constraints::loose(80.0, 16.0));
     chunk.push(SceneCommand::DrawText {

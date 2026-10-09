@@ -1,6 +1,6 @@
 // Single responsibility: Horizontal paragraph alignment (start, center, end, justify).
 
-use crate::text::glyph::ShapedLine;
+use crate::glyph::ShapedLine;
 
 /// Horizontal alignment of text lines within the paragraph box.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]

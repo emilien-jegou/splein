@@ -1,11 +1,11 @@
 // Single responsibility: Configuration and layout parameters for styled typography.
 
 use aurora_foundation::Color;
-use crate::text::align::TextAlign;
-use crate::text::decoration::TextDecoration;
-use crate::text::fonts::{FontId, FontStyle, FontVariation};
-use crate::text::overflow::TextOverflow;
-use crate::text::selection::DEFAULT_SELECTION_COLOR;
+use crate::align::TextAlign;
+use crate::decoration::TextDecoration;
+use crate::fonts::{FontId, FontStyle, FontVariation};
+use crate::overflow::TextOverflow;
+use crate::selection::DEFAULT_SELECTION_COLOR;
 
 /// Line height policy: fixed pixels or a multiple of the font size.
 #[derive(Copy, Clone, Debug, PartialEq)]

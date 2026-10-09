@@ -5,7 +5,7 @@
 // the document-order helpers the router uses to span a range across runs.
 // Keyboard and clipboard are deliberately out of scope.
 
-use crate::text::layout::TextLayout;
+use crate::layout::TextLayout;
 use aurora_foundation::{Point, ResolvedRect};
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -212,14 +212,14 @@ fn line_at_y(layout: &TextLayout, y: f32) -> usize {
 
 /// X of a glyph's left edge in layout-local coordinates.
 #[inline]
-fn glyph_x(line: &crate::text::glyph::ShapedLine, glyph: &crate::text::glyph::ShapedGlyph) -> f32 {
+fn glyph_x(line: &crate::glyph::ShapedLine, glyph: &crate::glyph::ShapedGlyph) -> f32 {
     line.align_offset + glyph.point.x
 }
 
 /// Caret x for a byte offset inside one line: the left edge of the first glyph
 /// at or after the offset, else the line end.
 fn caret_x_in_line(
-    line: &crate::text::glyph::ShapedLine,
+    line: &crate::glyph::ShapedLine,
     line_start: usize,
     line_end: usize,
     offset: usize,
@@ -402,20 +402,20 @@ pub fn selection_rects(
 mod tests {
     use super::*;
     use aurora_foundation::Constraints;
-    use crate::text::TextContext;
+    use crate::TextContext;
 
     fn context() -> TextContext {
         let ctx = TextContext::new();
-        ctx.load_font(include_bytes!("../../assets/inter-var.ttf"));
+        ctx.load_font(include_bytes!("../assets/inter-var.ttf"));
         ctx
     }
 
     fn shape(content: &str, width: f32) -> (TextContext, std::sync::Arc<TextLayout>) {
         let ctx = context();
-        let cfg = crate::text::TextConfig {
+        let cfg = crate::TextConfig {
             content: content.to_string(),
             size: 16.0,
-            ..crate::text::TextConfig::default()
+            ..crate::TextConfig::default()
         };
         let layout = ctx.shape_config(&cfg, Constraints::loose(width, f32::INFINITY));
         (ctx, layout)

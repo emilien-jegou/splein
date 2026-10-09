@@ -2,7 +2,7 @@
 
 use aurora_foundation::{Constraints, Direction, IntrinsicSize, ResolvedRect};
 use crate::scene::context::PaintContext;
-use crate::text::TextConfig;
+use aurora_text::TextConfig;
 
 /// Trait implemented by user-defined custom layout primitives.
 pub trait Primitive {

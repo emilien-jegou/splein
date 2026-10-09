@@ -28,7 +28,7 @@ pub use aurora_reactive::derived;
 pub use crate::render::RenderBackend;
 pub use crate::runtime::{Engine, FrameDiagnostics, FrameReport};
 pub use crate::scene::vector::VectorGraphic;
-pub use crate::text::{
+pub use aurora_text::{
     FontStyle, LineHeight, SelectionGranularity, TextAlign, TextDecoration, TextOverflow,
     TextSelection,
 };

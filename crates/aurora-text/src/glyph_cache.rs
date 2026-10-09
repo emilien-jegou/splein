@@ -6,7 +6,7 @@
 // hit/eviction feedback so steady text stays resident while animated-size
 // churn cannot grow memory without bound.
 
-use crate::text::glyph::GlyphKey;
+use crate::glyph::GlyphKey;
 use rustc_hash::FxHashMap;
 use std::sync::{Arc, Mutex};
 

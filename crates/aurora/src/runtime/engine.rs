@@ -16,7 +16,7 @@ use crate::runtime::pointer_input::PointerInput;
 use crate::runtime::scheduler::FrameScheduler;
 use crate::runtime::FrameReport;
 use crate::scene::{LayerId, Scene};
-use crate::text::{TextContext, TextSelection};
+use aurora_text::{TextContext, TextSelection};
 use crate::tree::{DirtyFlags, NodeId, SubscriberRouter, TreeArena};
 
 /// Single-point facade managing the UI tree, reactive runtime, and scene compilation.

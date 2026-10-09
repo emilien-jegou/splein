@@ -1,8 +1,8 @@
 // Single responsibility: Converting Parley layout lines into Aurora shaped lines.
 
 use aurora_foundation::Point;
-use crate::text::engine::{ParleyEngine, RasterKey};
-use crate::text::glyph::{GlyphKey, ShapedGlyph, ShapedLine};
+use crate::engine::{ParleyEngine, RasterKey};
+use crate::glyph::{GlyphKey, ShapedGlyph, ShapedLine};
 use parley::{Layout, PositionedLayoutItem};
 use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
 use std::hash::{Hash, Hasher};

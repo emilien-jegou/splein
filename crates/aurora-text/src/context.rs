@@ -1,14 +1,14 @@
 // Single responsibility: Font database storage, lifetime management, and shaping dispatcher.
 
 use aurora_foundation::Constraints;
-use crate::text::cache::ShapedTextCache;
-use crate::text::config::TextConfig;
-use crate::text::engine::ParleyEngine;
-use crate::text::glyph::GlyphKey;
-use crate::text::glyph_cache::{CachedBitmap, GlyphBitmapCache, GlyphCacheBudget, GlyphCacheStats};
-use crate::text::layout::TextLayout;
-use crate::text::min_content;
-use crate::text::shaper::{TextShapeParams, TextShaper};
+use crate::cache::ShapedTextCache;
+use crate::config::TextConfig;
+use crate::engine::ParleyEngine;
+use crate::glyph::GlyphKey;
+use crate::glyph_cache::{CachedBitmap, GlyphBitmapCache, GlyphCacheBudget, GlyphCacheStats};
+use crate::layout::TextLayout;
+use crate::min_content;
+use crate::shaper::{TextShapeParams, TextShaper};
 use std::sync::{Arc, Mutex};
 use swash::scale::{Render, ScaleContext, Source, StrikeWith};
 

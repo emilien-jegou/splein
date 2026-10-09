@@ -2,7 +2,7 @@
 
 use aurora_foundation::{Constraints, Direction, Gap, IntrinsicSize};
 use crate::layout::measure::compute_child_desired;
-use crate::text::TextContext;
+use aurora_text::TextContext;
 use crate::tree::{NodeId, TreeArena};
 
 /// Computes intrinsic bounding size of a flex group from its children.

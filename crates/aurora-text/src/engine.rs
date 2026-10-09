@@ -7,11 +7,11 @@ use parley::fontique::{Blob, Collection, CollectionOptions};
 use parley::FontContext;
 use rustc_hash::FxHashMap;
 
-use crate::text::glyph::GlyphKey;
-use crate::text::layout::TextLayout;
-use crate::text::overflow::{TextOverflow, truncate_to_lines};
-use crate::text::shape::shape_text;
-use crate::text::shaper::{TextShapeParams, TextShaper};
+use crate::glyph::GlyphKey;
+use crate::layout::TextLayout;
+use crate::overflow::{TextOverflow, truncate_to_lines};
+use crate::shape::shape_text;
+use crate::shaper::{TextShapeParams, TextShaper};
 
 /// Raster identity for one shaped glyph behind an opaque [`GlyphKey`].
 ///
@@ -109,7 +109,7 @@ impl ParleyEngine {
     pub(crate) fn resolve_family(
         &self,
         fcx: &mut FontContext,
-        font: Option<crate::text::fonts::FontId>,
+        font: Option<crate::fonts::FontId>,
         family: Option<&str>,
     ) -> Option<String> {
         let style_key = ResolvedStyleKey {
@@ -133,7 +133,7 @@ impl ParleyEngine {
     fn resolve_family_uncached(
         &self,
         fcx: &mut FontContext,
-        font: Option<crate::text::fonts::FontId>,
+        font: Option<crate::fonts::FontId>,
         family: Option<&str>,
     ) -> Option<String> {
         if let Some(name) = family {
@@ -141,7 +141,7 @@ impl ParleyEngine {
                 return Some(name.to_string());
             }
         }
-        if let Some(crate::text::fonts::FontId(id)) = font {
+        if let Some(crate::fonts::FontId(id)) = font {
             if let Some(names) = self.blob_families.lock().unwrap().get(id as usize) {
                 if let Some(first) = names.first() {
                     return Some(first.clone());

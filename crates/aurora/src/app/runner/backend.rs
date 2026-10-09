@@ -7,7 +7,7 @@ use winit::window::Window;
 use aurora_foundation::{Color, DamageRegion, ResolvedRect};
 use crate::render::BackendError;
 use crate::scene::Scene;
-use crate::text::TextContext;
+use aurora_text::TextContext;
 
 /// Resolves the accumulated damage a swapchain buffer age requires.
 pub trait DamageResolver {

@@ -1,10 +1,10 @@
 // Single responsibility: Thread-safe memoization cache for shaped typography layouts.
 
-use crate::text::align::TextAlign;
-use crate::text::fonts::{FontId, FontStyle};
-use crate::text::layout::TextLayout;
-use crate::text::overflow::TextOverflow;
-use crate::text::shaper::TextShapeParams;
+use crate::align::TextAlign;
+use crate::fonts::{FontId, FontStyle};
+use crate::layout::TextLayout;
+use crate::overflow::TextOverflow;
+use crate::shaper::TextShapeParams;
 use rustc_hash::FxHashMap;
 use std::sync::{Arc, Mutex};
 
@@ -171,7 +171,7 @@ impl Inner {
 mod tests {
     use super::*;
     use aurora_foundation::{Constraints, IntrinsicSize};
-    use crate::text::fonts::FontStyle;
+    use crate::fonts::FontStyle;
 
     fn params_for(text: &str, max_width: f32) -> TextShapeParams<'_> {
         TextShapeParams {

@@ -1,7 +1,7 @@
 // Single responsibility: Text decoration flags and underline/strike/overline geometry.
 
 use aurora_foundation::ResolvedRect;
-use crate::text::glyph::ShapedLine;
+use crate::glyph::ShapedLine;
 use std::ops::BitOr;
 
 /// Set of decoration lines drawn under or over a text run.

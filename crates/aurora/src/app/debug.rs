@@ -14,7 +14,7 @@ use crate::app::painter::OverlayPainter;
 use crate::app::telemetry::TelemetryWorker;
 use aurora_foundation::{DamageRegion, ResolvedRect};
 use crate::runtime::{Engine, FrameDiagnostics};
-use crate::text::TextContext;
+use aurora_text::TextContext;
 
 /// Visual inspection modes, one per frame pass whose output they visualize.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]

@@ -2,7 +2,7 @@
 // Replace TextLayout implementation:
 
 use aurora_foundation::IntrinsicSize;
-use crate::text::glyph::ShapedLine;
+use crate::glyph::ShapedLine;
 use std::any::Any;
 use std::ops::Deref;
 use std::sync::Arc;

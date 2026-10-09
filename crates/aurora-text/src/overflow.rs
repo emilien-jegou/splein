@@ -1,7 +1,7 @@
 // Single responsibility: Overflow behavior and ellipsis truncation for text lines.
 
-use crate::text::layout::TextLayout;
-use crate::text::shaper::TextShapeParams;
+use crate::layout::TextLayout;
+use crate::shaper::TextShapeParams;
 
 /// Behavior when text does not fit within its allowed line count.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]

@@ -1,10 +1,10 @@
 // Single responsibility: Trait contracts and parameter structs for multi-line text shaping.
 
 use aurora_foundation::Constraints;
-use crate::text::align::TextAlign;
-use crate::text::fonts::{FontId, FontStyle, FontVariation};
-use crate::text::layout::TextLayout;
-use crate::text::overflow::TextOverflow;
+use crate::align::TextAlign;
+use crate::fonts::{FontId, FontStyle, FontVariation};
+use crate::layout::TextLayout;
+use crate::overflow::TextOverflow;
 
 /// Unified parameter specification for text layout and shaping passes.
 #[derive(Copy, Clone, Debug, PartialEq)]

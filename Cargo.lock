@@ -183,21 +183,18 @@ dependencies = [
  "aurora-macros",
  "aurora-reactive",
  "aurora-scene",
+ "aurora-text",
  "aurora-tiny-skia",
  "aurora-vello",
  "bon",
  "ntest",
- "parley",
- "resvg",
  "rustc-hash 2.1.3",
  "smallvec",
- "swash 0.2.10",
  "tiny-skia",
  "tracing",
  "tracing-subscriber",
  "tracing-tracy",
  "tracy-client",
- "unicode-segmentation",
  "winit",
 ]
 
@@ -280,6 +277,16 @@ dependencies = [
 [[package]]
 name = "aurora-text"
 version = "0.0.1-rc.1"
+dependencies = [
+ "aurora-foundation",
+ "aurora-scene",
+ "parley",
+ "rustc-hash 2.1.3",
+ "smallvec",
+ "swash 0.2.10",
+ "tracing",
+ "unicode-segmentation",
+]
 
 [[package]]
 name = "aurora-tiny-skia"

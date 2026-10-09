@@ -7,7 +7,7 @@ use crate::input::handlers::Propagation;
 use crate::input::hit::{hit_chain, HitNode, HitTest};
 use crate::input::keyboard::{KeyCode, KeyEvent};
 use crate::input::tracker::{PointerTracker, TrackerChange};
-use crate::text::selection::{
+use aurora_text::selection::{
     caret_at_point, caret_line_col, expand_selection, line_byte_ranges, move_grapheme,
     offset_at_visual_line, snap_to_boundary, word_bounds, word_edge, SelectionGranularity,
     TextSelection,

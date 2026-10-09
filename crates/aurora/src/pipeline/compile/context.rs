@@ -4,7 +4,7 @@ use aurora_foundation::{DamageRegion, ResolvedRect, Transform};
 use crate::pipeline::compile::hierarchy::compile_node_hierarchy;
 use crate::pipeline::compile::stacking::StackingContext;
 use crate::scene::{Scene, SceneChunk};
-use crate::text::TextContext;
+use aurora_text::TextContext;
 use crate::tree::{DirtyFlags, TreeArena};
 
 /// Recursively compiles hierarchical stacking contexts in strict painter's z-order.

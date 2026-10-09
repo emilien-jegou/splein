@@ -2,7 +2,7 @@
 
 use aurora_foundation::{Constraints, DesiredSize, IntrinsicSize, LayoutPresence, Size};
 use crate::layout::group_measure::measure_group_intrinsic;
-use crate::text::TextContext;
+use aurora_text::TextContext;
 use crate::tree::{NodeId, NodeKind, TreeArena};
 
 /// Derives resolved pixel size from sizing intent, intrinsic size, and parent bound.
@@ -61,7 +61,7 @@ pub fn compute_intrinsic(
     let effective_constraints = if is_text {
         Constraints {
             min_width: 0.0,
-            max_width: crate::text::TextConfig::wrap_width(w_size, constraints),
+            max_width: aurora_text::TextConfig::wrap_width(w_size, constraints),
             min_height: 0.0,
             max_height: f32::INFINITY,
         }
@@ -151,7 +151,7 @@ pub fn fit_text_run_to_width(
     let config = match &arena.get(id).kind {
         NodeKind::Text(config) => {
             let cached = arena.get(id).state.text.cached_text_layout.as_deref();
-            if !crate::text::TextConfig::needs_refit(cached, width) {
+            if !aurora_text::TextConfig::needs_refit(cached, width) {
                 return;
             }
             config.clone()

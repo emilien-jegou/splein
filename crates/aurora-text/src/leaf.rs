@@ -8,12 +8,12 @@
 use std::sync::Arc;
 
 use aurora_foundation::{Appearance, Constraints, Direction, Fill, IntrinsicSize, Point, Size};
-use crate::scene::{SceneChunk, SceneCommand};
-use crate::text::config::TextConfig;
-use crate::text::decoration::decoration_rules;
-use crate::text::layout::TextLayout;
-use crate::text::selection::{caret_rect, selection_rects, TextSelection};
-use crate::text::TextContext;
+use aurora_scene::{SceneChunk, SceneCommand};
+use crate::config::TextConfig;
+use crate::decoration::decoration_rules;
+use crate::layout::TextLayout;
+use crate::selection::{caret_rect, selection_rects, TextSelection};
+use crate::TextContext;
 
 impl TextConfig {
     /// Inline width text wraps against, from the node's width intent and offered space.

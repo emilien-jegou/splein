@@ -12,7 +12,7 @@ use crate::layout::measure::{
 };
 use crate::layout::min_size::compute_min_size;
 use crate::layout::report::LayoutResult;
-use crate::text::TextContext;
+use aurora_text::TextContext;
 use crate::tree::{DirtyFlags, NodeId, TreeArena};
 
 pub fn layout_node(arena: &mut TreeArena, node_id: NodeId, constraints: Constraints) {

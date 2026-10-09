@@ -7,8 +7,8 @@
 
 use crate::input::handlers::NodeHandlers;
 use crate::scene::SceneChunk;
-use crate::text::selection::{SelectionGranularity, TextSelection};
-use crate::text::TextLayout;
+use aurora_text::selection::{SelectionGranularity, TextSelection};
+use aurora_text::TextLayout;
 use crate::tree::binding::NodeBindings;
 use crate::tree::cache::LayoutCache;
 use crate::tree::flags::DirtyFlags;
