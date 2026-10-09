@@ -11,33 +11,6 @@ use crate::runtime::{
 use crate::scene::Scene;
 use crate::tree::NodeId;
 
-/// Decomposes `rect` minus `cut` into up to four non-overlapping bands.
-///
-/// Empties (no exposure on that side) are dropped by `push`, so callers pass all four
-/// unconditionally.
-fn subtract_rect(rect: ResolvedRect, cut: ResolvedRect) -> Vec<ResolvedRect> {
-    vec![
-        // Left strip, full height.
-        ResolvedRect::new(rect.x, rect.y, cut.x - rect.x, rect.height),
-        // Right strip, full height.
-        ResolvedRect::new(
-            cut.x + cut.width,
-            rect.y,
-            rect.x + rect.width - (cut.x + cut.width),
-            rect.height,
-        ),
-        // Top strip, between the cut edges.
-        ResolvedRect::new(cut.x, rect.y, cut.width, cut.y - rect.y),
-        // Bottom strip, between the cut edges.
-        ResolvedRect::new(
-            cut.x,
-            cut.y + cut.height,
-            cut.width,
-            rect.y + rect.height - (cut.y + cut.height),
-        ),
-    ]
-}
-
 /// Runs the frame passes over arena state, emitting the compiled scene and telemetry.
 #[tracing::instrument(name = "Engine::frame", skip_all)]
 pub fn run_frame_passes(
@@ -140,21 +113,15 @@ pub fn run_frame_passes(
         for rect in plan.region.rects() {
             frame_damage.push(*rect);
         }
-        // Preserved canvas pixels are copied verbatim by the present path, so they
-        // are never damage: carve the preserved rect out. On resize this is what
-        // keeps stationary content undamaged while exposed strips (already in the
-        // region, disjoint from preserved) stand.
-        if let Some(preserved_rect) = preserved {
-            let kept: Vec<ResolvedRect> = frame_damage
-                .rects()
-                .iter()
-                .flat_map(|r| subtract_rect(*r, preserved_rect))
-                .collect();
-            frame_damage.clear();
-            for rect in kept {
-                frame_damage.push(rect);
-            }
-        }
+        // NOTE: no preserved-rect carve-out here, deliberately. A previous
+        // revision subtracted the preserved overlap ("copied verbatim by the
+        // present path"), which is true of the *renderer's* persistent canvas
+        // (renderer.resize copies old pixels) but NOT of the *surface* buffer:
+        // resize reallocates it, so its validity is governed solely by the
+        // swapchain age, and a stale nonzero age leaves the "preserved"
+        // region unpainted (tear). Engine::resize already pushes the full new
+        // viewport; subtracting the overlap back out re-opens the hole.
+        // `preserved` survives below for diagnostics only.
         plan
     };
     let t_spatial = t1.elapsed();

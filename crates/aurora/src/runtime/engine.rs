@@ -151,6 +151,18 @@ impl Engine {
     }
 
     /// Resizes engine viewport dimensions and records perimeter damage.
+    ///
+    /// A resize pushes the FULL new viewport as damage, not just the exposed
+    /// strips. Resizing reallocates the backend surface, so no previously
+    /// presented pixel can be trusted — a fresh buffer's validity is governed
+    /// solely by the swapchain age, and a stale nonzero age would leave the
+    /// "preserved" region unpainted (tear). One full repaint per resize event
+    /// is the only safe assumption. This mirrors the backends' own convention
+    /// (`WaylandBackend::needs_full`, vello's present-unconditionally-after-
+    /// reconfigure) at the engine level so every present path agrees.
+    /// `pending_preserved_canvas_rect` still reports the reusable overlap for
+    /// diagnostics and for the renderer's canvas-pixel preservation, which is
+    /// a separate concern from surface-buffer validity.
     pub fn resize(&mut self, width: u32, height: u32) {
         let (nw, nh) = (width.max(1), height.max(1));
         if self.logical_size == (nw, nh) {
@@ -164,23 +176,8 @@ impl Engine {
             ow.min(nw) as f32,
             oh.min(nh) as f32,
         ));
-
-        if nw > ow {
-            self.pending_damage.push(ResolvedRect::new(
-                ow as f32,
-                0.0,
-                (nw - ow) as f32,
-                oh.min(nh) as f32,
-            ));
-        }
-        if nh > oh {
-            self.pending_damage.push(ResolvedRect::new(
-                0.0,
-                oh as f32,
-                nw as f32,
-                (nh - oh) as f32,
-            ));
-        }
+        self.pending_damage
+            .push(ResolvedRect::new(0.0, 0.0, nw as f32, nh as f32));
     }
 
     /// Replaces the declarative root node and marks layout dirty.
