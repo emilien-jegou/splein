@@ -1,7 +1,7 @@
 // Single responsibility: First-class declarative builder for vector graphics.
 
 use crate::dsl::custom::{custom, CustomDef};
-use crate::foundation::{Constraints, IntrinsicSize, ResolvedRect};
+use aurora_foundation::{Constraints, IntrinsicSize, ResolvedRect};
 use crate::scene::context::PaintContext;
 use crate::scene::vector::VectorGraphic;
 use crate::tree::Primitive;

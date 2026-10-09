@@ -1,7 +1,7 @@
 // In crates/aurora/src/text/layout.rs:
 // Replace TextLayout implementation:
 
-use crate::foundation::IntrinsicSize;
+use aurora_foundation::IntrinsicSize;
 use crate::text::glyph::ShapedLine;
 use std::ops::Deref;
 

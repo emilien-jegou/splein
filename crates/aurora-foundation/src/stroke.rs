@@ -1,7 +1,7 @@
 // Single responsibility: Border outline definition and geometric stroke alignment.
 
-use crate::foundation::color::Color;
-use crate::foundation::fill::Fill;
+use crate::color::Color;
+use crate::fill::Fill;
 
 /// Geometric alignment of a stroke outline relative to boundary edge.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]

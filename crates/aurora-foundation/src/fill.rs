@@ -1,7 +1,7 @@
 // Visual surface fill definitions (solid, linear, radial).
 
-use crate::foundation::color::Color;
-use crate::foundation::geometry::Point;
+use crate::color::Color;
+use crate::geometry::Point;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ColorStop {

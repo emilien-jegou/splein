@@ -178,6 +178,7 @@ name = "aurora"
 version = "0.0.1-rc.1"
 dependencies = [
  "arboard",
+ "aurora-foundation",
  "aurora-macros",
  "aurora-tiny-skia",
  "aurora-vello",
@@ -198,6 +199,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "aurora-anim"
+version = "0.0.1-rc.1"
+
+[[package]]
+name = "aurora-anim-core"
+version = "0.0.1-rc.1"
+
+[[package]]
+name = "aurora-app"
+version = "0.0.1-rc.1"
+
+[[package]]
+name = "aurora-dsl"
+version = "0.0.1-rc.1"
+
+[[package]]
+name = "aurora-foundation"
+version = "0.0.1-rc.1"
+dependencies = [
+ "smallvec",
+]
+
+[[package]]
+name = "aurora-input"
+version = "0.0.1-rc.1"
+
+[[package]]
+name = "aurora-layout"
+version = "0.0.1-rc.1"
+
+[[package]]
 name = "aurora-macros"
 version = "0.0.1-rc.1"
 dependencies = [
@@ -205,6 +237,30 @@ dependencies = [
  "quote",
  "syn 2.0.119",
 ]
+
+[[package]]
+name = "aurora-pipeline"
+version = "0.0.1-rc.1"
+
+[[package]]
+name = "aurora-reactive"
+version = "0.0.1-rc.1"
+
+[[package]]
+name = "aurora-render"
+version = "0.0.1-rc.1"
+
+[[package]]
+name = "aurora-runtime"
+version = "0.0.1-rc.1"
+
+[[package]]
+name = "aurora-scene"
+version = "0.0.1-rc.1"
+
+[[package]]
+name = "aurora-text"
+version = "0.0.1-rc.1"
 
 [[package]]
 name = "aurora-tiny-skia"
@@ -223,6 +279,10 @@ dependencies = [
  "tracy-client",
  "winit",
 ]
+
+[[package]]
+name = "aurora-tree"
+version = "0.0.1-rc.1"
 
 [[package]]
 name = "aurora-vello"

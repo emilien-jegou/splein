@@ -1,7 +1,7 @@
 // Single responsibility: Pluggable application extension trait contracts.
 
 use crate::app::painter::OverlayPainter;
-use crate::foundation::{DamageRegion, ResolvedRect};
+use aurora_foundation::{DamageRegion, ResolvedRect};
 use crate::runtime::{Engine, FrameDiagnostics};
 use crate::text::TextContext;
 use winit::event::WindowEvent;

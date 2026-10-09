@@ -58,7 +58,7 @@ mod tests {
     use crate::dsl::component::IntoElement;
     use crate::dsl::element::Element;
     use crate::dsl::group;
-    use crate::foundation::Color;
+    use aurora_foundation::Color;
     use crate::prelude::component;
 
     /// A component body returns something `IntoElement`; the macro's wrapper converts it.

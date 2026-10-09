@@ -5,7 +5,7 @@ use std::rc::Rc;
 use crate::dsl::component::IntoElement;
 use crate::dsl::element::{Element, IntoChildList};
 use crate::dsl::element_ref::ElementRef;
-use crate::foundation::*;
+use aurora_foundation::*;
 use crate::input::{ClickInfo, DragInfo, HandlerSet, HitTest, HoverInfo, PointerEvent, Propagation};
 use crate::reactive::prop::{DynamicProp, IntoProp};
 use crate::reactive::readable::Readable;
@@ -23,7 +23,7 @@ pub struct GroupDef {
     pub scale: Option<DynamicProp<f32>>,
     pub rotate_degrees: Option<DynamicProp<f32>>,
     pub shadow: Option<DynamicProp<Shadow>>,
-    pub light: LightEnvironment,
+    pub light_override: Option<LightEnvironment>,
     pub layout: LayoutConfig,
     pub margin: Margin,
     pub stroke: Option<Stroke>,
@@ -65,7 +65,7 @@ pub fn group() -> GroupDef {
         scale: None,
         rotate_degrees: None,
         shadow: None,
-        light: LightEnvironment::DEFAULT,
+        light_override: None,
         layout: LayoutConfig::default(),
         margin: Margin::ZERO,
         stroke: None,
@@ -148,22 +148,20 @@ impl GroupDef {
         self.rotate_degrees = Some(DynamicProp::Dynamic(Rc::new(move || source.read())));
         self
     }
-    /// Static shadow: accepts an elevation, an `(elevation, color)` pair,
-    /// a [`Shadow::web_like`] value, or a fully built [`Shadow`].
-    pub fn shadow<S: IntoShadow>(mut self, s: S) -> Self {
-        self.shadow = Some(DynamicProp::Static(s.into_shadow()));
-        self
-    }
-
-    /// Reactive shadow, re-evaluated when its signals change.
-    pub fn dynamic_shadow<P: IntoProp<Shadow>>(mut self, s: P) -> Self {
+    /// Shadow from anything shadow-like: an elevation (`8.0`), an
+    /// `(elevation, color)` pair, a [`Shadow`], a closure `move || ...`, or
+    /// a reactive signal. Static values stay static; closures and signals
+    /// re-evaluate when their dependencies change.
+    pub fn shadow<P: IntoProp<Shadow>>(mut self, s: P) -> Self {
         self.shadow = Some(s.into_prop());
         self
     }
 
-    /// Per-node light override for elevation-based shadows.
+    /// Light override for this subtree: children inherit it unless they
+    /// declare their own. Resolved during paint traversal, so overrides
+    /// never touch layout or reconciliation.
     pub fn light(mut self, light: LightEnvironment) -> Self {
-        self.light = light;
+        self.light_override = Some(light);
         self
     }
 

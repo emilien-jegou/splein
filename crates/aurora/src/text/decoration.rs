@@ -1,6 +1,6 @@
 // Single responsibility: Text decoration flags and underline/strike/overline geometry.
 
-use crate::foundation::ResolvedRect;
+use aurora_foundation::ResolvedRect;
 use crate::text::glyph::ShapedLine;
 use std::ops::BitOr;
 

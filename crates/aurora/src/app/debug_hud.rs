@@ -3,7 +3,7 @@
 use crate::app::debug::InspectorMode;
 use crate::app::debug_draw::{draw_tint, draw_wireframe};
 use crate::app::debug_font::draw_text_scaled;
-use crate::foundation::ResolvedRect;
+use aurora_foundation::ResolvedRect;
 use crate::runtime::FrameDiagnostics;
 
 /// Short badge naming the animation clock's rate, or `None` at real time.

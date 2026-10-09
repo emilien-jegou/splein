@@ -2,7 +2,7 @@
 
 use smallvec::SmallVec;
 
-use crate::foundation::{Constraints, Direction, Distribution, Point, ResolvedRect, Size};
+use aurora_foundation::{Constraints, Direction, Distribution, Point, ResolvedRect, Size};
 use crate::layout::allocate_absolute::resolve_absolute_child;
 use crate::layout::allocate_cross::resolve_child_cross;
 use crate::layout::allocate_main::{allocate_main_axis, MainAxisItems};

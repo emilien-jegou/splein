@@ -4,7 +4,7 @@ use crate::dsl::component::IntoElement;
 use crate::dsl::custom::CustomDef;
 use crate::dsl::group::GroupDef;
 use crate::dsl::text::TextDef;
-use crate::foundation::Key;
+use aurora_foundation::Key;
 
 /// Ephemeral element enum representing declarative UI tree specifications.
 pub enum Element {

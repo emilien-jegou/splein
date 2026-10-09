@@ -1,6 +1,6 @@
 // Single responsibility: Pure geometric damage analysis comparing visual bounds against history.
 
-use crate::foundation::{DamageRegion, Point, ResolvedRect, Transform};
+use aurora_foundation::{DamageRegion, LightEnvironment, Point, ResolvedRect, Transform};
 use crate::tree::{DirtyFlags, NodeId, NodeKind, TreeArena};
 
 /// Damage calculation plan containing aggregated damaged regions and removed node bounds.
@@ -46,7 +46,14 @@ impl DamagePlan {
                 let parent_tx = arena
                     .parent(id)
                     .map_or(Transform::IDENTITY, |p| arena.node_absolute_transform(p));
-                resolve_spatial_and_damage(arena, id, parent_tx, None, &mut plan.region);
+                resolve_spatial_and_damage(
+                    arena,
+                    id,
+                    parent_tx,
+                    None,
+                    LightEnvironment::DEFAULT,
+                    &mut plan.region,
+                );
             }
             return plan;
         }
@@ -68,6 +75,7 @@ impl DamagePlan {
             root,
             Transform::IDENTITY,
             root_clip,
+            LightEnvironment::DEFAULT,
             &mut plan.region,
         );
         plan
@@ -79,6 +87,7 @@ fn resolve_spatial_and_damage(
     id: NodeId,
     parent_tx: Transform,
     active_clip: Option<ResolvedRect>,
+    inherited_light: LightEnvironment,
     damage: &mut DamageRegion,
 ) -> ResolvedRect {
     let (node_tx, is_clip, painted) = {
@@ -92,6 +101,18 @@ fn resolve_spatial_and_damage(
         }
         (tx, node.style.clip, painted)
     };
+
+    // Ambient light resolves top-down: the nearest override wins, and the
+    // resolved value is stashed for paint/bounds/hit testing to read. The
+    // stash always precedes its consumers within a frame (damage runs before
+    // compile), so it can never feed a stale light to fresh paint.
+    let ambient = arena
+        .get(id)
+        .style
+        .appearance
+        .light_override
+        .unwrap_or(inherited_light);
+    arena.get_mut(id).state.resolved_light = ambient;
 
     let node_abs = node_tx.transform_point(Point::new(0.0, 0.0));
     // Unclipped occupancy drives damage: a node leaving its clip must still clear its old pixels.
@@ -110,7 +131,8 @@ fn resolve_spatial_and_damage(
     let child_count = arena.children(id).len();
     for i in 0..child_count {
         let child = arena.children(id)[i];
-        let child_subtree = resolve_spatial_and_damage(arena, child, node_tx, next_clip, damage);
+        let child_subtree =
+            resolve_spatial_and_damage(arena, child, node_tx, next_clip, ambient, damage);
         subtree_bounds = subtree_bounds.union(&child_subtree);
     }
 

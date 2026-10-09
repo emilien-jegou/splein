@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use winit::window::Window;
 
-use crate::foundation::{Color, DamageRegion, ResolvedRect};
+use aurora_foundation::{Color, DamageRegion, ResolvedRect};
 use crate::render::BackendError;
 use crate::scene::Scene;
 use crate::text::TextContext;

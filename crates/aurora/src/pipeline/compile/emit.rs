@@ -1,6 +1,6 @@
 // Single responsibility: Node coordinate framing, transformation, and display list command emission.
 
-use crate::foundation::{Point, Radius, ResolvedRect, Transform};
+use aurora_foundation::{Point, Radius, ResolvedRect, Transform};
 use crate::scene::{LayerId, PaintContext, SceneChunk, SceneCommand};
 use crate::text::TextContext;
 use crate::tree::{LayoutNode, NodeKind};
@@ -149,7 +149,7 @@ pub fn emit_node_content(
             rect: surface_rect,
             radius: node.style.appearance.radius,
             shadow: s.clone(),
-            light: node.style.appearance.light,
+            light: node.state.resolved_light,
         });
     }
 

@@ -5,7 +5,7 @@ pub mod emit;
 pub mod hierarchy;
 pub mod stacking;
 
-use crate::foundation::{DamageRegion, Point, ResolvedRect};
+use aurora_foundation::{DamageRegion, Point, ResolvedRect};
 use crate::scene::chunk::InheritedClips;
 use crate::scene::Scene;
 use crate::text::TextContext;

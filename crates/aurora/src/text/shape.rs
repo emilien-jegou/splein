@@ -2,7 +2,7 @@
 
 use std::cell::RefCell;
 
-use crate::foundation::{Constraints, IntrinsicSize};
+use aurora_foundation::{Constraints, IntrinsicSize};
 use crate::text::align::apply_alignment;
 use crate::text::engine::ParleyEngine;
 use crate::text::fonts::FontStyle;

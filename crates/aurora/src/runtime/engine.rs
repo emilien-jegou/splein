@@ -6,7 +6,7 @@ use std::rc::Rc;
 use crate::dsl::element::Element;
 use crate::dsl::reconciler::reconcile;
 use crate::dsl::IntoElement;
-use crate::foundation::{Color, DamageRegion, DamageRing, Key, Point, ResolvedRect, Transform};
+use aurora_foundation::{Color, DamageRegion, DamageRing, Key, Point, ResolvedRect, Transform};
 use crate::input::{CursorIcon, KeyEvent, PointerEvent, PointerOutcome};
 use crate::reactive::{Cx, ReactiveRuntime, Signal};
 use crate::runtime::diagnostics::EngineDiagnostics;

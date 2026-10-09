@@ -7,3 +7,4 @@ description = "Aurora UI engine: aurora-foundation (split from aurora facade)"
 license = "GPL-3.0"
 
 [dependencies]
+smallvec = "1.16.1"

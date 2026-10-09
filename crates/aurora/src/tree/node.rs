@@ -1,6 +1,6 @@
 // Single responsibility: Retained arena node aggregating style, geometry, and runtime state.
 
-use crate::foundation::{Key, Point, ResolvedRect, Shadow, Size, StrokeAlign, Transform};
+use aurora_foundation::{Key, Point, ResolvedRect, Size, StrokeAlign, Transform};
 use crate::tree::kind::NodeKind;
 use crate::tree::state::NodeState;
 use crate::tree::style::NodeStyle;
@@ -229,8 +229,8 @@ impl LayoutNode {
         let mut bounds = ResolvedRect::ZERO;
         if let Some(shadow) = &self.style.appearance.shadow {
             for layer in shadow.layers() {
-                let (ox, oy) = shadow.layer_offset(&self.style.appearance.light, layer);
-                let pad = Shadow::layer_pad(layer);
+                let (ox, oy) = shadow.layer_offset(&self.state.resolved_light, layer);
+                let pad = shadow.layer_pad(layer);
                 bounds = bounds.union(&Self::project(
                     tx,
                     box_rect.x + ox - pad,
@@ -272,8 +272,8 @@ impl LayoutNode {
 
         if let Some(shadow) = &self.style.appearance.shadow {
             for layer in shadow.layers() {
-                let (ox, oy) = shadow.layer_offset(&self.style.appearance.light, layer);
-                let pad = Shadow::layer_pad(layer);
+                let (ox, oy) = shadow.layer_offset(&self.state.resolved_light, layer);
+                let pad = shadow.layer_pad(layer);
                 let shadow_rect = Self::project(
                     tx,
                     ox - pad,

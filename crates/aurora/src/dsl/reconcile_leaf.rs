@@ -4,7 +4,7 @@ use crate::dsl::cleanup::clean_orphaned_children;
 use crate::dsl::custom::CustomDef;
 use crate::dsl::reconciler::evaluate_prop;
 use crate::dsl::text::TextDef;
-use crate::foundation::Size;
+use aurora_foundation::Size;
 use crate::reactive::ReactiveRuntime;
 use crate::tree::binding::{DynamicBindings, NodeBindings};
 use crate::tree::SubscriberRouter;

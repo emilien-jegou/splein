@@ -1,6 +1,6 @@
 // Single responsibility: Pointer event intake, queued dispatch, and gesture state.
 
-use crate::foundation::Point;
+use aurora_foundation::Point;
 use crate::input::{PointerEvent, PointerOutcome, PointerRouter};
 use crate::runtime::FrameScheduler;
 

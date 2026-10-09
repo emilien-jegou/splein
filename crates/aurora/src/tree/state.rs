@@ -1,6 +1,6 @@
 // Single responsibility: Retained invalidation bitflags, layout caches, and dynamic bindings.
 
-use crate::foundation::{LayoutPresence, ResolvedRect, Transform};
+use aurora_foundation::{LayoutPresence, ResolvedRect, Transform};
 use crate::input::handlers::NodeHandlers;
 use crate::scene::SceneChunk;
 use crate::text::selection::{SelectionGranularity, TextSelection};
@@ -66,5 +66,13 @@ pub struct NodeState {
     ///
     /// A node whose children come from reactive state is re-reconciled only when this
     /// sequence actually differs, so an unchanged list costs one comparison per frame.
-    pub child_keys: Vec<Option<crate::foundation::Key>>,
+    pub child_keys: Vec<Option<aurora_foundation::Key>>,
+    /// Ambient light resolved for this node during the damage traversal:
+    /// the nearest ancestor override wins, else the global default.
+    ///
+    /// Written outside reconciliation (which never sees it, so overrides
+    /// never dirty unaffected nodes) and read by paint, bounds, and hit
+    /// testing. Stale at most until the next damage walk, which always
+    /// precedes the paint that consumes it.
+    pub resolved_light: aurora_foundation::LightEnvironment,
 }

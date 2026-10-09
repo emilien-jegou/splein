@@ -1,6 +1,6 @@
 // Single responsibility: Painter-ordered pointer hit resolution producing a bubbling hit chain.
 
-use crate::foundation::{Point, ResolvedRect, Transform};
+use aurora_foundation::{Point, ResolvedRect, Transform};
 use crate::tree::node::PaintLayer;
 use crate::tree::{NodeId, TreeArena};
 
@@ -163,7 +163,7 @@ fn collect(
 }
 
 /// The keyed node on top at a point, for callers that only need the target.
-pub fn top_key(arena: &TreeArena, root: NodeId, point: Point) -> Option<crate::foundation::Key> {
+pub fn top_key(arena: &TreeArena, root: NodeId, point: Point) -> Option<aurora_foundation::Key> {
     hit_chain(arena, root, point)
         .into_iter()
         .find_map(|hit| arena.get(hit.id).key.clone())

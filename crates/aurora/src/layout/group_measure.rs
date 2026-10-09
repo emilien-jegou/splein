@@ -1,6 +1,6 @@
 // Single responsibility: Bottom-up intrinsic size computation for flex Group containers.
 
-use crate::foundation::{Constraints, Direction, Gap, IntrinsicSize};
+use aurora_foundation::{Constraints, Direction, Gap, IntrinsicSize};
 use crate::layout::measure::compute_child_desired;
 use crate::text::TextContext;
 use crate::tree::{NodeId, TreeArena};

@@ -1,6 +1,6 @@
 // Single responsibility: Generational arena managing node allocation, hierarchy, and invalidation.
 
-use crate::foundation::{Key, MeasuredElement, Point, ResolvedRect, Transform};
+use aurora_foundation::{Key, MeasuredElement, Point, ResolvedRect, Transform};
 use crate::tree::flags::DirtyFlags;
 use crate::tree::id::NodeId;
 use crate::tree::invalidation::mark_node_dirty;

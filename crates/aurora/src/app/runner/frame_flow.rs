@@ -7,7 +7,7 @@ use crate::app::extension::{AppExtension, OverlayCaps};
 use crate::app::painter::OverlayPainter;
 use crate::app::runner::adapters::{EngineDamage, ExtensionScanline};
 use crate::app::runner::backend::{Backend, FramePostProcess, Present, SurfaceRequest};
-use crate::foundation::ResolvedRect;
+use aurora_foundation::ResolvedRect;
 use crate::runtime::Engine;
 
 /// Ticks the engine, injects extension overlays, and presents exactly one frame.

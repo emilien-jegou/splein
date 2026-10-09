@@ -1,6 +1,6 @@
 // 2D affine transformations and coordinate projection.
 
-use crate::foundation::geometry::Point;
+use crate::geometry::Point;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Transform {

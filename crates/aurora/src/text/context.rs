@@ -1,6 +1,6 @@
 // Single responsibility: Font database storage, lifetime management, and shaping dispatcher.
 
-use crate::foundation::Constraints;
+use aurora_foundation::Constraints;
 use crate::text::cache::ShapedTextCache;
 use crate::text::config::TextConfig;
 use crate::text::engine::ParleyEngine;

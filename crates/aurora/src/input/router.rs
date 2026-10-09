@@ -1,7 +1,7 @@
 // Single responsibility: Routing pointer events through the hit chain to per-node handlers.
 
-use crate::foundation::Point;
-use crate::foundation::Key;
+use aurora_foundation::Point;
+use aurora_foundation::Key;
 use crate::input::event::{ClickInfo, CursorIcon, HoverInfo, PointerEvent, PointerPhase};
 use crate::input::handlers::Propagation;
 use crate::input::hit::{hit_chain, HitNode, HitTest};
@@ -18,7 +18,7 @@ use crate::tree::{DirtyFlags, NodeId, NodeKind, TreeArena};
 #[derive(Default, Debug)]
 pub struct PointerOutcome {
     /// Key of the node on top at the cursor, when one was hit.
-    pub hovered: Option<crate::foundation::Key>,
+    pub hovered: Option<aurora_foundation::Key>,
     /// Node that received the press, for gesture ownership.
     pub captured: Option<NodeId>,
     /// Whether a gesture is active.

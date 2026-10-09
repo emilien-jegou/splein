@@ -1,6 +1,6 @@
 // Single responsibility: Declarative UI conversions from foundation types into dynamic properties.
 
-use crate::foundation::{Color, Fill, LayoutPresence, Radius, Shadow, Size, Transform};
+use aurora_foundation::{Color, Fill, LayoutPresence, Radius, Shadow, Size, Transform};
 use crate::reactive::derived::Derived;
 use crate::reactive::prop::{DynamicProp, IntoProp};
 use crate::reactive::signal::Signal;
@@ -50,6 +50,20 @@ impl IntoProp<LayoutPresence> for LayoutPresence {
 impl IntoProp<Shadow> for Shadow {
     fn into_prop(self) -> DynamicProp<Shadow> {
         DynamicProp::Static(self)
+    }
+}
+
+/// Raw elevation: `group().shadow(8.0)` builds a default-physics shadow.
+impl IntoProp<Shadow> for f32 {
+    fn into_prop(self) -> DynamicProp<Shadow> {
+        DynamicProp::Static(Shadow::elevation(self))
+    }
+}
+
+/// Elevation plus tint: `group().shadow((8.0, color))`.
+impl IntoProp<Shadow> for (f32, Color) {
+    fn into_prop(self) -> DynamicProp<Shadow> {
+        DynamicProp::Static(Shadow::elevation(self.0).color(self.1))
     }
 }
 

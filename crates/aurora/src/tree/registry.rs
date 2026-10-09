@@ -2,7 +2,7 @@
 
 use rustc_hash::FxHashMap;
 
-use crate::foundation::Key;
+use aurora_foundation::Key;
 use crate::tree::id::NodeId;
 
 /// Bidirectional index pairing stable element keys with retained node handles.

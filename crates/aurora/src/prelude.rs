@@ -10,9 +10,9 @@ pub use crate::dsl::{
     custom, group, image, svg, text, Behavior, Component, CustomDef, Element, GroupDef,
     IntoElement, TextDef,
 };
-pub use crate::foundation::{
+pub use aurora_foundation::{
     Alignment, Anchor, BlendMode, Color, Direction, Distribution, FalloffCurve, Fill, Gap,
-    IntoShadow, LayoutPresence, LightEnvironment, Margin, Radius, RenderDriver, Shadow,
+    LayoutPresence, LightEnvironment, Margin, Radius, RenderDriver, Shadow,
     ShadowOffset, ShadowShape, Size, Stroke, StrokeAlign, Transform,
 };
 pub use crate::input::{ClickInfo, CursorIcon, DragInfo, HitTest, HoverInfo, KeyCode, KeyEvent, PointerButton, PointerEvent, PointerPhase, Propagation};

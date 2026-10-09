@@ -3,7 +3,7 @@
 use crate::dsl::group::GroupDef;
 use crate::dsl::reconcile_children::reconcile_children;
 use crate::dsl::reconciler::evaluate_prop;
-use crate::foundation::{Fill, LayoutPresence, Shadow, Size, Transform};
+use aurora_foundation::{Fill, LayoutPresence, Shadow, Size, Transform};
 use crate::input::handlers::NodeHandlers;
 use crate::reactive::id::SubscriberId;
 use crate::reactive::observer::Observer;
@@ -129,7 +129,7 @@ pub fn reconcile_group(
     }
     node.style.appearance.stroke = def.stroke;
     node.style.appearance.shadow = props.shadow.clone();
-    node.style.appearance.light = def.light;
+    node.style.appearance.light_override = def.light_override;
     node.style.appearance.radius = def.radius;
 
     // A node either declares its children statically or builds them from reactive state.
@@ -282,7 +282,7 @@ impl ChangeSet {
         let paint = app.fill != props.fill
             || (props.opacity.is_some() && props.opacity != Some(app.opacity))
             || app.shadow != props.shadow
-            || app.light != def.light
+            || app.light_override != def.light_override
             || app.stroke != def.stroke
             || app.radius != def.radius
             // Stacking is paint-class: a new z reorders paint (and hit testing, which mirrors

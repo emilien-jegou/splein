@@ -31,6 +31,9 @@ arboard = { version = "3", default-features = false, features = ["wayland-data-c
 # Attribute macros (#[component])
 aurora-macros = { path = "../aurora-macros", version = "0.0.1-rc.1" }
 
+# Split crates (aurora stays the facade)
+aurora-foundation = { path = "../aurora-foundation", version = "0.0.1-rc.1" }
+
 # Tracing
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "registry", "env-filter"] }

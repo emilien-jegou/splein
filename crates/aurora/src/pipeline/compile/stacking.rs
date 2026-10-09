@@ -1,6 +1,6 @@
 // Single responsibility: Stacking context tree construction and z-index order partitioning.
 
-use crate::foundation::{Point, ResolvedRect, Transform};
+use aurora_foundation::{Point, ResolvedRect, Transform};
 use crate::scene::chunk::InheritedClip;
 use crate::tree::{NodeId, TreeArena};
 use smallvec::SmallVec;

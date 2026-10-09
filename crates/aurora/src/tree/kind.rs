@@ -1,6 +1,6 @@
 // Single responsibility: Node kind taxonomy and primitive trait contract.
 
-use crate::foundation::{Constraints, Direction, IntrinsicSize, ResolvedRect};
+use aurora_foundation::{Constraints, Direction, IntrinsicSize, ResolvedRect};
 use crate::scene::context::PaintContext;
 use crate::text::TextConfig;
 

@@ -1,6 +1,6 @@
 // Single responsibility: Structured engine telemetry and frame performance diagnostics payload.
 
-use crate::foundation::ResolvedRect;
+use aurora_foundation::ResolvedRect;
 use crate::tree::DirtyFlags;
 use smallvec::SmallVec;
 use std::time::Duration;

@@ -69,6 +69,17 @@ impl Color {
         c
     }
 
+    /// Constructs color from 8-bit RGBA channels, eliminating manual
+    /// `x / 255.0` float division clutter at call sites.
+    pub fn rgba8(r: u8, g: u8, b: u8, a: u8) -> Self {
+        Self {
+            r: r as f32 / 255.0,
+            g: g as f32 / 255.0,
+            b: b as f32 / 255.0,
+            a: a as f32 / 255.0,
+        }
+    }
+
     /// Constructs white with the specified opacity alpha.
     pub fn white_alpha(a: f32) -> Self {
         Self::rgba(1.0, 1.0, 1.0, a)

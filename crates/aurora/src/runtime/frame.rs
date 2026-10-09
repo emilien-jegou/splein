@@ -1,6 +1,6 @@
 // Single responsibility: Orchestrates the per-frame pass sequence: layout, damage, compile, and bounds commit.
 
-use crate::foundation::{Constraints, DamageRegion, ResolvedRect};
+use aurora_foundation::{Constraints, DamageRegion, ResolvedRect};
 use crate::layout::LayoutResult;
 use crate::pipeline::{commit_painted_bounds, CompileResult, DamagePlan};
 use crate::runtime::scheduler::FrameScheduler;

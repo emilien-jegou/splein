@@ -1,6 +1,6 @@
 // Single responsibility: Intrinsic sizing, text measurement, and desired dimension derivation.
 
-use crate::foundation::{Constraints, DesiredSize, IntrinsicSize, LayoutPresence, Size};
+use aurora_foundation::{Constraints, DesiredSize, IntrinsicSize, LayoutPresence, Size};
 use crate::layout::group_measure::measure_group_intrinsic;
 use crate::text::TextContext;
 use crate::tree::{NodeId, NodeKind, TreeArena};

@@ -1,6 +1,6 @@
 // Single responsibility: Discrete bounded slice of display list commands.
 
-use crate::foundation::{Point, Radius, ResolvedRect, Transform};
+use aurora_foundation::{Point, Radius, ResolvedRect, Transform};
 use crate::scene::command::{LayerId, SceneCommand};
 use smallvec::SmallVec;
 use std::rc::Rc;

@@ -1,8 +1,8 @@
 // Single responsibility: Elevation-based shadow specification with layered falloff.
 
-use crate::foundation::color::Color;
-use crate::foundation::falloff::FalloffCurve;
-use crate::foundation::light::LightEnvironment;
+use crate::color::Color;
+use crate::falloff::FalloffCurve;
+use crate::light::LightEnvironment;
 
 /// How a shadow composites with the surface beneath it.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
@@ -66,6 +66,9 @@ pub struct Shadow {
     pub blend: BlendMode,
     pub shape: ShadowShape,
     pub offset: ShadowOffset,
+    /// Occluder expansion in px before blurring (CSS `spread` semantics:
+    /// positive grows, negative shrinks). Applies to every layer.
+    pub spread: f32,
     layers: Vec<ShadowLayer>,
 }
 
@@ -81,6 +84,7 @@ impl Shadow {
             blend: BlendMode::Multiply,
             shape: ShadowShape::Box,
             offset: ShadowOffset::Elevation,
+            spread: 0.0,
             layers: vec![ShadowLayer {
                 falloff: FalloffCurve::EaseOut,
                 softness: elevation * 0.75,
@@ -91,15 +95,21 @@ impl Shadow {
         }
     }
 
-    /// CSS-compatible shadow with explicit offset and tight `Linear` falloff.
+    /// CSS-compatible shadow with explicit offset, blur, spread, and color.
     ///
-    /// Escape hatch for `box-shadow: offset_x offset_y blur color` parity;
+    /// Exact `box-shadow: offset_x offset_y blur spread color` parity;
     /// prefer [`Shadow::elevation`] for new code.
     ///
     /// The kernel radius is half the CSS blur radius: the rasterizer runs
     /// two box iterations (sigma ≈ 1.15r, support ±2r), so r = blur/2 lands
     /// sigma ≈ 0.58R with support ±R, close to the browser's Gaussian.
-    pub fn web_like(offset_x: f32, offset_y: f32, blur: f32, color: Color) -> Self {
+    pub fn web_like(
+        offset_x: f32,
+        offset_y: f32,
+        blur: f32,
+        spread: f32,
+        color: Color,
+    ) -> Self {
         Self {
             elevation: 0.0,
             color,
@@ -109,6 +119,7 @@ impl Shadow {
                 offset_x,
                 offset_y,
             },
+            spread,
             layers: vec![ShadowLayer {
                 falloff: FalloffCurve::Linear,
                 softness: (blur * 0.5).max(0.0),
@@ -134,6 +145,7 @@ impl Shadow {
                 offset_x: 0.0,
                 offset_y: 0.0,
             },
+            spread: 0.0,
             layers: Vec::new(),
         }
     }
@@ -148,6 +160,15 @@ impl Shadow {
             opacity: 1.0,
             offset: Some((offset_x, offset_y)),
         });
+        self
+    }
+
+    /// Batch-declares stacked drop layers without repetition:
+    /// `.drops(&[(ox, oy, blur), ...])`.
+    pub fn drops(mut self, layers: &[(f32, f32, f32)]) -> Self {
+        for &(ox, oy, blur) in layers {
+            self = self.drop(ox, oy, blur);
+        }
         self
     }
 
@@ -180,8 +201,40 @@ impl Shadow {
         self
     }
 
+    /// Conditional multiply for reactive call sites:
+    /// `.multiply_if(is_dark_mode)`.
+    pub fn multiply_if(mut self, on: bool) -> Self {
+        self.blend = if on {
+            BlendMode::Multiply
+        } else {
+            BlendMode::Normal
+        };
+        self
+    }
+
     pub fn normal(mut self) -> Self {
         self.blend = BlendMode::Normal;
+        self
+    }
+
+    pub fn blend(mut self, mode: BlendMode) -> Self {
+        self.blend = mode;
+        self
+    }
+
+    /// Expands (positive) or contracts (negative) the occluder geometry
+    /// before blurring, in px. Applies to every layer.
+    pub fn spread(mut self, spread: f32) -> Self {
+        self.spread = spread;
+        self
+    }
+
+    /// Rewrites every current layer's falloff curve. Later `ease_out` /
+    /// `physical` / `drop` calls still name their own curve.
+    pub fn falloff(mut self, falloff: FalloffCurve) -> Self {
+        for layer in &mut self.layers {
+            layer.falloff = falloff;
+        }
         self
     }
 
@@ -221,11 +274,11 @@ impl Shadow {
         layer.offset.unwrap_or_else(|| self.resolve_offset(light))
     }
 
-    /// Kernel padding for one layer: covers the declared reach and the
+    /// Kernel padding for one layer: the spread-expanded reach and the
     /// blur kernel support, whichever is larger. Shared by damage bounds
     /// and both rasterizers so all three agree on the footprint.
-    pub fn layer_pad(layer: &ShadowLayer) -> f32 {
-        layer.extent.max(3.0 * layer.softness.max(0.5))
+    pub fn layer_pad(&self, layer: &ShadowLayer) -> f32 {
+        self.spread + layer.extent.max(3.0 * layer.softness.max(0.5))
     }
 
     /// Largest layer extent, for damage bounds and kernel padding.
@@ -245,25 +298,4 @@ impl Shadow {
     }
 }
 
-/// Polymorphic shadow constructor for the DSL: `f32`, `(f32, Color)`, or `Shadow`.
-pub trait IntoShadow {
-    fn into_shadow(self) -> Shadow;
-}
 
-impl IntoShadow for f32 {
-    fn into_shadow(self) -> Shadow {
-        Shadow::elevation(self)
-    }
-}
-
-impl IntoShadow for (f32, Color) {
-    fn into_shadow(self) -> Shadow {
-        Shadow::elevation(self.0).color(self.1)
-    }
-}
-
-impl IntoShadow for Shadow {
-    fn into_shadow(self) -> Shadow {
-        self
-    }
-}

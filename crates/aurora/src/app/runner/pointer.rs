@@ -5,7 +5,7 @@ use winit::event::{ElementState, MouseButton, WindowEvent};
 use winit::keyboard::{Key, NamedKey};
 use winit::keyboard::ModifiersKeyState;
 
-use crate::foundation::Point;
+use aurora_foundation::Point;
 use crate::input::{KeyCode, KeyEvent, PointerButton, PointerEvent, PointerPhase};
 use crate::runtime::Engine;
 

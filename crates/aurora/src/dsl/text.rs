@@ -2,7 +2,7 @@
 
 use crate::dsl::component::IntoElement;
 use crate::dsl::element::Element;
-use crate::foundation::{Anchor, Color, Key, Margin, Size};
+use aurora_foundation::{Anchor, Color, Key, Margin, Size};
 use crate::reactive::prop::{DynamicProp, IntoProp};
 use crate::text::{
     FontId, FontStyle, FontVariation, LineHeight, TextAlign, TextConfig, TextDecoration,

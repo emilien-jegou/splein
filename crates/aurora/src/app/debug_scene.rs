@@ -3,7 +3,7 @@
 use crate::app::debug::InspectorMode;
 use crate::app::debug_hud::{time_control_hint, time_scale_label};
 use crate::app::debug_layout::hud_panel;
-use crate::foundation::{Appearance, Color, Fill, Point, ResolvedRect, Stroke};
+use aurora_foundation::{Appearance, Color, Fill, Point, ResolvedRect, Stroke};
 use crate::runtime::FrameDiagnostics;
 use crate::scene::{SceneChunk, SceneCommand};
 use crate::text::TextContext;
@@ -217,7 +217,7 @@ fn emit_label(
         color,
         ..crate::text::TextConfig::default()
     };
-    let layout = text_ctx.shape_config(&cfg, crate::foundation::Constraints::loose(80.0, 16.0));
+    let layout = text_ctx.shape_config(&cfg, aurora_foundation::Constraints::loose(80.0, 16.0));
     chunk.push(SceneCommand::DrawText {
         origin,
         layout,

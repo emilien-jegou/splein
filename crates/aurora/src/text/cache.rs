@@ -170,7 +170,7 @@ impl Inner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::foundation::{Constraints, IntrinsicSize};
+    use aurora_foundation::{Constraints, IntrinsicSize};
     use crate::text::fonts::FontStyle;
 
     fn params_for(text: &str, max_width: f32) -> TextShapeParams<'_> {

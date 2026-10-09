@@ -1,6 +1,6 @@
 // Single responsibility: Backend-agnostic display list drawing commands.
 
-use crate::foundation::{
+use aurora_foundation::{
     Appearance, BlendMode, Color, Fill, LightEnvironment, Point, Radius, ResolvedRect, Shadow,
     ShadowOffset, ShadowShape, StrokeAlign, Transform,
 };
@@ -224,6 +224,8 @@ fn shadow_bits(s: &Shadow) -> Vec<u32> {
             ShadowShape::Box => 0,
             ShadowShape::Alpha => 1,
         },
+        s.elevation.to_bits(),
+        s.spread.to_bits(),
         s.layers().len() as u32,
     ];
     for l in s.layers() {
@@ -305,7 +307,13 @@ fn appearance_bits(a: &Appearance) -> Vec<u32> {
             v.extend(shadow_bits(s));
         }
     }
-    v.extend(light_bits(&a.light));
+    match &a.light_override {
+        None => v.push(0),
+        Some(l) => {
+            v.push(1);
+            v.extend(light_bits(l));
+        }
+    }
     v
 }
 

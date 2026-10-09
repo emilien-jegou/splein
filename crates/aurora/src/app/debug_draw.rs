@@ -1,6 +1,6 @@
 // Single responsibility: Low-level zero-allocation rasterization primitives for debug visual cues.
 
-use crate::foundation::ResolvedRect;
+use aurora_foundation::ResolvedRect;
 
 /// Blends a transparent color tint into a bounded rectangle of pixels.
 pub fn draw_tint(

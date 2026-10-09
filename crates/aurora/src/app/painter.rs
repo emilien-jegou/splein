@@ -1,6 +1,6 @@
 // Single responsibility: Scoped overlay recording surface for application extensions.
 
-use crate::foundation::{Point, ResolvedRect};
+use aurora_foundation::{Point, ResolvedRect};
 use crate::scene::{Scene, SceneChunk};
 
 /// Appends extension-drawn overlay chunks to the frame display list.

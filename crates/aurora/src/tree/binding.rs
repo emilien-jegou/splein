@@ -1,6 +1,6 @@
 // Single responsibility: Dynamic property evaluation closures on a layout node.
 
-use crate::foundation::{Fill, LayoutPresence, Shadow, Size, Transform};
+use aurora_foundation::{Fill, LayoutPresence, Shadow, Size, Transform};
 use std::rc::Rc;
 
 /// Inner storage for dynamic property evaluators.

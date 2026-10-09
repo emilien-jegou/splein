@@ -1,6 +1,6 @@
 // Single responsibility: Trait contracts and parameter structs for multi-line text shaping.
 
-use crate::foundation::Constraints;
+use aurora_foundation::Constraints;
 use crate::text::align::TextAlign;
 use crate::text::fonts::{FontId, FontStyle, FontVariation};
 use crate::text::layout::TextLayout;

@@ -1,6 +1,6 @@
 // Single responsibility: Pure reconciliation diff algorithm between old and new child keys.
 
-use crate::foundation::Key;
+use aurora_foundation::Key;
 use crate::tree::NodeId;
 
 /// Individual diffing action for child list reconciliation.

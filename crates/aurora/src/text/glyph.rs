@@ -1,6 +1,6 @@
 // Single responsibility: Shaped glyph metrics, font cache key, and line runs.
 
-use crate::foundation::Point;
+use aurora_foundation::Point;
 
 /// Backend-agnostic cache identifier for an individual shaped glyph run.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]

@@ -5,7 +5,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::anim::clock::Clock;
-use crate::foundation::{Constraints, Key, Point};
+use aurora_foundation::{Constraints, Key, Point};
 use crate::layout::{layout_node_with_text, LayoutResult};
 use crate::reactive::{Observer, ReactiveRuntime, SubscriberId};
 use crate::runtime::boundary::{collect_layout_boundaries, prune_nested_boundaries};
@@ -400,7 +400,7 @@ impl FrameScheduler {
             if node.is_layout_boundary() {
                 let constraints = node.state.cache.last_constraints.unwrap_or_else(|| {
                     let (w, h) = match (node.style.width, node.style.height) {
-                        (crate::foundation::Size::Fixed(w), crate::foundation::Size::Fixed(h)) => {
+                        (aurora_foundation::Size::Fixed(w), aurora_foundation::Size::Fixed(h)) => {
                             (w, h)
                         }
                         _ => (0.0, 0.0),

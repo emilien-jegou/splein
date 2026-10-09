@@ -1,6 +1,6 @@
 // Single responsibility: Configuration and layout parameters for styled typography.
 
-use crate::foundation::Color;
+use aurora_foundation::Color;
 use crate::text::align::TextAlign;
 use crate::text::decoration::TextDecoration;
 use crate::text::fonts::{FontId, FontStyle, FontVariation};

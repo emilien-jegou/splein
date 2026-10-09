@@ -2,7 +2,7 @@
 
 use crate::dsl::component::IntoElement;
 use crate::dsl::element::Element;
-use crate::foundation::{Anchor, Key, Margin, Size};
+use aurora_foundation::{Anchor, Key, Margin, Size};
 use crate::tree::Primitive;
 
 /// Declarative element builder for custom primitives with layout and anchoring.

@@ -1,6 +1,6 @@
 // Main-axis direction, distribution, and cross-axis alignment models.
 
-use crate::foundation::spacing::Gap;
+use crate::spacing::Gap;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub enum Direction {

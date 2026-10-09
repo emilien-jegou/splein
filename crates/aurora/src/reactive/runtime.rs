@@ -1,6 +1,6 @@
 // Single responsibility: Reactive signal dependency graph, batches, and notification dispatch.
 
-use crate::foundation::snapshot::GeometrySnapshot;
+use aurora_foundation::snapshot::GeometrySnapshot;
 use crate::reactive::id::{SignalId, SubscriberId};
 use crate::reactive::observer::Observer;
 use crate::reactive::ticker::{Ticker, TickerRegistry};

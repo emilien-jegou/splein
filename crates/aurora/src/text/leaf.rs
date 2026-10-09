@@ -7,7 +7,7 @@
 
 use std::sync::Arc;
 
-use crate::foundation::{Appearance, Constraints, Direction, Fill, IntrinsicSize, Point, Size};
+use aurora_foundation::{Appearance, Constraints, Direction, Fill, IntrinsicSize, Point, Size};
 use crate::scene::{SceneChunk, SceneCommand};
 use crate::text::config::TextConfig;
 use crate::text::decoration::decoration_rules;
@@ -146,7 +146,7 @@ impl TextConfig {
                 }
             }
         }
-        let decorations: Vec<crate::foundation::ResolvedRect> = if self.decoration.is_empty() {
+        let decorations: Vec<aurora_foundation::ResolvedRect> = if self.decoration.is_empty() {
             Vec::new()
         } else {
             layout

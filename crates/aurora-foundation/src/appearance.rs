@@ -1,10 +1,10 @@
 // Aggregate visual surface appearance specification.
 
-use crate::foundation::fill::Fill;
-use crate::foundation::light::LightEnvironment;
-use crate::foundation::radius::Radius;
-use crate::foundation::shadow::Shadow;
-use crate::foundation::stroke::Stroke;
+use crate::fill::Fill;
+use crate::light::LightEnvironment;
+use crate::radius::Radius;
+use crate::shadow::Shadow;
+use crate::stroke::Stroke;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Appearance {
@@ -13,8 +13,11 @@ pub struct Appearance {
     pub radius: Radius,
     /// One shadow per node, internally layered.
     pub shadow: Option<Shadow>,
-    /// Per-node light override; defaults to [`LightEnvironment::DEFAULT`].
-    pub light: LightEnvironment,
+    /// Per-subtree light override. `None` (the case for ~all nodes) inherits
+    /// the ambient light resolved during the paint/damage traversal; the
+    /// resolved value lives in tree state, never here, so overrides never
+    /// dirty unaffected nodes.
+    pub light_override: Option<LightEnvironment>,
     pub opacity: f32,
 }
 
@@ -24,7 +27,7 @@ impl Appearance {
         stroke: None,
         radius: Radius::ZERO,
         shadow: None,
-        light: LightEnvironment::DEFAULT,
+        light_override: None,
         opacity: 1.0,
     };
 
@@ -49,7 +52,7 @@ impl Appearance {
     }
 
     pub fn with_light(mut self, light: LightEnvironment) -> Self {
-        self.light = light;
+        self.light_override = Some(light);
         self
     }
 

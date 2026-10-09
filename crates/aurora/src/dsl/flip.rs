@@ -6,7 +6,7 @@ use std::rc::Rc;
 use crate::anim::spring::Spring;
 use crate::anim::track::ScalarTrack;
 use crate::dsl::element_ref::ElementRef;
-use crate::foundation::{Point, Transform};
+use aurora_foundation::{Point, Transform};
 use crate::reactive::hooks::{current_scope, next_slot, no_scope, recall_value, remember_value};
 use crate::reactive::ticker::Ticker;
 use crate::reactive::ReactiveRuntime;

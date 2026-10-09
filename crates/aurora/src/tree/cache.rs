@@ -1,6 +1,6 @@
 // Single responsibility: Multi-slot layout constraint memoization and cache validation.
 
-use crate::foundation::{Constraints, IntrinsicSize, ResolvedRect};
+use aurora_foundation::{Constraints, IntrinsicSize, ResolvedRect};
 
 /// Multi-slot MRU layout cache preventing multi-pass flexbox eviction.
 #[derive(Clone, Debug, Default, PartialEq)]

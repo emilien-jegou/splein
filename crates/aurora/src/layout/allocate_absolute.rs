@@ -1,6 +1,6 @@
 // Single responsibility: Immediate-parent absolute anchoring incorporating external child margins.
 
-use crate::foundation::{Anchor, ResolvedRect};
+use aurora_foundation::{Anchor, ResolvedRect};
 use crate::tree::LayoutNode;
 
 #[derive(Copy, Clone)]
