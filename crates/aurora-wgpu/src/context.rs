@@ -12,7 +12,9 @@ use winit::window::Window;
 pub struct WgpuContext {
     pub device: Arc<Device>,
     pub queue: Arc<Queue>,
-    pub surface: Surface<'static>,
+    /// Native window presentation surface. `None` for headless (quad-combine)
+    /// contexts, which shade into the persistent target and read back.
+    pub surface: Option<Surface<'static>>,
     pub config: SurfaceConfiguration,
     pub persistent: Texture,
     pub persistent_view: TextureView,
@@ -128,7 +130,52 @@ impl WgpuContext {
         Ok(Self {
             device,
             queue,
-            surface,
+            surface: Some(surface),
+            config,
+            persistent,
+            persistent_view,
+        })
+    }
+
+    /// Initializes a headless GPU context: adapter + device with no window
+    /// surface. Only the offscreen path (`render_scene_offscreen` +
+    /// `readback_rgba8`) is usable. Used by the quad-combine backend so
+    /// several rasterizers share one window without opening one swapchain
+    /// surface each (platforms allow a single surface per window).
+    pub async fn init_headless(width: u32, height: u32) -> Result<Self, String> {
+        let instance = Instance::new(InstanceDescriptor {
+            backends: Backends::PRIMARY,
+            ..Default::default()
+        });
+        let adapter = instance
+            .request_adapter(&RequestAdapterOptions {
+                compatible_surface: None,
+                power_preference: wgpu::PowerPreference::HighPerformance,
+                force_fallback_adapter: false,
+            })
+            .await
+            .ok_or_else(|| "No compatible GPU adapter found".to_string())?;
+        let (device, queue) = adapter
+            .request_device(&DeviceDescriptor::default(), None)
+            .await
+            .map_err(|e| format!("Failed to create GPU device: {e:?}"))?;
+        let device = Arc::new(device);
+        let queue = Arc::new(queue);
+        let config = SurfaceConfiguration {
+            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_DST,
+            format: TextureFormat::Rgba8Unorm,
+            width: width.max(1),
+            height: height.max(1),
+            present_mode: PresentMode::Fifo,
+            alpha_mode: CompositeAlphaMode::Auto,
+            view_formats: vec![],
+            desired_maximum_frame_latency: 1,
+        };
+        let (persistent, persistent_view) = make_persistent(&device, config.width, config.height);
+        Ok(Self {
+            device,
+            queue,
+            surface: None,
             config,
             persistent,
             persistent_view,
@@ -142,7 +189,9 @@ impl WgpuContext {
         }
         self.config.width = nw;
         self.config.height = nh;
-        self.surface.configure(&self.device, &self.config);
+        if let Some(surface) = &self.surface {
+            surface.configure(&self.device, &self.config);
+        }
         let (persistent, persistent_view) = make_persistent(&self.device, nw, nh);
         self.persistent = persistent;
         self.persistent_view = persistent_view;

@@ -136,7 +136,10 @@ impl SurfacePresenter {
         let dst_pixels = buffer.as_mut();
         let src_all: &[u32] = bytemuck::cast_slice(pixmap.data());
 
-        for y in 0..safe_h {
+        // Same resize-race guard as `swizzle_rect`: never address past the
+        // live buffer.
+        let rows = safe_h.min(dst_pixels.len() / dst_stride.max(1));
+        for y in 0..rows {
             let (src_start, dst_start) = (y * src_stride, y * dst_stride);
             swizzle_rgba_to_bgra(
                 &mut dst_pixels[dst_start..dst_start + safe_w],
@@ -145,7 +148,7 @@ impl SurfacePresenter {
         }
 
         let empty_damage = DamageRegion::new();
-        post_process(dst_pixels, &empty_damage, dst_stride, safe_h);
+        post_process(dst_pixels, &empty_damage, dst_stride, rows);
         let _ = buffer.present();
 
         #[cfg(feature = "tracy")]
@@ -164,12 +167,33 @@ fn swizzle_rect(
     safe_w: usize,
     safe_h: usize,
 ) -> Option<softbuffer::Rect> {
+    // Genuine bounds from the slices themselves: the stride/size metadata
+    // can disagree with the live buffer across a resize race (surface
+    // reconfigured but buffer not yet re-allocated, or vice versa). Clamp
+    // to reality and report once instead of panicking mid-frame.
+    let dst_h = dst.len() / dst_stride.max(1);
+    let src_h = src.len() / src_stride.max(1);
     let x0 = (r.x.floor() as i32).max(0) as usize;
     let y0 = (r.y.floor() as i32).max(0) as usize;
     let x1 = (r.right().ceil() as usize).min(safe_w);
-    let y1 = (r.bottom().ceil() as usize).min(safe_h);
+    let y1 = (r.bottom().ceil() as usize).min(safe_h).min(dst_h).min(src_h);
 
     if x1 <= x0 || y1 <= y0 {
+        static CLAMPED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+        CLAMPED.get_or_init(|| {
+            tracing::warn!(
+                rect = ?r,
+                dst_len = dst.len(),
+                src_len = src.len(),
+                dst_stride,
+                src_stride,
+                safe_w,
+                safe_h,
+                dst_h,
+                src_h,
+                "damage rect outside live buffer bounds; frame partially skipped"
+            );
+        });
         return None;
     }
 

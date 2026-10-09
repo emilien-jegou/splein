@@ -212,7 +212,7 @@ fn create_blit_pipeline(
 
 /// High-throughput GPU rasterizer executing compute shaders over display lists.
 pub struct VelloRenderer {
-    _window: Arc<Window>,
+    _window: Option<Arc<Window>>,
     gpu: GpuContext,
     vello_engine: VelloEngine,
     vello_scene: VelloScene,
@@ -260,6 +260,34 @@ impl VelloRenderer {
     ) -> Result<Self, BackendError> {
         let gpu = pollster::block_on(GpuContext::init(Arc::clone(&window), width, height))
             .map_err(BackendError::init)?;
+        Self::from_context(gpu, Some(window), width, height, use_cpu)
+    }
+
+    /// Creates a headless Vello renderer: no window surface, shading only.
+    ///
+    /// Used by the quad-combine backend: several rasterizers share one
+    /// window, so only the host owns a surface. Pair with
+    /// [`Self::render_scene_offscreen`] + [`Self::readback_rgba8`].
+    pub fn new_headless(width: u32, height: u32) -> Result<Self, BackendError> {
+        let gpu = pollster::block_on(GpuContext::init_headless(width, height))
+            .map_err(BackendError::init)?;
+        Self::from_context(gpu, None, width, height, false)
+    }
+
+    /// Headless variant of [`Self::new_cpu`]: CPU-staged coarse rasterization.
+    pub fn new_cpu_headless(width: u32, height: u32) -> Result<Self, BackendError> {
+        let gpu = pollster::block_on(GpuContext::init_headless(width, height))
+            .map_err(BackendError::init)?;
+        Self::from_context(gpu, None, width, height, true)
+    }
+
+    fn from_context(
+        gpu: GpuContext,
+        window: Option<Arc<Window>>,
+        width: u32,
+        height: u32,
+        use_cpu: bool,
+    ) -> Result<Self, BackendError> {
         let vello_engine = VelloEngine::new(
             &gpu.device,
             RendererOptions {
@@ -515,13 +543,16 @@ impl VelloRenderer {
     ) -> Result<usize, BackendError> {
         let encoded = self.render_scene_offscreen(scene, base_color, damage)?;
 
-        let surface_texture = match self.gpu.surface.get_current_texture() {
+        let surface = self
+            .gpu
+            .surface
+            .as_ref()
+            .expect("render_frame needs a window surface; headless contexts use render_scene_offscreen");
+        let surface_texture = match surface.get_current_texture() {
             Ok(t) => t,
             Err(wgpu::SurfaceError::Outdated | wgpu::SurfaceError::Lost) => {
-                self.gpu
-                    .surface
-                    .configure(&self.gpu.device, &self.gpu.config);
-                self.gpu.surface.get_current_texture().map_err(|e| {
+                surface.configure(&self.gpu.device, &self.gpu.config);
+                surface.get_current_texture().map_err(|e| {
                     BackendError::surface(format!("swapchain recovery failed: {e:?}"))
                 })?
             }

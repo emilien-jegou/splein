@@ -14,8 +14,9 @@ pub struct GpuContext {
     pub device: Arc<Device>,
     /// Command execution submission queue.
     pub queue: Arc<Queue>,
-    /// Native window presentation surface.
-    pub surface: Surface<'static>,
+    /// Native window presentation surface. `None` for headless (quad-combine)
+    /// contexts, which shade into the persistent target and read back.
+    pub surface: Option<Surface<'static>>,
     /// Swapchain surface configuration parameters.
     pub config: SurfaceConfiguration,
     /// Persistent Vello render target, kept across frames.
@@ -155,7 +156,57 @@ impl GpuContext {
         Ok(Self {
             device,
             queue,
-            surface,
+            surface: Some(surface),
+            config,
+            persistent,
+            persistent_view,
+        })
+    }
+
+    /// Initializes a headless GPU context: adapter + device with no window
+    /// surface. The persistent shade target is sized directly; only the
+    /// offscreen path (`render_scene_offscreen` + `readback_rgba8`) is
+    /// usable — presenting requires a surface. Used by the quad-combine
+    /// backend so several rasterizers share one window without opening one
+    /// swapchain surface each (platforms allow a single surface per window).
+    pub async fn init_headless(width: u32, height: u32) -> Result<Self, String> {
+        let instance = Instance::new(InstanceDescriptor {
+            backends: Backends::PRIMARY,
+            ..Default::default()
+        });
+        let adapter = instance
+            .request_adapter(&RequestAdapterOptions {
+                compatible_surface: None,
+                power_preference: wgpu::PowerPreference::HighPerformance,
+                force_fallback_adapter: false,
+            })
+            .await
+            .ok_or_else(|| "No compatible GPU adapter found".to_string())?;
+
+        let (device, queue) = adapter
+            .request_device(&DeviceDescriptor::default(), None)
+            .await
+            .map_err(|e| format!("Failed to create GPU device: {:?}", e))?;
+
+        let device = Arc::new(device);
+        let queue = Arc::new(queue);
+        // No swapchain negotiates a format: the persistent target is always
+        // Rgba8Unorm and the quad compositor consumes it directly.
+        let config = SurfaceConfiguration {
+            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_DST,
+            format: TextureFormat::Rgba8Unorm,
+            width: width.max(1),
+            height: height.max(1),
+            present_mode: PresentMode::Fifo,
+            alpha_mode: CompositeAlphaMode::Auto,
+            view_formats: vec![],
+            desired_maximum_frame_latency: 1,
+        };
+        let (persistent, persistent_view) = make_persistent(&device, config.width, config.height);
+        Ok(Self {
+            device,
+            queue,
+            surface: None,
             config,
             persistent,
             persistent_view,
@@ -166,7 +217,9 @@ impl GpuContext {
     pub fn resize(&mut self, width: u32, height: u32) {
         self.config.width = width.max(1);
         self.config.height = height.max(1);
-        self.surface.configure(&self.device, &self.config);
+        if let Some(surface) = &self.surface {
+            surface.configure(&self.device, &self.config);
+        }
         // The persistent target must match the swapchain exactly or blits
         // fault: rebuild it (old contents are meaningless at a new size).
         let (persistent, persistent_view) =

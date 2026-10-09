@@ -124,6 +124,30 @@ struct OpenMenu {
     state: MenuState,
 }
 
+/// Drops the live backend BEFORE creating its replacement.
+///
+/// wgpu/vello open one swapchain surface per window, and the platform
+/// rejects a second surface on the same window while the first is alive
+/// ("Surface already has a fifo" / Invalid surface on configure).
+/// Creation order is load-bearing: destroy, then create.
+fn replace_backend(
+    backend: &mut Option<Box<dyn Backend>>,
+    window: &Arc<Window>,
+    factory: Option<BackendFactory>,
+    w: u32,
+    h: u32,
+    text_ctx: crate::text::TextContext,
+    what: &str,
+) {
+    drop(backend.take());
+    if let Some(f) = factory {
+        match f(Arc::clone(window), w, h, text_ctx) {
+            Ok(b) => *backend = Some(b),
+            Err(e) => tracing::error!(error = ?e, what, "backend rebuild failed"),
+        }
+    }
+}
+
 fn find_demo<'d>(demos: &'d [DemoDef], id: &str) -> &'d DemoDef {
     match demos.iter().find(|d| d.id == id) {
         Some(d) => d,
@@ -224,7 +248,7 @@ fn run_switchable_loop(
         e
     };
 
-    let mut backend: Box<dyn Backend> = {
+    let mut backend: Option<Box<dyn Backend>> = Some({
         let physical = window.inner_size();
         let text_ctx = engine.text_context();
         if is_quad {
@@ -234,8 +258,27 @@ fn run_switchable_loop(
                 qh * 2 + QUAD_STRIP,
             ));
             match config.quad_factory {
-                Some(qf) => qf(Arc::clone(&window), qw * 2, qh * 2 + QUAD_STRIP, text_ctx)
-                    .expect("quad backend init failed"),
+                Some(qf) => {
+                    let text_ctx = engine.text_context();
+                    match qf(Arc::clone(&window), qw * 2, qh * 2 + QUAD_STRIP, text_ctx) {
+                        Ok(b) => b,
+                        Err(e) => {
+                            tracing::error!(error = ?e, "quad boot failed, single tiny-skia instead");
+                            is_quad = false;
+                            single_slot = 0;
+                            let text_ctx = engine.text_context();
+                            let physical = window.inner_size();
+                            config.factories[0]
+                                .expect("tiny-skia factory missing")(
+                                Arc::clone(&window),
+                                physical.width.max(1),
+                                physical.height.max(1),
+                                text_ctx,
+                            )
+                            .expect("tiny-skia backend init failed")
+                        }
+                    }
+                }
                 None => panic!("--combine without quad factory"),
             }
         } else {
@@ -253,7 +296,7 @@ fn run_switchable_loop(
                 None => panic!("no factory for initial backend"),
             }
         }
-    };
+    });
     window.request_redraw();
 
     let mut menu: Option<OpenMenu> = None;
@@ -293,19 +336,27 @@ fn run_switchable_loop(
                                     is_quad = false;
                                     let tc = engine.text_context();
                                     let (ew, eh) = engine.logical_size();
-                                    if let Some(f) =
-                                        factories[single_slot % BACKEND_ORDER.len()]
-                                    {
-                                        match f(Arc::clone(&window), ew, eh, tc) {
-                                            Ok(b) => backend = b,
-                                            Err(e) => tracing::error!(%e, "backend rebuild failed"),
-                                        }
-                                    }
+                                    replace_backend(
+                                        &mut backend,
+                                        &window,
+                                        factories[single_slot % BACKEND_ORDER.len()],
+                                        ew,
+                                        eh,
+                                        tc,
+                                        "unquad for menu",
+                                    );
                                 }
                                 let physical = window.inner_size();
                                 let prev = (physical.width.max(1), physical.height.max(1));
                                 let target_w = prev.0.max(MENU_MIN_W);
                                 let target_h = prev.1.max(MENU_MIN_H);
+                                // Build the menu at the CURRENT engine size;
+                                // the async Resized below grows backend and
+                                // engine together through the standard flow.
+                                // Pre-sizing the engine here is what raced
+                                // the backend surface and panicked the
+                                // presenter on mismatched buffers.
+                                let (ew, eh) = engine.logical_size();
                                 let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
                                 let state = MenuState {
                                     selected: Signal::new(Rc::clone(&runtime), 0usize),
@@ -313,8 +364,8 @@ fn run_switchable_loop(
                                 };
                                 let ctx = BootCtx {
                                     runtime,
-                                    engine_w: target_w,
-                                    engine_h: target_h,
+                                    engine_w: ew,
+                                    engine_h: eh,
                                     demos: meta.clone(),
                                     menu: Some(state.clone()),
                                 };
@@ -332,9 +383,6 @@ fn run_switchable_loop(
                                 window.set_title(
                                     "Aurora — demos  [↑↓ move | Enter open | Esc back]",
                                 );
-                                // Size the backend up front; the async
-                                // Resized converges the window right after.
-                                pending_resize = Some((target_w, target_h));
                                 let _ = window.request_inner_size(
                                     winit::dpi::LogicalSize::new(target_w, target_h),
                                 );
@@ -352,6 +400,8 @@ fn run_switchable_loop(
                                         &mut pointer,
                                         &window,
                                         &proxy,
+                                        &factories,
+                                        single_slot,
                                         quad_factory,
                                         &mut backend,
                                         &mut is_quad,
@@ -399,6 +449,10 @@ fn run_switchable_loop(
                                 let (ew, eh) = engine.logical_size();
                                 is_quad = !is_quad;
                                 if is_quad {
+                                    // Quad is headless-GPU + softbuffer: no
+                                    // extra swapchain surface, but still drop
+                                    // the single backend's surface first.
+                                    drop(backend.take());
                                     let tc = engine.text_context();
                                     match quad_factory {
                                         Some(qf) => match qf(
@@ -408,7 +462,7 @@ fn run_switchable_loop(
                                             tc,
                                         ) {
                                             Ok(b) => {
-                                                backend = b;
+                                                backend = Some(b);
                                                 let _ = window.request_inner_size(
                                                     winit::dpi::LogicalSize::new(
                                                         ew * 2,
@@ -427,15 +481,31 @@ fn run_switchable_loop(
                                             is_quad = false;
                                         }
                                     }
+                                    if !is_quad {
+                                        // Quad failed: restore the single backend.
+                                        let tc = engine.text_context();
+                                        replace_backend(
+                                            &mut backend,
+                                            &window,
+                                            factories[single_slot % BACKEND_ORDER.len()],
+                                            ew,
+                                            eh,
+                                            tc,
+                                            "quad fallback",
+                                        );
+                                    }
                                 } else {
                                     let tc = engine.text_context();
                                     let slot = single_slot % BACKEND_ORDER.len();
-                                    if let Some(f) = factories[slot] {
-                                        match f(Arc::clone(&window), ew, eh, tc) {
-                                            Ok(b) => backend = b,
-                                            Err(e) => tracing::error!(%e, "backend rebuild failed"),
-                                        }
-                                    }
+                                    replace_backend(
+                                        &mut backend,
+                                        &window,
+                                        factories[slot],
+                                        ew,
+                                        eh,
+                                        tc,
+                                        "unquad",
+                                    );
                                     let _ = window.request_inner_size(
                                         winit::dpi::LogicalSize::new(ew, eh),
                                     );
@@ -454,20 +524,22 @@ fn run_switchable_loop(
                                 }
                                 let tc = engine.text_context();
                                 let (ew, eh) = engine.logical_size();
-                                if let Some(f) = factories[single_slot] {
-                                    match f(Arc::clone(&window), ew, eh, tc) {
-                                        Ok(b) => {
-                                            backend = b;
-                                            tracing::info!(
-                                                engine = backend_display_name(
-                                                    BACKEND_ORDER[single_slot]
-                                                ),
-                                                "engine cycled"
-                                            );
-                                        }
-                                        Err(e) => tracing::error!(%e, "backend rebuild failed"),
-                                    }
-                                }
+                                let slot = single_slot;
+                                replace_backend(
+                                    &mut backend,
+                                    &window,
+                                    factories[slot],
+                                    ew,
+                                    eh,
+                                    tc,
+                                    "engine cycle",
+                                );
+                                tracing::info!(
+                                    engine = backend_display_name(
+                                        BACKEND_ORDER[slot]
+                                    ),
+                                    "engine cycled"
+                                );
                                 window.request_redraw();
                             }
                             SwitchAction::Exit => elwt.exit(),
@@ -496,7 +568,10 @@ fn run_switchable_loop(
                         if is_quad {
                             // Quad carries the engine at quadrant size;
                             // present_one must not see the full size.
-                            backend.resize(w, h);
+                            backend
+                                .as_mut()
+                                .expect("quad backend present")
+                                .resize(w, h);
                             let (qw, qh) = quad_layout(w, h);
                             if (qw, qh) != engine.logical_size() {
                                 engine.resize(qw, qh);
@@ -552,6 +627,8 @@ fn run_switchable_loop(
                                                 &mut pointer,
                                                 &window,
                                                 &proxy,
+                                                &factories,
+                                                single_slot,
                                                 quad_factory,
                                                 &mut backend,
                                                 &mut is_quad,
@@ -568,7 +645,7 @@ fn run_switchable_loop(
                         }
                         present_one(
                             &mut engine,
-                            &mut *backend,
+                            &mut **backend.as_mut().expect("backend present"),
                             &mut extensions,
                             pending_resize.take(),
                         );
@@ -637,25 +714,48 @@ fn close_menu_to(
     pointer: &mut PointerBridge,
     window: &Arc<Window>,
     proxy: &winit::event_loop::EventLoopProxy<()>,
+    factories: &[Option<BackendFactory>; 4],
+    single_slot: usize,
     quad_factory: Option<BackendFactory>,
-    backend: &mut Box<dyn Backend>,
+    backend: &mut Option<Box<dyn Backend>>,
     is_quad: &mut bool,
 ) {
     let (pw, ph) = open.prev_size;
     if open.was_quad {
         *is_quad = true;
         let (qw, qh) = quad_layout(pw, ph);
+        // Drop the menu's single surface before the quad backend is built.
+        drop(backend.take());
+        let mut quad_ok = false;
         if let Some(qf) = quad_factory {
             let tc = engine.text_context();
             match qf(Arc::clone(window), pw, ph, tc) {
-                Ok(b) => *backend = b,
-                Err(e) => {
-                    tracing::error!(%e, "quad rebuild failed");
-                    *is_quad = false;
+                Ok(b) => {
+                    *backend = Some(b);
+                    quad_ok = true;
                 }
+                Err(e) => tracing::error!(%e, "quad rebuild failed"),
             }
-        } else {
+        }
+        if !quad_ok {
+            // Fall back to single: engine goes full-size, backend rebuilt.
             *is_quad = false;
+            let tc = engine.text_context();
+            replace_backend(
+                backend,
+                window,
+                factories[single_slot % BACKEND_ORDER.len()],
+                pw,
+                ph,
+                tc,
+                "menu-close quad fallback",
+            );
+            let _ = window.request_inner_size(winit::dpi::LogicalSize::new(pw, ph));
+            *current_id = swap_demo(
+                demos, meta, None, &open.return_id, pw, ph, engine, extensions, pointer,
+                window, proxy,
+            );
+            return;
         }
         let _ = window.request_inner_size(winit::dpi::LogicalSize::new(pw, ph));
         *current_id = swap_demo(

@@ -144,18 +144,19 @@ impl QuadBackend {
         skia.set_text_context(text_ctx.clone());
         skia.resize(qw, qh);
 
-        // The GPU contexts each open their own surface on the quad window at
-        // quadrant size. Those surfaces are never acquired or presented; only
-        // the persistent shade targets (resized to quadrant size) are used,
-        // then read back for CPU compositing.
-        let mut vello_gpu = VelloRenderer::new(Arc::clone(&window), qw, qh)
+        // Headless GPU contexts: no window surface each. The platform
+        // allows a single swapchain surface per window, so the three GPU
+        // rasterizers shade into their persistent targets (same code as
+        // standalone) and read back for CPU compositing; only the host
+        // softbuffer surface presents.
+        let mut vello_gpu = VelloRenderer::new_headless(qw, qh)
             .map_err(|e| BackendError::init(format!("quad vello-gpu: {e:?}")))?;
         vello_gpu.set_text_context(text_ctx.clone());
-        let mut vello_cpu = VelloRenderer::new_cpu(Arc::clone(&window), qw, qh)
+        let mut vello_cpu = VelloRenderer::new_cpu_headless(qw, qh)
             .map_err(|e| BackendError::init(format!("quad vello-cpu: {e:?}")))?;
         vello_cpu.set_text_context(text_ctx.clone());
 
-        let gpu = pollster::block_on(WgpuContext::init(Arc::clone(&window), qw, qh))
+        let gpu = pollster::block_on(WgpuContext::init_headless(qw, qh))
             .map_err(BackendError::init)?;
         let mut wgpu = WgpuRenderer::new(gpu, text_ctx.clone());
         wgpu.set_scale(window.scale_factor() as f32);

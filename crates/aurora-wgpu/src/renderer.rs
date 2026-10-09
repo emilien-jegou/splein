@@ -667,13 +667,16 @@ impl WgpuRenderer {
         base_color: Color,
         damage: &DamageRegion,
     ) -> Result<(), BackendError> {
-        let frame = match self.gpu.surface.get_current_texture() {
+        let surface = self
+            .gpu
+            .surface
+            .as_ref()
+            .expect("render_frame needs a window surface; headless contexts use render_scene_offscreen");
+        let frame = match surface.get_current_texture() {
             Ok(t) => t,
             Err(wgpu::SurfaceError::Outdated | wgpu::SurfaceError::Lost) => {
-                self.gpu
-                    .surface
-                    .configure(&self.gpu.device, &self.gpu.config);
-                self.gpu.surface.get_current_texture().map_err(|e| {
+                surface.configure(&self.gpu.device, &self.gpu.config);
+                surface.get_current_texture().map_err(|e| {
                     BackendError::surface(format!("swapchain recovery failed: {e:?}"))
                 })?
             }
