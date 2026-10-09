@@ -1,6 +1,6 @@
 // Single responsibility: Target observers subscribing to reactive dependency tracking.
 
-use crate::reactive::id::{SignalId, SubscriberId};
+use crate::id::{SignalId, SubscriberId};
 
 /// Observer target that tracks reactive signal dependencies.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]

@@ -6,12 +6,12 @@ use std::rc::Rc;
 
 use rustc_hash::FxHashSet;
 
-use crate::anim::transition::{ControllerHandle, Transition, TransitionCell};
-use crate::reactive::derived::Derived;
-use crate::reactive::readable::Readable;
-use crate::reactive::runtime::ReactiveRuntime;
-use crate::reactive::signal::Signal;
-use crate::reactive::ticker::Ticker;
+use crate::transition::{ControllerHandle, Transition, TransitionCell};
+use crate::derived::Derived;
+use crate::readable::Readable;
+use crate::runtime::ReactiveRuntime;
+use crate::signal::Signal;
+use crate::ticker::Ticker;
 
 thread_local! {
     /// Context stack every component body runs inside, so hooks need no plumbing.
@@ -27,7 +27,11 @@ thread_local! {
 }
 
 /// One entry of the ambient hook scope stack.
-pub(crate) struct HookScope {
+///
+/// `#[doc(hidden)]` cross-crate plumbing for `aurora-dsl` (FLIP hooks allocate hook
+/// state through these); not part of the app-facing API.
+#[doc(hidden)]
+pub struct HookScope {
     pub(crate) inner: Rc<RefCell<Inner>>,
     /// Identity this scope's hook state is filed under.
     pub(crate) instance: Rc<str>,
@@ -54,6 +58,24 @@ pub(crate) struct HookScope {
     /// by position — exactly the bug that makes a reordered list hand each row the wrong
     /// history.
     pub(crate) stable: bool,
+}
+
+impl HookScope {
+    /// Whether state filed under this scope's identity survives rebuilds.
+    ///
+    /// `#[doc(hidden)]` cross-crate read for `aurora-dsl` hook authors; not app API.
+    #[doc(hidden)]
+    pub fn is_stable(&self) -> bool {
+        self.stable
+    }
+
+    /// The runtime this scope allocates hook state on.
+    ///
+    /// `#[doc(hidden)]` cross-crate read for `aurora-dsl` hook authors; not app API.
+    #[doc(hidden)]
+    pub fn runtime(&self) -> Rc<RefCell<ReactiveRuntime>> {
+        Rc::clone(&self.inner.borrow().runtime)
+    }
 }
 
 /// Handle to the ambient component context.
@@ -241,7 +263,8 @@ impl Cx {
 }
 
 /// The innermost ambient scope, or `None` outside a component body.
-pub(crate) fn current_scope() -> Option<HookScope> {
+#[doc(hidden)]
+pub fn current_scope() -> Option<HookScope> {
     CURRENT.with(|stack| {
         stack.borrow().last().map(|scope| HookScope {
             inner: Rc::clone(&scope.inner),
@@ -254,7 +277,8 @@ pub(crate) fn current_scope() -> Option<HookScope> {
     })
 }
 
-pub(crate) fn no_scope() -> ! {
+#[doc(hidden)]
+pub fn no_scope() -> ! {
     panic!("hook called outside a component body; take a `Cx` argument instead")
 }
 
@@ -267,7 +291,8 @@ pub(crate) fn no_scope() -> ! {
 /// every hook in a body slot 0: values filed by different hooks would collide, recall would
 /// miss by type on every rebuild, and each rebuild would allocate fresh state (a FLIP that
 /// teleports, a counter that resets, a ticker registry that grows without bound).
-pub(crate) fn next_slot(scope: &HookScope) -> usize {
+#[doc(hidden)]
+pub fn next_slot(scope: &HookScope) -> usize {
     CURRENT.with(|stack| {
         let stack = stack.borrow();
         match stack.last() {
@@ -311,7 +336,8 @@ fn remember<T: Clone + 'static>(scope: &HookScope, slot: usize, signal: &Signal<
 ///
 /// The type check is what makes a changed hook signature fail loudly at the first rebuild
 /// instead of handing back a signal of the wrong shape and panicking somewhere unrelated.
-pub(crate) fn recall_value<T: Clone + 'static>(scope: &HookScope, slot: usize) -> Option<T> {
+#[doc(hidden)]
+pub fn recall_value<T: Clone + 'static>(scope: &HookScope, slot: usize) -> Option<T> {
     let runtime = Rc::clone(&scope.inner.borrow().runtime);
     let borrow = runtime.borrow();
     let states = borrow.hook_states.get(&scope.instance)?;
@@ -320,7 +346,8 @@ pub(crate) fn recall_value<T: Clone + 'static>(scope: &HookScope, slot: usize) -
 }
 
 /// Files a value under this instance's `slot`.
-pub(crate) fn remember_value<T: Clone + 'static>(scope: &HookScope, slot: usize, value: &T) {
+#[doc(hidden)]
+pub fn remember_value<T: Clone + 'static>(scope: &HookScope, slot: usize, value: &T) {
     let runtime = Rc::clone(&scope.inner.borrow().runtime);
     let mut borrow = runtime.borrow_mut();
     let states = borrow
@@ -491,7 +518,7 @@ fn claim_key(scope: &HookScope, key: &'static str) {
 /// signature is an edit to be told about, not a miss to silently reallocate on
 /// (which is what would reset the component without warning).
 fn recall_keyed<T: Clone + 'static>(scope: &HookScope, key: &'static str) -> Option<T> {
-    use crate::reactive::runtime::KeyedSlot;
+    use crate::runtime::KeyedSlot;
     let runtime = Rc::clone(&scope.inner.borrow().runtime);
     let borrow = runtime.borrow();
     let slots = borrow.keyed_hook_states.get(&scope.instance)?;
@@ -509,7 +536,7 @@ fn recall_keyed<T: Clone + 'static>(scope: &HookScope, key: &'static str) -> Opt
 
 /// Files a value under this instance's call-site `key`.
 fn remember_keyed<T: Clone + 'static>(scope: &HookScope, key: &'static str, value: &T) {
-    use crate::reactive::runtime::KeyedSlot;
+    use crate::runtime::KeyedSlot;
     let runtime = Rc::clone(&scope.inner.borrow().runtime);
     let mut borrow = runtime.borrow_mut();
     let slots = borrow
@@ -538,10 +565,10 @@ fn remember_keyed<T: Clone + 'static>(scope: &HookScope, key: &'static str, valu
 #[macro_export]
 macro_rules! use_signal {
     ($init:expr) => {
-        $crate::reactive::use_signal_keyed(concat!(file!(), ":", line!()), $init)
+        $crate::use_signal_keyed(concat!(file!(), ":", line!()), $init)
     };
     ($key:literal, $init:expr) => {
-        $crate::reactive::use_signal_keyed(concat!(file!(), "#", $key), $init)
+        $crate::use_signal_keyed(concat!(file!(), "#", $key), $init)
     };
 }
 
@@ -563,7 +590,7 @@ macro_rules! use_signal {
 #[macro_export]
 macro_rules! derived {
     ($body:expr) => {
-        $crate::reactive::Cx::expect_current().derived($body)
+        $crate::Cx::expect_current().derived($body)
     };
 }
 

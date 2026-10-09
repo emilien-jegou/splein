@@ -3,7 +3,7 @@
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 
-use crate::reactive::{ReactiveRuntime, SubscriberId};
+use aurora_reactive::{ReactiveRuntime, SubscriberId};
 use crate::tree::flags::DirtyFlags;
 use crate::tree::id::NodeId;
 

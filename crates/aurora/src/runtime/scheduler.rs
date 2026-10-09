@@ -7,7 +7,7 @@ use std::rc::Rc;
 use aurora_anim_core::clock::Clock;
 use aurora_foundation::{Constraints, Key, Point};
 use crate::layout::{layout_node_with_text, LayoutResult};
-use crate::reactive::{Observer, ReactiveRuntime, SubscriberId};
+use aurora_reactive::{Observer, ReactiveRuntime, SubscriberId};
 use crate::runtime::boundary::{collect_layout_boundaries, prune_nested_boundaries};
 use crate::text::TextContext;
 use crate::tree::{DirtyFlags, NodeId, NodeKind, SubscriberRouter, TreeArena};
@@ -215,7 +215,7 @@ impl FrameScheduler {
                         // a hook scope for a `#[component]` child to allocate its signals on.
                         // Entering it is what lets a reactive list contain components at all.
                         let runtime = Rc::clone(&self.runtime);
-                        let spec = crate::reactive::Cx::new(runtime).enter(|| build());
+                        let spec = aurora_reactive::Cx::new(runtime).enter(|| build());
                         let keys: Vec<Option<Key>> = spec.iter().map(|e| e.key()).collect();
                         pending_children = Some((spec, keys));
                     }

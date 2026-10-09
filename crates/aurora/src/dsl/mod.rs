@@ -21,7 +21,6 @@ pub mod element_ref;
 pub mod flip;
 pub mod group;
 pub mod image;
-pub mod prop;
 pub mod reconcile_children;
 pub mod reconcile_group;
 pub mod reconcile_leaf;

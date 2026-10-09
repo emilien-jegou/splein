@@ -1,7 +1,7 @@
 // Single responsibility: Generic dynamic property abstraction supporting values, signals, and computations.
 
-use crate::reactive::derived::Derived;
-use crate::reactive::signal::Signal;
+use crate::derived::Derived;
+use crate::signal::Signal;
 use std::rc::Rc;
 
 /// Dynamic property holding either a static value or a reactive computation closure.

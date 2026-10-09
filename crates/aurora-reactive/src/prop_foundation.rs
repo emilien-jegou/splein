@@ -1,9 +1,9 @@
-// Single responsibility: Declarative UI conversions from foundation types into dynamic properties.
+// Single responsibility: Bridge impls letting foundation values be used as dynamic props.
 
 use aurora_foundation::{Color, Fill, LayoutPresence, Radius, Shadow, Size, Transform};
-use crate::reactive::derived::Derived;
-use crate::reactive::prop::{DynamicProp, IntoProp};
-use crate::reactive::signal::Signal;
+use crate::derived::Derived;
+use crate::prop::{DynamicProp, IntoProp};
+use crate::signal::Signal;
 
 impl IntoProp<Size> for Size {
     fn into_prop(self) -> DynamicProp<Size> {

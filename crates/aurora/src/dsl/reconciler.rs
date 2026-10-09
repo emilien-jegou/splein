@@ -3,8 +3,8 @@
 use crate::dsl::element::Element;
 use crate::dsl::reconcile_group::reconcile_group;
 use crate::dsl::reconcile_leaf::{reconcile_custom, reconcile_text};
-use crate::reactive::prop::DynamicProp;
-use crate::reactive::{Observer, ReactiveRuntime, SubscriberId};
+use aurora_reactive::prop::DynamicProp;
+use aurora_reactive::{Observer, ReactiveRuntime, SubscriberId};
 use crate::tree::SubscriberRouter;
 use crate::tree::{NodeId, TreeArena};
 use std::cell::RefCell;

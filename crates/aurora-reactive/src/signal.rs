@@ -1,10 +1,10 @@
 // Single responsibility: Signal handle with two-phase topological glitch-free dispatch.
 
-use crate::reactive::ambient;
-use crate::reactive::derived::Derived;
-use crate::reactive::id::SignalId;
-use crate::reactive::readable::Readable;
-use crate::reactive::runtime::ReactiveRuntime;
+use crate::ambient;
+use crate::derived::Derived;
+use crate::id::SignalId;
+use crate::readable::Readable;
+use crate::runtime::ReactiveRuntime;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
@@ -183,7 +183,7 @@ impl<T: Clone + 'static> Signal<T> {
     ///
     /// This is how animation adapts to the reactive graph without either layer knowing
     /// about the other: the adapter is driven by time, and publishes through a signal.
-    pub fn register_ticker(&self, ticker: Box<dyn crate::reactive::ticker::Ticker>) {
+    pub fn register_ticker(&self, ticker: Box<dyn crate::ticker::Ticker>) {
         self.runtime_ref().borrow_mut().register_ticker(ticker);
     }
 }

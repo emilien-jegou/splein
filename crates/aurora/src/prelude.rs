@@ -15,15 +15,15 @@ pub use aurora_foundation::{
     ShadowOffset, ShadowShape, Size, Stroke, StrokeAlign, Transform,
 };
 pub use crate::input::{ClickInfo, CursorIcon, DragInfo, HitTest, HoverInfo, KeyCode, KeyEvent, PointerButton, PointerEvent, PointerPhase, Propagation};
-pub use crate::reactive::{
+pub use aurora_reactive::{
     ambient_guard, batch, computed, use_frame_clock, use_interval, use_interval_toggle,
-    use_playback, use_signal, use_signal_keyed, use_timeout, AmbientGuard, Cx, Derived, Effect,
-    Signal, SignalRead,
+    use_playback, use_signal_keyed, use_timeout, AmbientGuard, Cx, Derived, Effect, Signal,
+    SignalRead,
 };
 /// Call-site-keyed signal hook: `use_signal!(init)` or `use_signal!("name", init)`.
-pub use crate::use_signal;
+pub use aurora_reactive::use_signal;
 /// Named derived handle from a plain closure: `derived!(move || signal.get() + 1)`.
-pub use crate::derived;
+pub use aurora_reactive::derived;
 
 pub use crate::render::RenderBackend;
 pub use crate::runtime::{Engine, FrameDiagnostics, FrameReport};

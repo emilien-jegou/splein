@@ -1,10 +1,9 @@
 // Single responsibility: Reactive signal dependency graph, batches, and notification dispatch.
 
 use aurora_foundation::snapshot::GeometrySnapshot;
-use crate::reactive::id::{SignalId, SubscriberId};
-use crate::reactive::observer::Observer;
-use crate::reactive::ticker::{Ticker, TickerRegistry};
-use crate::tree::NodeId;
+use crate::id::{SignalId, SubscriberId};
+use crate::observer::Observer;
+use crate::ticker::{Ticker, TickerRegistry};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::any::Any;
 use std::cell::RefCell;
@@ -106,12 +105,18 @@ pub struct ReactiveRuntime {
     /// landed is not a change to anything, and turning it into a notification would let a
     /// measurement schedule the frame that invalidates the measurement.
     snapshot: GeometrySnapshot,
-    /// Arena indices whose geometry is published each frame, because something asked to read it.
+    /// Opaque element identities whose geometry is published each frame, because something
+    /// asked to read it.
+    ///
+    /// Deliberately not a tree `NodeId`: the reactive layer never learns what a node is. The
+    /// tree packs its generational id into the `u64` on the way in (`watch_geometry`) and
+    /// unpacks it on the way out (`watched_geometry`), so generation staleness is still
+    /// caught at publication time without the graph importing the arena.
     ///
     /// A set rather than a list: the publish pass writes each one into a table keyed by the same
     /// index, so the order it visits them in cannot matter, and a handle that is bound and
     /// unbound repeatedly must not grow the list.
-    watched: FxHashSet<NodeId>,
+    watched: FxHashSet<u64>,
     /// Work that has to happen after layout has placed things and before the frame is compiled.
     ///
     /// This exists for one reason: a client that reacts to where layout put something cannot use
@@ -169,9 +174,10 @@ impl ReactiveRuntime {
     /// Asks for an element's box to be published after every layout.
     ///
     /// Called by the reconciler when an element binds a handle. Idempotent, because a rebuild
-    /// binds the same handle again.
-    pub fn watch_geometry(&mut self, node: NodeId) {
-        self.watched.insert(node);
+    /// binds the same handle again. Takes the tree's packed element identity (`NodeId::packed`);
+    /// the value is opaque here and unpacked by the publish pass.
+    pub fn watch_geometry(&mut self, packed: u64) {
+        self.watched.insert(packed);
     }
 
     /// Whether anything is watching geometry at all.
@@ -194,7 +200,7 @@ impl ReactiveRuntime {
     ///
     /// Exposed as a slice-producing accessor rather than handing out the set, because the
     /// publish pass holds a borrow of the arena at the same time.
-    pub fn watched_geometry(&self) -> Vec<NodeId> {
+    pub fn watched_geometry(&self) -> Vec<u64> {
         self.watched.iter().copied().collect()
     }
 

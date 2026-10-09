@@ -36,7 +36,7 @@ pub fn run_frame_passes(
     let t_react0 = std::time::Instant::now();
     let (steps, step) = scheduler.clock.animation_steps();
     for _ in 0..steps {
-        crate::reactive::tick(&scheduler.runtime, step);
+        aurora_reactive::tick(&scheduler.runtime, step);
     }
     // Total time the tickers were given this frame, handed on to the post-layout phase so a
     // transition that lives there integrates at exactly the same rate as one that lives here.
@@ -47,7 +47,7 @@ pub fn run_frame_passes(
         // notice that its target moved. Without this, an animation triggered while time is
         // slowed or frozen is never observed as started, the engine reports itself idle, and
         // the animation simply never begins.
-        crate::reactive::tick(&scheduler.runtime, 0.0);
+        aurora_reactive::tick(&scheduler.runtime, 0.0);
     }
 
     let t0 = std::time::Instant::now();
@@ -70,6 +70,9 @@ pub fn run_frame_passes(
     if scheduler.runtime.borrow().geometry_watched() {
         let watched = scheduler.runtime.borrow().watched_geometry();
         let snapshot = scheduler.runtime.borrow().snapshot().clone();
+        // The runtime hands back opaque packed identities; unpacking restores the
+        // generational ids so publication still skips stale (purged/reused) nodes.
+        let watched: Vec<NodeId> = watched.iter().map(|&p| NodeId::unpack(p)).collect();
         scheduler
             .arena
             .publish_watched(&watched, |index, rect| snapshot.put(index, rect));
@@ -82,7 +85,7 @@ pub fn run_frame_passes(
     // only thing downstream is damage, and a callback cannot dirty a node — it writes signals,
     // which the reactive layer resolves below — so the region computed here is the one this
     // frame's compile will actually use.
-    crate::reactive::run_post_layout(&scheduler.runtime, ticked);
+    aurora_reactive::run_post_layout(&scheduler.runtime, ticked);
     let t_react = t_react0.elapsed();
 
     // Whatever those callbacks wrote into a bound signal is applied here, in the same frame.

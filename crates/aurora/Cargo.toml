@@ -34,6 +34,7 @@ aurora-macros = { path = "../aurora-macros", version = "0.0.1-rc.1" }
 # Split crates (aurora stays the facade)
 aurora-foundation = { path = "../aurora-foundation", version = "0.0.1-rc.1" }
 aurora-anim-core = { path = "../aurora-anim-core", version = "0.0.1-rc.1" }
+aurora-reactive = { path = "../aurora-reactive", version = "0.0.1-rc.1" }
 
 # Tracing
 tracing = "0.1"

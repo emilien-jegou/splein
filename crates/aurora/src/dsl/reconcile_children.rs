@@ -4,7 +4,7 @@ use crate::dsl::cleanup::purge_node;
 use crate::dsl::diff::{diff_children, ChildOp};
 use crate::dsl::element::Element;
 use crate::dsl::reconciler::reconcile;
-use crate::reactive::ReactiveRuntime;
+use aurora_reactive::ReactiveRuntime;
 use crate::tree::SubscriberRouter;
 use crate::tree::{NodeId, TreeArena};
 use std::cell::RefCell;

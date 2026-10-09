@@ -101,7 +101,7 @@ impl PointerInput {
         // Handlers write signals; they resolve ambiently, so dispatch pushes
         // the scheduler's runtime even though frames usually already have.
         // (Called before any frame pass, and standalone in stepping harnesses.)
-        let _ambient = crate::reactive::ambient_guard(&scheduler.runtime);
+        let _ambient = aurora_reactive::ambient_guard(&scheduler.runtime);
         // The arena is borrowed mutably for the whole batch: the router owns
         // the native text-selection highlight beside handler dispatch, and
         // handlers write signals (marking subscribers, never inserting nodes

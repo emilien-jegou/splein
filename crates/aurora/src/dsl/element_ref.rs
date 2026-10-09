@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 use aurora_foundation::snapshot::GeometrySnapshot;
 use aurora_foundation::{Point, ResolvedRect};
-use crate::reactive::ReactiveRuntime;
+use aurora_reactive::ReactiveRuntime;
 use crate::tree::NodeId;
 
 /// A handle to an element in the tree, created before that element exists.
@@ -56,7 +56,7 @@ impl ElementRef {
         self.index.set(Some(node.index));
         // Asked for once, at bind time, rather than on every read: the publish pass walks a set,
         // so a handle that is bound and rebuilt stays one entry.
-        self.runtime.borrow_mut().watch_geometry(node);
+        self.runtime.borrow_mut().watch_geometry(node.packed());
     }
 
     /// The runtime this handle reads from.

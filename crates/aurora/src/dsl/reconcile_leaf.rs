@@ -5,7 +5,7 @@ use crate::dsl::custom::CustomDef;
 use crate::dsl::reconciler::evaluate_prop;
 use crate::dsl::text::TextDef;
 use aurora_foundation::Size;
-use crate::reactive::ReactiveRuntime;
+use aurora_reactive::ReactiveRuntime;
 use crate::tree::binding::{DynamicBindings, NodeBindings};
 use crate::tree::SubscriberRouter;
 use crate::tree::{DirtyFlags, LayoutNode, NodeId, NodeKind, TreeArena};

@@ -7,10 +7,10 @@ use aurora_anim_core::spring::Spring;
 use aurora_anim_core::track::ScalarTrack;
 use crate::dsl::element_ref::ElementRef;
 use aurora_foundation::{Point, Transform};
-use crate::reactive::hooks::{current_scope, next_slot, no_scope, recall_value, remember_value};
-use crate::reactive::ticker::Ticker;
-use crate::reactive::ReactiveRuntime;
-use crate::reactive::{Effect, Readable, Signal};
+use aurora_reactive::hooks::{current_scope, next_slot, no_scope, recall_value, remember_value};
+use aurora_reactive::ticker::Ticker;
+use aurora_reactive::ReactiveRuntime;
+use aurora_reactive::{Effect, Readable, Signal};
 
 /// Animates an element between the positions layout gives it, in two dimensions.
 ///
@@ -56,14 +56,14 @@ pub fn use_flip(
     let slot = next_slot(&scope);
 
     let cell = match scope
-        .stable
+        .is_stable()
         .then(|| recall_value::<Rc<FlipCell>>(&scope, slot))
         .flatten()
     {
         Some(existing) => existing,
         None => {
             let fresh = Rc::new(FlipCell::new(target, spring));
-            if scope.stable {
+            if scope.is_stable() {
                 remember_value(&scope, slot, &fresh);
             }
             fresh
@@ -320,14 +320,14 @@ pub fn use_ref() -> ElementRef {
         no_scope()
     };
     let slot = next_slot(&scope);
-    if scope.stable {
+    if scope.is_stable() {
         if let Some(existing) = recall_value::<ElementRef>(&scope, slot) {
             return existing;
         }
     }
-    let runtime = Rc::clone(&scope.inner.borrow().runtime);
+    let runtime = scope.runtime();
     let fresh = ElementRef::new(runtime);
-    if scope.stable {
+    if scope.is_stable() {
         remember_value(&scope, slot, &fresh);
     }
     fresh
@@ -354,14 +354,14 @@ pub fn use_follow(
     let slot = next_slot(&scope);
 
     let cell = match scope
-        .stable
+        .is_stable()
         .then(|| recall_value::<Rc<FollowCell>>(&scope, slot))
         .flatten()
     {
         Some(existing) => existing,
         None => {
             let fresh = Rc::new(FollowCell::new(target, want_centre, grab_dy));
-            if scope.stable {
+            if scope.is_stable() {
                 remember_value(&scope, slot, &fresh);
             }
             fresh
