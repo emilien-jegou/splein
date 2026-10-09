@@ -47,12 +47,8 @@
 !crates/aurora-wayland/
 !crates/aurora-wayland/**/*
 
-!crates/aurora-foundation/
-!crates/aurora-foundation/**/*
-!crates/aurora-reactive/
-!crates/aurora-reactive/**/*
-!crates/aurora-text/
-!crates/aurora-text/**/*
+!crates/aurora-macros/
+!crates/aurora-macros/**/*
 
 !docs/
 !docs/**/*

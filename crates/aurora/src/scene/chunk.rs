@@ -1,6 +1,6 @@
 // Single responsibility: Discrete bounded slice of display list commands.
 
-use aurora_foundation::{Point, Radius, ResolvedRect, Transform};
+use crate::foundation::{Point, Radius, ResolvedRect, Transform};
 use crate::scene::command::{LayerId, SceneCommand};
 use smallvec::SmallVec;
 use std::rc::Rc;
@@ -104,26 +104,5 @@ impl SceneChunk {
     #[inline(always)]
     pub fn is_empty(&self) -> bool {
         self.commands.is_empty()
-    }
-}
-
-// Foreign trait (aurora-text), local type: the legal direction for bridging the
-// text crate's paint sink to the display list without a dependency cycle.
-impl aurora_text::PaintSink for SceneChunk {
-    fn draw_rect(&mut self, rect: ResolvedRect, appearance: aurora_foundation::Appearance) {
-        self.push(SceneCommand::DrawRect { rect, appearance });
-    }
-
-    fn draw_text(
-        &mut self,
-        origin: Point,
-        layout: &std::sync::Arc<aurora_text::TextLayout>,
-        color: aurora_foundation::Color,
-    ) {
-        self.push(SceneCommand::DrawText {
-            origin,
-            layout: std::sync::Arc::clone(layout),
-            color,
-        });
     }
 }

@@ -1,10 +1,10 @@
 // Single responsibility: Stacking context traversal and cached chunk culling against damage.
 
-use aurora_foundation::{DamageRegion, ResolvedRect, Transform};
+use crate::foundation::{DamageRegion, ResolvedRect, Transform};
 use crate::pipeline::compile::hierarchy::compile_node_hierarchy;
 use crate::pipeline::compile::stacking::StackingContext;
 use crate::scene::{Scene, SceneChunk};
-use aurora_text::TextContext;
+use crate::text::TextContext;
 use crate::tree::{DirtyFlags};
 use crate::tree::{TreeArena};
 

@@ -3,9 +3,9 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use aurora_foundation::snapshot::GeometrySnapshot;
-use aurora_foundation::{Point, ResolvedRect};
-use aurora_reactive::ReactiveRuntime;
+use crate::foundation::snapshot::GeometrySnapshot;
+use crate::foundation::{Point, ResolvedRect};
+use crate::reactive::ReactiveRuntime;
 use crate::tree::NodeId;
 
 /// A handle to an element in the tree, created before that element exists.

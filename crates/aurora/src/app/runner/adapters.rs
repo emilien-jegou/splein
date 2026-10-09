@@ -2,7 +2,7 @@
 
 use crate::app::extension::AppExtension;
 use crate::app::runner::backend::{DamageResolver, FramePostProcess};
-use aurora_foundation::DamageRegion;
+use crate::foundation::DamageRegion;
 use crate::runtime::Engine;
 
 /// Resolves swapchain-age damage from the engine's frame history.

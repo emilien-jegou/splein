@@ -25,8 +25,8 @@ use winit::event_loop::EventLoopBuilder;
 use winit::window::WindowBuilder;
 
 use crate::dsl::component::IntoElement;
-use aurora_foundation::Color;
-use aurora_reactive::{Cx, ReactiveRuntime};
+use crate::foundation::Color;
+use crate::reactive::{Cx, ReactiveRuntime};
 use crate::render::RenderBackend;
 use crate::runtime::Engine;
 use runner::{run_event_loop, Backend, BackendFactory};

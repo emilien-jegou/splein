@@ -3,12 +3,12 @@
 use crate::dsl::group::GroupDef;
 use crate::dsl::reconcile_children::reconcile_children;
 use crate::dsl::reconciler::evaluate_prop;
-use aurora_foundation::{Fill, LayoutPresence, Shadow, Size, Transform};
+use crate::foundation::{Fill, LayoutPresence, Shadow, Size, Transform};
 use crate::input::handlers::NodeHandlers;
-use aurora_reactive::graph::id::SubscriberId;
-use aurora_reactive::graph::observer::Observer;
-use aurora_reactive::graph::prop::DynamicProp;
-use aurora_reactive::ReactiveRuntime;
+use crate::reactive::id::SubscriberId;
+use crate::reactive::observer::Observer;
+use crate::reactive::prop::DynamicProp;
+use crate::reactive::ReactiveRuntime;
 use crate::tree::binding::{resolve_z_index, DynamicBindings, NodeBindings, PoseBindings};
 use crate::tree::SubscriberRouter;
 use crate::tree::{DirtyFlags, NodeId, NodeKind};
@@ -143,7 +143,7 @@ pub fn reconcile_group(
             // `use_signal` would therefore panic with "hook called outside a component body"
             // the first time its parent re-rendered. Entering the scope here makes the two
             // compose: the list can be rebuilt as often as its signals change.
-            let cx = aurora_reactive::Cx::new(Rc::clone(runtime));
+            let cx = crate::reactive::Cx::new(Rc::clone(runtime));
             let spec = if let Some(sub) = m_sub.or(p_sub) {
                 runtime
                     .borrow_mut()

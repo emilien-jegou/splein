@@ -1,6 +1,6 @@
 // Single responsibility: Retained node removal and subscriber disposal helpers.
 
-use aurora_reactive::ReactiveRuntime;
+use crate::reactive::ReactiveRuntime;
 use crate::tree::SubscriberRouter;
 use crate::tree::{NodeId};
 use crate::tree::{TreeArena};

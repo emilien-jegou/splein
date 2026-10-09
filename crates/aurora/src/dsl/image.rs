@@ -1,7 +1,7 @@
 // Single responsibility: First-class declarative builder for raster images.
 
 use crate::dsl::custom::{custom, CustomDef};
-use aurora_foundation::{Constraints, IntrinsicSize, ResolvedRect};
+use crate::foundation::{Constraints, IntrinsicSize, ResolvedRect};
 use crate::scene::context::PaintContext;
 use crate::scene::image::ImageSource;
 use crate::tree::Primitive;

@@ -1,6 +1,6 @@
 // Single responsibility: Backend-neutral pointer event vocabulary shared by the engine and the DSL.
 
-use aurora_foundation::Point;
+use crate::foundation::Point;
 
 /// Which pointer button a press refers to.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]

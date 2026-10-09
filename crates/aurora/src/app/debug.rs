@@ -12,9 +12,9 @@ use crate::app::debug_toggle::handle_debug_key;
 use crate::app::extension::{AppExtension, OverlayCaps};
 use crate::app::painter::OverlayPainter;
 use crate::app::telemetry::TelemetryWorker;
-use aurora_foundation::{DamageRegion, ResolvedRect};
+use crate::foundation::{DamageRegion, ResolvedRect};
 use crate::runtime::{Engine, FrameDiagnostics};
-use aurora_text::TextContext;
+use crate::text::TextContext;
 
 /// Visual inspection modes, one per frame pass whose output they visualize.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -363,7 +363,7 @@ impl AppExtension for VisualDebugger {
 /// and rects. A frame that draws the wrong shape is explained by one of these, and text diffs
 /// between two frames far better than screenshots do.
 fn dump_scene(scene: &crate::scene::Scene) -> String {
-    use aurora_foundation::Radius;
+    use crate::foundation::Radius;
     use crate::scene::SceneCommand;
     let mut out = String::new();
     for (i, c) in scene.chunks.iter().enumerate() {

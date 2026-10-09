@@ -1,8 +1,8 @@
 // Single responsibility: Node coordinate framing, transformation, and display list command emission.
 
-use aurora_foundation::{Point, Radius, ResolvedRect, Transform};
+use crate::foundation::{Point, Radius, ResolvedRect, Transform};
 use crate::scene::{LayerId, PaintContext, SceneChunk, SceneCommand};
-use aurora_text::TextContext;
+use crate::text::TextContext;
 use crate::tree::{NodeKind};
 use crate::tree::{LayoutNode};
 

@@ -1,8 +1,8 @@
 // Single responsibility: Readonly text selection gestures: press, drag-extend, release,
 // keyboard selection, and clipboard reads.
 
-use aurora_foundation::Point;
-use aurora_text::selection::{
+use crate::foundation::Point;
+use crate::text::selection::{
     caret_at_point, expand_selection, snap_to_boundary, word_bounds, SelectionGranularity,
     TextSelection,
 };

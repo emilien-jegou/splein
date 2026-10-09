@@ -2,8 +2,8 @@
 
 use smallvec::SmallVec;
 
-use aurora_foundation::{Direction, Gap};
-use aurora_text::TextContext;
+use crate::foundation::{Direction, Gap};
+use crate::text::TextContext;
 use crate::tree::cache::LayoutCache;
 use crate::tree::{NodeId, NodeKind};
 use crate::tree::{TreeArena};

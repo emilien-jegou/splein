@@ -1,6 +1,6 @@
 // Single responsibility: Pure geometric damage analysis comparing visual bounds against history.
 
-use aurora_foundation::{DamageRegion, LightEnvironment, Point, ResolvedRect, Transform};
+use crate::foundation::{DamageRegion, LightEnvironment, Point, ResolvedRect, Transform};
 use crate::tree::{DirtyFlags, NodeId, NodeKind};
 use crate::tree::{TreeArena};
 

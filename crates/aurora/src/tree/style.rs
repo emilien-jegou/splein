@@ -1,7 +1,7 @@
 // Single responsibility: Immutable styling intent and layout constraints for retained nodes.
 
-use aurora_foundation::{Anchor, Appearance, LayoutConfig, Margin, Size};
-use aurora_foundation::HitTest;
+use crate::foundation::{Anchor, Appearance, LayoutConfig, Margin, Size};
+use crate::input::HitTest;
 
 /// Declared styling specification and layout constraints on a tree node.
 #[derive(Clone, Debug, PartialEq)]

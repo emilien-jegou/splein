@@ -1,6 +1,6 @@
 // Single responsibility: Key-based reads of retained node geometry.
 
-use aurora_foundation::{Key, Point, ResolvedRect, Transform};
+use crate::foundation::{Key, Point, ResolvedRect, Transform};
 use crate::runtime::FrameScheduler;
 use crate::tree::{NodeId};
 use crate::tree::{TreeArena};

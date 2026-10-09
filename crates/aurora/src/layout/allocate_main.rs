@@ -2,7 +2,7 @@
 
 use smallvec::SmallVec;
 
-use aurora_foundation::{Distribution, Gap};
+use crate::foundation::{Distribution, Gap};
 
 /// Main-axis allocation plan containing resolved item sizes and gap interval.
 pub struct MainAllocPlan {

@@ -5,10 +5,10 @@ use std::rc::Rc;
 use crate::dsl::component::IntoElement;
 use crate::dsl::element::{Element, IntoChildList};
 use crate::dsl::element_ref::ElementRef;
-use aurora_foundation::*;
+use crate::foundation::*;
 use crate::input::{ClickInfo, DragInfo, HandlerSet, HitTest, HoverInfo, PointerEvent, Propagation};
-use aurora_reactive::graph::prop::{DynamicProp, IntoProp};
-use aurora_reactive::graph::readable::Readable;
+use crate::reactive::prop::{DynamicProp, IntoProp};
+use crate::reactive::readable::Readable;
 
 /// Declarative flex container builder with reactive properties and styling modifiers.
 pub struct GroupDef {
@@ -309,7 +309,7 @@ impl GroupDef {
                     // scope is the one the list is already being built in, which is why this
                     // needs no runtime of its own.
                     let key = key_of(&s);
-                    match aurora_reactive::Cx::current() {
+                    match crate::reactive::Cx::current() {
                         Some(cx) => cx.enter_keyed(key, || row(i, s)),
                         // Built outside any scope, e.g. by a caller that only wants the shape.
                         // The rows still work; they just cannot preserve hook state.

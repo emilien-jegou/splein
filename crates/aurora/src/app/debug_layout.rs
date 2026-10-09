@@ -1,6 +1,6 @@
 // Single responsibility: Shared scene-space geometry for visual debugger overlay panels.
 
-use aurora_foundation::ResolvedRect;
+use crate::foundation::ResolvedRect;
 
 /// Bounding rect of the diagnostics HUD panel drawn by every backend.
 pub fn hud_panel() -> ResolvedRect {

@@ -1,14 +1,14 @@
 // Single responsibility: Routing pointer events through the hit chain to per-node handlers.
 
-use aurora_foundation::Point;
-use aurora_foundation::Key;
+use crate::foundation::Point;
+use crate::foundation::Key;
 use crate::input::event::{ClickInfo, CursorIcon, HoverInfo, PointerEvent, PointerPhase};
 use crate::input::handlers::Propagation;
 use crate::input::hit::{hit_chain, HitNode, HitTest};
 use crate::input::keyboard::{KeyCode, KeyEvent};
 use crate::input::tracker::{PointerTracker, TrackerChange};
 use super::selection::{ActiveSelection, PendingPress, current_selection, key_name, selectable_text};
-use aurora_text::selection::{
+use crate::text::selection::{
     caret_line_col, line_byte_ranges, move_grapheme, offset_at_visual_line, snap_to_boundary,
     word_edge, TextSelection,
 };
@@ -19,7 +19,7 @@ use crate::tree::{TreeArena};
 #[derive(Default, Debug)]
 pub struct PointerOutcome {
     /// Key of the node on top at the cursor, when one was hit.
-    pub hovered: Option<aurora_foundation::Key>,
+    pub hovered: Option<crate::foundation::Key>,
     /// Node that received the press, for gesture ownership.
     pub captured: Option<NodeId>,
     /// Whether a gesture is active.

@@ -1,9 +1,9 @@
 // Single responsibility: Node tree visual bounds evaluation, framing, and command emission.
 
-use aurora_foundation::{Point, ResolvedRect, Transform};
+use crate::foundation::{Point, ResolvedRect, Transform};
 use crate::pipeline::compile::emit::{emit_node_content, enter_node_frame, exit_node_frame};
 use crate::scene::{LayerId, SceneChunk};
-use aurora_text::TextContext;
+use crate::text::TextContext;
 use crate::tree::{DirtyFlags, NodeId};
 use crate::tree::{TreeArena};
 

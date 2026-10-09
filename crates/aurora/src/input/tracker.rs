@@ -1,6 +1,6 @@
 // Single responsibility: Pointer gesture state: capture, drag recognition, and release velocity.
 
-use aurora_foundation::Point;
+use crate::foundation::Point;
 use crate::input::event::{DragInfo, PointerButton, PointerEvent, PointerPhase};
 use crate::tree::NodeId;
 

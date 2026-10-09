@@ -4,10 +4,10 @@ use std::sync::Arc;
 use std::time::Duration;
 use winit::window::Window;
 
-use aurora_foundation::{Color, DamageRegion, ResolvedRect};
+use crate::foundation::{Color, DamageRegion, ResolvedRect};
 use crate::render::BackendError;
 use crate::scene::Scene;
-use aurora_text::TextContext;
+use crate::text::TextContext;
 
 /// Resolves the accumulated damage a swapchain buffer age requires.
 pub trait DamageResolver {

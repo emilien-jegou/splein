@@ -1,6 +1,6 @@
 // Single responsibility: Retained arena node aggregating style, geometry, and runtime state.
 
-use aurora_foundation::{Key, Point, ResolvedRect, Size, StrokeAlign, Transform};
+use crate::foundation::{Key, Point, ResolvedRect, Size, StrokeAlign, Transform};
 use crate::tree::kind::NodeKind;
 use crate::tree::state::NodeState;
 use crate::tree::style::NodeStyle;

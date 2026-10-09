@@ -1,7 +1,7 @@
 // Single responsibility: Component contracts, element conversion, and the ambient hook scope.
 
 use crate::dsl::element::Element;
-use aurora_reactive::Cx;
+use crate::reactive::Cx;
 
 /// Converts a built value into a mountable element.
 pub trait IntoElement {
@@ -58,7 +58,7 @@ mod tests {
     use crate::dsl::component::IntoElement;
     use crate::dsl::element::Element;
     use crate::dsl::group;
-    use aurora_foundation::Color;
+    use crate::foundation::Color;
     use crate::prelude::component;
 
     /// A component body returns something `IntoElement`; the macro's wrapper converts it.
@@ -77,9 +77,9 @@ mod tests {
         // Before the alias this file did not compile at all: `::aurora` had no meaning here.
         // The body still needs an ambient scope to run in, which `Cx::enter` provides.
         let runtime = std::rc::Rc::new(std::cell::RefCell::new(
-            aurora_reactive::ReactiveRuntime::new(),
+            crate::reactive::ReactiveRuntime::new(),
         ));
-        let element = aurora_reactive::Cx::new(runtime).enter(|| counter(3));
+        let element = crate::reactive::Cx::new(runtime).enter(|| counter(3));
         assert_eq!(element.key(), None);
     }
 }

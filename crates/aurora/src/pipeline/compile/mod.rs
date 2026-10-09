@@ -5,10 +5,10 @@ pub mod emit;
 pub mod hierarchy;
 pub mod stacking;
 
-use aurora_foundation::{DamageRegion, Point, ResolvedRect};
+use crate::foundation::{DamageRegion, Point, ResolvedRect};
 use crate::scene::chunk::InheritedClips;
 use crate::scene::Scene;
-use aurora_text::TextContext;
+use crate::text::TextContext;
 use crate::tree::{NodeId};
 use crate::tree::{TreeArena};
 use context::compile_stacking_context;

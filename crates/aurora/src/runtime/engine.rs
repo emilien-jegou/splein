@@ -6,9 +6,9 @@ use std::rc::Rc;
 use crate::dsl::element::Element;
 use crate::dsl::reconciler::reconcile;
 use crate::dsl::IntoElement;
-use aurora_foundation::{Color, DamageRegion, DamageRing, Key, Point, ResolvedRect, Transform};
+use crate::foundation::{Color, DamageRegion, DamageRing, Key, Point, ResolvedRect, Transform};
 use crate::input::{CursorIcon, KeyEvent, PointerEvent, PointerOutcome};
-use aurora_reactive::{Cx, ReactiveRuntime, Signal};
+use crate::reactive::{Cx, ReactiveRuntime, Signal};
 use crate::runtime::diagnostics::EngineDiagnostics;
 use crate::runtime::frame::run_frame_passes;
 use crate::runtime::node_query::NodeQuery;
@@ -16,7 +16,7 @@ use crate::runtime::pointer_input::PointerInput;
 use crate::runtime::scheduler::FrameScheduler;
 use crate::runtime::FrameReport;
 use crate::scene::{LayerId, Scene};
-use aurora_text::{TextContext, TextSelection};
+use crate::text::{TextContext, TextSelection};
 use crate::tree::{DirtyFlags, NodeId, SubscriberRouter};
 use crate::tree::{TreeArena};
 
@@ -53,7 +53,7 @@ impl Engine {
         height: u32,
     ) -> Self {
         // The initial reconcile runs builders, which may read captured signals.
-        let _ambient = aurora_reactive::ambient_guard(&runtime);
+        let _ambient = crate::reactive::ambient_guard(&runtime);
         let (mut arena, mut router) = (TreeArena::new(), SubscriberRouter::new());
         let root_key = root.key();
         let root_id = reconcile(&runtime, &mut arena, &mut router, None, root);
@@ -178,7 +178,7 @@ impl Engine {
 
     /// Replaces the declarative root node and marks layout dirty.
     pub fn set_root(&mut self, element: Element) {
-        let _ambient = aurora_reactive::ambient_guard(&self.runtime());
+        let _ambient = crate::reactive::ambient_guard(&self.runtime());
         let key = element.key();
         let root = reconcile(
             &self.scheduler.runtime,
@@ -199,7 +199,7 @@ impl Engine {
         // Ambient for everything a frame runs: tickers, effects, post-layout
         // callbacks, scheduler rebuilds, and component bodies. Nested guards
         // (dispatch pushes its own below) resolve to the same runtime.
-        let _ambient = aurora_reactive::ambient_guard(&self.runtime());
+        let _ambient = crate::reactive::ambient_guard(&self.runtime());
         let (w, h) = self.logical_size;
         self.frame_counter = self.frame_counter.wrapping_add(1);
 
@@ -644,7 +644,7 @@ impl Engine {
     /// the engine pushes its own guard, so this is only for external code — and
     /// only when another engine was active more recently on this thread.
     pub fn guard<R>(&self, f: impl FnOnce() -> R) -> R {
-        let _guard = aurora_reactive::ambient_guard(&self.runtime());
+        let _guard = crate::reactive::ambient_guard(&self.runtime());
         f()
     }
 

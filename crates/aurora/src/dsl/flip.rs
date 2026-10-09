@@ -3,14 +3,14 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use aurora_reactive::anim::spring::Spring;
-use aurora_reactive::anim::track::ScalarTrack;
+use crate::anim::spring::Spring;
+use crate::anim::track::ScalarTrack;
 use crate::dsl::element_ref::ElementRef;
-use aurora_foundation::{Point, Transform};
-use aurora_reactive::hooks::{current_scope, next_slot, no_scope, recall_value, remember_value};
-use aurora_reactive::graph::ticker::Ticker;
-use aurora_reactive::ReactiveRuntime;
-use aurora_reactive::{Effect, Readable, Signal};
+use crate::foundation::{Point, Transform};
+use crate::reactive::hooks::{current_scope, next_slot, no_scope, recall_value, remember_value};
+use crate::reactive::ticker::Ticker;
+use crate::reactive::ReactiveRuntime;
+use crate::reactive::{Effect, Readable, Signal};
 
 /// Animates an element between the positions layout gives it, in two dimensions.
 ///

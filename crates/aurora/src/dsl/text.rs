@@ -2,9 +2,9 @@
 
 use crate::dsl::component::IntoElement;
 use crate::dsl::element::Element;
-use aurora_foundation::{Anchor, Color, Key, Margin, Size};
-use aurora_reactive::graph::prop::{DynamicProp, IntoProp};
-use aurora_text::{
+use crate::foundation::{Anchor, Color, Key, Margin, Size};
+use crate::reactive::prop::{DynamicProp, IntoProp};
+use crate::text::{
     FontId, FontStyle, FontVariation, LineHeight, TextAlign, TextConfig, TextDecoration,
     TextOverflow,
 };
@@ -82,7 +82,7 @@ pub fn text<P: IntoProp<String>>(content: P) -> TextDef {
         max_lines: None,
         color: Color::WHITE,
         selectable: false,
-        selection_color: aurora_text::DEFAULT_SELECTION_COLOR,
+        selection_color: crate::text::DEFAULT_SELECTION_COLOR,
         is_absolute: false,
         anchor: None,
         margin: Margin::ZERO,

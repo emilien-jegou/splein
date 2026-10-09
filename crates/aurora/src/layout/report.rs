@@ -1,6 +1,6 @@
 // Single responsibility: Layout pass execution report recording recomputed, cached, and boundary work.
 
-use aurora_foundation::ResolvedRect;
+use crate::foundation::ResolvedRect;
 
 /// Layout execution result detailing exact work performed this frame.
 #[derive(Clone, Debug, Default)]

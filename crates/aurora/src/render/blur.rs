@@ -23,7 +23,7 @@ pub fn box_blur_alpha(
 /// tails, no rim kink for Mach bands to catch), the second attains
 /// sigma ≈ 1.15r with ±2r support. Callers size `radius` for that: a CSS
 /// blur R maps to r = R/2 (sigma ≈ 0.58R, support ±R). The LUT comes from
-/// [`aurora_foundation::FalloffCurve::lut`]; callers that render multiple
+/// [`crate::foundation::FalloffCurve::lut`]; callers that render multiple
 /// layers of one shadow compute it once per distinct curve.
 pub fn box_blur_alpha_with_falloff(
     src: &[u8],

@@ -1,6 +1,6 @@
 // Single responsibility: Analytical stroke alignment geometry shared by render backends.
 
-use aurora_foundation::{Radius, ResolvedRect, Stroke, StrokeAlign};
+use crate::foundation::{Radius, ResolvedRect, Stroke, StrokeAlign};
 
 /// Adjusts the rect and corner radius for inside, center, or outside stroke alignment.
 #[inline(always)]

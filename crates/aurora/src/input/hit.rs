@@ -1,11 +1,9 @@
 // Single responsibility: Painter-ordered pointer hit resolution producing a bubbling hit chain.
 
-use aurora_foundation::{Point, ResolvedRect, Transform};
+use crate::foundation::{Point, ResolvedRect, Transform};
 use crate::tree::node::PaintLayer;
 use crate::tree::{NodeId};
 use crate::tree::{TreeArena};
-
-pub use aurora_foundation::HitTest;
 
 /// One entry in a hit chain: a node under the pointer, plus why it matched.
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -13,6 +11,22 @@ pub struct HitNode {
     pub id: NodeId,
     /// The node's box in absolute window coordinates, which is what a gesture offset from.
     pub bounds: ResolvedRect,
+}
+
+/// How a node participates in pointer hit testing.
+///
+/// `Auto` is the default: handler-less nodes are skipped by the router's target
+/// search, so decorative wrappers never swallow input meant for the control inside.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub enum HitTest {
+    /// Default participation: skipped by target search when handler-less.
+    #[default]
+    Auto,
+    /// Solid even without handlers: absorbs hits so clicks on dead space never
+    /// ghost through to nodes beneath (menus, modals). Acts as an implicit stop.
+    Opaque,
+    /// Invisible to collision: the subtree is skipped as if it were not there.
+    Passthrough,
 }
 
 /// Nodes under a point, ordered topmost first, ending at the root.
@@ -150,7 +164,7 @@ fn collect(
 }
 
 /// The keyed node on top at a point, for callers that only need the target.
-pub fn top_key(arena: &TreeArena, root: NodeId, point: Point) -> Option<aurora_foundation::Key> {
+pub fn top_key(arena: &TreeArena, root: NodeId, point: Point) -> Option<crate::foundation::Key> {
     hit_chain(arena, root, point)
         .into_iter()
         .find_map(|hit| arena.get(hit.id).key.clone())

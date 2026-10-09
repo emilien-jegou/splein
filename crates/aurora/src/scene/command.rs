@@ -1,6 +1,6 @@
 // Single responsibility: Backend-agnostic display list drawing commands.
 
-use aurora_foundation::{
+use crate::foundation::{
     Appearance, BlendMode, Color, Fill, LightEnvironment, Point, Radius, ResolvedRect, Shadow,
     ShadowOffset, ShadowShape, StrokeAlign, Transform,
 };

@@ -4,12 +4,12 @@ use smallvec::SmallVec;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use aurora_reactive::anim::clock::Clock;
-use aurora_foundation::{Constraints, Key, Point};
+use crate::anim::clock::Clock;
+use crate::foundation::{Constraints, Key, Point};
 use crate::layout::{layout_node_with_text, LayoutResult};
-use aurora_reactive::{Observer, ReactiveRuntime, SubscriberId};
+use crate::reactive::{Observer, ReactiveRuntime, SubscriberId};
 use crate::runtime::boundary::{collect_layout_boundaries, prune_nested_boundaries};
-use aurora_text::TextContext;
+use crate::text::TextContext;
 use crate::tree::{DirtyFlags, NodeId, NodeKind, SubscriberRouter};
 use crate::tree::{TreeArena};
 
@@ -216,7 +216,7 @@ impl FrameScheduler {
                         // a hook scope for a `#[component]` child to allocate its signals on.
                         // Entering it is what lets a reactive list contain components at all.
                         let runtime = Rc::clone(&self.runtime);
-                        let spec = aurora_reactive::Cx::new(runtime).enter(|| build());
+                        let spec = crate::reactive::Cx::new(runtime).enter(|| build());
                         let keys: Vec<Option<Key>> = spec.iter().map(|e| e.key()).collect();
                         pending_children = Some((spec, keys));
                     }
@@ -401,7 +401,7 @@ impl FrameScheduler {
             if node.is_layout_boundary() {
                 let constraints = node.state.core.cache.last_constraints.unwrap_or_else(|| {
                     let (w, h) = match (node.style.width, node.style.height) {
-                        (aurora_foundation::Size::Fixed(w), aurora_foundation::Size::Fixed(h)) => {
+                        (crate::foundation::Size::Fixed(w), crate::foundation::Size::Fixed(h)) => {
                             (w, h)
                         }
                         _ => (0.0, 0.0),

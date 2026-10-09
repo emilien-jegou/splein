@@ -7,12 +7,12 @@
 
 use crate::input::handlers::NodeHandlers;
 use crate::scene::SceneChunk;
-use aurora_text::selection::{SelectionGranularity, TextSelection};
-use aurora_text::TextLayout;
+use crate::text::selection::{SelectionGranularity, TextSelection};
+use crate::text::TextLayout;
 use crate::tree::binding::NodeBindings;
 use crate::tree::cache::LayoutCache;
 use crate::tree::flags::DirtyFlags;
-use aurora_foundation::{Key, LayoutPresence, LightEnvironment, ResolvedRect, Transform};
+use crate::foundation::{Key, LayoutPresence, LightEnvironment, ResolvedRect, Transform};
 use std::sync::Arc;
 
 /// Invalidation flags, layout caches, bindings, and identity: owned by the tree itself.

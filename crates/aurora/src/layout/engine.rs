@@ -2,7 +2,7 @@
 
 use smallvec::SmallVec;
 
-use aurora_foundation::{Constraints, Direction, Distribution, Point, ResolvedRect, Size};
+use crate::foundation::{Constraints, Direction, Distribution, Point, ResolvedRect, Size};
 use crate::layout::allocate_absolute::resolve_absolute_child;
 use crate::layout::allocate_cross::resolve_child_cross;
 use crate::layout::allocate_main::{allocate_main_axis, MainAxisItems};
@@ -12,7 +12,7 @@ use crate::layout::measure::{
 };
 use crate::layout::min_size::compute_min_size;
 use crate::layout::report::LayoutResult;
-use aurora_text::TextContext;
+use crate::text::TextContext;
 use crate::tree::{DirtyFlags, NodeId};
 use crate::tree::{TreeArena};
 

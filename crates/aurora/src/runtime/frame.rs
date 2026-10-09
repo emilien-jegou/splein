@@ -1,6 +1,6 @@
 // Single responsibility: Orchestrates the per-frame pass sequence: layout, damage, compile, and bounds commit.
 
-use aurora_foundation::{Constraints, DamageRegion, ResolvedRect};
+use crate::foundation::{Constraints, DamageRegion, ResolvedRect};
 use crate::layout::LayoutResult;
 use crate::pipeline::{commit_painted_bounds, CompileResult, DamagePlan};
 use crate::runtime::scheduler::FrameScheduler;
@@ -63,7 +63,7 @@ pub fn run_frame_passes(
     let t_react0 = std::time::Instant::now();
     let (steps, step) = scheduler.clock.animation_steps();
     for _ in 0..steps {
-        aurora_reactive::tick(&scheduler.runtime, step);
+        crate::reactive::tick(&scheduler.runtime, step);
     }
     // Total time the tickers were given this frame, handed on to the post-layout phase so a
     // transition that lives there integrates at exactly the same rate as one that lives here.
@@ -74,7 +74,7 @@ pub fn run_frame_passes(
         // notice that its target moved. Without this, an animation triggered while time is
         // slowed or frozen is never observed as started, the engine reports itself idle, and
         // the animation simply never begins.
-        aurora_reactive::tick(&scheduler.runtime, 0.0);
+        crate::reactive::tick(&scheduler.runtime, 0.0);
     }
 
     let t0 = std::time::Instant::now();
@@ -112,7 +112,7 @@ pub fn run_frame_passes(
     // only thing downstream is damage, and a callback cannot dirty a node — it writes signals,
     // which the reactive layer resolves below — so the region computed here is the one this
     // frame's compile will actually use.
-    aurora_reactive::run_post_layout(&scheduler.runtime, ticked);
+    crate::reactive::run_post_layout(&scheduler.runtime, ticked);
     let t_react = t_react0.elapsed();
 
     // Whatever those callbacks wrote into a bound signal is applied here, in the same frame.

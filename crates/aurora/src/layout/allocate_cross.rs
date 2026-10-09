@@ -1,6 +1,6 @@
 // Single responsibility: Cross-axis alignment and bounded allocation preserving explicit child sizes.
 
-use aurora_foundation::{Alignment, Size};
+use crate::foundation::{Alignment, Size};
 
 /// Resolves a child's final cross-axis content size and offset from its sizing intent.
 ///

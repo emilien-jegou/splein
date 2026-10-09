@@ -1,6 +1,6 @@
 // Single responsibility: Scoped builder context for emitting display list commands directly into chunks.
 
-use aurora_foundation::{Appearance, Color, Point, Radius, ResolvedRect, Transform};
+use crate::foundation::{Appearance, Color, Point, Radius, ResolvedRect, Transform};
 use crate::scene::chunk::SceneChunk;
 use crate::scene::command::SceneCommand;
 use crate::scene::image::ImageSource;
