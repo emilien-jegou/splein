@@ -149,7 +149,7 @@ fn DocumentedRow(spec: RowSpec) -> impl IntoElement {
         spec.revision.map(Trigger::from),
         Spring::snappy(),
     );
-    let follow = use_follow(row_ref.clone(), spec.want_centre, spec.grab_dy);
+    let (follow, _follow_handle) = use_follow(row_ref.clone(), spec.want_centre, spec.grab_dy);
 
     // The held-row rule from the guide: gate on the hold, not on a non-zero offset.
     let is_held = spec.held.map({

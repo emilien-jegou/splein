@@ -82,7 +82,7 @@ pub use custom::{custom, CustomDef};
 pub use diff::ChildOp;
 pub use element::Element;
 pub use element_ref::ElementRef;
-pub use flip::{use_flip, use_follow, use_ref, Trigger};
+pub use flip::{use_flip, use_follow, use_ref, FollowHandle, Trigger};
 pub use group::{group, Behavior, GroupDef};
 pub use image::image;
 pub use reconciler::reconcile;

@@ -28,7 +28,7 @@ unicode-segmentation = "1.12"
 arboard = { version = "3", default-features = false, features = ["wayland-data-control"], optional = true }
 
 # Attribute macros (#[component])
-aurora-macros = { path = "../aurora-macros", version = "0.0.1-rc.1" }
+aurora-macros = { path = "./macros", version = "0.0.1-rc.1" }
 resvg = "0.42"
 
 # Tracing

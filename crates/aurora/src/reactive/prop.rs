@@ -182,7 +182,7 @@ macro_rules! impl_display_prop {
     };
 }
 
-impl_display_prop!(f32, i32, u32, bool);
+impl_display_prop!(f32, i32, u32, usize, isize, bool);
 
 impl IntoProp<i32> for i32 {
     fn into_prop(self) -> DynamicProp<i32> {

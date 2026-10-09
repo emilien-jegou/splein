@@ -46,8 +46,11 @@ fn node_name_string(name: &NodeName) -> String {
     }
 }
 
-/// `on:click` → `on_click`; `foo-bar` → `foo_bar`; else identity.
+/// `on:click` → `on_click`; `ref` → `bind_ref`; `foo-bar` → `foo_bar`; else identity.
 fn attr_method(key: &str) -> String {
+    if key == "ref" {
+        return "bind_ref".to_string();
+    }
     if let Some(ev) = key.strip_prefix("on:") {
         format!("on_{}", ev.replace(['-', ':'], "_"))
     } else {

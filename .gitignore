@@ -20,9 +20,9 @@
 !crates/splein/
 !crates/splein/**/*
 
-!crates/aurora-macros/
-!crates/aurora-macros/**/*
 !crates/aurora/
+!crates/aurora/macros/
+!crates/aurora/macros/**/*
 !crates/aurora/assets/
 !crates/aurora/assets/**/*
 !crates/aurora/Cargo.toml
@@ -46,9 +46,6 @@
 
 !crates/aurora-wayland/
 !crates/aurora-wayland/**/*
-
-!crates/aurora-macros/
-!crates/aurora-macros/**/*
 
 !docs/
 !docs/**/*

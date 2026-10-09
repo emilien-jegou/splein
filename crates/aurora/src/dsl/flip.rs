@@ -347,7 +347,7 @@ pub fn use_follow(
     target: ElementRef,
     want_centre: impl Readable<Option<f32>> + 'static,
     grab_dy: impl Readable<f32> + 'static,
-) -> Signal<Transform> {
+) -> (Signal<Transform>, FollowHandle) {
     let Some(scope) = current_scope() else {
         no_scope()
     };
@@ -379,7 +379,27 @@ pub fn use_follow(
         });
     }
 
-    cell.out.clone()
+    (cell.out.clone(), FollowHandle(Rc::clone(&cell)))
+}
+
+/// Synchronous access to a follow offset, for moments that cannot wait for
+/// the post-layout phase.
+///
+/// The offset only materializes in `resolve()`, which runs post-layout. A
+/// gesture that reads the composed transform *before* any frame ran since
+/// the last pointer sample — a grab-whip-release inside one frame — would
+/// read a stale zero and seed whatever follows (a release glide) from
+/// nothing, teleporting the row. Calling `resolve_now()` first recomputes
+/// from current intent and boxes, so the read sees this frame's truth.
+#[derive(Clone)]
+pub struct FollowHandle(Rc<FollowCell>);
+
+impl FollowHandle {
+    /// Recomputes the offset now and returns it.
+    pub fn resolve_now(&self) -> Transform {
+        self.0.resolve();
+        self.0.out.get()
+    }
 }
 
 /// One element's pointer-driven offset.

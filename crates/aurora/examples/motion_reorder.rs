@@ -227,7 +227,7 @@ fn Row(index: usize, spec: RowSpec) -> impl IntoElement {
 
     // The pointer offset, derived from the pointer's intent and the row's current box rather
     // than accumulated from the grab.
-    let follow_sig = use_follow(
+    let (follow_sig, follow_handle) = use_follow(
         row_ref.clone(),
         drag.want_centre.clone(),
         drag.grab_dy.clone(),
@@ -291,29 +291,107 @@ fn Row(index: usize, spec: RowSpec) -> impl IntoElement {
     });
 
     let displayed = offset(offset(flip, follow), settle.clone());
-    let release = Release {
-        settle,
-        settling,
-        displayed: displayed.clone(),
-        flip: flip_sig.clone(),
-    };
 
-    row(index, &label)
-        .bind_ref(row_ref)
-        .transform(displayed)
-        .z_index(elevation)
-        .pipe_gesture(drag, label, release)
-        .into_element()
-}
+    view! {
+        <Group
+            key={format!("row-{label}")}
+            ref={row_ref}
+            direction="horizontal"
+            width="fill"
+            height="fill"
+            radius={12.0}
+            fill={ACCENT}
+            alignment="center"
+            gap={14.0}
+            margin={Margin::x(4.0)}
+            transform={displayed.clone()}
+            z_index={elevation}
+            on:pointer-down={{
+                let drag = drag.clone();
+                let label = label.clone();
+                let settle = settle.clone();
+                let settling = settling.clone();
+                move |event: &PointerEvent| {
+                    settling.set(false);
+                    settle.set(Transform::IDENTITY);
+                    let centre = drag
+                        .slots()
+                        .get(drag.slot_of(&label))
+                        .map(|r| r.y + r.height * 0.5)
+                        .unwrap_or(event.position.y);
+                    drag.grab_dy.set(event.position.y - centre);
+                    drag.held.set(Some(label.clone()));
+                }
+            }}
+            on:drag-start={{
+                let drag = drag.clone();
+                move |info: &DragInfo| {
+                    drag.want_centre
+                        .set(Some(info.position.y - drag.grab_dy.get()));
+                }
+            }}
+            on:drag-step={{
+                let drag = drag.clone();
+                let label = label.clone();
+                move |info: &DragInfo| {
+                    let centre = info.position.y - drag.grab_dy.get();
+                    drag.want_centre.set(Some(centre));
 
-/// What the gesture needs to land a row softly: the glide offset it seeds on release,
-/// whether a glide is in flight, the row's total transform to capture at release, and
-/// the raw FLIP output the glide must wait for before handing control back.
-struct Release {
-    settle: Signal<Transform>,
-    settling: Signal<bool>,
-    displayed: Derived<Transform>,
-    flip: Signal<Transform>,
+                    let from = drag.slot_of(&label);
+                    if let Some(to) = drag.target_slot(centre) {
+                        drag.move_row(from, to);
+                    }
+                }
+            }}
+            on:drag-end={{
+                let drag = drag.clone();
+                let settle = settle.clone();
+                let settling = settling.clone();
+                let displayed = displayed.clone();
+                let flip = flip_sig.clone();
+                let follow_handle = follow_handle.clone();
+                move |info: &DragInfo| {
+                    // Resolve the follow offset NOW, before reading anything.
+                    // It only materializes in the post-layout phase: releasing
+                    // in the same frame as the last pointer sample (a fast
+                    // whip) would otherwise seed the glide below from a stale
+                    // zero and teleport the row to its slot. See FollowHandle.
+                    follow_handle.resolve_now();
+                    let from = displayed.get();
+                    settle.set(from);
+                    settling.set(true);
+                    drag.held.set(None);
+                    drag.want_centre.set(None);
+                    drag.grab_dy.set_with_velocity(0.0, info.velocity.y);
+                    if (from.ty.abs() >= 1.0 || from.tx.abs() >= 1.0)
+                        || flip.get() != Transform::IDENTITY
+                    {
+                        settle.register_ticker(Box::new(GlideTicker {
+                            out: settle.clone(),
+                            settling: settling.clone(),
+                            flip: flip.clone(),
+                            from,
+                            t: 0.0,
+                        }));
+                    } else {
+                        settling.set(false);
+                    }
+                }
+            }}
+            on:pointer-up={{
+                let drag = drag.clone();
+                move |_: &PointerEvent| {
+                    drag.held.set(None);
+                    drag.want_centre.set(None);
+                }
+            }}
+        >
+            <Text size={13.0} weight={700u16} color={Color::white_alpha(0.70)} margin={Margin::left(16.0)}>{index + 1}</Text>
+            <Text size={14.0} weight={600u16} color={Color::WHITE}>{label}</Text>
+            <Group width="fill" />
+            <Text size={12.0} color={Color::white_alpha(0.6)} margin={Margin::right(16.0)}>"drag me"</Text>
+        </Group>
+    }
 }
 
 /// Seconds a released row takes to ease into its slot.
@@ -376,153 +454,4 @@ fn offset(
         let b = follow.get();
         Transform::from_translation(a.tx + b.tx, a.ty + b.ty)
     })
-}
-
-/// Wires one row's whole gesture: claim it, follow it, reorder as it crosses a row, and hand
-/// the release velocity back.
-///
-/// The hand-off matters here more than anywhere else: without it the row stops dead the instant
-/// the pointer lifts, however hard it was thrown.
-#[allow(clippy::too_many_arguments)]
-fn gesture(row: GroupDef, drag: Rc<Drag>, label: String, release: Release) -> GroupDef {
-    // Recorded on the press, not on the drag's start. Sub-threshold moves produce no
-    // drag events at all (a 1px click wiggle is a click, not a drag), so a grab recorded
-    // at drag start would not exist yet if the first step arrived any other way — and
-    // the press is the one moment the pointer is guaranteed to be on the row.
-    row.on_pointer_down({
-        let drag = drag.clone();
-        let label = label.clone();
-        let settle = release.settle.clone();
-        let settling = release.settling.clone();
-        move |event: &PointerEvent| {
-            // A fresh grab cancels any glide still in flight and reclaims the offset, so the
-            // row answers the pointer immediately instead of finishing a landing nobody wants.
-            // Clearing `settling` disarms the ticker; it retires on its next advance.
-            settling.set(false);
-            settle.set(Transform::IDENTITY);
-            // Measured against the box layout gave this row, read through the list rather than
-            // from the builder's index: a reorder since the last build makes that stale.
-            let centre = drag
-                .slots()
-                .get(drag.slot_of(&label))
-                .map(|r| r.y + r.height * 0.5)
-                .unwrap_or(event.position.y);
-            drag.grab_dy.set(event.position.y - centre);
-            drag.held.set(Some(label.clone()));
-        }
-    })
-    // Seeded on the drag's start as well as on every step. The sample that crosses the
-    // threshold reports the start but no step of its own, so without this the row sits
-    // still through the first few pixels of a gesture and then jumps to the pointer once
-    // the first step lands, which reads as the row lagging rather than as a drag that
-    // just began.
-    .on_drag_start({
-        let drag = drag.clone();
-        move |info: &DragInfo| {
-            drag.want_centre
-                .set(Some(info.position.y - drag.grab_dy.get()));
-        }
-    })
-    .on_drag_step({
-        let drag = drag.clone();
-        let label = label.clone();
-        move |info: &DragInfo| {
-            // The centre the pointer is asking for. Every other decision is measured against it.
-            let centre = info.position.y - drag.grab_dy.get();
-            drag.want_centre.set(Some(centre));
-
-            let from = drag.slot_of(&label);
-            if let Some(to) = drag.target_slot(centre) {
-                drag.move_row(from, to);
-            }
-        }
-    })
-    .on_drag_end({
-        let drag = drag.clone();
-        let settle = release.settle.clone();
-        let settling = release.settling.clone();
-        let displayed = release.displayed.clone();
-        let flip = release.flip.clone();
-        move |info| {
-            // Captured before the hold clears, while the gates still show the row where the
-            // pointer left it. Seeding the glide from this (rather than from zero) is what
-            // turns the snap into a landing: the first eased frame continues the last held
-            // one instead of jumping home.
-            let from = displayed.get();
-            settle.set(from);
-            settling.set(true);
-            drag.held.set(None);
-            // Cleared so the follow offset reads exactly zero, which is what releases the row.
-            drag.want_centre.set(None);
-            // The throw's own velocity, so a flick is thrown rather than stopped dead.
-            drag.grab_dy.set_with_velocity(0.0, info.velocity.y);
-            // Skipped only when there is truly nothing to wait for: a sub-pixel offset *and*
-            // a settled FLIP. Otherwise the ticker eases home and holds the FLIP gate shut
-            // until the spring is at rest too, so control hands over with no residual jump.
-            if (from.ty.abs() >= 1.0 || from.tx.abs() >= 1.0)
-                || flip.get() != Transform::IDENTITY
-            {
-                settle.register_ticker(Box::new(GlideTicker {
-                    out: settle.clone(),
-                    settling: settling.clone(),
-                    flip: flip.clone(),
-                    from,
-                    t: 0.0,
-                }));
-            } else {
-                settling.set(false);
-            }
-        }
-    })
-    // A press released below the drag threshold never becomes a drag, so `on_drag_end`
-    // never runs for it — without this the hold (and the elevation) would stick on a
-    // plain click. Exclusive with the path above: a release that ended a drag reports
-    // `DragEnded`, never `Released`, so the two cannot double-clear.
-    .on_pointer_up(move |_| {
-        drag.held.set(None);
-        drag.want_centre.set(None);
-    })
-}
-
-/// Wires a row's gesture onto it.
-trait PipeGesture {
-    fn pipe_gesture(self, drag: Rc<Drag>, label: String, release: Release) -> GroupDef;
-}
-
-impl PipeGesture for GroupDef {
-    fn pipe_gesture(self, drag: Rc<Drag>, label: String, release: Release) -> GroupDef {
-        gesture(self, drag, label, release)
-    }
-}
-
-/// A row's presented surface.
-fn row(index: usize, label: &str) -> GroupDef {
-    group()
-        // Keyed by label, not by index: a reorder then reads as two rows changing places rather
-        // than as every row being replaced.
-        .key(format!("row-{label}"))
-        .direction("horizontal")
-        .width("fill")
-        .height("fill")
-        .radius(12.0)
-        .fill(ACCENT)
-        .alignment("center")
-        .gap(14.0)
-        .margin(Margin::x(4.0))
-        .children((
-            text(format!("{}", index + 1))
-                .size(13.0)
-                .weight(700)
-                .color(Color::white_alpha(0.70))
-                .margin(Margin::left(16.0)),
-            text(label.to_string())
-                .size(14.0)
-                .weight(600)
-                .color(Color::WHITE),
-            group().width("fill"),
-            text("drag me")
-                .size(12.0)
-                .color(Color::white_alpha(0.6))
-                .margin(Margin::right(16.0)),
-        ))
 }

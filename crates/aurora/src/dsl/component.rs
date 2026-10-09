@@ -73,7 +73,7 @@ macro_rules! impl_display_element {
     };
 }
 
-impl_display_element!(f32, i32, u32, bool);
+impl_display_element!(f32, i32, u32, usize, isize, bool);
 
 /// Splices any `IntoElement` child in `view! { {expr} }` position.
 pub fn view_child(expr: impl IntoElement) -> Element {
