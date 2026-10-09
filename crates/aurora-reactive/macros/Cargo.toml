@@ -1,0 +1,15 @@
+[package]
+name = "aurora-macros"
+version = "0.0.1-rc.1"
+edition = "2021"
+publish = true
+description = "Attribute macros for the Aurora UI engine"
+license = "GPL-3.0"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "2", features = ["full"] }

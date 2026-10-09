@@ -25,7 +25,7 @@ bon = "3.3"
 arboard = { version = "3", default-features = false, features = ["wayland-data-control"], optional = true }
 
 # Attribute macros (#[component])
-aurora-macros = { path = "../aurora-macros", version = "0.0.1-rc.1" }
+aurora-macros = { path = "../aurora-reactive/macros", version = "0.0.1-rc.1" }
 
 # Split crates (aurora stays the facade)
 aurora-foundation = { path = "../aurora-foundation", version = "0.0.1-rc.1" }
