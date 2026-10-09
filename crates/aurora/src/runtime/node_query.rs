@@ -57,10 +57,15 @@ impl<'a> NodeQuery<'a> {
         Some(self.scheduler.arena.get(id).effective_transform())
     }
 
-    /// The box in absolute window coordinates, projected through the transform chain.
+    /// The laid-out box in absolute window coordinates, projected through the live
+    /// transform chain but without coverage padding.
+    ///
+    /// Tight on purpose: this is what geometry handles read from the published snapshot,
+    /// so the two agree. Paint coverage (AA pad, stroke, shadow) stays in the damage and
+    /// hit paths, which call `compute_visual_bounds` directly.
     pub fn absolute_rect(&self, key: impl Into<Key>) -> Option<ResolvedRect> {
         let id = self.id(key)?;
-        Some(self.scheduler.arena.node_absolute_rect(id))
+        Some(self.scheduler.arena.node_absolute_layout_rect(id))
     }
 
     /// Resolves a window point to the topmost keyed view under it.

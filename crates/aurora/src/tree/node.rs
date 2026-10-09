@@ -243,6 +243,18 @@ impl LayoutNode {
         bounds
     }
 
+    /// Computes the laid-out box projected through `tx`, with no coverage pad.
+    ///
+    /// Same projection as [`compute_visual_bounds`](Self::compute_visual_bounds) but tight:
+    /// no AA pad, no stroke, no shadow. This is the measurement answer — it agrees with the
+    /// geometry snapshot the publish pass writes (which stores layout boxes), so a handle
+    /// and the engine report the same box once nothing is in flight. Mid-flight it still
+    /// tracks the live transform, unlike the stored box, which is layout-time.
+    pub fn compute_layout_bounds(&self, tx: &Transform) -> ResolvedRect {
+        let (w, h) = (self.resolved_rect.width, self.resolved_rect.height);
+        Self::project_aa(tx, 0.0, 0.0, w, h, 0.0)
+    }
+
     /// Computes the visual screen-space bounds projected through `tx`, with strokes,
     /// shadows and ancestor clipping folded in.
     pub fn compute_visual_bounds(

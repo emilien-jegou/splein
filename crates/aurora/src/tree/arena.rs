@@ -164,6 +164,10 @@ impl TreeArena {
                 // outlive the element it was bound to without ever reading a dead slot.
                 continue;
             }
+            // Raw layout boxes, not visual bounds: handles are a measurement path
+            // (slot tables match on exact heights, FLIP compares deltas), and padding
+            // would corrupt both. Paint coverage keeps its own pad in the damage and
+            // compile passes, which call `compute_visual_bounds` directly.
             let children: Box<[ResolvedRect]> = self
                 .children(node)
                 .iter()
@@ -266,6 +270,20 @@ impl TreeArena {
         }
         let tx = self.node_absolute_transform(id);
         self.get(id).compute_visual_bounds(&tx, None)
+    }
+
+    /// Tight layout box in absolute window coordinates, projected through the live transform
+    /// chain but without AA pad, stroke, or shadow.
+    ///
+    /// The measurement counterpart to [`node_absolute_rect`](Self::node_absolute_rect):
+    /// settled, it equals the stored layout box the snapshot publishes; in flight, it tracks
+    /// the transform. Node queries use this so handles and the engine agree.
+    pub fn node_absolute_layout_rect(&self, id: NodeId) -> ResolvedRect {
+        if !self.is_valid(id) {
+            return ResolvedRect::ZERO;
+        }
+        let tx = self.node_absolute_transform(id);
+        self.get(id).compute_layout_bounds(&tx)
     }
 }
 
