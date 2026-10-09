@@ -1,6 +1,6 @@
 // Single responsibility: Layout boundary resolution and nested boundary deduplication.
 
-use aurora_tree::{DirtyFlags, NodeId};
+use crate::tree::{DirtyFlags, NodeId};
 use crate::tree::{TreeArena};
 use smallvec::SmallVec;
 

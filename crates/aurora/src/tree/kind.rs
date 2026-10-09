@@ -1,8 +1,8 @@
 // Single responsibility: Node kind taxonomy and primitive trait contract.
 
 use aurora_foundation::{Constraints, Direction, IntrinsicSize, ResolvedRect};
-use aurora_scene::context::PaintContext;
-use aurora_text::TextConfig;
+use crate::scene::context::PaintContext;
+use crate::text::TextConfig;
 
 /// Trait implemented by user-defined custom layout primitives.
 pub trait Primitive {

@@ -7,13 +7,27 @@
 
 use std::sync::Arc;
 
-use aurora_foundation::{Appearance, Constraints, Direction, Fill, IntrinsicSize, Point, Size};
-use aurora_scene::{SceneChunk, SceneCommand};
+use aurora_foundation::{
+    Appearance, Color, Constraints, Direction, Fill, IntrinsicSize, Point, ResolvedRect, Size,
+};
 use crate::config::TextConfig;
 use crate::decoration::decoration_rules;
 use crate::layout::TextLayout;
 use crate::selection::{caret_rect, selection_rects, TextSelection};
 use crate::TextContext;
+
+/// Display list sink for text paint, without depending on the scene crate.
+///
+/// The scene lives in the facade and owns the command stream; typography must not
+/// import it back (that would be a crate cycle). The facade implements this for its
+/// chunk type, so emission stays here next to shaping while command construction
+/// stays there next to rasterization.
+pub trait PaintSink {
+    /// Appends a rectangle fill or stroke command.
+    fn draw_rect(&mut self, rect: ResolvedRect, appearance: Appearance);
+    /// Appends a shaped typography run command.
+    fn draw_text(&mut self, origin: Point, layout: &Arc<TextLayout>, color: Color);
+}
 
 impl TextConfig {
     /// Inline width text wraps against, from the node's width intent and offered space.
@@ -122,7 +136,7 @@ impl TextConfig {
     pub fn emit(
         &self,
         layout: &Arc<TextLayout>,
-        chunk: &mut SceneChunk,
+        sink: &mut dyn PaintSink,
         selection: Option<TextSelection>,
         focused: bool,
     ) {
@@ -138,15 +152,14 @@ impl TextConfig {
                     "painting highlight"
                 );
                 for rect in rects {
-                    chunk.push(SceneCommand::DrawRect {
+                    sink.draw_rect(
                         rect,
-                        appearance: Appearance::EMPTY
-                            .with_fill(Fill::Solid(self.selection_color)),
-                    });
+                        Appearance::EMPTY.with_fill(Fill::Solid(self.selection_color)),
+                    );
                 }
             }
         }
-        let decorations: Vec<aurora_foundation::ResolvedRect> = if self.decoration.is_empty() {
+        let decorations: Vec<ResolvedRect> = if self.decoration.is_empty() {
             Vec::new()
         } else {
             layout
@@ -155,20 +168,12 @@ impl TextConfig {
                 .flat_map(|line| decoration_rules(line, self.size, self.decoration))
                 .collect()
         };
-        // Struct fields are not coercion sites (and inference unifies backwards
-        // through Arc::clone): clone concretely, then coerce via annotation.
-        let owned: Arc<TextLayout> = Arc::clone(layout);
-        let layout_view: Arc<dyn aurora_scene::TextLayoutView> = owned;
-        chunk.push(SceneCommand::DrawText {
-            origin: Point::ZERO,
-            layout: layout_view,
-            color: self.color,
-        });
+        sink.draw_text(Point::ZERO, layout, self.color);
         for rect in decorations {
-            chunk.push(SceneCommand::DrawRect {
+            sink.draw_rect(
                 rect,
-                appearance: Appearance::EMPTY.with_fill(Fill::Solid(self.color)),
-            });
+                Appearance::EMPTY.with_fill(Fill::Solid(self.color)),
+            );
         }
         // A focused caret paints last, over the glyphs. Unfocused collapsed
         // selections stay invisible, like a blurred browser field.
@@ -178,11 +183,10 @@ impl TextConfig {
                     match caret_rect(layout, &self.content, sel.focus) {
                         Some(rect) => {
                             tracing::debug!(offset = sel.focus, "painting caret");
-                            chunk.push(SceneCommand::DrawRect {
+                            sink.draw_rect(
                                 rect,
-                                appearance: Appearance::EMPTY
-                                    .with_fill(Fill::Solid(self.color)),
-                            });
+                                Appearance::EMPTY.with_fill(Fill::Solid(self.color)),
+                            );
                         }
                         None => {
                             tracing::debug!(

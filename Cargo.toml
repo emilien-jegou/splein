@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/splein", "crates/aurora", "crates/aurora-macros", "crates/aurora-tiny-skia", "crates/aurora-vello", "crates/aurora-wayland", "crates/aurora/benches/bench_suite", "crates/aurora-foundation", "crates/aurora-reactive", "crates/aurora-anim-core", "crates/aurora-anim", "crates/aurora-text", "crates/aurora-tree", "crates/aurora-scene", "crates/aurora-layout", "crates/aurora-input", "crates/aurora-pipeline", "crates/aurora-dsl", "crates/aurora-render", "crates/aurora-runtime", "crates/aurora-app"]
+members = ["crates/splein", "crates/aurora", "crates/aurora-macros", "crates/aurora-tiny-skia", "crates/aurora-vello", "crates/aurora-wayland", "crates/aurora/benches/bench_suite", "crates/aurora-foundation", "crates/aurora-reactive", "crates/aurora-text", "crates/aurora-layout", "crates/aurora-input", "crates/aurora-pipeline", "crates/aurora-dsl", "crates/aurora-render", "crates/aurora-runtime", "crates/aurora-app"]
 
 [workspace.dependencies]
 smithay-client-toolkit = { version = "0.19", default-features = false }

@@ -28,6 +28,7 @@ pub use fonts::{FontData, FontId, FontStyle, FontVariation};
 pub use glyph_cache::{GlyphBitmapCache, GlyphCacheBudget, GlyphCacheStats};
 pub use glyph::{GlyphKey, ShapedGlyph, ShapedLine};
 pub use layout::TextLayout;
+pub use leaf::PaintSink;
 pub use overflow::TextOverflow;
 pub use selection::{
     caret_at_point, caret_line_col, caret_rect, expand_selection, grapheme_boundaries,

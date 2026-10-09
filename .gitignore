@@ -51,16 +51,8 @@
 !crates/aurora-foundation/**/*
 !crates/aurora-reactive/
 !crates/aurora-reactive/**/*
-!crates/aurora-anim-core/
-!crates/aurora-anim-core/**/*
-!crates/aurora-anim/
-!crates/aurora-anim/**/*
 !crates/aurora-text/
 !crates/aurora-text/**/*
-!crates/aurora-tree/
-!crates/aurora-tree/**/*
-!crates/aurora-scene/
-!crates/aurora-scene/**/*
 !crates/aurora-layout/
 !crates/aurora-layout/**/*
 !crates/aurora-input/

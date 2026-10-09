@@ -2,7 +2,7 @@
 
 use aurora_foundation::{Key, Point, ResolvedRect, Transform};
 use crate::runtime::FrameScheduler;
-use aurora_tree::{NodeId};
+use crate::tree::{NodeId};
 use crate::tree::{TreeArena};
 
 /// Read-only node queries addressed by key.

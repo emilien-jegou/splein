@@ -12,7 +12,7 @@ use aurora_text::selection::{
     caret_line_col, line_byte_ranges, move_grapheme, offset_at_visual_line, snap_to_boundary,
     word_edge, TextSelection,
 };
-use aurora_tree::{NodeId, NodeKind};
+use crate::tree::{NodeId, NodeKind};
 use crate::tree::{TreeArena};
 
 /// Resolved pointer state for a frame, after dispatch.

@@ -4,7 +4,7 @@ use crate::dsl::custom::{custom, CustomDef};
 use aurora_foundation::{Constraints, IntrinsicSize, ResolvedRect};
 use crate::scene::context::PaintContext;
 use crate::scene::image::ImageSource;
-use aurora_tree::Primitive;
+use crate::tree::Primitive;
 
 struct ImagePrimitive {
     image: ImageSource,

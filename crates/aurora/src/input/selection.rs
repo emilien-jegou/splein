@@ -6,7 +6,7 @@ use aurora_text::selection::{
     caret_at_point, expand_selection, snap_to_boundary, word_bounds, SelectionGranularity,
     TextSelection,
 };
-use aurora_tree::{DirtyFlags, NodeId, NodeKind};
+use crate::tree::{DirtyFlags, NodeId, NodeKind};
 use super::router::PointerRouter;
 use crate::input::event::PointerEvent;
 use crate::tree::TreeArena;

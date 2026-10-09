@@ -2,7 +2,7 @@
 
 use aurora_foundation::{Point, ResolvedRect, Transform};
 use crate::scene::chunk::InheritedClip;
-use aurora_tree::{NodeId};
+use crate::tree::{NodeId};
 use crate::tree::{TreeArena};
 use smallvec::SmallVec;
 

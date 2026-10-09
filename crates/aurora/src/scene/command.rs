@@ -4,20 +4,11 @@ use aurora_foundation::{
     Appearance, BlendMode, Color, Fill, LightEnvironment, Point, Radius, ResolvedRect, Shadow,
     ShadowOffset, ShadowShape, StrokeAlign, Transform,
 };
-use crate::image::ImageSource;
-use crate::vector::VectorGraphic;
-use std::any::Any;
+use crate::scene::image::ImageSource;
+use crate::scene::vector::VectorGraphic;
+use crate::text::layout::TextLayout;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
-
-/// Backend-agnostic view of a shaped text layout, for display list commands.
-///
-/// The scene owns the command stream but must not own typography: the concrete
-/// shaped layout lives in `aurora-text`, which implements this trait. Backends
-/// downcast to the concrete type (they already depend on the text crate for
-/// shaping contexts). Marker-only today — hashing stays allocation-identity —
-/// so new text backends only need the trait, not the layout type.
-pub trait TextLayoutView: Any + std::fmt::Debug + Send + Sync {}
 
 /// Stable identifier for cached layer-backed display list subtrees.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -72,7 +63,7 @@ pub enum SceneCommand {
     },
     DrawText {
         origin: Point,
-        layout: Arc<dyn TextLayoutView>,
+        layout: Arc<TextLayout>,
         color: Color,
     },
 }
@@ -172,9 +163,7 @@ pub fn hash_commands(commands: &[SceneCommand]) -> u64 {
             } => {
                 14u8.hash(&mut h);
                 point_bits(origin).hash(&mut h);
-                // Allocation identity, as before: the pointer is fat now, so hash
-                // the data address half.
-                (Arc::as_ptr(layout) as *const () as usize).hash(&mut h);
+                (Arc::as_ptr(layout) as usize).hash(&mut h);
                 color_bits(color).hash(&mut h);
             }
         }

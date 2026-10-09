@@ -6,7 +6,7 @@ use std::rc::Rc;
 use aurora_foundation::snapshot::GeometrySnapshot;
 use aurora_foundation::{Point, ResolvedRect};
 use aurora_reactive::ReactiveRuntime;
-use aurora_tree::NodeId;
+use crate::tree::NodeId;
 
 /// A handle to an element in the tree, created before that element exists.
 ///

@@ -1,7 +1,7 @@
 // Single responsibility: Collection of discrete, retained display list chunks.
 
-use crate::chunk::SceneChunk;
-use crate::command::SceneCommand;
+use crate::scene::chunk::SceneChunk;
+use crate::scene::command::SceneCommand;
 use std::ops::Deref;
 
 /// Display list composed of discrete, bounded drawing chunks.

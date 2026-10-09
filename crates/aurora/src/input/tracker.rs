@@ -2,7 +2,7 @@
 
 use aurora_foundation::Point;
 use crate::input::event::{DragInfo, PointerButton, PointerEvent, PointerPhase};
-use aurora_tree::NodeId;
+use crate::tree::NodeId;
 
 /// Pointer travel, in logical pixels, before a press becomes a drag rather than a click.
 pub const DRAG_THRESHOLD: f32 = 4.0;

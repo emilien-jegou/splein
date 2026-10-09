@@ -2,7 +2,7 @@
 
 use aurora_foundation::{Point, ResolvedRect, Transform};
 use crate::tree::node::PaintLayer;
-use aurora_tree::{NodeId};
+use crate::tree::{NodeId};
 use crate::tree::{TreeArena};
 
 pub use aurora_foundation::HitTest;

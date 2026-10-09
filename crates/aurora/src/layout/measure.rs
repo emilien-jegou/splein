@@ -3,7 +3,7 @@
 use aurora_foundation::{Constraints, DesiredSize, IntrinsicSize, LayoutPresence, Size};
 use crate::layout::group_measure::measure_group_intrinsic;
 use aurora_text::TextContext;
-use aurora_tree::{NodeId, NodeKind};
+use crate::tree::{NodeId, NodeKind};
 use crate::tree::{TreeArena};
 
 /// Derives resolved pixel size from sizing intent, intrinsic size, and parent bound.

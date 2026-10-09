@@ -1,6 +1,6 @@
 // Single responsibility: Convenient top-level re-exports for declarative application authoring.
 
-pub use aurora_anim_core::{Ease, Millis, Spring, Tween};
+pub use aurora_reactive::{Ease, Millis, Spring, Tween};
 pub use crate::anim::{ControllerHandle, PlayState, Repeat, Transition};
 pub use crate::app::{App, AppConfig, AppExtension, FpsLimit, OverlayCaps, OverlayPainter};
 // `component` is the #[component] attribute macro re-exported below, so the hand-written
@@ -32,6 +32,6 @@ pub use aurora_text::{
     FontStyle, LineHeight, SelectionGranularity, TextAlign, TextDecoration, TextOverflow,
     TextSelection,
 };
-pub use aurora_tree::Primitive;
+pub use crate::tree::Primitive;
 /// Attribute macro marking a function as a component that runs inside the hook scope.
 pub use aurora_macros::component;

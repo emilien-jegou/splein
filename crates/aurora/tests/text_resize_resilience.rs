@@ -26,7 +26,7 @@ fn first_run_lines(engine: &Engine) -> Option<usize> {
         .iter()
         .flat_map(|chunk| chunk.commands.iter())
         .find_map(|cmd| match cmd {
-            SceneCommand::DrawText { layout, .. } => Some(aurora::text::TextLayout::view_ref(layout).lines.len()),
+            SceneCommand::DrawText { layout, .. } => Some(layout.lines.len()),
             _ => None,
         })
 }

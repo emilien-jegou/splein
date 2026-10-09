@@ -4,13 +4,13 @@ use smallvec::SmallVec;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use aurora_anim_core::clock::Clock;
+use aurora_reactive::clock::Clock;
 use aurora_foundation::{Constraints, Key, Point};
 use crate::layout::{layout_node_with_text, LayoutResult};
 use aurora_reactive::{Observer, ReactiveRuntime, SubscriberId};
 use crate::runtime::boundary::{collect_layout_boundaries, prune_nested_boundaries};
 use aurora_text::TextContext;
-use aurora_tree::{DirtyFlags, NodeId, NodeKind, SubscriberRouter};
+use crate::tree::{DirtyFlags, NodeId, NodeKind, SubscriberRouter};
 use crate::tree::{TreeArena};
 
 /// Execution summary of reactive updates and layout recalculations.

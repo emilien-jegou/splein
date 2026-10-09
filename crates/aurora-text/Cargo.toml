@@ -8,7 +8,6 @@ license = "GPL-3.0"
 
 [dependencies]
 aurora-foundation = { path = "../aurora-foundation", version = "0.0.1-rc.1" }
-aurora-scene = { path = "../aurora-scene", version = "0.0.1-rc.1" }
 parley = { version = "0.11", default-features = false, features = ["std"] }
 swash = { version = "0.2" }
 unicode-segmentation = "1.12"

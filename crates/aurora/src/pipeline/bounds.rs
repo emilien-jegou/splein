@@ -1,7 +1,7 @@
 // Single responsibility: Commits each node's compiled screen-space visual bounds back into the arena.
 
 use aurora_foundation::{Point, ResolvedRect, Transform};
-use aurora_tree::{NodeId};
+use crate::tree::{NodeId};
 use crate::tree::{TreeArena};
 
 /// Commits the visual screen-space bounds of every node to the arena.
