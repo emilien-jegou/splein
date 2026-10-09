@@ -147,16 +147,34 @@ fn resolve_spatial_and_damage(
 
     if let Some(old) = old_bounds {
         // Either the box moved or the interior re-flowed: both vacate pixels.
+        //
+        // Clipped to the active clip: paint outside it never happened (compile culls
+        // there), so there is nothing to clear beyond it — including for a node that
+        // moved, whose old painted pixels were inside the clip it was painted under.
         if old != full_bounds || old_flow != Some(flow_bounds) {
-            damage.push(old);
-            damage.push(full_bounds);
+            match active_clip {
+                Some(clip) => {
+                    damage.push(old.intersect(&clip));
+                    damage.push(full_bounds.intersect(&clip));
+                }
+                None => {
+                    damage.push(old);
+                    damage.push(full_bounds);
+                }
+            }
         } else if node.state.core.dirty.contains(DirtyFlags::PAINT) || is_text_mutation {
             let damage_target = if child_count > 0 {
                 subtree_bounds
             } else {
                 full_bounds
             };
-            damage.push(damage_target);
+            // New paint never escapes the active clip (compile culls it there), so
+            // clip it: a text caret blinking at a clipped edge must not damage
+            // outside the clip.
+            match active_clip {
+                Some(clip) => damage.push(damage_target.intersect(&clip)),
+                None => damage.push(damage_target),
+            }
         }
     } else {
         damage.push(full_bounds);
