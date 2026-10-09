@@ -198,27 +198,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "aurora-app"
-version = "0.0.1-rc.1"
-
-[[package]]
-name = "aurora-dsl"
-version = "0.0.1-rc.1"
-
-[[package]]
 name = "aurora-foundation"
 version = "0.0.1-rc.1"
 dependencies = [
  "smallvec",
 ]
-
-[[package]]
-name = "aurora-input"
-version = "0.0.1-rc.1"
-
-[[package]]
-name = "aurora-layout"
-version = "0.0.1-rc.1"
 
 [[package]]
 name = "aurora-macros"
@@ -230,10 +214,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "aurora-pipeline"
-version = "0.0.1-rc.1"
-
-[[package]]
 name = "aurora-reactive"
 version = "0.0.1-rc.1"
 dependencies = [
@@ -242,14 +222,6 @@ dependencies = [
  "rustc-hash 2.1.3",
  "smallvec",
 ]
-
-[[package]]
-name = "aurora-render"
-version = "0.0.1-rc.1"
-
-[[package]]
-name = "aurora-runtime"
-version = "0.0.1-rc.1"
 
 [[package]]
 name = "aurora-text"

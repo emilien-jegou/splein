@@ -1,9 +1,0 @@
-[package]
-name = "aurora-app"
-version = "0.0.1-rc.1"
-edition = "2021"
-publish = true
-description = "Aurora UI engine: aurora-app (split from aurora facade)"
-license = "GPL-3.0"
-
-[dependencies]

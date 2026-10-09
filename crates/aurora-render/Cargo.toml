@@ -1,9 +1,0 @@
-[package]
-name = "aurora-render"
-version = "0.0.1-rc.1"
-edition = "2021"
-publish = true
-description = "Aurora UI engine: aurora-render (split from aurora facade)"
-license = "GPL-3.0"
-
-[dependencies]
