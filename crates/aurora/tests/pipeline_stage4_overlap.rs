@@ -125,11 +125,15 @@ fn test_4_6_equal_z_index_resolved_by_tree_order() {
     engine.mount(
         group().width(200.0).height(200.0).children([
             group()
+                .absolute()
+                .anchor(Anchor::TopLeft)
                 .width(100.0)
                 .height(100.0)
                 .fill(Color::RED)
                 .z_index(10),
             group()
+                .absolute()
+                .anchor(Anchor::TopLeft)
                 .width(100.0)
                 .height(100.0)
                 .fill(Color::BLUE)

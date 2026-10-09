@@ -120,10 +120,12 @@ pub fn build_stacking_tree(
         }
     }
 
+    // Stable: equal z-index resolves by tree order (later sibling paints above),
+    // and only a stable sort preserves the insertion order the walk produced.
     current_ctx
         .negative_z
-        .sort_unstable_by_key(|ctx| ctx.z_index);
+        .sort_by_key(|ctx| ctx.z_index);
     current_ctx
         .positive_z
-        .sort_unstable_by_key(|ctx| ctx.z_index);
+        .sort_by_key(|ctx| ctx.z_index);
 }
