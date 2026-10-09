@@ -7,8 +7,8 @@ pub use crate::app::{App, AppConfig, AppExtension, FpsLimit, OverlayCaps, Overla
 // `component` is the #[component] attribute macro re-exported below, so the hand-written
 // `dsl::component` function is deliberately left out of the prelude: one name cannot be both.
 pub use crate::dsl::{
-    custom, group, image, svg, text, view_child, Behavior, Component, CustomDef, Element, GroupDef,
-    IntoElement, TextDef,
+    custom, group, image, svg, text, view_child, Behavior, ChildSegment, Component, CustomDef,
+    Element, GroupDef, IntoElement, Provider, TextDef,
 };
 pub use crate::foundation::{
     Alignment, Anchor, BlendMode, Color, Direction, Distribution, FalloffCurve, Fill, Gap,
@@ -18,8 +18,8 @@ pub use crate::foundation::{
 pub use crate::input::{ClickInfo, CursorIcon, DragInfo, HitTest, HoverInfo, KeyCode, KeyEvent, PointerButton, PointerEvent, PointerPhase, Propagation};
 pub use crate::reactive::{
     ambient_guard, batch, computed, use_frame_clock, use_interval, use_interval_toggle,
-    use_playback, use_signal, use_signal_keyed, use_timeout, AmbientGuard, Cx, Derived, Effect,
-    IntoPropValue, Prop, PropDefault, Signal, SignalRead,
+    use_playback, use_signal, use_signal_keyed, use_timeout, AmbientGuard, Context, Ctx, Cx,
+    Derived, Effect, IntoPropValue, Prop, PropDefault, Provided, Signal, SignalRead,
 };
 /// Call-site-keyed signal hook: `use_signal!("name", init)` (explicit, move-proof keys).
 pub use crate::use_signal;

@@ -24,6 +24,9 @@ pub fn reconcile_text(
     let id = existing.unwrap_or_else(|| arena.insert(LayoutNode::default()));
     clean_orphaned_children(runtime, arena, router, id);
 
+    // See reconcile_group: evaluation node for context reads in `content`.
+    let _eval_node = crate::reactive::context::enter_node(id, arena);
+
     let is_dynamic = def.content.is_dynamic();
     let m_sub = is_dynamic.then(|| router.measure_sub(id, &mut runtime.borrow_mut()));
 
@@ -89,6 +92,10 @@ pub fn reconcile_custom(
 ) -> NodeId {
     let id = existing.unwrap_or_else(|| arena.insert(LayoutNode::default()));
     clean_orphaned_children(runtime, arena, router, id);
+    // Custom primitives take no dynamic props, but the guard keeps nesting
+    // uniform: a custom node under evaluation still anchors context reads in
+    // any nested evaluation the reconciler performs for it.
+    let _eval_node = crate::reactive::context::enter_node(id, arena);
     arena.get_mut(id).state.core.bindings = NodeBindings::default();
 
     let effective_z = if def.z_index != 0 {

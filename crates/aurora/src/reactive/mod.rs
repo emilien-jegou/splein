@@ -76,6 +76,7 @@
 
 pub mod batch;
 pub mod ambient;
+pub mod context;
 pub mod derived;
 pub mod effect;
 pub mod hooks;
@@ -89,6 +90,7 @@ pub mod ticker;
 
 pub use ambient::{guard as ambient_guard, AmbientGuard};
 pub use batch::batch;
+pub use context::{Context, Ctx, Provided};
 pub use derived::Derived;
 pub use effect::Effect;
 pub use hooks::{

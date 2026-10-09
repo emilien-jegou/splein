@@ -96,6 +96,12 @@ pub fn text<P: IntoProp<String>>(content: P) -> TextDef {
 }
 
 impl TextDef {
+    /// Whether the content reads context (a `DynamicProp::Context`).
+    /// Reconcile uses it to place missing-provider guards.
+    pub fn has_context_reads(&self) -> bool {
+        matches!(self.content, crate::reactive::prop::DynamicProp::Context(_))
+    }
+
     /// Sets an explicit reconciliation diffing key.
     pub fn key<K: Into<Key>>(mut self, k: K) -> Self {
         self.key = Some(k.into());

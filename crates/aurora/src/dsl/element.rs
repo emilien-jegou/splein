@@ -24,6 +24,17 @@ impl Element {
             Self::Custom(c) => c.key.clone(),
         }
     }
+
+    /// Whether reconciling this element may read context (and therefore miss
+    /// a provider). Reconcile wraps such children so a missing provider
+    /// mounts a placeholder plus a console error instead of aborting the walk.
+    pub fn has_context_reads(&self) -> bool {
+        match self {
+            Self::Group(g) => g.has_context_reads(),
+            Self::Text(t) => t.has_context_reads(),
+            Self::Custom(_) => false,
+        }
+    }
 }
 
 impl From<GroupDef> for Element {

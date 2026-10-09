@@ -454,6 +454,21 @@ impl ReactiveRuntime {
         self.observer_stack.pop()
     }
 
+    /// Depth of the observer stack, for panic recovery.
+    ///
+    /// Observer push/pop pairs are manual, so a panic between them (e.g. a
+    /// missing-provider read during evaluation) leaves a stale entry that
+    /// would misattribute every later read. Catch sites record the depth
+    /// before risky evaluation and truncate back on unwind.
+    pub fn observer_depth(&self) -> usize {
+        self.observer_stack.len()
+    }
+
+    /// Drops observer entries pushed after `depth`. See [`Self::observer_depth`].
+    pub fn truncate_observer_stack(&mut self, depth: usize) {
+        self.observer_stack.truncate(depth);
+    }
+
     pub fn track_read(&mut self, id: SignalId) {
         if let Some(&current) = self.observer_stack.last() {
             self.subscribers.entry(id).or_default().insert(current);

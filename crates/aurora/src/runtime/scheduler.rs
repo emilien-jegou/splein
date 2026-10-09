@@ -176,6 +176,9 @@ impl FrameScheduler {
         sub: SubscriberId,
     ) -> Option<DirtyFlags> {
         let bindings = self.arena.get(node).state.core.bindings.clone();
+        // Evaluation node for context reads below: retained resolving closures
+        // (scheduler-side bindings) resolve against this node's ancestors.
+        let _eval_node = crate::reactive::context::enter_node(node, &self.arena);
         let mut effective = DirtyFlags::NONE;
         let mut pending_children: Option<(Vec<crate::dsl::element::Element>, Vec<Option<Key>>)> =
             None;

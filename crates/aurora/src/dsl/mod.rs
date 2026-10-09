@@ -77,7 +77,7 @@
 //! - `custom()` primitives bypass layout caching — measure honestly in `Primitive::measure`
 //!   or every ancestor pays for it.
 
-pub use component::{component, component_scope, component_scope_named, panic_message, view_child, Component, IntoElement};
+pub use component::{component, component_scope, component_scope_named, panic_message, view_child, Component, IntoElement, Provider};
 pub use custom::{custom, CustomDef};
 pub use diff::ChildOp;
 pub use element::Element;

@@ -26,6 +26,11 @@ pub fn reconcile_group(
 ) -> NodeId {
     let id = existing.unwrap_or_else(|| arena.insert(LayoutNode::default()));
 
+    // Evaluation node for context reads below: every DynamicProp::Context in
+    // this declaration resolves against the retained ancestors of THIS node.
+    // Restored on drop (regions nest: scheduler rebuilds reconcile children).
+    let _eval_node = crate::reactive::context::enter_node(id, arena);
+
     // A reactive child segment needs a measure subscriber of its own. Without one a node whose only
     // reactive input is dynamic children would allocate nothing to track against, read its list
     // once at mount, and never hear about a reorder.
@@ -136,6 +141,18 @@ pub fn reconcile_group(
     node.style.appearance.shadow = props.shadow.clone();
     node.style.appearance.light_override = def.light_override;
     node.style.appearance.radius = def.radius;
+
+    // Provided context values live on the retained node (cleared when the
+    // declaration carries none, so conditional providers vanish cleanly) and
+    // on the descent stack for the children reconcile below: freshly mounted
+    // links don't exist in the tree yet, but the lexical chain is live.
+    // Reads walk ancestors for the nearest entry; see `reactive::context`.
+    if def.provided.is_empty() {
+        arena.get_mut(id).state.core.provided = None;
+    } else {
+        arena.get_mut(id).state.core.provided = Some(def.provided.clone());
+    }
+    let _descent = crate::reactive::context::enter_descent(&def.provided);
 
     // Children merge in declaration order: static segments splice in place,
     // dynamic segments build now, inside the measure observer, so a builder
@@ -249,7 +266,9 @@ impl ResolvedProps {
 
         let shadow = match &def.shadow {
             Some(DynamicProp::Static(s)) => Some(s.clone()),
-            Some(DynamicProp::Dynamic(_)) => evaluate_prop(&def.shadow, p_sub, runtime),
+            Some(DynamicProp::Dynamic(_)) | Some(DynamicProp::Context(_)) => {
+                evaluate_prop(&def.shadow, p_sub, runtime)
+            }
             None => None,
         };
 

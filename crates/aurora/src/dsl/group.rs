@@ -48,6 +48,13 @@ pub struct GroupDef {
     pub handlers: HandlerSet,
     /// Hit-test participation for this node (and, for passthrough, its subtree).
     pub hit_test: HitTest,
+    /// Context values provided to this node's subtree.
+    ///
+    /// Empty by default; the `Provider` component sets it. Reconcile stores
+    /// the pairs on the retained node (clearing them when emptied, so
+    /// conditional providers vanish cleanly), and context reads walk
+    /// ancestors for the nearest entry.
+    pub provided: Vec<(crate::reactive::context::CtxId, crate::reactive::context::ProviderValue)>,
     /// Ordered child sources: static elements and reactive builders interleaved.
     ///
     /// Control-flow nodes (`<for>`, `<if>`, `<match>`) contribute `Dynamic`
@@ -98,6 +105,7 @@ pub fn group() -> GroupDef {
         element_ref: None,
         handlers: HandlerSet::default(),
         hit_test: HitTest::Auto,
+        provided: Vec::new(),
         child_segments: Vec::new(),
     }
 }
@@ -121,6 +129,8 @@ impl GroupDef {
         self.fill = Some(match prop {
             DynamicProp::Static(v) => DynamicProp::Static(Some(v)),
             DynamicProp::Dynamic(f) => DynamicProp::Dynamic(std::rc::Rc::new(move || Some(f()))),
+            // Markers compose through `.map`, like any other staged transform.
+            DynamicProp::Context(m) => DynamicProp::Context(m.map(Some)),
         });
         self
     }
@@ -262,6 +272,39 @@ impl GroupDef {
         self.child_segments
             .push(ChildSegment::Static(c.into_child_list()));
         self
+    }
+
+    /// Provides a context value to this node's subtree (see
+    /// `reactive::context`). Returns the builder for chaining; repeat calls
+    /// accumulate, nearest entry winning per context at lookup.
+    pub fn provided(
+        mut self,
+        grant: crate::reactive::context::Provided,
+    ) -> Self {
+        self.provided.push((grant.id(), grant.reader()));
+        self
+    }
+
+    /// Whether any property reads context (a `DynamicProp::Context` anywhere
+    /// in the declaration). Reconcile uses it to place missing-provider
+    /// guards; evaluation uses it to... nothing — reads resolve uniformly.
+    pub fn has_context_reads(&self) -> bool {
+        use crate::reactive::prop::DynamicProp;
+        fn is_ctx<T>(p: &Option<DynamicProp<T>>) -> bool {
+            matches!(p, Some(DynamicProp::Context(_)))
+        }
+        is_ctx(&self.width)
+            || is_ctx(&self.height)
+            || is_ctx(&self.fill)
+            || is_ctx(&self.opacity)
+            || is_ctx(&self.transform)
+            || is_ctx(&self.x)
+            || is_ctx(&self.y)
+            || is_ctx(&self.scale)
+            || is_ctx(&self.rotate_degrees)
+            || is_ctx(&self.shadow)
+            || is_ctx(&self.z_index)
+            || is_ctx(&self.presence)
     }
 
     /// Appends pre-built child segments (static elements and reactive builders
@@ -569,6 +612,13 @@ impl GroupDef {
                     }
                 }))
             }
+            DynamicProp::Context(m) => DynamicProp::Context(m.map(|on| {
+                if on {
+                    LayoutPresence::Present
+                } else {
+                    LayoutPresence::Absent
+                }
+            })),
         });
         self
     }

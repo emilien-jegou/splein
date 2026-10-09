@@ -41,14 +41,14 @@ pub fn reconcile_children(
             ChildOp::Reuse { old, new_idx } => {
                 let elem = elements[new_idx].take().expect("Child already consumed");
                 let key = new_keys[new_idx].take();
-                let child_id = reconcile(runtime, arena, router, Some(old), elem);
+                let child_id = reconcile_guarded(runtime, arena, router, Some(old), elem);
                 arena.bind_key(key, child_id);
                 resolved[new_idx] = Some(child_id);
             }
             ChildOp::Create { new_idx } => {
                 let elem = elements[new_idx].take().expect("Child already consumed");
                 let key = new_keys[new_idx].take();
-                let child_id = reconcile(runtime, arena, router, None, elem);
+                let child_id = reconcile_guarded(runtime, arena, router, None, elem);
                 arena.bind_key(key, child_id);
                 resolved[new_idx] = Some(child_id);
             }
@@ -63,4 +63,43 @@ pub fn reconcile_children(
         .map(|slot| slot.expect("diff must cover every new child index"))
         .collect();
     arena.set_children(parent, resolved);
+}
+
+/// Reconciles one child, guarding context reads: a missing provider panics
+/// during evaluation, and without this guard one unprovided consumer would
+/// abort the whole walk. Flagged children (see
+/// [`Element::has_context_reads`]) mount an empty group plus a console error
+/// instead — the same contract as a panicking component body. The observer
+/// stack is truncated back on unwind (manual push/pop pairs don't unwind).
+fn reconcile_guarded(
+    runtime: &Rc<RefCell<ReactiveRuntime>>,
+    arena: &mut TreeArena,
+    router: &mut SubscriberRouter,
+    existing: Option<NodeId>,
+    elem: Element,
+) -> NodeId {
+    if !elem.has_context_reads() {
+        return reconcile(runtime, arena, router, existing, elem);
+    }
+    let depth = runtime.borrow().observer_depth();
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        reconcile(runtime, arena, router, existing, elem)
+    }));
+    match result {
+        Ok(id) => id,
+        Err(payload) => {
+            runtime.borrow_mut().truncate_observer_stack(depth);
+            tracing::error!(
+                "aurora: child reconcile failed ({}); mounting empty placeholder",
+                crate::dsl::component::panic_message(&payload)
+            );
+            reconcile(
+                runtime,
+                arena,
+                router,
+                existing,
+                crate::dsl::element::Element::Group(crate::dsl::group()),
+            )
+        }
+    }
 }

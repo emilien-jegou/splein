@@ -1,5 +1,7 @@
 // Single responsibility: Component contracts, element conversion, and the ambient hook scope.
 
+use aurora_macros::component;
+
 use crate::dsl::element::Element;
 use crate::reactive::Cx;
 
@@ -90,6 +92,29 @@ impl<C: Component> IntoElement for ComponentElement<C> {
 
 pub fn component<C: Component>(comp: C) -> Element {
     comp.render()
+}
+
+/// Establishes a context value for its subtree (see `reactive::context`).
+///
+/// The grant pairs handle and signal with statically enforced types, so a
+/// `Signal<Theme>` can never be provided under a `Context<Border>`. Children
+/// forward flat through a passthrough group — no wrapper node of its own.
+///
+/// ```ignore
+/// view! {
+///     <Provider grant={Theme.provide(theme_sig)}>
+///         <Card />
+///     </Provider>
+/// }
+/// ```
+#[component]
+pub fn Provider(
+    grant: crate::reactive::context::Provided,
+    children: Vec<Element>,
+) -> impl IntoElement {
+    crate::dsl::group()
+        .provided(grant)
+        .children(children)
 }
 
 /// Runs a component body inside the ambient hook scope, converting the result to an element.

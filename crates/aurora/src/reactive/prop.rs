@@ -1,5 +1,6 @@
 // Single responsibility: Generic dynamic property abstraction supporting values, signals, and computations.
 
+use crate::reactive::context::Ctx;
 use crate::reactive::derived::Derived;
 use crate::reactive::signal::Signal;
 use std::rc::Rc;
@@ -9,28 +10,45 @@ use std::rc::Rc;
 pub enum DynamicProp<T> {
     Static(T),
     Dynamic(Rc<dyn Fn() -> T>),
+    /// A lazily-resolved context read (see `reactive::context`). Resolves
+    /// against the retained ancestor chain during node evaluation — never
+    /// eagerly, because component bodies have no node yet.
+    Context(Ctx<T>),
 }
 
 impl<T: Clone + 'static> DynamicProp<T> {
     /// Evaluates the property value.
+    ///
+    /// A `Context` read resolves through the ambient evaluation node (set by
+    /// reconcile, scheduler rebuilds, and handler dispatch); outside node
+    /// evaluation it panics loudly rather than returning a stale guess.
     pub fn evaluate(&self) -> T {
         match self {
             DynamicProp::Static(val) => val.clone(),
             DynamicProp::Dynamic(f) => f(),
+            DynamicProp::Context(m) => m.resolve(),
         }
     }
 
     /// Whether this property encapsulates a reactive computation closure.
+    ///
+    /// Context reads count as dynamic: they subscribe (via the provider
+    /// signal read under the observer) and must schedule like any binding.
     #[inline(always)]
     pub fn is_dynamic(&self) -> bool {
-        matches!(self, DynamicProp::Dynamic(_))
+        matches!(self, DynamicProp::Dynamic(_) | DynamicProp::Context(_))
     }
 
     /// Extracts a clone of the dynamic closure handle, if dynamic.
+    ///
+    /// Context markers resolve through a fresh closure capturing the marker:
+    /// re-resolution on every call is what keeps scheduler rebuilds tracking
+    /// provider updates.
     #[inline(always)]
     pub fn dynamic_closure(&self) -> Option<Rc<dyn Fn() -> T>> {
         match self {
             DynamicProp::Dynamic(f) => Some(Rc::clone(f)),
+            DynamicProp::Context(m) => Some(m.resolving_closure()),
             DynamicProp::Static(_) => None,
         }
     }
@@ -112,6 +130,12 @@ impl<T: Clone + 'static> IntoPropValue<T> for Signal<T> {
 impl<T: Clone + 'static> IntoPropValue<T> for Derived<T> {
     fn into_prop_value(self) -> DynamicProp<T> {
         DynamicProp::Dynamic(Rc::new(move || self.get()))
+    }
+}
+
+impl<T: Clone + 'static> IntoPropValue<T> for Ctx<T> {
+    fn into_prop_value(self) -> DynamicProp<T> {
+        DynamicProp::Context(self)
     }
 }
 
@@ -211,6 +235,12 @@ impl<T: Clone + 'static> IntoProp<T> for Signal<T> {
 impl<T: Clone + 'static> IntoProp<T> for Derived<T> {
     fn into_prop(self) -> DynamicProp<T> {
         DynamicProp::Dynamic(Rc::new(move || self.get()))
+    }
+}
+
+impl<T: Clone + 'static> IntoProp<T> for Ctx<T> {
+    fn into_prop(self) -> DynamicProp<T> {
+        DynamicProp::Context(self)
     }
 }
 

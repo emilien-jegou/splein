@@ -45,6 +45,14 @@ pub struct CoreState {
     /// testing. Stale at most until the next damage walk, which always
     /// precedes the paint that consumes it.
     pub resolved_light: LightEnvironment,
+    /// Context values this node provides to its subtree: `(context id,
+    /// erased signal reader)` pairs, nearest entry wins on lookup.
+    ///
+    /// Written by reconciliation from the node's declaration (so conditional
+    /// providers appear and vanish with their nodes — no leaks, no stale
+    /// entries), read by context resolution walks. `None` (the common case)
+    /// costs one tag and is skipped outright.
+    pub provided: Option<Vec<(crate::reactive::context::CtxId, crate::reactive::context::ProviderValue)>>,
 }
 
 /// Pointer interaction state: owned by the input domain.

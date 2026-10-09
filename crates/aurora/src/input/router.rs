@@ -657,6 +657,9 @@ fn fire(
     }
     match arena.get(id).state.input.handlers.get() {
         Some(handlers) => {
+            // Evaluation node for context reads inside handlers: reads snapshot
+            // (no subscription — events act, then set signals explicitly).
+            let _eval_node = crate::reactive::context::enter_node(id, arena);
             let propagation = invoke(handlers);
             (true, propagation == Propagation::Stop)
         }

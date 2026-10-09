@@ -10,9 +10,18 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use aurora::app::{AppExtension, VisualDebugger};
+use aurora::dsl::component::ProviderProps;
+use aurora::initContext;
 use aurora::prelude::*;
 use aurora::reactive::{ReactiveRuntime, Signal};
 use aurora::runtime::Engine;
+
+/// Live selection readout, provided by [`Page`] and consumed by [`status_card`].
+/// A separate object from [`CLIPBOARD`] over the same value type — identity is
+/// the object, not the type.
+static STATUS: Context<String> = initContext!();
+/// OS clipboard readout; see [`STATUS`].
+static CLIPBOARD: Context<String> = initContext!();
 
 mod common;
 #[path = "common/motion_ui.rs"]
@@ -111,33 +120,40 @@ fn main() {
 }
 
 /// Page body: selectable copy, a live status card, and the gesture cheat sheet.
+///
+/// Provides the monitor's readout signals as context rather than drilling them:
+/// `status_card` reads them where it renders, with no intermediate forwarding.
 #[component]
 pub fn Page(status: Signal<String>, clipboard: Signal<String>) -> impl IntoElement {
     view! {
-        <Shell
-            eyebrow_label="TEXT · 01 — SELECTION"
-            title="One gesture, many runs."
-            copy="Every paragraph below is selectable body copy. Drag inside one, or sweep across several: the highlight spans runs, Shift-click extends from the anchor, and Ctrl+C copies to the OS clipboard."
-        >
-            <Content>
-                <Group direction="vertical" width="fill" gap={12.0}>
-                    <Para
-                        hk="show-a"
-                        copy="Aurora keeps one layout and compositor engine under a reactive DSL, so a paragraph is shaped once and every caret, word edge, and highlight rect derives from that same layout."
-                    />
-                    <Para
-                        hk="show-b"
-                        copy="Transforms and opacity are compositor overrides: they invalidate paint only and never reach the layout pass, which is why dragging a selection over animated chrome stays exact."
-                    />
-                    <Para
-                        hk="show-c"
-                        copy="A spring drives a signal, layout reads that signal, and the engine only lays out and paints what it is given — press into the copy while panels animate and the anchor still resolves."
-                    />
-                    <StatusCard status={status} clipboard={clipboard} />
-                    <CheatSheet />
-                </Group>
-            </Content>
-        </Shell>
+        <Provider grant={STATUS.provide(status)}>
+            <Provider grant={CLIPBOARD.provide(clipboard)}>
+                <Shell
+                    eyebrow_label="TEXT · 01 — SELECTION"
+                    title="One gesture, many runs."
+                    copy="Every paragraph below is selectable body copy. Drag inside one, or sweep across several: the highlight spans runs, Shift-click extends from the anchor, and Ctrl+C copies to the OS clipboard."
+                >
+                    <Content>
+                        <Group direction="vertical" width="fill" gap={12.0}>
+                            <Para
+                                hk="show-a"
+                                copy="Aurora keeps one layout and compositor engine under a reactive DSL, so a paragraph is shaped once and every caret, word edge, and highlight rect derives from that same layout."
+                            />
+                            <Para
+                                hk="show-b"
+                                copy="Transforms and opacity are compositor overrides: they invalidate paint only and never reach the layout pass, which is why dragging a selection over animated chrome stays exact."
+                            />
+                            <Para
+                                hk="show-c"
+                                copy="A spring drives a signal, layout reads that signal, and the engine only lays out and paints what it is given — press into the copy while panels animate and the anchor still resolves."
+                            />
+                            <StatusCard />
+                            <CheatSheet />
+                        </Group>
+                    </Content>
+                </Shell>
+            </Provider>
+        </Provider>
     }
 }
 
@@ -156,7 +172,7 @@ fn Para(hk: &'static str, copy: &'static str) -> impl IntoElement {
 }
 
 #[component]
-fn StatusCard(status: Signal<String>, clipboard: Signal<String>) -> impl IntoElement {
+fn StatusCard() -> impl IntoElement {
     view! {
         <Group
             direction="vertical"
@@ -168,9 +184,9 @@ fn StatusCard(status: Signal<String>, clipboard: Signal<String>) -> impl IntoEle
             stroke={Stroke::inside(1.0, hairline())}
         >
             <Eyebrow label="LIVE SELECTION" />
-            <Text size={12.0} color={INK}>{status}</Text>
+            <Text size={12.0} color={INK}>{STATUS.get()}</Text>
             <Eyebrow label="OS CLIPBOARD" />
-            <Text size={12.0} color={INK}>{clipboard}</Text>
+            <Text size={12.0} color={INK}>{CLIPBOARD.get()}</Text>
         </Group>
     }
 }
