@@ -47,6 +47,12 @@
 !crates/aurora-wayland/
 !crates/aurora-wayland/**/*
 
+!crates/aurora-wgpu/
+!crates/aurora-wgpu/**/*
+
+!crates/aurora-quad/
+!crates/aurora-quad/**/*
+
 !docs/
 !docs/**/*
 

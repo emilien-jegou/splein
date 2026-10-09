@@ -202,9 +202,10 @@ impl ExampleCli {
 
     /// Pre-configures a `MultiBackendConfig` with all four raster backends.
     ///
-    /// One shared engine/reactive state, one window per backend. `1-4` select,
-    /// `Tab` cycles, `C` toggles combine mode. The CLI positional/flags pick
-    /// the focused backend; `--combine` boots with all four live.
+    /// One shared engine/reactive state. `1-4` select a single backend
+    /// window, `Tab` cycles, `C` toggles the single-window quad combine
+    /// (2x2 quadrants + legend strip, one scene, one present). The CLI
+    /// positional/flags pick the focused backend; `--combine` boots quad.
     pub fn app_config_multi(&self, title: &str) -> aurora::app::multibackend::MultiBackendConfig {
         use aurora::app::multibackend::MultiBackend;
         let mut debugger = VisualDebugger::new();
@@ -216,6 +217,7 @@ impl ExampleCli {
             Some(aurora_vello::create_cpu_backend),
             Some(aurora_wgpu::create_backend),
         ])
+        .quad_factory(aurora_quad::create_backend)
         .title(format!(
             "{title} [1-4 engine | Tab cycle | C combine | {}]",
             match self.backend {

@@ -44,8 +44,12 @@ fn make_persistent(device: &Device, width: u32, height: u32) -> (Texture, Textur
         // sRGB swapchain formats (e.g. Bgra8UnormSrgb) reject that usage.
         // The blit pass below samples this as a texture and converts to the
         // swapchain format, mirroring Vello's own `render_to_surface` path.
+        // COPY_SRC feeds the quad-combine readback (texture -> staging
+        // buffer for CPU compositing); unused by the standalone path.
         format: TextureFormat::Rgba8Unorm,
-        usage: TextureUsages::STORAGE_BINDING | TextureUsages::TEXTURE_BINDING,
+        usage: TextureUsages::STORAGE_BINDING
+            | TextureUsages::TEXTURE_BINDING
+            | TextureUsages::COPY_SRC,
         view_formats: &[],
     });
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());

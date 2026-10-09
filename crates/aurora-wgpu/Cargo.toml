@@ -1,0 +1,17 @@
+[package]
+name = "aurora-wgpu"
+version = "0.0.1-rc.1"
+edition = "2021"
+publish = true
+description = "Raw wgpu rasterization backend for the Aurora UI engine (analytical shaders)"
+license = "GPL-3.0"
+
+[dependencies]
+aurora = { path = "../aurora", version = "0.0.1-rc.1" }
+wgpu = "0.20"
+pollster = "0.3"
+resvg = "0.42"
+winit = { version = "0.29", default-features = false, features = ["rwh_06"] }
+rustc-hash = "2.1.3"
+bytemuck = "1.25.2"
+tracing = "0.1"

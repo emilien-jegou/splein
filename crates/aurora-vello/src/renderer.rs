@@ -232,6 +232,8 @@ pub struct VelloRenderer {
     /// Damage blits issued to the swapchain last frame (telemetry).
     pub last_blit_rects: usize,
     pub last_blit_bytes: u64,
+    /// Cached readback staging buffer (size + buffer) for offscreen use.
+    readback: Option<(u32, u32, wgpu::Buffer)>,
 }
 
 impl VelloRenderer {
@@ -291,6 +293,7 @@ impl VelloRenderer {
             last_reused: 0,
             last_blit_rects: 0,
             last_blit_bytes: 0,
+            readback: None,
         })
     }
 
@@ -305,25 +308,23 @@ impl VelloRenderer {
         self.viewport_bound = KurboRect::new(0.0, 0.0, width.max(1) as f64, height.max(1) as f64);
     }
 
-    /// Renders display list scene to the swapchain and presents.
+    /// Encodes the scene and shades it into the persistent texture.
     ///
-    /// Encode reuse is content-addressed: each chunk compiles into an
-    /// isolated fragment keyed by its command hash, so identical content
-    /// re-appends under the current placement instead of recompiling — even
-    /// when the chunk moved (scroll/offset) or Aurora recompiled it for
-    /// layout-local reasons. Every visible chunk still contributes each frame
-    /// (shade is fullscreen via `render_to_surface`). Returns chunks
-    /// re-encoded (telemetry).
-    #[tracing::instrument(name = "Vello::RenderFrame", skip_all)]
-    pub fn render_frame(
+    /// Same work as [`Self::render_frame`] minus the swapchain acquire, blit
+    /// and present: the quad-combine backend reads the persistent texture
+    /// back to CPU (see [`Self::readback_rgba8`]) and composites it with the
+    /// other engines into one window. Damage selects encode reuse exactly as
+    /// in the standalone path; shading itself is always fullscreen.
+    #[tracing::instrument(name = "Vello::RenderOffscreen", skip_all)]
+    pub fn render_scene_offscreen(
         &mut self,
         scene: &Scene,
         base_color: Color,
         _damage: &DamageRegion,
     ) -> Result<usize, BackendError> {
-        // Damage selects blit rects below; encode reuse is content-addressed
-        // (a damaged-but-identical chunk, e.g. scrolled content, still
-        // re-appends instead of recompiling).
+        // Damage selects encode reuse below; shading is always fullscreen.
+        // A damaged-but-identical chunk (e.g. scrolled content) still
+        // re-appends instead of recompiling.
         self.vello_scene.reset();
         self.tx_stack.clear();
 
@@ -391,29 +392,9 @@ impl VelloRenderer {
         self.last_encoded = encoded;
         self.last_reused = reused;
 
-        let surface_texture = match self.gpu.surface.get_current_texture() {
-            Ok(t) => t,
-            Err(wgpu::SurfaceError::Outdated | wgpu::SurfaceError::Lost) => {
-                self.gpu
-                    .surface
-                    .configure(&self.gpu.device, &self.gpu.config);
-                self.gpu.surface.get_current_texture().map_err(|e| {
-                    BackendError::surface(format!("swapchain recovery failed: {e:?}"))
-                })?
-            }
-            Err(e) => {
-                return Err(BackendError::surface(format!(
-                    "swapchain acquire failed: {e:?}"
-                )))
-            }
-        };
-
-        // Shade into the persistent target, then blit fullscreen.
-        // A swapchain image is freshly acquired every frame with undefined
-        // contents (and Mailbox/Fifo may rotate buffers), so a partial
-        // damage blit with Load would leave the rest of the screen
-        // black/garbage. Damage stays useful for encode culling above;
-        // the present itself must write every pixel.
+        // Shade into the persistent target (fullscreen; see render_frame for
+        // why partial presents can't Load a rotated swapchain image here —
+        // the offscreen consumer reads this texture instead).
         let aa = aa_for_chunks(scene.chunks.iter());
         self.vello_engine
             .render_to_texture(
@@ -431,6 +412,125 @@ impl VelloRenderer {
             .map_err(|e| {
                 BackendError::raster(format!("Vello GPU render execution failed: {e:?}"))
             })?;
+        Ok(encoded)
+    }
+
+    /// Persistent target size in pixels (quadrant size in quad-combine use).
+    pub fn target_size(&self) -> (u32, u32) {
+        (self.gpu.config.width.max(1), self.gpu.config.height.max(1))
+    }
+
+    /// Copies the persistent texture to CPU as tightly-packed RGBA bytes.
+    ///
+    /// Must follow [`Self::render_scene_offscreen`] once the GPU work is
+    /// submitted (render_to_texture submits internally; this only adds the
+    /// copy + a blocking map). Staging buffer is cached across frames and
+    /// rebuilt on size change. The quad-combine backend composites these
+    /// bytes with the other engines into one window.
+    #[tracing::instrument(name = "Vello::Readback", skip_all)]
+    pub fn readback_rgba8(&mut self) -> Result<Vec<u8>, BackendError> {
+        let (w, h) = self.target_size();
+        // COPY_BYTES_PER_ROW_ALIGNMENT: rows are padded to 256B.
+        let pitch = ((w * 4 + 255) / 256 * 256) as usize;
+        let size = (pitch * h as usize) as u64;
+        let buf = match &self.readback {
+            Some((bw, bh, b)) if *bw == w && *bh == h => b,
+            _ => {
+                let b = self.gpu.device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("aurora-vello-readback"),
+                    size: size.max(256),
+                    usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+                    mapped_at_creation: false,
+                });
+                self.readback = Some((w, h, b));
+                &self.readback.as_ref().unwrap().2
+            }
+        };
+        let mut encoder =
+            self.gpu
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("aurora-vello-readback"),
+                });
+        encoder.copy_texture_to_buffer(
+            wgpu::ImageCopyTexture {
+                texture: &self.gpu.persistent,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::ImageCopyBuffer {
+                buffer: buf,
+                layout: wgpu::ImageDataLayout {
+                    offset: 0,
+                    bytes_per_row: Some(pitch as u32),
+                    rows_per_image: Some(h),
+                },
+            },
+            wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
+        );
+        self.gpu.queue.submit(Some(encoder.finish()));
+
+        let slice = buf.slice(..);
+        let (tx, rx) = std::sync::mpsc::channel();
+        slice.map_async(wgpu::MapMode::Read, move |r| {
+            let _ = tx.send(r);
+        });
+        self.gpu.device.poll(wgpu::Maintain::Wait);
+        rx.recv()
+            .map_err(|_| BackendError::raster("readback map channel closed"))?
+            .map_err(|e| BackendError::raster(format!("readback map failed: {e:?}")))?;
+        let out = {
+            let mapped = slice.get_mapped_range();
+            let mut tight = vec![0u8; (w * h * 4) as usize];
+            for y in 0..h as usize {
+                tight[y * w as usize * 4..(y + 1) * w as usize * 4]
+                    .copy_from_slice(&mapped[y * pitch..y * pitch + w as usize * 4]);
+            }
+            tight
+        };
+        buf.unmap();
+        Ok(out)
+    }
+
+    /// Renders display list scene to the swapchain and presents.
+    ///
+    /// Encode reuse is content-addressed: each chunk compiles into an
+    /// isolated fragment keyed by its command hash, so identical content
+    /// re-appends under the current placement instead of recompiling — even
+    /// when the chunk moved (scroll/offset) or Aurora recompiled it for
+    /// layout-local reasons. Every visible chunk still contributes each frame
+    /// (shade is fullscreen via `render_to_surface`). Returns chunks
+    /// re-encoded (telemetry).
+    #[tracing::instrument(name = "Vello::RenderFrame", skip_all)]
+    pub fn render_frame(
+        &mut self,
+        scene: &Scene,
+        base_color: Color,
+        damage: &DamageRegion,
+    ) -> Result<usize, BackendError> {
+        let encoded = self.render_scene_offscreen(scene, base_color, damage)?;
+
+        let surface_texture = match self.gpu.surface.get_current_texture() {
+            Ok(t) => t,
+            Err(wgpu::SurfaceError::Outdated | wgpu::SurfaceError::Lost) => {
+                self.gpu
+                    .surface
+                    .configure(&self.gpu.device, &self.gpu.config);
+                self.gpu.surface.get_current_texture().map_err(|e| {
+                    BackendError::surface(format!("swapchain recovery failed: {e:?}"))
+                })?
+            }
+            Err(e) => {
+                return Err(BackendError::surface(format!(
+                    "swapchain acquire failed: {e:?}"
+                )))
+            }
+        };
 
         let (sw, sh) = (self.gpu.config.width, self.gpu.config.height);
         {

@@ -179,6 +179,7 @@ version = "0.0.1-rc.1"
 dependencies = [
  "arboard",
  "aurora-macros",
+ "aurora-quad",
  "aurora-tiny-skia",
  "aurora-vello",
  "aurora-wgpu",
@@ -206,6 +207,22 @@ dependencies = [
  "quote",
  "rstml",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "aurora-quad"
+version = "0.0.1-rc.1"
+dependencies = [
+ "aurora",
+ "aurora-tiny-skia",
+ "aurora-vello",
+ "aurora-wgpu",
+ "bytemuck",
+ "pollster",
+ "softbuffer",
+ "tiny-skia",
+ "tracing",
+ "winit",
 ]
 
 [[package]]

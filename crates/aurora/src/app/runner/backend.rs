@@ -55,6 +55,17 @@ pub struct PresentReport {
     pub present: Duration,
 }
 
+/// Per-engine stats inside a combine backend (one entry per quadrant).
+#[derive(Clone, Debug)]
+pub struct QuadEngineStat {
+    /// Engine display name, e.g. `"tiny-skia"`.
+    pub name: &'static str,
+    /// Average FPS over the trailing 5s window.
+    pub fps_avg5: f32,
+    /// Last frame's raster time in milliseconds.
+    pub raster_ms: f32,
+}
+
 /// Presents compiled frames to an OS window surface.
 pub trait Backend {
     /// Resizes the surface and any retained rasterizer buffers.
@@ -66,6 +77,14 @@ pub trait Backend {
     /// Whether this backend can expose its framebuffer to a scanline post-process pass.
     fn supports_scanline(&self) -> bool {
         false
+    }
+
+    /// Per-engine stats for combine backends (one entry per engine).
+    ///
+    /// `None` for single-engine backends. The multi-backend runner logs the
+    /// entries 1x/s in combine mode for side-by-side perf comparison.
+    fn quad_stats(&self) -> Option<Vec<QuadEngineStat>> {
+        None
     }
 
     /// Rasterizes and presents exactly one frame.

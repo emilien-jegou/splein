@@ -9,7 +9,7 @@ pub mod pointer;
 
 pub use backend::{
     Backend, BackendFactory, DamageResolver, FramePostProcess, Present, PresentReport,
-    SurfaceRequest,
+    QuadEngineStat, SurfaceRequest,
 };
 pub use pacing::FpsLimit;
 

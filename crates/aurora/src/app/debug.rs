@@ -345,7 +345,10 @@ impl AppExtension for VisualDebugger {
                 emit_inspector_overlay(chunk, self.mode, &self.last_diag);
             });
         }
-        if self.show_hud {
+        // The quad-combine window draws its own legend strip (per-engine
+        // names + stats) instead of this panel: the shared scene would stamp
+        // one backend's tag into all four quadrants.
+        if self.show_hud && caps.backend != "quad" {
             paint.record(hud_panel(), |chunk| {
                 emit_hud_overlay(
                     chunk,
