@@ -25,7 +25,7 @@ impl Primitive for ImagePrimitive {
 
 /// Constructs a first-class declarative image element.
 ///
-/// Sized by content like [`svg`](crate::dsl::svg): the pixel dimensions are the `Fit`
+/// Sized by content like [`svg`](crate::dsl::svg()): the pixel dimensions are the `Fit`
 /// measure, so the image draws 1:1 in an unbounded parent. Pin an exact box with
 /// `.size(w, h)` to scale it into a layout-owned box.
 pub fn image(source: ImageSource) -> CustomDef {

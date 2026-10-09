@@ -151,7 +151,7 @@ impl<T: Clone + 'static> Derived<T> {
 
     /// Derives a further value from this one.
     ///
-    /// Same shape as [`Signal::map`], so a derivation can be refined without going back to
+    /// Same shape as [`Signal::map`](crate::reactive::Signal::map), so a derivation can be refined without going back to
     /// a writable signal. Memoized on the same terms: it recomputes only when this
     /// derivation is dirty.
     pub fn map<U: Clone + 'static>(&self, f: impl Fn(T) -> U + 'static) -> Derived<U> {

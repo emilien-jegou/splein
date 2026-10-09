@@ -1,4 +1,73 @@
-// Single responsibility: Application window runner, event loop integration, and lifecycle manager.
+//! Application window runner: event loop, backends, and lifecycle.
+//!
+//! This is the composition root — the one place that knows about *everything*. [`App::config`]
+//! builds an [`AppConfig`], you describe your UI as a component function, and [`AppConfig::run`]
+//! wires the window, the engine, a raster backend, and the event loop together. Nothing else
+//! in the crate imports this module; that one-way dependency is deliberate.
+//!
+//! A minimal desktop app looks like this:
+//!
+//! ```ignore
+//! use aurora::prelude::*;
+//!
+//! #[component]
+//! fn Page() -> impl IntoElement {
+//!     let open = use_signal(false);
+//!     group().width(800.0).height(600.0).fill(Color::WHITE).children([
+//!         group()
+//!             .width(200.0)
+//!             .height(60.0)
+//!             .fill(Color::hex(0x2563EB))
+//!             .on_click(move |_| open.set(!open.get()))
+//!             .children([text(open.map(|o| if o { "Open" } else { "Closed" }))]),
+//!     ])
+//! }
+//!
+//! fn main() {
+//!     App::config()
+//!         .title("Hello")
+//!         .size(800, 600)
+//!         .font("Inter", include_bytes!("inter-var.ttf"))
+//!         .background(Color::WHITE)
+//!         .backend(RenderBackend::TinySkia)
+//!         .backend_factory(aurora_tiny_skia::create_backend)
+//!         .run(Page);
+//! }
+//! ```
+//!
+//! # Choosing a backend
+//!
+//! The engine itself rasterizes nothing — a factory from a backend crate does that:
+//!
+//! | [`RenderBackend`] | Factory | When |
+//! |---|---|---|
+//! | `TinySkia` (default) | `aurora_tiny_skia::create_backend` | CPU rasterization; the sane default and what the test harness uses |
+//! | `Vello` | `aurora_vello::create_backend` | GPU rasterization via wgpu |
+//! | `VelloCpu` | `aurora_vello::create_cpu_backend` | Vello's CPU-staged pipeline, for comparing against GPU |
+//!
+//! Forgetting `.backend_factory(..)` panics with a message naming the missing factory —
+//! that panic is intentional (a window with no painter is a programming error, not a
+//! runtime condition).
+//!
+//! # Custom per-frame work
+//!
+//! Implement [`AppExtension`] and pass it with [`AppConfig::extension`] to run code every
+//! frame (physics drivers, telemetry, custom painters via [`OverlayPainter`]). See
+//! `examples/moving.rs` (a DVD-screensaver physics driver) and `examples/showcase.rs`.
+//!
+//! # Debugging a live app
+//!
+//! [`VisualDebugger`] (the `debug_*` modules) draws layout boxes, scene chunks, and a
+//! performance HUD over your UI. The human-operated debug keys are `F8` (freeze the
+//! clock), `.` (advance one 1/120 s quantum while frozen), `[`/`]` (slow motion),
+//! and `s` (write presented pixels to `$AURORA_CAPTURE_DIR`).
+//!
+//! # Headless use
+//!
+//! Tests and benchmarks skip this module entirely: [`crate::runtime::Engine::headless`]
+//! plus `aurora_tiny_skia::HeadlessRaster` (or the `Harness` in
+//! `aurora_tiny_skia::testing`) drive the engine without a window. If you find yourself
+//! reaching for `App` in a test, reach for `Harness` instead.
 
 pub mod debug;
 pub mod debug_draw;

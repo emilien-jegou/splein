@@ -1,4 +1,41 @@
-// Single responsibility: Render module boundary, backend selector, and engine re-exports.
+//! Backend selection and shared raster helpers.
+//!
+//! Aurora draws through backends it does not own. This module holds the two things that
+//! *are* engine-side: the [`RenderBackend`] selector enum, and the small raster kernels
+//! both backends share rather than reimplementing twice.
+//!
+//! # The split
+//!
+//! - **Here**: [`RenderBackend`] (which painter to use), [`BackendError`], plus shared
+//!   kernels — [`blur`] (box-blur with shadow falloff), [`stroke_geometry`],
+//!   [`swizzle_rgba_to_bgra`].
+//! - **Elsewhere**: `aurora-tiny-skia` (CPU) and `aurora-vello` (GPU) implement the actual
+//!   rasterizers behind a factory fn you hand to
+//!   [`AppConfig::backend_factory`](crate::app::AppConfig::backend_factory).
+//!
+//! If you find yourself adding a rasterizer *here*, stop — it belongs in a backend crate.
+//! If both backends need the same ten lines of pixel math, it belongs here.
+//!
+//! # Showcase
+//!
+//! Backend selection is one enum at startup; everything downstream is backend-agnostic:
+//!
+//! ```ignore
+//! use aurora::prelude::*;
+//!
+//! // CPU (default): needs no GPU, and it's what the test harness uses.
+//! App::config().backend(RenderBackend::TinySkia)
+//!     .backend_factory(aurora_tiny_skia::create_backend)
+//!     .run(Page);
+//!
+//! // GPU: same scene, different painter.
+//! App::config().backend(RenderBackend::Vello)
+//!     .backend_factory(aurora_vello::create_backend)
+//!     .run(Page);
+//! ```
+//!
+//! Headless code never names a backend at all: [`crate::runtime::Engine::headless`] plus
+//! `aurora_tiny_skia::HeadlessRaster` (or the `Harness`) is the whole story.
 
 pub mod blur;
 pub mod error;

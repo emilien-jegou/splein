@@ -1,4 +1,74 @@
-// Single responsibility: Module boundary and re-exports for the declarative DSL.
+//! Declarative UI: builders, reconciliation, and motion hooks.
+//!
+//! You describe what the interface *should look like right now*; the reconciler
+//! ([`reconciler::reconcile`]) diffs that description against the retained tree and
+//! updates only what changed. A component body runs once per mount — never per frame —
+//! and everything dynamic flows through signals captured in property bindings.
+//!
+//! # The builders
+//!
+//! | Builder | Makes | Typical modifiers |
+//! |---------|-------|-------------------|
+//! | [`group()`] | Flex container | `.direction()`, `.width()`, `.fill()`, `.children()`, `.on_click()`, `.shadow()`, `.clip()`, `.key()` |
+//! | [`text()`] | Shaped text run | `.size()`, `.color()`, `.align()`, `.selectable()`, `.max_lines()` |
+//! | [`image()`] | Raster image | `.size()` (from an [`ImageSource`](crate::scene::ImageSource)) |
+//! | [`svg()`] | Vector graphic | `.size()` (anything `Into<VectorGraphic>`: `&str`, `Arc<_>`, …) |
+//! | [`custom()`] | Escape hatch | any [`Primitive`](crate::tree::Primitive) you implement |
+//!
+//! ```ignore
+//! use aurora::prelude::*;
+//!
+//! #[component]
+//! fn Card(title: String, open: Signal<bool>) -> impl IntoElement {
+//!     group()
+//!         .key("card")                       // stable identity across rebuilds
+//!         .width(320.0)
+//!         .children([
+//!             text(title).size(16.0).color(Color::hex(0x111827)),
+//!             text(open.map(|o| if o { "Open" } else { "Closed" }))
+//!                 .size(12.0)
+//!                 .color(Color::hex(0x6B7280)),
+//!         ])
+//!         .fill(Color::WHITE)
+//!         .radius(12.0)
+//!         .shadow(8.0)                        // elevation, an (elevation, color) pair, or a Shadow
+//!         .on_click(move |_| open.set(!open.get()))
+//! }
+//! ```
+//!
+//! # Keeping state across rebuilds
+//!
+//! A builder that re-runs (a reordered list, a toggled branch) must find its old state.
+//! Three mechanisms, in increasing power:
+//!
+//! 1. **Signals** ([`crate::reactive`]): values that survive anything; prefer these.
+//! 2. **Hooks** ([`flip::use_ref`]): per-component-instance memory filed by call order.
+//! 3. **FLIP motion** ([`flip::use_flip`], [`flip::use_follow`]): position memory *plus*
+//!    the spring that animates the delta — this is how drag-to-reorder lists glide
+//!    instead of teleporting (see `examples/motion_reorder.rs`).
+//!
+//! [`element_ref::ElementRef`] is the odd one out on purpose: a *pull* handle for asking
+//! "where did layout put this?" without subscribing. Reading it never dirties anything,
+//! which is what makes measuring safe — but nothing re-runs when the answer changes,
+//! so sample it from a ticker, a gesture, or a post-layout callback.
+//!
+//! # How reconciliation works
+//!
+//! [`reconciler::reconcile`] walks the new element tree against retained nodes: same key
+//! (or same position) reuses the node and updates its style/bindings/handlers;
+//! anything else unmounts and remounts. [`diff::ChildOp`] + `reconcile_children` handle
+//! keyed lists with minimal moves. `reconcile_group`/`reconcile_leaf` specialize per
+//! node kind. Nothing here paints — it only decides *what exists* and marks it dirty.
+//!
+//! # Pitfalls
+//!
+//! - Forgetting `.key()` on list rows is the classic bug: state (and FLIP history) is
+//!   filed by identity, so position-keyed rows hand each other the wrong springs after
+//!   a reorder.
+//! - A `text()` fed a fresh `String` every frame re-shapes every frame. Feed it a signal
+//!   (or a `Derived`) so shaping is cached until the content actually changes.
+//! - `custom()` primitives bypass layout caching — measure honestly in `Primitive::measure`
+//!   or every ancestor pays for it.
 
 pub use component::{component, component_scope, Component, IntoElement};
 pub use custom::{custom, CustomDef};

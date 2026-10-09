@@ -448,7 +448,7 @@ pub fn use_signal<T: Clone + 'static>(initial: T) -> Signal<T> {
 /// Unlike [`use_signal`], which recalls by ordinal ("the Nth hook that ran"), this
 /// recalls by `key` — so a hook inside a conditional or after an early return keeps
 /// its state even on builds where an earlier hook is skipped. Prefer the
-/// [`use_signal!`] macro, which derives the key from the call site automatically.
+/// [`use_signal!`](crate::use_signal) macro, which derives the key from the call site automatically.
 ///
 /// Stability still requires a reproducible scope ([`Cx::enter_keyed`]), exactly like
 /// ordinal hooks. A changed type on an existing key panics naming both types,

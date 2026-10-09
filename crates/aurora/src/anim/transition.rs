@@ -126,7 +126,7 @@ impl Transition {
     /// The output starts at the target, so only later changes animate. A spring keeps its
     /// live velocity across target changes, which is what makes interruption seamless.
     ///
-    /// Prefer [`use_transition`](crate::use_transition) inside components,
+    /// Prefer [`use_transition`](crate::reactive::use_transition) inside components,
     /// especially rows in reactive lists: it recalls the cell across rebuilds so a
     /// retarget keeps position *and* velocity, and it registers the frame ticker once
     /// per hook slot instead of once per rebuild. Use `on` only for one-shot,
@@ -141,7 +141,7 @@ impl Transition {
     /// Builds the state a recalled transition would keep across a rebuild.
     ///
     /// Pair with [`TransitionCell::retarget_source`]. Used by
-    /// [`use_transition`](crate::use_transition); exposed because a cell cannot be
+    /// [`use_transition`](crate::reactive::use_transition); exposed because a cell cannot be
     /// assembled outside this module and the hook needs to make one.
     pub fn cell(self, target: impl Readable<f32> + 'static) -> Rc<TransitionCell> {
         let reader: Rc<dyn Readable<f32>> = Rc::from(Box::new(target) as Box<dyn Readable<f32>>);
