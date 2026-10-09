@@ -548,7 +548,7 @@ mod tests {
                     stroke: None,
                     radius: aurora::foundation::Radius::Scalar(4.0),
                     shadow: None,
-                    light: aurora::foundation::LightEnvironment::DEFAULT,
+                    light_override: None,
                     opacity: 1.0,
                 },
             },

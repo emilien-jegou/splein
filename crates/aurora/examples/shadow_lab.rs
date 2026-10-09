@@ -63,18 +63,18 @@ fn build_ui() -> impl IntoElement {
             .children([
                 card(
                     "Typical Shadow",
-                    Shadow::web_like(3.0, 6.0, 6.0, Color::rgba(0.0, 0.0, 0.0, 0.35)),
+                    Shadow::web_like(3.0, 6.0, 6.0, 0.0, Color::rgba(0.0, 0.0, 0.0, 0.35)),
                 ),
                 // TEMPORARY diagnostics (remove after): zero offset isolates
                 // whether the bottom band follows the offset; big offset
                 // tests whether any hole scales with oy.
                 card(
                     "probe zero-offset",
-                    Shadow::web_like(0.0, 0.0, 6.0, Color::rgba(0.0, 0.0, 0.0, 0.35)),
+                    Shadow::web_like(0.0, 0.0, 6.0, 0.0, Color::rgba(0.0, 0.0, 0.0, 0.35)),
                 ),
                 card(
                     "probe big-offset",
-                    Shadow::web_like(0.0, 20.0, 6.0, Color::rgba(0.0, 0.0, 0.0, 0.35)),
+                    Shadow::web_like(0.0, 20.0, 6.0, 0.0, Color::rgba(0.0, 0.0, 0.0, 0.35)),
                 ),
                 // TEMPORARY isolation (remove after): single layers tell
                 // whether squareness lives in one layer (geometry) or only

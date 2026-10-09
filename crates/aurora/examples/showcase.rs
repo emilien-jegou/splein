@@ -203,7 +203,7 @@ fn build_ui(time_sig: Signal<f32>, counter_sig: Signal<u64>) -> impl IntoElement
                                             group()
                                                 .width(200.0).height(2.0)
                                                 .fill(Color::hex(0x38BDF8))
-                                                .shadow(Shadow::web_like(0.0, 0.0, 8.0, Color::hex(0x38BDF8)))
+                                                .shadow(Shadow::web_like(0.0, 0.0, 8.0, 0.0, Color::hex(0x38BDF8)))
                                                 .anchor(Anchor::Center)
                                                 .transform({
                                                     let t = time_sig.clone();
@@ -217,7 +217,7 @@ fn build_ui(time_sig: Signal<f32>, counter_sig: Signal<u64>) -> impl IntoElement
                                                 .width(14.0).height(14.0)
                                                 .radius(Radius::max())
                                                 .fill(Color::hex(0xEC4899))
-                                                .shadow(Shadow::web_like(0.0, 0.0, 10.0, Color::hex(0xEC4899)))
+                                                .shadow(Shadow::web_like(0.0, 0.0, 10.0, 0.0, Color::hex(0xEC4899)))
                                                 .anchor(Anchor::Center)
                                                 .transform({
                                                     let t = time_sig.clone();
@@ -384,6 +384,7 @@ fn build_equalizer_bars(t_sig: Signal<f32>) -> Vec<Element> {
                 0.0,
                 0.0,
                 6.0,
+                0.0,
                 Color::hex_alpha(0x38BDF8, 0.30),
             ))
             .anchor(Anchor::Bottom);

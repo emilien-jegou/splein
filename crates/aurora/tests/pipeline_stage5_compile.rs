@@ -74,7 +74,7 @@ fn test_5_4_offscreen_node_with_shadow_reaching_onscreen_is_compiled() {
             .width(100.0)
             .height(50.0)
             .fill(Color::BLACK)
-            .shadow(Shadow::web_like(0.0, -30.0, 10.0, Color::BLACK))]),
+            .shadow(Shadow::web_like(0.0, -30.0, 10.0, 0.0, Color::BLACK))]),
     );
     let FrameReport {
         diagnostics: diag, ..

@@ -8,19 +8,14 @@
 use super::patch::{blit_9patch, generate_patch, ShadowPatch};
 use super::ShadowRasterizer;
 use aurora::foundation::{
-    BlendMode, Color, FalloffCurve, LightEnvironment, Radius, ResolvedRect, Shadow, ShadowLayer,
+    BlendMode, Color, FalloffCurve, LightEnvironment, Radius, ResolvedRect, Shadow,
 };
 use tiny_skia::{Pixmap, Transform};
 
-/// Bare layer with the given geometry; the renderer reads the same fields.
-fn shadow_layer(softness: f32, extent: f32) -> ShadowLayer {
-    ShadowLayer {
-        falloff: FalloffCurve::Linear,
-        softness,
-        extent,
-        opacity: 1.0,
-        offset: None,
-    }
+/// Bare shadow with one layer of the given geometry; the renderer reads
+/// the same fields through the same `layer_geometry`.
+fn shadow_with_layer(softness: f32, extent: f32) -> Shadow {
+    Shadow::layered(Color::BLACK).ease_out(softness, extent, 1.0)
 }
 
 /// Renders one full shadow through the real rasterizer loop (offsets,
@@ -88,10 +83,33 @@ fn render_layers_compose() {
     );
 }
 
+/// Spread expands the footprint: 10px past the spread-free rim (which is
+/// empty) the spread shadow still carries coverage, and its umbra core
+/// stays solid.
+#[test]
+fn render_spread_expands_footprint() {
+    let rect = ResolvedRect::new(100.0, 100.0, 150.0, 150.0);
+    let plain = Shadow::web_like(0.0, 0.0, 12.0, 0.0, Color::BLACK);
+    let grown = Shadow::web_like(0.0, 0.0, 12.0, 10.0, Color::BLACK);
+    let mid_y = 175;
+    // Plain kernel support (2x6) ends 12px past the card edge: at 14px out
+    // it is exactly empty. The grown shape edge sits 10px further out, so
+    // the same pixel is 4px inside strong falloff.
+    // Plain kernel support (±12) ends before x=264: exactly empty.
+    let px = render_shadow(&plain, &rect);
+    assert_eq!(pix_alpha(&px, 250 + 14, mid_y), 0);
+    // Grown edge sits 10px further out; the same pixel is mid-falloff.
+    let gx = render_shadow(&grown, &rect);
+    assert!(pix_alpha(&gx, 250 + 14, mid_y) >= 40);
+    // Umbra core solid in both.
+    assert_eq!(pix_alpha(&px, 175, mid_y), 255);
+    assert_eq!(pix_alpha(&gx, 175, mid_y), 255);
+}
+
 /// Rendering twice (warm cache) is byte-identical to the first render.
 #[test]
 fn render_cache_is_deterministic() {
-    let shadow = Shadow::web_like(3.0, 6.0, 6.0, Color::rgba(0.0, 0.0, 0.0, 0.35));
+    let shadow = Shadow::web_like(3.0, 6.0, 6.0, 0.0, Color::rgba(0.0, 0.0, 0.0, 0.35));
     let rect = ResolvedRect::new(100.0, 100.0, 150.0, 150.0);
     let mut raster = ShadowRasterizer::new();
     let (mut p1, mut p2) = (
@@ -115,25 +133,25 @@ fn render_cache_is_deterministic() {
 
 fn make_patch(radius: f32, softness: f32, extent: f32) -> (ShadowPatch, usize, usize) {
     // Same derivation the renderer uses — never duplicated here.
-    let layer = shadow_layer(softness, extent);
-    let (pad, cs, dim) = super::patch::layer_geometry(radius, &layer);
+    let shadow = shadow_with_layer(softness, extent);
+    let layer = &shadow.layers()[0];
+    let (pad, cs, dim) = super::patch::layer_geometry(radius, &shadow, layer);
     let lut = FalloffCurve::Linear.lut();
     let (mut a, mut b, mut t) = (
         vec![0u8; dim * dim],
         vec![0u8; dim * dim],
         vec![0u8; dim * dim],
     );
-    let patch = generate_patch(&mut a, &mut b, &mut t, radius, softness, &lut, pad, cs, dim);
+    let patch = generate_patch(&mut a, &mut b, &mut t, radius, softness, &lut, pad, cs, dim, 0.0);
     (patch, cs, dim)
 }
 
 /// Builds a patch with blur forced to pass through (radius 0 copies
 /// src→dst; the Linear LUT is identity), exposing the raw occluder shape.
-fn make_patch_raw(radius: f32, pad: usize) -> (ShadowPatch, usize, usize) {
-    let (_pad, cs, dim) = super::patch::layer_geometry(radius, &shadow_layer(0.0, pad as f32));
-    // Zero blur would early-return *before* the LUT; pass a tiny blur and
-    // read the plateau interior instead — no. Use blur 0 and accept the
-    // copy-through: Linear LUT is identity anyway.
+fn make_patch_raw(radius: f32) -> (ShadowPatch, usize, usize) {
+    let shadow = shadow_with_layer(1.0, 3.0);
+    let layer = &shadow.layers()[0];
+    let (pad, cs, dim) = super::patch::layer_geometry(radius, &shadow, layer);
     let lut = FalloffCurve::Linear.lut();
     let (mut a, mut b, mut t) = (
         vec![0u8; dim * dim],
@@ -141,7 +159,7 @@ fn make_patch_raw(radius: f32, pad: usize) -> (ShadowPatch, usize, usize) {
         vec![0u8; dim * dim],
     );
     // NB: blur 0.0 selects the copy-through path; nothing else changes.
-    let patch = generate_patch(&mut a, &mut b, &mut t, radius, 0.0, &lut, pad, cs, dim);
+    let patch = generate_patch(&mut a, &mut b, &mut t, radius, 0.0, &lut, pad, cs, dim, 0.0);
     (patch, cs, dim)
 }
 
@@ -244,7 +262,7 @@ fn blit_layer(shadow: &Shadow, rect: &ResolvedRect) -> Blit {
     let light = LightEnvironment::DEFAULT;
     let layer = &shadow.layers()[0];
     let (ox, oy) = shadow.layer_offset(&light, layer);
-    let pad = Shadow::layer_pad(layer);
+    let pad = shadow.layer_pad(layer);
     let (patch, _cs, _dim) = make_patch(8.0, layer.softness, layer.extent);
     let mut pix = Pixmap::new(400, 400).unwrap();
     blit_9patch(
@@ -282,10 +300,10 @@ fn alpha_of(pix: &Pixmap, x: i32, y: i32) -> u8 {
 /// the slice now extends past the inward support so both sides agree.
 #[test]
 fn seams_show_no_step() {
-    let shadow = Shadow::web_like(0.0, 0.0, 16.0, Color::BLACK);
+    let shadow = Shadow::web_like(0.0, 0.0, 16.0, 0.0, Color::BLACK);
     let rect = ResolvedRect::new(100.0, 100.0, 150.0, 150.0);
     let layer = &shadow.layers()[0];
-    let (_pad, cs, _dim) = super::patch::layer_geometry(8.0, layer);
+    let (_pad, cs, _dim) = super::patch::layer_geometry(8.0, &shadow, layer);
     let cs = cs as i32;
     let blit = blit_layer(&shadow, &rect);
     let total_w = blit.total_w;
@@ -316,7 +334,7 @@ fn seams_show_no_step() {
 /// (0 vs ~90) dwarfs that tolerance.
 #[test]
 fn blit_is_mirror_symmetric() {
-    let shadow = Shadow::web_like(0.0, 0.0, 12.0, Color::BLACK);
+    let shadow = Shadow::web_like(0.0, 0.0, 12.0, 0.0, Color::BLACK);
     let rect = ResolvedRect::new(100.0, 100.0, 120.0, 72.0);
     let blit = blit_layer(&shadow, &rect);
     assert_eq!(blit.total_w % 2, 0);
@@ -347,7 +365,7 @@ fn blit_is_mirror_symmetric() {
 /// invariance of the blit. Any offset-dependent hole breaks this.
 #[test]
 fn offset_blit_is_symmetric_about_its_center() {
-    let shadow = Shadow::web_like(8.0, 16.0, 12.0, Color::BLACK);
+    let shadow = Shadow::web_like(8.0, 16.0, 12.0, 0.0, Color::BLACK);
     let rect = ResolvedRect::new(100.0, 100.0, 120.0, 72.0);
     let blit = blit_layer(&shadow, &rect);
     assert_eq!(blit.total_w % 2, 0);
@@ -368,7 +386,7 @@ fn offset_blit_is_symmetric_about_its_center() {
 /// band and no solid slab past the falloff end.
 #[test]
 fn middle_row_decays_monotonically() {
-    let shadow = Shadow::web_like(0.0, 0.0, 12.0, Color::BLACK);
+    let shadow = Shadow::web_like(0.0, 0.0, 12.0, 0.0, Color::BLACK);
     let rect = ResolvedRect::new(100.0, 100.0, 120.0, 72.0);
     let blit = blit_layer(&shadow, &rect);
     let mid_y = blit.oy + blit.total_h / 2;
@@ -394,7 +412,7 @@ fn middle_row_decays_monotonically() {
 /// (11,11) r=8 in a dim-22 patch: inside points solid, outside empty.
 #[test]
 fn raw_shape_matches_spec() {
-    let (patch, _cs, dim) = make_patch_raw(8.0, 3);
+    let (patch, _cs, dim) = make_patch_raw(8.0);
     assert_eq!(dim, 26);
     // Inside the arc.
     assert_eq!(at(&patch, dim, 8, 4), 255);

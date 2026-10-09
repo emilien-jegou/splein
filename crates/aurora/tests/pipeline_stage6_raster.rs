@@ -13,13 +13,13 @@ fn test_6_2_shadow_color_mutation_reuses_cached_blur_mask() {
     let mut engine = Engine::headless(400, 400);
     let shadow_color = engine.signal(Color::rgba(0.0, 0.0, 0.0, 0.5));
     let sc = shadow_color.clone();
-    let dyn_shadow = computed(move || Shadow::web_like(0.0, 4.0, 8.0, sc.get()));
+    let dyn_shadow = computed(move || Shadow::web_like(0.0, 4.0, 8.0, 0.0, sc.get()));
 
     engine.mount(
         group().width(400.0).height(400.0).children([group()
             .width(100.0)
             .height(100.0)
-            .dynamic_shadow(dyn_shadow)]),
+            .shadow(dyn_shadow)]),
     );
     engine.frame();
 
@@ -115,7 +115,7 @@ fn test_6_3_box_smaller_than_corner_patch_falls_back_to_direct_blur_without_cras
         group().width(200.0).height(200.0).children([group()
             .width(10.0)
             .height(10.0)
-            .shadow(Shadow::web_like(0.0, 0.0, 20.0, Color::BLACK))]),
+            .shadow(Shadow::web_like(0.0, 0.0, 20.0, 0.0, Color::BLACK))]),
     );
 
     let FrameReport { stats, .. } = engine.frame();

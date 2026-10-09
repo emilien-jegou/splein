@@ -11,8 +11,8 @@ use tiny_skia::{Mask, PixmapMut, Transform};
 /// strip/center seam reads plateau on both sides; without the extension
 /// the seam juxtaposes a still-ramping profile against the flat center
 /// and draws as a dark square outline.
-pub fn layer_geometry(radius: f32, layer: &ShadowLayer) -> (usize, usize, usize) {
-    let pad = Shadow::layer_pad(layer).ceil() as usize;
+pub fn layer_geometry(radius: f32, shadow: &Shadow, layer: &ShadowLayer) -> (usize, usize, usize) {
+    let pad = shadow.layer_pad(layer).ceil() as usize;
     // Same kernel the patch generator rounds to: `blur.round() as usize`
     // with `blur = softness.max(0.5)`, which is always >= 1.
     let kernel_int = layer.softness.max(0.5).round() as usize;
@@ -25,6 +25,7 @@ pub struct ShadowPatchKey {
     pub radius_bits: u32,
     pub blur_bits: u32,
     pub extent_bits: u32,
+    pub spread_bits: u32,
     pub falloff_tag: u8,
 }
 
@@ -44,6 +45,7 @@ pub fn generate_patch(
     kernel_pad: usize,
     corner_size: usize,
     patch_dim: usize,
+    spread: f32,
 ) -> ShadowPatch {
     let buf_len = patch_dim * patch_dim;
     scratch_a.resize(buf_len, 0);
@@ -57,8 +59,14 @@ pub fn generate_patch(
     // blur window dilutes to a ghost (peak ~ (2r/2blur)^2) while the solid
     // center fill keeps full opacity, which reads as a flat square slab.
     // Infinite runs hold the 255 plateau at any blur radius, matching Vello.
-    let p = kernel_pad as f32;
-    let c = p + radius.max(0.0);
+    //
+    // Spread grows the occluder in place: edge runs move out by `spread`
+    // while arc centers stay fixed and arc radii grow, exactly like growing
+    // a rounded rect. `pad` already includes spread (see `layer_pad`), so
+    // the inset backs it back out for shape placement.
+    let p = kernel_pad as f32 - spread;
+    let c = kernel_pad as f32 + radius.max(0.0);
+    let reff = (radius + spread).max(0.0);
 
     for y in 0..patch_dim {
         for x in 0..patch_dim {
@@ -67,7 +75,7 @@ pub fn generate_patch(
                 && fy >= p
                 && (fx >= c
                     || fy >= c
-                    || (fx - c) * (fx - c) + (fy - c) * (fy - c) <= radius * radius);
+                    || (fx - c) * (fx - c) + (fy - c) * (fy - c) <= reff * reff);
             if inside {
                 scratch_a[y * patch_dim + x] = 255;
             }

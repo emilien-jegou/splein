@@ -40,7 +40,7 @@ fn test_e2e_hover_box_with_shadow_recomputes_zero_layout() {
             .width(100.0)
             .height(100.0)
             .fill(fill.clone())
-            .shadow(Shadow::web_like(0.0, 4.0, 6.0, Color::BLACK))]),
+            .shadow(Shadow::web_like(0.0, 4.0, 6.0, 0.0, Color::BLACK))]),
     );
     engine.frame();
 

@@ -14,6 +14,7 @@ pub fn render_floating_hud() -> impl IntoElement {
             0.0,
             25.0,
             50.0,
+            0.0,
             Color::rgba(0.0, 0.0, 0.0, 0.25),
         ))
         .anchor(Anchor::Bottom)

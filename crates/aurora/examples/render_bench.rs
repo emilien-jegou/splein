@@ -47,7 +47,7 @@ fn row(label: &str) -> Element {
         .height(100.0)
         .radius(12.0)
         .fill(Color::hex(0x4F46E5))
-        .shadow(Shadow::web_like(0.0, 4.0, 8.0, Color::rgba(0.0, 0.0, 0.0, 0.5)))
+        .shadow(Shadow::web_like(0.0, 4.0, 8.0, 0.0, Color::rgba(0.0, 0.0, 0.0, 0.5)))
         .children([text(label.to_string())
             .size(14.0)
             .color(Color::WHITE)

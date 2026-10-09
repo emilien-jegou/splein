@@ -53,6 +53,7 @@ fn test_4_3_repetitive_damage_repaints_do_not_progressively_darken() {
             0.0,
             10.0,
             5.0,
+            0.0,
             Color::rgba(0.0, 0.0, 0.0, 0.5),
         )),
     ]));

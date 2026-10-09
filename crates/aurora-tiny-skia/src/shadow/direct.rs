@@ -16,7 +16,8 @@ pub fn render_direct_blur(
     offset_x: f32,
     offset_y: f32,
     softness: f32,
-    extent: f32,
+    pad: f32,
+    spread: f32,
     falloff_lut: &[u8; 256],
     color: Color,
     opacity: f32,
@@ -25,7 +26,7 @@ pub fn render_direct_blur(
     clip: Option<&Mask>,
 ) {
     let scale = if softness >= 16.0 { 0.5f32 } else { 1.0f32 };
-    let expansion = (extent + offset_x.abs().max(offset_y.abs())) * scale;
+    let expansion = (pad + offset_x.abs().max(offset_y.abs())) * scale;
     let bounds = ResolvedRect::new(
         (rect.x * scale) - expansion + (offset_x * scale),
         (rect.y * scale) - expansion + (offset_y * scale),
@@ -45,9 +46,19 @@ pub fn render_direct_blur(
     scratch_b.fill(0);
 
     let blur_r = ((softness * scale).round() as usize).max(1);
-    let scaled_rect = ResolvedRect::new(0.0, 0.0, rect.width * scale, rect.height * scale);
-    let shape_path =
-        crate::path::build_rounded_path(&scaled_rect, Radius::Scalar(radius * scale));
+    // Spread inflates the occluder before blurring, matching the 9-patch
+    // shape inflation (arc centers fixed, radii grown).
+    let spread_s = spread * scale;
+    let scaled_rect = ResolvedRect::new(
+        -spread_s,
+        -spread_s,
+        rect.width * scale + 2.0 * spread_s,
+        rect.height * scale + 2.0 * spread_s,
+    );
+    let shape_path = crate::path::build_rounded_path(
+        &scaled_rect,
+        Radius::Scalar((radius + spread).max(0.0) * scale),
+    );
     let Some(mut temp_pixmap) = Pixmap::new(bw, bh) else {
         return;
     };

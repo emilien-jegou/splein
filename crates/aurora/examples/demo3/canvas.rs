@@ -122,6 +122,7 @@ fn render_toolbar(icons: &AppIcons) -> impl IntoElement {
                             0.0,
                             1.0,
                             3.0,
+                            0.0,
                             Color::hex_alpha(0x000000, 0.1),
                         ))
                         .alignment(Alignment::Center)

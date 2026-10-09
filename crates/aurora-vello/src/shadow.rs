@@ -22,6 +22,7 @@ struct ShadowKey {
     radius_bits: u32,
     softness_bits: u32,
     extent_bits: u32,
+    spread_bits: u32,
     falloff_tag: u8,
     color_bits: u32,
 }
@@ -63,6 +64,17 @@ impl VelloShadowCache {
         if shadow.layers().is_empty() {
             return;
         }
+        // See tiny-skia: Alpha falls back to the box path until accelerated.
+        if matches!(
+            shadow.shape,
+            aurora::foundation::ShadowShape::Alpha
+        ) {
+            static WARNED: std::sync::atomic::AtomicBool =
+                std::sync::atomic::AtomicBool::new(false);
+            if !WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                tracing::warn!("ShadowShape::Alpha falls back to Box until accelerated");
+            }
+        }
         let intensity = light.intensity;
         if intensity <= 0.0 {
             return;
@@ -91,12 +103,13 @@ impl VelloShadowCache {
             }
             let (offset_x, offset_y) = shadow.layer_offset(light, layer);
             let blur_r = layer.softness.max(0.5);
-            let pad = Shadow::layer_pad(layer);
+            let pad = shadow.layer_pad(layer);
 
             let key = ShadowKey {
                 radius_bits: r_scalar.to_bits(),
                 softness_bits: blur_r.to_bits(),
                 extent_bits: pad.to_bits(),
+                spread_bits: shadow.spread.to_bits(),
                 falloff_tag: layer.falloff.tag(),
                 color_bits: (shadow.color.r.to_bits()
                     ^ shadow.color.g.to_bits()
@@ -112,7 +125,8 @@ impl VelloShadowCache {
                 let mut tinted = shadow.color;
                 tinted.a = 1.0;
                 let lut = layer.falloff.lut();
-                let patch = Self::generate_patch(r_scalar, blur_r, pad, &lut, &tinted);
+                let patch =
+                    Self::generate_patch(r_scalar, blur_r, pad, shadow.spread, &lut, &tinted);
                 self.cache.insert(key, patch);
             }
 
@@ -217,6 +231,7 @@ impl VelloShadowCache {
         radius: f32,
         softness: f32,
         pad: f32,
+        spread: f32,
         falloff_lut: &[u8; 256],
         color: &aurora::foundation::Color,
     ) -> ShadowPatch {
@@ -225,10 +240,13 @@ impl VelloShadowCache {
         let buf_len = dim * dim;
         let (mut a, mut b, mut temp) = (vec![0u8; buf_len], vec![0u8; buf_len], vec![0u8; buf_len]);
 
+        // Spread inflates the occluder (Vello keeps the solid-quadrant
+        // model with blur-rounded corners, matching its existing path).
+        let inset = pad - spread;
         for y in 0..dim {
             for x in 0..dim {
                 let (px, py) = (x as f32, y as f32);
-                if px >= pad && py >= pad {
+                if px >= inset && py >= inset {
                     a[y * dim + x] = 255;
                 }
             }

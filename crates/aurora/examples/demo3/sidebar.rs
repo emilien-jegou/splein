@@ -123,7 +123,7 @@ fn nav_item_with_status(label: &'static str, count: &'static str, dot: Color) ->
                     .height(7.0)
                     .radius(Radius::max())
                     .fill(dot)
-                    .shadow(Shadow::web_like(0.0, 0.0, 4.0, Color::hex(0xD5FFD7))),
+                    .shadow(Shadow::web_like(0.0, 0.0, 4.0, 0.0, Color::hex(0xD5FFD7))),
             ),
             text(label).size(14.0).color(Color::hex(0x0A0A0A)),
             group().width(Size::fill()),

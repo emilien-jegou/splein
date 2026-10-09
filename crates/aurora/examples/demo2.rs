@@ -175,6 +175,7 @@ fn btn_active(icon: &Arc<VectorGraphic>, k: &'static str) -> impl IntoElement {
             0.0,
             2.0,
             3.0,
+            0.0,
             Color::hex_alpha(0x54F554, 0.18),
         ))
         .alignment(Alignment::Center)

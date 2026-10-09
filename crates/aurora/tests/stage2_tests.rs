@@ -162,6 +162,7 @@ fn test_visual_bounds_expansion_for_strokes_and_outer_shadows() {
         0.0,
         5.0,
         3.0,
+        0.0,
         Color::rgba(0.0, 0.0, 0.0, 0.5),
     ));
 
@@ -438,6 +439,7 @@ fn test_shadow_blur_fringe_damage_expansion_and_cleanup() {
                         0.0,
                         10.0,
                         10.0,
+                        0.0,
                         Color::rgba(0.0, 0.0, 0.0, 0.5),
                     )),
             ]),

@@ -52,6 +52,18 @@ impl ShadowRasterizer {
         if shadow.layers().is_empty() {
             return;
         }
+        // Alpha-silhouette shadows are not accelerated yet; the 9-patch box
+        // path below is the graceful fallback. Warn once, not per frame.
+        if matches!(
+            shadow.shape,
+            aurora::foundation::ShadowShape::Alpha
+        ) {
+            static WARNED: std::sync::atomic::AtomicBool =
+                std::sync::atomic::AtomicBool::new(false);
+            if !WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                tracing::warn!("ShadowShape::Alpha falls back to Box until accelerated");
+            }
+        }
         let total_opacity = opacity * light.intensity;
         if total_opacity <= 0.0 {
             return;
@@ -80,9 +92,9 @@ impl ShadowRasterizer {
             }
             let (offset_x, offset_y) = shadow.layer_offset(light, layer);
             let blur_r = layer.softness.max(0.5);
-            let pad = Shadow::layer_pad(layer);
+            let pad = shadow.layer_pad(layer);
             // Slice past the inward blur support (see layer_geometry).
-            let (kernel_pad, corner_size, patch_dim) = layer_geometry(r_scalar, layer);
+            let (kernel_pad, corner_size, patch_dim) = layer_geometry(r_scalar, shadow, layer);
 
             // The 9-patch blit only applies the translation components of the
             // transform, so skewed (rotated) shadows fall back to the direct path,
@@ -102,6 +114,7 @@ impl ShadowRasterizer {
                     offset_y,
                     blur_r,
                     pad,
+                    shadow.spread,
                     &layer.falloff.lut(),
                     shadow.color,
                     layer_opacity,
@@ -112,12 +125,13 @@ impl ShadowRasterizer {
                 continue;
             }
 
-            let key = ShadowPatchKey {
-                radius_bits: r_scalar.to_bits(),
-                blur_bits: blur_r.to_bits(),
-                extent_bits: pad.to_bits(),
-                falloff_tag: layer.falloff.tag(),
-            };
+        let key = ShadowPatchKey {
+            radius_bits: r_scalar.to_bits(),
+            blur_bits: blur_r.to_bits(),
+            extent_bits: pad.to_bits(),
+            spread_bits: shadow.spread.to_bits(),
+            falloff_tag: layer.falloff.tag(),
+        };
 
             if !self.patch_cache.contains_key(&key) {
                 if self.patch_cache.len() >= MAX_SHADOW_PATCHES {
@@ -135,6 +149,7 @@ impl ShadowRasterizer {
                     kernel_pad,
                     corner_size,
                     patch_dim,
+                    shadow.spread,
                 );
                 self.patch_cache.insert(key, patch);
             }

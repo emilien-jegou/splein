@@ -68,6 +68,7 @@ fn card() -> GroupDef {
             0.0,
             10.0,
             30.0,
+            0.0,
             Color::hex_alpha(ACCENT, 0.30),
         ))
         .alignment(Alignment::Center)
