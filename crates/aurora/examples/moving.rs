@@ -144,61 +144,61 @@ fn main() {
 fn build_ui(pos_sig: Signal<(f32, f32)>, color_sig: Signal<Color>) -> impl IntoElement {
     let logo_graphic = VectorGraphic::from_str(DVD_SVG_RAW).expect("Valid SVG");
 
-    group().direction(Direction::Vertical)
-        .width(Size::fill()).height(Size::fill())
-        .fill(Color::hex(0x090D16))
+    group().direction("vertical")
+        .width("fill").height("fill")
+        .fill(0x090D16)
         .children((
-            group().direction(Direction::Vertical)
-                .width(Size::fill()).height(Size::fill())
+            group().direction("vertical")
+                .width("fill").height("fill")
                 .gap(20.0)
-                .margin(Margin::all(24.0))
+                .margin(24.0)
                 .children([
-                    group().direction(Direction::Horizontal)
-                        .width(Size::fill())
-                        .height(Size::fit())
-                        .distribution(Distribution::SpaceBetween)
-                        .alignment(Alignment::Center)
+                    group().direction("horizontal")
+                        .width("fill")
+                        .height("fit")
+                        .distribution("space-between")
+                        .alignment("center")
                         .children((
-                            group().direction(Direction::Vertical).gap(4.0).children([
+                            group().direction("vertical").gap(4.0).children([
                                 text("Aurora Rendering Showcase")
                                     .size(20.0)
                                     .weight(700)
                                     .color(Color::WHITE),
                                 text("DVD Vector Overlay bouncing over nested Flex containers")
                                     .size(13.0)
-                                    .color(Color::hex(0x64748B)),
+                                    .color(0x64748B),
                             ]),
                             group()
-                                .width(Size::fit()).height(Size::fit())
-                                .radius(Radius::scalar(999.0))
-                                .fill(Color::hex(0x1E293B))
-                                .stroke(Stroke::inside(1.0, Color::hex(0x334155)))
+                                .width("fit").height("fit")
+                                .radius(999.0)
+                                .fill(0x1E293B)
+                                .stroke("1.0 #334155 inside")
                                 .margin(Margin::sides(6.0, 12.0, 6.0, 12.0))
                                 .children([
                                     text("Press [F12] Damage | [F11] Boundaries")
                                         .size(12.0)
-                                        .color(Color::hex(0x38BDF8)),
+                                        .color(0x38BDF8),
                                 ]),
                         )),
-                    group().direction(Direction::Horizontal)
-                        .width(Size::fill())
-                        .height(Size::fill())
+                    group().direction("horizontal")
+                        .width("fill")
+                        .height("fill")
                         .gap(16.0)
                         .children((
-                            group().direction(Direction::Vertical)
-                                .width(Size::Percent(0.6))
-                                .height(Size::fill())
+                            group().direction("vertical")
+                                .width("60%")
+                                .height("fill")
                                 .gap(16.0)
                                 .children([
                                     group()
-                                        .width(Size::fill())
+                                        .width("fill")
                                         .height(180.0)
-                                        .radius(Radius::scalar(16.0))
-                                        .fill(Color::hex(0x131C2E))
-                                        .stroke(Stroke::inside(1.0, Color::hex(0x1E293B)))
-                                        .margin(Margin::all(16.0))
+                                        .radius(16.0)
+                                        .fill(0x131C2E)
+                                        .stroke("1.0 #1E293B inside")
+                                        .margin(16.0)
                                         .children([
-                                            group().direction(Direction::Vertical).gap(12.0).children([
+                                            group().direction("vertical").gap(12.0).children([
                                                 text("Subtree Isolation Matrix")
                                                     .size(15.0)
                                                     .weight(600)
@@ -206,52 +206,52 @@ fn build_ui(pos_sig: Signal<(f32, f32)>, color_sig: Signal<Color>) -> impl IntoE
                                                 text("The DVD logo hovers in an overlay z-plane. Moving affine translations incur O(1) dirty costs, strictly bounding spatial damage to its current and previous scanlines.")
                                                     .size(13.0)
                                                     .line_height(18.0)
-                                                    .color(Color::hex(0x94A3B8)),
+                                                    .color(0x94A3B8),
                                             ]),
                                         ]),
                                     group()
-                                        .width(Size::fill()).height(Size::fill())
-                                        .radius(Radius::scalar(16.0))
-                                        .fill(Color::hex(0x131C2E))
-                                        .stroke(Stroke::inside(1.0, Color::hex(0x1E293B)))
-                                        .margin(Margin::all(16.0))
+                                        .width("fill").height("fill")
+                                        .radius(16.0)
+                                        .fill(0x131C2E)
+                                        .stroke("1.0 #1E293B inside")
+                                        .margin(16.0)
                                         .children([
-                                            group().direction(Direction::Vertical).gap(12.0).children((
+                                            group().direction("vertical").gap(12.0).children((
                                                 text("Nested Geometry Containers")
                                                     .size(15.0)
                                                     .weight(600)
                                                     .color(Color::WHITE),
-                                                group().direction(Direction::Horizontal).gap(8.0).children([
-                                                    group().width(80.0).height(60.0).radius(Radius::scalar(8.0)).fill(Color::hex(0x1E293B)),
-                                                    group().width(80.0).height(60.0).radius(Radius::scalar(8.0)).fill(Color::hex(0x1E293B)),
-                                                    group().width(80.0).height(60.0).radius(Radius::scalar(8.0)).fill(Color::hex(0x1E293B)),
+                                                group().direction("horizontal").gap(8.0).children([
+                                                    group().width(80.0).height(60.0).radius(8.0).fill(0x1E293B),
+                                                    group().width(80.0).height(60.0).radius(8.0).fill(0x1E293B),
+                                                    group().width(80.0).height(60.0).radius(8.0).fill(0x1E293B),
                                                 ]),
                                             )),
                                         ]),
                                 ]),
-                            group().direction(Direction::Vertical)
-                                .width(Size::Percent(0.4))
-                                .height(Size::fill())
+                            group().direction("vertical")
+                                .width("40%")
+                                .height("fill")
                                 .gap(16.0)
                                 .children([
                                     group()
-                                        .width(Size::fill()).height(Size::fill())
-                                        .radius(Radius::scalar(16.0))
-                                        .fill(Color::hex(0x0F172A))
-                                        .stroke(Stroke::inside(1.0, Color::hex(0x1E293B)))
-                                        .margin(Margin::all(16.0))
+                                        .width("fill").height("fill")
+                                        .radius(16.0)
+                                        .fill(0x0F172A)
+                                        .stroke("1.0 #1E293B inside")
+                                        .margin(16.0)
                                         .children([
-                                            group().direction(Direction::Vertical).gap(10.0).children([
+                                            group().direction("vertical").gap(10.0).children([
                                                 text("Live Vector Telemetry")
                                                     .size(15.0)
                                                     .weight(600)
                                                     .color(Color::WHITE),
                                                 text("SVG ViewBox: 167.5 x 79.2")
                                                     .size(12.0)
-                                                    .color(Color::hex(0x64748B)),
+                                                    .color(0x64748B),
                                                 text("Render Mode: Vector Anti-aliased TinySkia / Vello")
                                                     .size(12.0)
-                                                    .color(Color::hex(0x64748B)),
+                                                    .color(0x64748B),
                                             ]),
                                         ]),
                                 ]),

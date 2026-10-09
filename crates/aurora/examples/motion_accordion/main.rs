@@ -10,7 +10,6 @@ pub mod panels;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use aurora::prelude::*;
 use aurora::reactive::{ReactiveRuntime, Signal};
 use common::ExampleCli;
 use motion_ui::*;
@@ -29,7 +28,7 @@ fn main() {
 
     cli.app_config("Aurora — Web 02 · Accordion")
         .font("Inter", include_bytes!("../../assets/inter-var.ttf"))
-        .background(Color::hex(PAGE))
+        .background(PAGE)
         .runtime(runtime)
         // The click lives on each header. There is no driver extension and nothing
         // polls the pointer, so an idle frame costs no interaction work at all.

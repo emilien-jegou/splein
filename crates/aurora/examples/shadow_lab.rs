@@ -25,18 +25,18 @@ const LABEL_COLOR: u32 = 0x483050;
 
 fn card(label: &'static str, shadow: Shadow) -> Element {
     group()
-        .direction(Direction::Vertical)
+        .direction("vertical")
         .gap(24.0)
-        .alignment(Alignment::Center)
+        .alignment("center")
         .children((
             text(label)
                 .size(16.0)
                 .weight(500)
-                .color(Color::hex(LABEL_COLOR)),
+                .color(LABEL_COLOR),
             group()
                 .width(150.0)
                 .height(150.0)
-                .radius(Radius::scalar(8.0))
+                .radius(8.0)
                 .fill(Color::WHITE)
                 .shadow(shadow),
         ))
@@ -47,19 +47,19 @@ fn build_ui() -> impl IntoElement {
     // The pink panel is the full background: no outer card, just the
     // two labeled cards centered with the reference's 96v/48h breathing room.
     group()
-        .direction(Direction::Vertical)
-        .width(Size::fill())
-        .height(Size::fill())
-        .fill(Color::hex(PANEL_BG))
-        .alignment(Alignment::Center)
-        .distribution(Distribution::Center)
+        .direction("vertical")
+        .width("fill")
+        .height("fill")
+        .fill(PANEL_BG)
+        .alignment("center")
+        .distribution("center")
         .children([group()
-            .direction(Direction::Horizontal)
-            .width(Size::fill())
+            .direction("horizontal")
+            .width("fill")
             .gap(48.0)
-            .margin(Margin::symmetric(96.0, 48.0))
-            .alignment(Alignment::Center)
-            .distribution(Distribution::Center)
+            .margin("96.0 48.0")
+            .alignment("center")
+            .distribution("center")
             .children([
                 card(
                     "Typical Shadow",
@@ -118,6 +118,6 @@ fn main() {
 
     cli.app_config("Aurora — Shadow Lab")
         .font("Inter", include_bytes!("../assets/inter-var.ttf"))
-        .background(Color::hex(PANEL_BG))
+        .background(PANEL_BG)
         .run(build_ui);
 }

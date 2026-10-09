@@ -38,9 +38,9 @@ pub fn Page() -> impl IntoElement {
 fn controls(status: Signal<String>, control: ControllerHandle) -> GroupDef {
     let reported = status.clone();
     group()
-        .direction(Direction::Horizontal)
+        .direction("horizontal")
         .gap(10.0)
-        .alignment(Alignment::Center)
+        .alignment("center")
         .children((
             status_chip(
                 text(reported)
@@ -59,9 +59,9 @@ fn restart_pill(control: ControllerHandle, status: Signal<String>) -> GroupDef {
     group()
         .key("restart")
         .height(26.0)
-        .radius(Radius::max())
-        .fill(Color::hex(ACCENT))
-        .alignment(Alignment::Center)
+        .radius("max")
+        .fill(ACCENT)
+        .alignment("center")
         .on_click(move |_| {
             handler.restart();
             reporter.set(String::from("restarted"));
@@ -82,13 +82,13 @@ fn card(control: ControllerHandle, slide: Signal<f32>) -> GroupDef {
 
     group()
         .key("card")
-        .direction(Direction::Vertical)
+        .direction("vertical")
         .width(140.0)
-        .height(Size::fill())
+        .height("fill")
         .radius(16.0)
-        .fill(Color::hex(ACCENT))
-        .alignment(Alignment::Center)
-        .distribution(Distribution::Center)
+        .fill(ACCENT)
+        .alignment("center")
+        .distribution("center")
         .gap(6.0)
         .x(slide)
         .on_pointer_enter(move |_| {

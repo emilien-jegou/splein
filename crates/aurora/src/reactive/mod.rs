@@ -97,7 +97,7 @@ pub use hooks::{
 };
 pub use id::{SignalId, SubscriberId};
 pub use observer::Observer;
-pub use prop::{computed, DynamicProp, IntoProp};
+pub use prop::{computed, DynamicProp, IntoProp, IntoPropValue, Prop, PropDefault};
 pub use readable::{Readable, SignalRead};
 pub use runtime::{run_post_layout, tick, ReactiveRuntime};
 pub use signal::Signal;

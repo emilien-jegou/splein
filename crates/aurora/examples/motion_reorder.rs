@@ -45,7 +45,7 @@ fn main() {
 
     cli.app_config("Aurora — Web 04 · Drag to reorder")
         .font("Inter", include_bytes!("../assets/inter-var.ttf"))
-        .background(Color::hex(PAGE))
+        .background(PAGE)
         .run(Page);
 }
 
@@ -196,9 +196,9 @@ fn list(drag: Rc<Drag>) -> GroupDef {
 
     group()
         .key("list")
-        .direction(Direction::Vertical)
-        .width(Size::fill())
-        .height(Size::fill())
+        .direction("vertical")
+        .width("fill")
+        .height("fill")
         .gap(GAP)
         // Bound so the gesture can read the row boxes. Nothing is published into a signal: the
         // gesture reads them when the pointer moves, and a measurement that invalidated
@@ -501,12 +501,12 @@ fn row(index: usize, label: &str) -> GroupDef {
         // Keyed by label, not by index: a reorder then reads as two rows changing places rather
         // than as every row being replaced.
         .key(format!("row-{label}"))
-        .direction(Direction::Horizontal)
-        .width(Size::fill())
-        .height(Size::fill())
+        .direction("horizontal")
+        .width("fill")
+        .height("fill")
         .radius(12.0)
-        .fill(Color::hex(ACCENT))
-        .alignment(Alignment::Center)
+        .fill(ACCENT)
+        .alignment("center")
         .gap(14.0)
         .margin(Margin::x(4.0))
         .children((
@@ -519,7 +519,7 @@ fn row(index: usize, label: &str) -> GroupDef {
                 .size(14.0)
                 .weight(600)
                 .color(Color::WHITE),
-            group().width(Size::fill()),
+            group().width("fill"),
             text("drag me")
                 .size(12.0)
                 .color(Color::white_alpha(0.6))

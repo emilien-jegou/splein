@@ -56,22 +56,22 @@ fn slider(
         move || fmt(value.get())
     });
     group()
-        .direction(Direction::Vertical)
+        .direction("vertical")
         .gap(4.0)
         .children((
             group()
-                .direction(Direction::Horizontal)
+                .direction("horizontal")
                 .gap(8.0)
-                .alignment(Alignment::Center)
+                .alignment("center")
                 .children((
-                    text(label).size(13.0).color(Color::hex(0x333333)),
-                    text(readout).size(13.0).color(Color::hex(0x111111)),
+                    text(label).size(13.0).color(0x333333),
+                    text(readout).size(13.0).color(0x111111),
                 )),
             group()
                 .width(TRACK_W)
                 .height(TRACK_H)
-                .radius(Radius::scalar(6.0))
-                .fill(Color::hex(0xD8D5D0))
+                .radius(6.0)
+                .fill(0xD8D5D0)
                 .hit_test(HitTest::Opaque)
                 .on_drag_start({
                     let (value, start_val, start_x) = (value.clone(), start_val.clone(), start_x.clone());
@@ -87,8 +87,8 @@ fn slider(
                 .children([group()
                     .width(THUMB_W)
                     .height(20.0)
-                    .radius(Radius::scalar(7.0))
-                    .fill(Color::hex(0x483050))
+                    .radius(7.0)
+                    .fill(0x483050)
                     .x(thumb_x)
                     // Static pose values are dropped by the reconciler;
                     // positions must be closures.
@@ -103,10 +103,10 @@ fn button(label: DynamicProp<String>, on_press: impl Fn() + 'static) -> Element 
     group()
         .width(150.0)
         .height(34.0)
-        .radius(Radius::scalar(8.0))
-        .fill(Color::hex(0x483050))
-        .alignment(Alignment::Center)
-        .distribution(Distribution::Center)
+        .radius(8.0)
+        .fill(0x483050)
+        .alignment("center")
+        .distribution("center")
         .hit_test(HitTest::Opaque)
         .on_click(move |_| on_press())
         .children([text(label).size(13.0).color(Color::WHITE)])
@@ -216,7 +216,7 @@ fn main() {
 
     cli.app_config("Aurora — Shadow Studio")
         .font("Inter", include_bytes!("../assets/inter-var.ttf"))
-        .background(Color::hex(0xE8E6E1))
+        .background(0xE8E6E1)
         .runtime(Rc::clone(&runtime))
         .run(move || {
             let fpx: Rc<dyn Fn(f32) -> String> = Rc::new(|v| format!("{v:.1}px"));
@@ -231,24 +231,24 @@ fn main() {
                 move || mode.get() == 1
             });
             group()
-                .direction(Direction::Horizontal)
-                .width(Size::fill())
-                .height(Size::fill())
-                .fill(Color::hex(0xE8E6E1))
-                .alignment(Alignment::Center)
+                .direction("horizontal")
+                .width("fill")
+                .height("fill")
+                .fill(0xE8E6E1)
+                .alignment("center")
                 .children([
                     // Control panel.
                     group()
-                        .direction(Direction::Vertical)
+                        .direction("vertical")
                         .gap(12.0)
-                        .margin(Margin::all(28.0))
+                        .margin(28.0)
                         .children((
                             button(mode_name.clone(), {
                                 let mode = mode.clone();
                                 move || mode.set((mode.get() + 1) % 3)
                             }),
                             group()
-                                .direction(Direction::Vertical)
+                                .direction("vertical")
                                 .gap(12.0)
                                 .visible(in_web.clone())
                                 .children((
@@ -257,7 +257,7 @@ fn main() {
                                     slider(&rt, "blur", blur.clone(), 0.0, 40.0, fpx.clone()),
                                 )),
                             group()
-                                .direction(Direction::Vertical)
+                                .direction("vertical")
                                 .gap(12.0)
                                 .visible(in_elev.clone())
                                 .children([slider(
@@ -271,12 +271,12 @@ fn main() {
                             slider(&rt, "spread", spread.clone(), -12.0, 24.0, fpx.clone()),
                             slider(&rt, "opacity", opacity.clone(), 0.0, 1.0, fop.clone()),
                             group()
-                                .direction(Direction::Horizontal)
+                                .direction("horizontal")
                                 .gap(8.0)
                                 .children([
                                     swatch(tint.clone(), Color::BLACK),
-                                    swatch(tint.clone(), Color::hex(0x7A3D8F)),
-                                    swatch(tint.clone(), Color::hex(0x2563EB)),
+                                    swatch(tint.clone(), 0x7A3D8F),
+                                    swatch(tint.clone(), 0x2563EB),
                                 ]),
                             button(
                                 {
@@ -325,41 +325,41 @@ fn main() {
                                     move || alpha_shape.set(!alpha_shape.get())
                                 },
                             ),
-                            text(css.clone()).size(12.0).color(Color::hex(0x555555)),
+                            text(css.clone()).size(12.0).color(0x555555),
                         )),
                     // Preview stage.
                     group()
-                        .width(Size::fill())
-                        .height(Size::fill())
-                        .fill(Color::hex(0xF1CFFC))
-                        .alignment(Alignment::Center)
-                        .distribution(Distribution::Center)
+                        .width("fill")
+                        .height("fill")
+                        .fill(0xF1CFFC)
+                        .alignment("center")
+                        .distribution("center")
                         .children([group()
-                            .direction(Direction::Horizontal)
+                            .direction("horizontal")
                             .gap(48.0)
-                            .alignment(Alignment::Center)
+                            .alignment("center")
                             .children((
                                 group()
                                     .width(150.0)
                                     .height(150.0)
-                                    .radius(Radius::scalar(8.0))
+                                    .radius(8.0)
                                     .fill(Color::WHITE)
                                     .shadow(shadow.clone()),
                                 group()
                                     .light(LightEnvironment::from_angles(270.0, 45.0))
-                                    .direction(Direction::Vertical)
+                                    .direction("vertical")
                                     .gap(8.0)
-                                    .alignment(Alignment::Center)
+                                    .alignment("center")
                                     .children((
                                         group()
                                             .width(110.0)
                                             .height(110.0)
-                                            .radius(Radius::scalar(8.0))
+                                            .radius(8.0)
                                             .fill(Color::WHITE)
                                             .shadow(12.0),
                                         text("light az 270")
                                             .size(12.0)
-                                            .color(Color::hex(0x483050)),
+                                            .color(0x483050),
                                     )),
                             ))]),
                 ])
@@ -367,11 +367,12 @@ fn main() {
 }
 
 /// A tint swatch button writing `color` (alpha preserved from current).
-fn swatch(tint: Signal<Color>, color: Color) -> Element {
+fn swatch(tint: Signal<Color>, color: impl Into<Color>) -> Element {
+    let color = color.into();
     group()
         .width(36.0)
         .height(28.0)
-        .radius(Radius::scalar(6.0))
+        .radius(6.0)
         .fill(color)
         .hit_test(HitTest::Opaque)
         .on_click(move |_| {

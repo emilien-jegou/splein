@@ -40,12 +40,13 @@ fn keyed_hooks_survive_a_skipped_conditional() {
     });
 }
 
-/// Auto-derived (`file:line`) keys recall across rebuilds.
+/// Explicit keys recall across rebuilds.
 ///
-/// The same source line re-executed recalls the same slot — which is exactly
-/// what a component body re-running is.
-fn build_auto_bump() -> u32 {
-    let v = use_signal!(10u32);
+/// The same key re-entered recalls the same slot — which is exactly what a
+/// component body re-running is. (The old `file:line`-derived arm is gone:
+/// moving a line must never reset state.)
+fn build_named_bump() -> u32 {
+    let v = use_signal!("named-bump", 10u32);
     let cur = v.get();
     v.set(cur + 1);
     cur
@@ -53,15 +54,15 @@ fn build_auto_bump() -> u32 {
 
 #[test]
 #[ntest::timeout(5_000)]
-fn auto_keys_recall_across_rebuilds() {
+fn named_keys_recall_across_rebuilds() {
     let rt = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let cx = Cx::new(Rc::clone(&rt));
 
-    assert_eq!(cx.enter_keyed("auto", build_auto_bump), 10);
+    assert_eq!(cx.enter_keyed("auto", build_named_bump), 10);
     assert_eq!(
-        cx.enter_keyed("auto", build_auto_bump),
+        cx.enter_keyed("auto", build_named_bump),
         11,
-        "same line re-executed must recall its value"
+        "same key re-entered must recall its value"
     );
 }
 
@@ -87,7 +88,7 @@ fn hook_in_loop_panics() {
     let cx = Cx::new(Rc::clone(&rt));
     cx.enter_keyed("loop", || {
         for _ in 0..3 {
-            let _s = use_signal!(0u32);
+            let _s = use_signal!("looped", 0u32);
         }
     });
 }

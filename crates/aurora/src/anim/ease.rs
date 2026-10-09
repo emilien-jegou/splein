@@ -64,3 +64,42 @@ impl Ease {
         }
     }
 }
+
+impl Ease {
+    /// Parses `linear`, `in-cubic`/`ease-in`, `out-cubic`/`ease-out` (default),
+    /// `in-out-cubic`/`ease-in-out`, `out-quint`, `in-out-quint`, `out-expo`.
+    /// Case-insensitive; underscores and PascalCase accepted too.
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_lowercase().replace('_', "-").as_str() {
+            "linear" => Some(Self::Linear),
+            "in-cubic" | "ease-in" | "incubic" | "in" => Some(Self::InCubic),
+            "out-cubic" | "ease-out" | "outcubic" | "out" | "" => Some(Self::OutCubic),
+            "in-out-cubic" | "ease-in-out" | "inoutcubic" | "in-out" => Some(Self::InOutCubic),
+            "out-quint" | "outquint" => Some(Self::OutQuint),
+            "in-out-quint" | "inoutquint" => Some(Self::InOutQuint),
+            "out-expo" | "outexpo" | "expo" => Some(Self::OutExpo),
+            _ => None,
+        }
+    }
+}
+
+impl std::str::FromStr for Ease {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, String> {
+        Self::parse(s).ok_or_else(|| format!("invalid ease `{s}`; expected linear, in-cubic, out-cubic, in-out-cubic, out-quint, in-out-quint, or out-expo"))
+    }
+}
+
+impl From<&str> for Ease {
+    fn from(s: &str) -> Self {
+        match Self::parse(s) {
+            Some(e) => e,
+            // Same no-crash contract as foundation literals: sentinel +
+            // loud log. Never panics, in any profile.
+            None => {
+                tracing::error!("aurora: invalid ease `{s}`; expected linear, in-cubic, out-cubic, in-out-cubic, out-quint, in-out-quint, or out-expo; using out-cubic");
+                Self::default()
+            }
+        }
+    }
+}

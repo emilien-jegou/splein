@@ -24,16 +24,16 @@ fn main() {
 
 fn build_ui() -> impl IntoElement {
     group()
-        .direction(Direction::Vertical)
-        .width(Size::fill())
-        .height(Size::fill())
+        .direction("vertical")
+        .width("fill")
+        .height("fill")
         .fill(Color::WHITE)
-        .alignment(Alignment::Center)
-        .distribution(Distribution::Center)
+        .alignment("center")
+        .distribution("center")
         .children([
             text("Selectable (readonly, mouse-only)")
                 .size(13.0)
-                .color(Color::hex(0x666666)),
+                .color(0x666666),
             text(LOREM)
                 .key("selectable-body")
                 .selectable(true)
@@ -43,7 +43,7 @@ fn build_ui() -> impl IntoElement {
                 .width(Size::fixed(520.0)),
             text("This label stays click-transparent: dragging over it selects nothing.")
                 .size(13.0)
-                .color(Color::hex(0x666666))
+                .color(0x666666)
                 .width(Size::fixed(520.0)),
         ])
 }

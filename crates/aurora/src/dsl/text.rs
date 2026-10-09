@@ -198,9 +198,9 @@ impl TextDef {
         self.overflow = overflow;
         self
     }
-    /// Sets text foreground color.
-    pub fn color(mut self, c: Color) -> Self {
-        self.color = c;
+    /// Sets text foreground color (`Color`, `"#121212"`, `"red"`, `0x121212`).
+    pub fn color(mut self, c: impl Into<Color>) -> Self {
+        self.color = c.into();
         self
     }
     /// Opts this run into mouse text selection (readonly highlight + drag).
@@ -218,8 +218,8 @@ impl TextDef {
     ///
     /// Chained calls compose (`.margin(left(..)).margin(top(..))`), which is the
     /// only reading under which the per-side constructors make sense.
-    pub fn margin(mut self, m: Margin) -> Self {
-        self.margin = self.margin.merged(m);
+    pub fn margin(mut self, m: impl Into<Margin>) -> Self {
+        self.margin = self.margin.merged(m.into());
         self
     }
     /// Sets the layout width sizing intent.
@@ -239,8 +239,8 @@ impl TextDef {
         self
     }
     /// Sets anchor alignment and enables absolute layout.
-    pub fn anchor(mut self, a: Anchor) -> Self {
-        self.anchor = Some(a);
+    pub fn anchor(mut self, a: impl Into<Anchor>) -> Self {
+        self.anchor = Some(a.into());
         self.is_absolute = true;
         self
     }

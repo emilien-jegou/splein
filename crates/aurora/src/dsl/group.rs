@@ -169,13 +169,13 @@ impl GroupDef {
     ///
     /// Chained calls compose (`.margin(left(..)).margin(top(..))`), which is the
     /// only reading under which the per-side constructors make sense.
-    pub fn margin(mut self, m: Margin) -> Self {
-        self.margin = self.margin.merged(m);
+    pub fn margin(mut self, m: impl Into<Margin>) -> Self {
+        self.margin = self.margin.merged(m.into());
         self
     }
 
-    pub fn stroke(mut self, s: Stroke) -> Self {
-        self.stroke = Some(s);
+    pub fn stroke(mut self, s: impl Into<Stroke>) -> Self {
+        self.stroke = Some(s.into());
         self
     }
     pub fn radius<R: Into<Radius>>(mut self, r: R) -> Self {
@@ -186,20 +186,20 @@ impl GroupDef {
         self.clip = c;
         self
     }
-    pub fn direction(mut self, d: Direction) -> Self {
-        self.layout.direction = d;
+    pub fn direction(mut self, d: impl Into<Direction>) -> Self {
+        self.layout.direction = d.into();
         self
     }
     pub fn gap<G: Into<Gap>>(mut self, g: G) -> Self {
         self.layout.gap = g.into();
         self
     }
-    pub fn alignment(mut self, a: Alignment) -> Self {
-        self.layout.alignment = a;
+    pub fn alignment(mut self, a: impl Into<Alignment>) -> Self {
+        self.layout.alignment = a.into();
         self
     }
-    pub fn distribution(mut self, d: Distribution) -> Self {
-        self.layout.distribution = d;
+    pub fn distribution(mut self, d: impl Into<Distribution>) -> Self {
+        self.layout.distribution = d.into();
         self
     }
 
@@ -207,8 +207,8 @@ impl GroupDef {
         self.is_absolute = true;
         self
     }
-    pub fn anchor(mut self, a: Anchor) -> Self {
-        self.anchor = Some(a);
+    pub fn anchor(mut self, a: impl Into<Anchor>) -> Self {
+        self.anchor = Some(a.into());
         self.is_absolute = true;
         self
     }

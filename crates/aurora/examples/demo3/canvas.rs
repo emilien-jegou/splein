@@ -6,39 +6,39 @@ use aurora::prelude::*;
 
 pub fn render_canvas(icons: &AppIcons) -> impl IntoElement {
     group()
-        .width(Size::fill())
-        .height(Size::fill())
+        .width("fill")
+        .height("fill")
         .fill(Color::WHITE)
         .children((
             group()
-                .direction(Direction::Vertical)
-                .width(Size::fill())
-                .height(Size::fill())
+                .direction("vertical")
+                .width("fill")
+                .height("fill")
                 .children((
                     render_toolbar(icons),
                     group()
-                        .width(Size::fill())
+                        .width("fill")
                         .height(1.0)
                         .fill(Color::hex_alpha(0x08090C, 0.06)),
                     group()
-                        .direction(Direction::Vertical)
-                        .width(Size::fill())
-                        .height(Size::fill())
-                        .margin(Margin::all(16.0))
+                        .direction("vertical")
+                        .width("fill")
+                        .height("fill")
+                        .margin(16.0)
                         .gap(16.0)
                         .children((
                             card_row(icons, "Inter", "Aa"),
                             card_row(icons, "Inter", "Aa"),
                             card_row(icons, "Arial (6)", "Aa"),
                             group()
-                                .direction(Direction::Horizontal)
-                                .width(Size::fill())
+                                .direction("horizontal")
+                                .width("fill")
                                 .height(80.0)
-                                .alignment(Alignment::Center)
-                                .distribution(Distribution::Center)
+                                .alignment("center")
+                                .distribution("center")
                                 .children([text("All 2 font families loaded")
                                     .size(12.0)
-                                    .color(Color::hex(0x999999))]),
+                                    .color(0x999999)]),
                         )),
                 )),
             render_floating_hud(),
@@ -47,20 +47,20 @@ pub fn render_canvas(icons: &AppIcons) -> impl IntoElement {
 
 fn render_toolbar(icons: &AppIcons) -> impl IntoElement {
     group()
-        .direction(Direction::Horizontal)
-        .width(Size::fill())
+        .direction("horizontal")
+        .width("fill")
         .height(52.0)
-        .alignment(Alignment::Center)
+        .alignment("center")
         .gap(12.0)
         .margin(Margin::x(16.0))
         .children((
             group()
-                .direction(Direction::Horizontal)
+                .direction("horizontal")
                 .width(344.0)
                 .height(32.0)
-                .radius(Radius::max())
+                .radius("max")
                 .fill(Color::hex_alpha(0x999999, 0.12))
-                .alignment(Alignment::Center)
+                .alignment("center")
                 .gap(10.0)
                 .children((
                     svg(&icons.search)
@@ -68,15 +68,15 @@ fn render_toolbar(icons: &AppIcons) -> impl IntoElement {
                         .margin(Margin::left(10.0)),
                     text("Search font, family, tag...")
                         .size(14.0)
-                        .color(Color::hex(0x7B7B7B)),
+                        .color(0x7B7B7B),
                 )),
             group()
-                .direction(Direction::Horizontal)
+                .direction("horizontal")
                 .height(32.0)
-                .radius(Radius::max())
+                .radius("max")
                 .stroke(Stroke::inside(1.0, Color::hex_alpha(0x000000, 0.1)))
-                .alignment(Alignment::Center)
-                .distribution(Distribution::Center)
+                .alignment("center")
+                .distribution("center")
                 .gap(6.0)
                 .children((
                     svg(&icons.filter)
@@ -85,38 +85,38 @@ fn render_toolbar(icons: &AppIcons) -> impl IntoElement {
                     text("Filters")
                         .size(14.0)
                         .weight(500)
-                        .color(Color::hex(0x0A0A0A))
+                        .color(0x0A0A0A)
                         .margin(Margin::right(14.0)),
                 )),
             group()
-                .direction(Direction::Horizontal)
-                .width(Size::fill())
+                .direction("horizontal")
+                .width("fill")
                 .height(32.0)
-                .alignment(Alignment::Center)
+                .alignment("center")
                 .gap(12.0)
                 .children((
                     group()
-                        .width(Size::fill())
+                        .width("fill")
                         .height(6.0)
                         .radius(3.0)
                         .fill(Color::hex_alpha(0x000000, 0.07))
                         .children([group()
                             .width(Size::percent(0.40))
-                            .height(Size::fill())
+                            .height("fill")
                             .radius(3.0)
-                            .fill(Color::hex(0x1019EC))]),
-                    text("24px").size(14.0).color(Color::hex(0x2B2B2B)),
+                            .fill(0x1019EC)]),
+                    text("24px").size(14.0).color(0x2B2B2B),
                 )),
             group()
-                .direction(Direction::Horizontal)
+                .direction("horizontal")
                 .height(32.0)
-                .radius(Radius::max())
+                .radius("max")
                 .fill(Color::hex_alpha(0x08090C, 0.04))
-                .alignment(Alignment::Center)
+                .alignment("center")
                 .children((
                     group()
                         .height(28.0)
-                        .radius(Radius::max())
+                        .radius("max")
                         .fill(Color::WHITE)
                         .shadow(Shadow::web_like(
                             0.0,
@@ -125,21 +125,21 @@ fn render_toolbar(icons: &AppIcons) -> impl IntoElement {
                             0.0,
                             Color::hex_alpha(0x000000, 0.1),
                         ))
-                        .alignment(Alignment::Center)
-                        .distribution(Distribution::Center)
+                        .alignment("center")
+                        .distribution("center")
                         .children([text("Grid")
                             .size(14.0)
                             .weight(500)
-                            .color(Color::hex(0x0A0A0A))
+                            .color(0x0A0A0A)
                             .margin(Margin::x(12.0))]),
                     group()
                         .height(28.0)
-                        .radius(Radius::max())
-                        .alignment(Alignment::Center)
-                        .distribution(Distribution::Center)
+                        .radius("max")
+                        .alignment("center")
+                        .distribution("center")
                         .children([text("List")
                             .size(12.0)
-                            .color(Color::hex(0x525252))
+                            .color(0x525252)
                             .margin(Margin::x(12.0))]),
                 )),
         ))
@@ -147,8 +147,8 @@ fn render_toolbar(icons: &AppIcons) -> impl IntoElement {
 
 fn card_row(icons: &AppIcons, name: &'static str, sample: &'static str) -> impl IntoElement {
     group()
-        .direction(Direction::Horizontal)
-        .width(Size::fill())
+        .direction("horizontal")
+        .width("fill")
         .gap(12.0)
         .children((
             font_card(icons, name, sample),
@@ -162,42 +162,42 @@ fn card_row(icons: &AppIcons, name: &'static str, sample: &'static str) -> impl 
 
 fn font_card(icons: &AppIcons, name: &'static str, sample: &'static str) -> impl IntoElement {
     group()
-        .direction(Direction::Vertical)
-        .width(Size::fill())
+        .direction("vertical")
+        .width("fill")
         .height(220.0)
         .radius(16.0)
         .fill(Color::WHITE)
         .stroke(Stroke::inside(1.0, Color::hex_alpha(0x08090C, 0.06)))
         .children((
             group()
-                .direction(Direction::Horizontal)
-                .width(Size::fill())
-                .alignment(Alignment::Center)
-                .margin(Margin::all(8.0))
+                .direction("horizontal")
+                .width("fill")
+                .alignment("center")
+                .margin(8.0)
                 .children((
                     group()
                         .width(6.0)
                         .height(6.0)
-                        .radius(Radius::max())
-                        .fill(Color::hex(0x999999)),
+                        .radius("max")
+                        .fill(0x999999),
                     text("V")
                         .size(13.0)
                         .weight(700)
-                        .color(Color::hex(0x1019EC))
+                        .color(0x1019EC)
                         .margin(Margin::left(4.0)),
                     text(name)
                         .size(13.0)
                         .weight(500)
-                        .color(Color::hex(0x0A0A0A))
+                        .color(0x0A0A0A)
                         .margin(Margin::left(4.0)),
-                    group().width(Size::fill()),
+                    group().width("fill"),
                     svg(&icons.star).size(15.0, 15.0),
                 )),
             group()
-                .width(Size::fill())
-                .height(Size::fill())
-                .alignment(Alignment::Center)
-                .distribution(Distribution::Center)
-                .children([text(sample).size(90.0).color(Color::hex(0x0A0A0A))]),
+                .width("fill")
+                .height("fill")
+                .alignment("center")
+                .distribution("center")
+                .children([text(sample).size(90.0).color(0x0A0A0A)]),
         ))
 }

@@ -21,7 +21,7 @@ fn main() {
 
     cli.app_config("Aurora — Motion 03c · Seamless interruption")
         .font("Inter", include_bytes!("../assets/inter-var.ttf"))
-        .background(Color::hex(PAGE))
+        .background(PAGE)
         .run(Page);
 }
 
@@ -40,7 +40,7 @@ pub fn Page() -> impl IntoElement {
         move || step.update(|n| *n += 1)
     });
 
-    let x = Transition::spring(Spring::snappy()).on(target);
+    let x = Transition::from_str("spring").on(target);
 
     page(
         "MOTION · 03C — INTERRUPTION",
@@ -59,11 +59,11 @@ pub fn Page() -> impl IntoElement {
 fn card() -> GroupDef {
     group()
         .key("card")
-        .direction(Direction::Vertical)
+        .direction("vertical")
         .width(180.0)
-        .height(Size::fill())
+        .height("fill")
         .radius(16.0)
-        .fill(Color::hex(ACCENT))
+        .fill(ACCENT)
         .shadow(Shadow::web_like(
             0.0,
             10.0,
@@ -71,8 +71,8 @@ fn card() -> GroupDef {
             0.0,
             Color::hex_alpha(ACCENT, 0.30),
         ))
-        .alignment(Alignment::Center)
-        .distribution(Distribution::Center)
+        .alignment("center")
+        .distribution("center")
         .gap(6.0)
         .children((
             text("SPRING")

@@ -47,6 +47,13 @@
 //!    the spring that animates the delta — this is how drag-to-reorder lists glide
 //!    instead of teleporting (see `examples/motion_reorder.rs`).
 //!
+//! Identity rules (what "instance" means above): every `#[component]` runs in a
+//! scope keyed by `module_path!()::Name`, and `AppConfig::run` mounts the root
+//! under a stable `"root"` scope — so ordinal hooks survive remounts while call
+//! order is unchanged, and same-name siblings disambiguate by child index.
+//! Keyed hooks (`use_signal!("name", …)`) additionally survive reordering and
+//! conditional skips; ordinal hooks do not (a skipped hook shifts every later
+//! slot — documented hazard, see `tests/hooks_keyed.rs`).
 //! [`element_ref::ElementRef`] is the odd one out on purpose: a *pull* handle for asking
 //! "where did layout put this?" without subscribing. Reading it never dirties anything,
 //! which is what makes measuring safe — but nothing re-runs when the answer changes,
@@ -70,7 +77,7 @@
 //! - `custom()` primitives bypass layout caching — measure honestly in `Primitive::measure`
 //!   or every ancestor pays for it.
 
-pub use component::{component, component_scope, Component, IntoElement};
+pub use component::{component, component_scope, component_scope_named, panic_message, view_child, Component, IntoElement};
 pub use custom::{custom, CustomDef};
 pub use diff::ChildOp;
 pub use element::Element;

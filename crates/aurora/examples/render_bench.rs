@@ -13,7 +13,7 @@ fn page() -> impl IntoElement {
     group()
         .width(760.0)
         .height(660.0)
-        .fill(Color::hex(0xF4F5F7))
+        .fill(0xF4F5F7)
         .clip(true)
         .children([
             group()
@@ -24,7 +24,7 @@ fn page() -> impl IntoElement {
                 .into_element(),
             group()
                 .key("rows")
-                .direction(Direction::Vertical)
+                .direction("vertical")
                 .width(760.0)
                 .height(600.0)
                 .gap(10.0)
@@ -42,11 +42,11 @@ fn page() -> impl IntoElement {
 fn row(label: &str) -> Element {
     group()
         .key(format!("row-{label}"))
-        .direction(Direction::Horizontal)
+        .direction("horizontal")
         .width(760.0)
         .height(100.0)
         .radius(12.0)
-        .fill(Color::hex(0x4F46E5))
+        .fill(0x4F46E5)
         .shadow(Shadow::web_like(0.0, 4.0, 8.0, 0.0, Color::rgba(0.0, 0.0, 0.0, 0.5)))
         .children([text(label.to_string())
             .size(14.0)

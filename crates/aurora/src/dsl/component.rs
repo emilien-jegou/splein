@@ -19,6 +19,67 @@ impl IntoElement for Element {
     }
 }
 
+impl IntoElement for Vec<Element> {
+    fn into_element(self) -> Element {
+        crate::dsl::group().children(self).into_element()
+    }
+}
+
+impl IntoElement for String {
+    fn into_element(self) -> Element {
+        crate::dsl::text(self).into_element()
+    }
+}
+
+impl IntoElement for &'static str {
+    fn into_element(self) -> Element {
+        crate::dsl::text(self).into_element()
+    }
+}
+
+impl IntoElement for crate::reactive::Signal<String> {
+    fn into_element(self) -> Element {
+        crate::dsl::text(self).into_element()
+    }
+}
+
+impl IntoElement for crate::reactive::Derived<String> {
+    fn into_element(self) -> Element {
+        crate::dsl::text(self).into_element()
+    }
+}
+
+impl<F: Fn() -> String + 'static> IntoElement for F {
+    fn into_element(self) -> Element {
+        crate::dsl::text(self).into_element()
+    }
+}
+
+impl IntoElement for crate::reactive::DynamicProp<String> {
+    fn into_element(self) -> Element {
+        crate::dsl::text(self).into_element()
+    }
+}
+
+macro_rules! impl_display_element {
+    ($($t:ty),*) => {
+        $(
+            impl IntoElement for $t {
+                fn into_element(self) -> Element {
+                    crate::dsl::text(self.to_string()).into_element()
+                }
+            }
+        )*
+    };
+}
+
+impl_display_element!(f32, i32, u32, bool);
+
+/// Splices any `IntoElement` child in `view! { {expr} }` position.
+pub fn view_child(expr: impl IntoElement) -> Element {
+    expr.into_element()
+}
+
 pub struct ComponentElement<C: Component>(pub C);
 
 impl<C: Component> IntoElement for ComponentElement<C> {
@@ -40,9 +101,56 @@ pub fn component<C: Component>(comp: C) -> Element {
 ///
 /// Panics outside a scope rather than quietly inventing a runtime, because a component
 /// built against a throwaway graph would drive nothing while appearing to work.
+///
+/// A panicking *body* does not propagate: it logs loudly and mounts a zero-size
+/// placeholder, so one bad component can't abort the reconcile walk (or, in a
+/// hot-reload loop, kill the app). Signals the body allocated before panicking
+/// are not reclaimed — bounded leak per failed mount, acceptable for a dev loop.
 pub fn component_scope<T: IntoElement>(body: impl FnOnce() -> T) -> Element {
     let cx = Cx::expect_current();
-    cx.enter(body).into_element()
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| cx.enter(body))) {
+        Ok(built) => built.into_element(),
+        Err(payload) => {
+            tracing::error!(
+                "aurora: component body panicked during mount ({}); mounting empty placeholder",
+                panic_message(&payload)
+            );
+            crate::dsl::group().into_element()
+        }
+    }
+}
+
+/// Named variant of [`component_scope`]: the body runs in a scope keyed by a
+/// stable component identity (by convention `module_path!()::Name`, emitted by
+/// `#[component]`), so ordinal hooks survive remounts and rebuilds while call
+/// order is unchanged. Sibling instances of one component disambiguate by
+/// child index (see [`Cx::enter_named`]); distinct modules can't collide.
+///
+/// Same panic contract as [`component_scope`]: outside a scope it panics
+/// loudly; a panicking body mounts an empty placeholder.
+pub fn component_scope_named<T: IntoElement>(path: &'static str, body: impl FnOnce() -> T) -> Element {
+    let cx = Cx::expect_current();
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| cx.enter_named(path, body))) {
+        Ok(built) => built.into_element(),
+        Err(payload) => {
+            tracing::error!(
+                "aurora: component body `{path}` panicked during mount ({}); mounting empty placeholder",
+                panic_message(&payload)
+            );
+            crate::dsl::group().into_element()
+        }
+    }
+}
+
+/// Best-effort panic payload rendering for error logs.
+pub fn panic_message(payload: &Box<dyn std::any::Any + Send>) -> String {
+    if let Some(s) = payload.downcast_ref::<&str>() {
+        s.to_string()
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "unknown panic payload".to_string()
+    }
 }
 
 #[cfg(test)]

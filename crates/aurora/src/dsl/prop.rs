@@ -1,6 +1,6 @@
 // Single responsibility: Declarative UI conversions from foundation types into dynamic properties.
 
-use crate::foundation::{Color, Fill, LayoutPresence, Radius, Shadow, Size, Transform};
+use crate::foundation::{Alignment, Color, Direction, Distribution, Fill, Gap, LayoutPresence, Margin, Radius, Shadow, Size, Stroke, Transform};
 use crate::reactive::derived::Derived;
 use crate::reactive::prop::{DynamicProp, IntoProp};
 use crate::reactive::signal::Signal;
@@ -90,3 +90,57 @@ impl IntoProp<Fill> for Derived<Color> {
         DynamicProp::Dynamic(std::rc::Rc::new(move || Fill::solid(self.get())))
     }
 }
+
+/// Literal inference: every paint/layout value accepts strings and numbers.
+///
+/// `fill="#121212"`, `fill="rgb(18,18,18)"`, `fill={0x121212}`, `width="fill"`,
+/// `radius="max"`, `margin="8 16"`, `direction="vertical"`,
+/// `shadow="0 4 16 #0008"`. Invalid literals panic naming the value and the
+/// accepted grammar — a typo should fail loud, not render transparent.
+macro_rules! impl_str_prop {
+    ($ty:ty) => {
+        impl IntoProp<$ty> for &'static str {
+            fn into_prop(self) -> DynamicProp<$ty> {
+                DynamicProp::Static(<$ty>::from(self))
+            }
+        }
+        impl IntoProp<$ty> for String {
+            fn into_prop(self) -> DynamicProp<$ty> {
+                DynamicProp::Static(<$ty>::from(self))
+            }
+        }
+    };
+}
+
+impl_str_prop!(Color);
+impl_str_prop!(Fill);
+impl_str_prop!(Size);
+impl_str_prop!(Radius);
+impl_str_prop!(Gap);
+impl_str_prop!(Margin);
+impl_str_prop!(Direction);
+impl_str_prop!(Alignment);
+impl_str_prop!(Distribution);
+impl_str_prop!(Stroke);
+impl_str_prop!(Shadow);
+
+macro_rules! impl_num_prop {
+    ($ty:ty) => {
+        impl IntoProp<$ty> for u32 {
+            fn into_prop(self) -> DynamicProp<$ty> {
+                DynamicProp::Static(<$ty>::from(self))
+            }
+        }
+        impl IntoProp<$ty> for i32 {
+            fn into_prop(self) -> DynamicProp<$ty> {
+                DynamicProp::Static(<$ty>::from(self))
+            }
+        }
+    };
+}
+
+impl_num_prop!(Color);
+impl_num_prop!(Fill);
+impl_num_prop!(Size);
+impl_num_prop!(Radius);
+impl_num_prop!(Gap);

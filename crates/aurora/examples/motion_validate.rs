@@ -21,7 +21,7 @@ fn main() {
 
     cli.app_config("Aurora — Web 03 · Growing action")
         .font("Inter", include_bytes!("../assets/inter-var.ttf"))
-        .background(Color::hex(PAGE))
+        .background(PAGE)
         .run(Page);
 }
 
@@ -39,7 +39,7 @@ pub fn Page() -> impl IntoElement {
     // cannot disagree. The previous version bound both to the raw `expanded` flag and let the
     // engine spring the box alone, so the label swapped to "Validate" on frame one while the box
     // was still 52px wide -- a long word laid out in a box that had not grown yet.
-    let width = Transition::spring(Spring::snappy()).on(expanded.clone().map(|is_open| {
+    let width = Transition::from_str("spring").on(expanded.clone().map(|is_open| {
         if is_open {
             EXPANDED
         } else {
@@ -60,16 +60,16 @@ pub fn Page() -> impl IntoElement {
 
 fn body(width: Signal<f32>, expanded: Signal<bool>) -> GroupDef {
     group()
-        .direction(Direction::Vertical)
-        .width(Size::fill())
-        .height(Size::fill())
-        .distribution(Distribution::Center)
+        .direction("vertical")
+        .width("fill")
+        .height("fill")
+        .distribution("center")
         .gap(20.0)
         .children((
             row(width, expanded),
             text("press the action to expand it")
                 .size(12.0)
-                .color(Color::hex(MUTED))
+                .color(MUTED)
                 .into_element(),
         ))
 }
@@ -81,11 +81,11 @@ fn body(width: Signal<f32>, expanded: Signal<bool>) -> GroupDef {
 /// rather than an animated box hiding a static one.
 fn row(width: Signal<f32>, expanded: Signal<bool>) -> GroupDef {
     group()
-        .direction(Direction::Horizontal)
-        .width(Size::fit())
+        .direction("horizontal")
+        .width("fit")
         .height(52.0)
         .gap(12.0)
-        .alignment(Alignment::Center)
+        .alignment("center")
         .children((action(width, expanded), field()))
 }
 
@@ -100,12 +100,12 @@ fn action(width: Signal<f32>, expanded: Signal<bool>) -> GroupDef {
     group()
         .key("action")
         .width(width)
-        .height(Size::fill())
-        .radius(Radius::max())
+        .height("fill")
+        .radius("max")
         .clip(true)
-        .fill(Color::hex(ACCENT))
-        .alignment(Alignment::Center)
-        .distribution(Distribution::Center)
+        .fill(ACCENT)
+        .alignment("center")
+        .distribution("center")
         .on_click(move |_| state.update(|open| *open = !*open))
         .children([text(label.map(|w| {
             if w > (COLLAPSED + EXPANDED) * 0.5 {
@@ -121,15 +121,15 @@ fn action(width: Signal<f32>, expanded: Signal<bool>) -> GroupDef {
 
 fn field() -> GroupDef {
     group()
-        .direction(Direction::Horizontal)
+        .direction("horizontal")
         .width(320.0)
-        .height(Size::fill())
-        .radius(Radius::max())
-        .fill(Color::hex(0xF7F8FA))
+        .height("fill")
+        .radius("max")
+        .fill(0xF7F8FA)
         .stroke(Stroke::inside(1.0, hairline()))
-        .alignment(Alignment::Center)
+        .alignment("center")
         .children([text("you@example.com")
             .size(14.0)
-            .color(Color::hex(MUTED))
+            .color(MUTED)
             .margin(Margin::x(16.0))])
 }

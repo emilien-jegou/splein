@@ -59,9 +59,9 @@ pub fn Page(open: Signal<Option<usize>>) -> impl IntoElement {
 /// rather than by an animated box offset from a settled one.
 fn list(open: Signal<Option<usize>>) -> GroupDef {
     group()
-        .direction(Direction::Vertical)
-        .width(Size::fill())
-        .height(Size::fill())
+        .direction("vertical")
+        .width("fill")
+        .height("fill")
         .gap(12.0)
         .children((
             item(0, "What is Aurora?", "A retained layout and compositor engine for Wayland overlays, with a reactive DSL on top.", open.clone()),
@@ -86,7 +86,7 @@ fn item(
     // The height is animated here rather than by the engine, so it is a real layout value at
     // every frame. The copy below is laid out against it and clipped by it in the same pass,
     // which is why nothing needs a separate reveal.
-    let height = Transition::spring(Spring::smooth()).on(is_open.clone().map(move |open| {
+    let height = Transition::from_str("spring:smooth").on(is_open.clone().map(move |open| {
         if open {
             OPEN
         } else {
@@ -96,12 +96,12 @@ fn item(
 
     group()
         .key(format!("panel-{index}"))
-        .direction(Direction::Vertical)
-        .width(Size::fill())
+        .direction("vertical")
+        .width("fill")
         .height(height)
         .radius(12.0)
         .clip(true)
-        .fill(Color::hex(SURFACE))
+        .fill(SURFACE)
         .stroke(Stroke::inside(1.0, hairline()))
         .children((
             header(index, title, is_open.clone(), open.clone()),
@@ -122,10 +122,10 @@ fn header(
 
     group()
         .key(format!("item-{index}"))
-        .direction(Direction::Horizontal)
-        .width(Size::fill())
+        .direction("horizontal")
+        .width("fill")
         .height(HEADER)
-        .alignment(Alignment::Center)
+        .alignment("center")
         .margin(Margin::x(20.0))
         .gap(12.0)
         .on_click(move |_| {
@@ -136,8 +136,8 @@ fn header(
             });
         })
         .children((
-            text(title).size(14.0).weight(600).color(Color::hex(INK)),
-            group().width(Size::fill()),
+            text(title).size(14.0).weight(600).color(INK),
+            group().width("fill"),
             chevron(degrees),
         ))
 }
@@ -153,16 +153,16 @@ fn header(
 fn panel_body(index: usize, copy: &'static str, is_open: Derived<bool>) -> impl IntoElement {
     // The copy fades on the same clock as the box, so it never appears before the reveal.
     let reveal =
-        Transition::ease(180.ms(), Ease::OutCubic)
+        Transition::from_str("out-cubic 180ms")
             .on(is_open.map(move |open| if open { 1.0 } else { 0.0 }));
     group()
-        .direction(Direction::Vertical)
-        .width(Size::fill())
-        .height(Size::fill())
+        .direction("vertical")
+        .width("fill")
+        .height("fill")
         // Centre on the main axis, which for a column is vertical. This is what gives the box's
         // travel something to reveal: the copy is uncovered from both edges at once instead of
         // sitting under the header with the whole lower half of the panel to fill.
-        .distribution(Distribution::Center)
+        .distribution("center")
         .margin(Margin::sides(0.0, 20.0, BODY_PAD, 20.0))
         .opacity(reveal)
         .children([text(copy)
@@ -170,8 +170,8 @@ fn panel_body(index: usize, copy: &'static str, is_open: Derived<bool>) -> impl 
             .selectable(true)
             .size(13.0)
             .line_height(COPY_LINE)
-            .color(Color::hex(BODY))
-            .width(Size::fill())])
+            .color(BODY)
+            .width("fill")])
 }
 
 /// Rotating chevron driven by the item's own animated angle.
@@ -179,8 +179,8 @@ fn chevron(degrees: impl Readable<f32> + 'static) -> impl IntoElement {
     group()
         .width(18.0)
         .height(18.0)
-        .alignment(Alignment::Center)
-        .distribution(Distribution::Center)
+        .alignment("center")
+        .distribution("center")
         .rotate_degrees_from(degrees)
-        .children([text("^").size(13.0).weight(700).color(Color::hex(MUTED))])
+        .children([text("^").size(13.0).weight(700).color(MUTED)])
 }

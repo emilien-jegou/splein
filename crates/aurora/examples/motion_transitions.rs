@@ -19,7 +19,7 @@ fn main() {
 
     cli.app_config("Aurora — Motion 02 · Signal transitions")
         .font("Inter", include_bytes!("../assets/inter-var.ttf"))
-        .background(Color::hex(PAGE))
+        .background(PAGE)
         .run(Page);
 }
 
@@ -32,10 +32,10 @@ pub fn Page() -> impl IntoElement {
     // transition says how, and the frame loop supplies the time.
     // One declaration, three independent streams: the target says where, the
     // transition says how, and the frame loop supplies the time.
-    let tween = Transition::ease(200.ms(), Ease::OutCubic);
+    let tween = Transition::from_str("out-cubic 200ms");
     let opacity = tween.on(enabled.clone().map(|on| if on { 1.0 } else { 0.35 }));
     let slide_x = tween.on(enabled.clone().map(|on| if on { 0.0 } else { 48.0 }));
-    let spring = Transition::spring(Spring::snappy());
+    let spring = Transition::from_str("spring");
     let scale = spring.on(enabled.map(|on| if on { 1.18 } else { 1.0 }));
 
     page(
@@ -44,26 +44,26 @@ pub fn Page() -> impl IntoElement {
         "Each property wraps its own target in a transition, so a tween and a spring can drive different properties of the same view off one boolean. Nothing animates implicitly: what is declared is exactly what moves.",
         content(
             group()
-                .direction(Direction::Horizontal)
-                .width(Size::fill())
-                .height(Size::fill())
+                .direction("horizontal")
+                .width("fill")
+                .height("fill")
                 .gap(20.0)
                 .children((
                     panel(
                         strip(
                             eyebrow("TWEEN"),
-                            text("Transition::ease(200ms, OutCubic)")
+                            text("Transition::from_str(\"out-cubic 200ms\")")
                                 .size(12.0)
-                                .color(Color::hex(BODY)),
+                                .color(BODY),
                         ),
                         tile("fade + slide", ACCENT).opacity(opacity).x(slide_x),
                     ),
                     panel(
                         strip(
                             eyebrow("SPRING"),
-                            text("Transition::spring(Spring::snappy())")
+                            text("Transition::from_str(\"spring\")")
                                 .size(12.0)
-                                .color(Color::hex(BODY)),
+                                .color(BODY),
                         ),
                         tile("settle", 0x10B981).scale(scale),
                     ),
@@ -75,13 +75,13 @@ pub fn Page() -> impl IntoElement {
 /// Accent tile used by both panels, sized so scaling never reaches the arena edge.
 fn tile(label: &'static str, accent: u32) -> GroupDef {
     group()
-        .direction(Direction::Vertical)
+        .direction("vertical")
         .width(Size::percent(0.62))
-        .height(Size::fill())
+        .height("fill")
         .radius(14.0)
         .fill(Color::hex(accent))
-        .alignment(Alignment::Center)
-        .distribution(Distribution::Center)
+        .alignment("center")
+        .distribution("center")
         .gap(6.0)
         .children((
             text(label).size(16.0).weight(700).color(Color::WHITE),

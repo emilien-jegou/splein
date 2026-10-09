@@ -7,7 +7,6 @@ mod motion_ui;
 
 mod controls;
 
-use aurora::prelude::*;
 use common::ExampleCli;
 use motion_ui::*;
 
@@ -24,7 +23,7 @@ fn main() {
 
     cli.app_config("Aurora — Motion 03d · Hover to pause, click to restart")
         .font("Inter", include_bytes!("../../assets/inter-var.ttf"))
-        .background(Color::hex(PAGE))
+        .background(PAGE)
         .run(Page);
 }
 

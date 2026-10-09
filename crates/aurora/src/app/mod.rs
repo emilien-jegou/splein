@@ -149,8 +149,8 @@ impl AppConfig {
         self.fonts.push(bytes.to_vec());
         self
     }
-    pub fn background(mut self, color: Color) -> Self {
-        self.background = color;
+    pub fn background(mut self, color: impl Into<Color>) -> Self {
+        self.background = color.into();
         self
     }
     pub fn backend(mut self, backend: RenderBackend) -> Self {
@@ -197,11 +197,15 @@ impl AppConfig {
             .take()
             .unwrap_or_else(|| Rc::new(RefCell::new(ReactiveRuntime::new())));
 
-        // The root builder runs inside the hook scope, so a `#[component]` page can call the
-        // `use_*` hooks with no arguments and land its signals on the runtime the engine is
-        // about to drain.
+        // The root builder runs inside a *stable* hook scope (`"root"`), so a
+        // `#[component]` page can call the `use_*` hooks with no arguments and
+        // land its signals on the runtime the engine is about to drain — and
+        // so those hooks recall across remounts. Stability cascades
+        // positionally: every component under the root derives a reproducible
+        // identity (see `Cx::enter_named`). One runtime hosts one app, so one
+        // `"root"` key is enough; tests that need stability name their own.
         let cx = Cx::new(Rc::clone(&runtime));
-        let root = cx.enter(root_fn).into_element();
+        let root = cx.enter_keyed("root", root_fn).into_element();
 
         // The engine, the backend surface, and pointer input all run in
         // physical pixels (the viewport is later kept from `Resized`, which

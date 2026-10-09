@@ -52,39 +52,39 @@ fn main() {
 
     cli.app_config("Aurora — Mission Control Engine Showcase")
         .font("Inter", include_bytes!("../assets/inter-var.ttf"))
-        .background(Color::hex(0x06090F))
+        .background(0x06090F)
         .runtime(runtime)
         .extension(ticker)
         .run(move || build_ui(time_sig.clone(), counter_sig.clone()));
 }
 
 fn build_ui(time_sig: Signal<f32>, counter_sig: Signal<u64>) -> impl IntoElement {
-    group().direction(Direction::Horizontal)
-        .width(Size::fill()).height(Size::fill())
-        .fill(Color::hex(0x06090F)) // Void dark background
+    group().direction("horizontal")
+        .width("fill").height("fill")
+        .fill(0x06090F) // Void dark background
         .children((
             // =========================================================================
             // 1. LEFT NAVIGATION SIDEBAR (Static complex UI tree, $0 CPU cost)
             // =========================================================================
-            group().direction(Direction::Vertical)
+            group().direction("vertical")
                 .width(260.0)
-                .height(Size::fill())
-                .fill(Color::hex(0x0C101A))
-                .stroke(Stroke::inside(1.0, Color::hex(0x1A2234)))
-                .margin(Margin::all(16.0))
+                .height("fill")
+                .fill(0x0C101A)
+                .stroke("1.0 #1A2234 inside")
+                .margin(16.0)
                 .children((
                     // Logo Header
-                    group().direction(Direction::Horizontal).width(Size::fill()).alignment(Alignment::Center).gap(10.0).margin(Margin::x(8.0)).children((
-                        group().width(28.0).height(28.0).radius(Radius::scalar(8.0)).fill(Color::hex(0x38BDF8)).alignment(Alignment::Center).distribution(Distribution::Center).children([
-                            text("▲").size(14.0).color(Color::hex(0x06090F)),
+                    group().direction("horizontal").width("fill").alignment("center").gap(10.0).margin(Margin::x(8.0)).children((
+                        group().width(28.0).height(28.0).radius(8.0).fill(0x38BDF8).alignment("center").distribution("center").children([
+                            text("▲").size(14.0).color(0x06090F),
                         ]),
                         text("AURORA CORE").size(15.0).weight(700).color(Color::WHITE),
                     )),
 
-                    group().width(Size::fill()).height(1.0).fill(Color::hex(0x1A2234)).margin(Margin::y(12.0)),
+                    group().width("fill").height(1.0).fill(0x1A2234).margin(Margin::y(12.0)),
 
                     // Sidebar Navigation Links
-                    group().direction(Direction::Vertical).width(Size::fill()).gap(4.0).children((
+                    group().direction("vertical").width("fill").gap(4.0).children((
                         nav_link("Mission Overview", true),
                         nav_link("Telemetry Stream", false),
                         nav_link("Spatial Damage", false),
@@ -92,22 +92,22 @@ fn build_ui(time_sig: Signal<f32>, counter_sig: Signal<u64>) -> impl IntoElement
                         nav_link("GPU Compute Vello", false),
                     )),
 
-                    group().height(Size::fill()),
+                    group().height("fill"),
 
                     // System Architecture Specs Card
                     group()
-                        .width(Size::fill())
-                        .radius(Radius::scalar(12.0))
-                        .fill(Color::hex(0x111726))
-                        .stroke(Stroke::inside(1.0, Color::hex(0x1E293B)))
-                        .margin(Margin::all(12.0))
+                        .width("fill")
+                        .radius(12.0)
+                        .fill(0x111726)
+                        .stroke("1.0 #1E293B inside")
+                        .margin(12.0)
                         .children([
-                            group().direction(Direction::Vertical).gap(6.0).children([
-                                text("ENGINE SPECS").size(11.0).weight(700).color(Color::hex(0x38BDF8)),
-                                text("Pipeline: 7-Stage Retained").size(11.0).color(Color::hex(0x94A3B8)),
-                                text("Reactivity: $0 Atomic Contention").size(11.0).color(Color::hex(0x94A3B8)),
-                                text("Layout: O(1) Boundary Cascades").size(11.0).color(Color::hex(0x94A3B8)),
-                                text("Presentation: Hardware SIMD").size(11.0).color(Color::hex(0x94A3B8)),
+                            group().direction("vertical").gap(6.0).children([
+                                text("ENGINE SPECS").size(11.0).weight(700).color(0x38BDF8),
+                                text("Pipeline: 7-Stage Retained").size(11.0).color(0x94A3B8),
+                                text("Reactivity: $0 Atomic Contention").size(11.0).color(0x94A3B8),
+                                text("Layout: O(1) Boundary Cascades").size(11.0).color(0x94A3B8),
+                                text("Presentation: Hardware SIMD").size(11.0).color(0x94A3B8),
                             ]),
                         ]),
                 )),
@@ -115,54 +115,54 @@ fn build_ui(time_sig: Signal<f32>, counter_sig: Signal<u64>) -> impl IntoElement
             // =========================================================================
             // 2. MAIN MISSION CONTROL DASHBOARD
             // =========================================================================
-            group().direction(Direction::Vertical)
-                .width(Size::fill()).height(Size::fill())
-                .margin(Margin::all(16.0))
+            group().direction("vertical")
+                .width("fill").height("fill")
+                .margin(16.0)
                 .gap(16.0)
                 .children((
                     // Top Metrics Banner (Mixed Fit / Fill, Badges)
-                    group().direction(Direction::Horizontal).width(Size::fill()).height(Size::fit()).distribution(Distribution::SpaceBetween).alignment(Alignment::Center).children((
-                        group().direction(Direction::Vertical).gap(4.0).children([
+                    group().direction("horizontal").width("fill").height("fit").distribution("space-between").alignment("center").children((
+                        group().direction("vertical").gap(4.0).children([
                             text("Active Mission Telemetry").size(22.0).weight(700).color(Color::WHITE),
                             text("Press [F11] to verify Layout Boundaries | [F12] for Damage Heatmaps | [F9] for Stacking")
                                 .size(13.0)
-                                .color(Color::hex(0x64748B)),
+                                .color(0x64748B),
                         ]),
-                        group().direction(Direction::Horizontal).gap(8.0).children((
-                            status_badge("PIPELINE", "ONLINE", Color::hex(0x22C55E)),
-                            status_badge("VSYNC", "LOCKED", Color::hex(0x38BDF8)),
+                        group().direction("horizontal").gap(8.0).children((
+                            status_badge("PIPELINE", "ONLINE", 0x22C55E),
+                            status_badge("VSYNC", "LOCKED", 0x38BDF8),
                         )),
                     )),
 
                     // Grid Layout (2x2 Modular Telemetry Cards)
-                    group().direction(Direction::Horizontal).width(Size::fill()).height(Size::fill()).gap(16.0).children((
+                    group().direction("horizontal").width("fill").height("fill").gap(16.0).children((
                         // -------------------------------------------------------------
                         // CARD 1: LIVE AUDIO HARMONICS EQUALIZER (16 Live Dynamic Bars)
                         // Proves: 16 dynamic flex elements updating without dirtying outer layout
                         // -------------------------------------------------------------
                         group()
                             .width(Size::percent(0.5))
-                            .height(Size::fill())
-                            .radius(Radius::scalar(16.0))
-                            .fill(Color::hex(0x0C101A))
-                            .stroke(Stroke::inside(1.0, Color::hex(0x1A2234)))
-                            .margin(Margin::all(16.0))
+                            .height("fill")
+                            .radius(16.0)
+                            .fill(0x0C101A)
+                            .stroke("1.0 #1A2234 inside")
+                            .margin(16.0)
                             .children([
-                                group().direction(Direction::Vertical).width(Size::fill()).height(Size::fill()).children((
-                                    group().direction(Direction::Horizontal).width(Size::fill()).distribution(Distribution::SpaceBetween).alignment(Alignment::Center).children((
+                                group().direction("vertical").width("fill").height("fill").children((
+                                    group().direction("horizontal").width("fill").distribution("space-between").alignment("center").children((
                                         text("Dynamic Harmonics Spectrum").size(15.0).weight(600).color(Color::WHITE),
-                                        text("16 Isolated Signals").size(12.0).color(Color::hex(0x38BDF8)),
+                                        text("16 Isolated Signals").size(12.0).color(0x38BDF8),
                                     )),
                                     text("Mutating flex heights inside an isolated layout boundary ($O(K)$ updates)")
                                         .size(12.0)
-                                        .color(Color::hex(0x64748B))
+                                        .color(0x64748B)
                                         .margin(Margin::bottom(16.0)),
 
                                     // The 16 Animated Equalizer Bars
-                                    group().direction(Direction::Horizontal)
-                                        .width(Size::fill()).height(Size::fill())
-                                        .alignment(Alignment::Center)
-                                        .distribution(Distribution::SpaceBetween)
+                                    group().direction("horizontal")
+                                        .width("fill").height("fill")
+                                        .alignment("center")
+                                        .distribution("space-between")
                                         .children(build_equalizer_bars(time_sig.clone())),
                                 )),
                             ]),
@@ -173,37 +173,37 @@ fn build_ui(time_sig: Signal<f32>, counter_sig: Signal<u64>) -> impl IntoElement
                         // -------------------------------------------------------------
                         group()
                             .width(Size::percent(0.5))
-                            .height(Size::fill())
-                            .radius(Radius::scalar(16.0))
-                            .fill(Color::hex(0x0C101A))
-                            .stroke(Stroke::inside(1.0, Color::hex(0x1A2234)))
-                            .margin(Margin::all(16.0))
+                            .height("fill")
+                            .radius(16.0)
+                            .fill(0x0C101A)
+                            .stroke("1.0 #1A2234 inside")
+                            .margin(16.0)
                             .children([
-                                group().direction(Direction::Vertical).width(Size::fill()).height(Size::fill()).children((
-                                    group().direction(Direction::Horizontal).width(Size::fill()).distribution(Distribution::SpaceBetween).alignment(Alignment::Center).children((
+                                group().direction("vertical").width("fill").height("fill").children((
+                                    group().direction("horizontal").width("fill").distribution("space-between").alignment("center").children((
                                         text("Orbital Vector Scanner").size(15.0).weight(600).color(Color::WHITE),
-                                        text("360° Continuous Matrix").size(12.0).color(Color::hex(0xEC4899)),
+                                        text("360° Continuous Matrix").size(12.0).color(0xEC4899),
                                     )),
                                     text("Affine rotation matrices executed with $0 CPU layout calculations")
                                         .size(12.0)
-                                        .color(Color::hex(0x64748B)),
+                                        .color(0x64748B),
 
                                     // Radar Visualizer Container
                                     group()
-                                        .width(Size::fill()).height(Size::fill())
-                                        .alignment(Alignment::Center).distribution(Distribution::Center)
+                                        .width("fill").height("fill")
+                                        .alignment("center").distribution("center")
                                         .children([
                                             // Concentric Target Rings
-                                            group().width(220.0).height(220.0).radius(Radius::max()).stroke(Stroke::inside(1.0, Color::hex(0x1E293B))).alignment(Alignment::Center).distribution(Distribution::Center).children([
-                                                group().width(140.0).height(140.0).radius(Radius::max()).stroke(Stroke::inside(1.0, Color::hex(0x1E293B))).alignment(Alignment::Center).distribution(Distribution::Center).children([
-                                                    group().width(60.0).height(60.0).radius(Radius::max()).fill(Color::hex(0x111726)),
+                                            group().width(220.0).height(220.0).radius("max").stroke("1.0 #1E293B inside").alignment("center").distribution("center").children([
+                                                group().width(140.0).height(140.0).radius("max").stroke("1.0 #1E293B inside").alignment("center").distribution("center").children([
+                                                    group().width(60.0).height(60.0).radius("max").fill(0x111726),
                                                 ]),
                                             ]),
                                             // Rotating Radar Line
                                             group()
                                                 .width(200.0).height(2.0)
-                                                .fill(Color::hex(0x38BDF8))
-                                                .shadow(Shadow::web_like(0.0, 0.0, 8.0, 0.0, Color::hex(0x38BDF8)))
+                                                .fill(0x38BDF8)
+                                                .shadow(Shadow::from("0 0 8 0 #38BDF8"))
                                                 .anchor(Anchor::Center)
                                                 .transform({
                                                     let t = time_sig.clone();
@@ -215,9 +215,9 @@ fn build_ui(time_sig: Signal<f32>, counter_sig: Signal<u64>) -> impl IntoElement
                                             // Orbiting Satellite Beacon
                                             group()
                                                 .width(14.0).height(14.0)
-                                                .radius(Radius::max())
-                                                .fill(Color::hex(0xEC4899))
-                                                .shadow(Shadow::web_like(0.0, 0.0, 10.0, 0.0, Color::hex(0xEC4899)))
+                                                .radius("max")
+                                                .fill(0xEC4899)
+                                                .shadow(Shadow::from("0 0 10 0 #EC4899"))
                                                 .anchor(Anchor::Center)
                                                 .transform({
                                                     let t = time_sig.clone();
@@ -234,20 +234,20 @@ fn build_ui(time_sig: Signal<f32>, counter_sig: Signal<u64>) -> impl IntoElement
                     )),
 
                     // Bottom Row (High-Frequency Realtime Throughput Stream)
-                    group().direction(Direction::Horizontal).width(Size::fill()).height(120.0).gap(16.0).children((
+                    group().direction("horizontal").width("fill").height(120.0).gap(16.0).children((
                         // Live Stream Counter Card
                         group()
                             .width(Size::percent(0.5))
-                            .height(Size::fill())
-                            .radius(Radius::scalar(16.0))
-                            .fill(Color::hex(0x0C101A))
-                            .stroke(Stroke::inside(1.0, Color::hex(0x1A2234)))
-                            .margin(Margin::all(16.0))
+                            .height("fill")
+                            .radius(16.0)
+                            .fill(0x0C101A)
+                            .stroke("1.0 #1A2234 inside")
+                            .margin(16.0)
                             .children([
-                                group().direction(Direction::Horizontal).width(Size::fill()).height(Size::fill()).alignment(Alignment::Center).distribution(Distribution::SpaceBetween).children((
-                                    group().direction(Direction::Vertical).gap(4.0).children([
-                                        text("TELEMETRY INGESTION STREAM").size(11.0).weight(700).color(Color::hex(0x94A3B8)),
-                                        text("High-frequency reactive string buffer mutations").size(12.0).color(Color::hex(0x64748B)),
+                                group().direction("horizontal").width("fill").height("fill").alignment("center").distribution("space-between").children((
+                                    group().direction("vertical").gap(4.0).children([
+                                        text("TELEMETRY INGESTION STREAM").size(11.0).weight(700).color(0x94A3B8),
+                                        text("High-frequency reactive string buffer mutations").size(12.0).color(0x64748B),
                                     ]),
                                     text({
                                         let c = counter_sig.clone();
@@ -255,31 +255,31 @@ fn build_ui(time_sig: Signal<f32>, counter_sig: Signal<u64>) -> impl IntoElement
                                     })
                                     .size(24.0)
                                     .weight(700)
-                                    .color(Color::hex(0x22C55E)),
+                                    .color(0x22C55E),
                                 )),
                             ]),
 
                         // Live Memory / Frame Budget Health Card
                         group()
                             .width(Size::percent(0.5))
-                            .height(Size::fill())
-                            .radius(Radius::scalar(16.0))
-                            .fill(Color::hex(0x0C101A))
-                            .stroke(Stroke::inside(1.0, Color::hex(0x1A2234)))
-                            .margin(Margin::all(16.0))
+                            .height("fill")
+                            .radius(16.0)
+                            .fill(0x0C101A)
+                            .stroke("1.0 #1A2234 inside")
+                            .margin(16.0)
                             .children([
-                                group().direction(Direction::Horizontal).width(Size::fill()).height(Size::fill()).alignment(Alignment::Center).distribution(Distribution::SpaceBetween).children((
-                                    group().direction(Direction::Vertical).gap(4.0).children([
-                                        text("16.6ms FRAME BUDGET HEALTH").size(11.0).weight(700).color(Color::hex(0x94A3B8)),
-                                        text("CPU Compute Time: < 0.4ms (97.6% Headroom)").size(12.0).color(Color::hex(0x22C55E)),
+                                group().direction("horizontal").width("fill").height("fill").alignment("center").distribution("space-between").children((
+                                    group().direction("vertical").gap(4.0).children([
+                                        text("16.6ms FRAME BUDGET HEALTH").size(11.0).weight(700).color(0x94A3B8),
+                                        text("CPU Compute Time: < 0.4ms (97.6% Headroom)").size(12.0).color(0x22C55E),
                                     ]),
                                     group()
                                         .width(160.0)
                                         .height(8.0)
-                                        .radius(Radius::max())
-                                        .fill(Color::hex(0x1E293B))
+                                        .radius("max")
+                                        .fill(0x1E293B)
                                         .children([
-                                            group().width(Size::percent(0.04)).height(Size::fill()).radius(Radius::max()).fill(Color::hex(0x22C55E)),
+                                            group().width(Size::percent(0.04)).height("fill").radius("max").fill(0x22C55E),
                                         ]),
                                 )),
                             ]),
@@ -294,22 +294,22 @@ fn build_ui(time_sig: Signal<f32>, counter_sig: Signal<u64>) -> impl IntoElement
 
 fn nav_link(label: &'static str, active: bool) -> impl IntoElement {
     group()
-        .direction(Direction::Horizontal)
-        .width(Size::fill())
+        .direction("horizontal")
+        .width("fill")
         .height(36.0)
-        .radius(Radius::scalar(8.0))
+        .radius(8.0)
         .fill(if active {
             Color::hex_alpha(0x38BDF8, 0.12)
         } else {
             Color::TRANSPARENT
         })
-        .alignment(Alignment::Center)
+        .alignment("center")
         .margin(Margin::x(8.0))
         .children((
             group()
                 .width(6.0)
                 .height(6.0)
-                .radius(Radius::max())
+                .radius("max")
                 .fill(if active {
                     Color::hex(0x38BDF8)
                 } else {
@@ -328,27 +328,28 @@ fn nav_link(label: &'static str, active: bool) -> impl IntoElement {
         ))
 }
 
-fn status_badge(label: &'static str, val: &'static str, color: Color) -> impl IntoElement {
+fn status_badge(label: &'static str, val: &'static str, color: impl Into<Color>) -> impl IntoElement {
+    let color = color.into();
     group()
-        .direction(Direction::Horizontal)
+        .direction("horizontal")
         .height(30.0)
-        .radius(Radius::scalar(8.0))
-        .fill(Color::hex(0x111726))
-        .stroke(Stroke::inside(1.0, Color::hex(0x1E293B)))
-        .alignment(Alignment::Center)
+        .radius(8.0)
+        .fill(0x111726)
+        .stroke("1.0 #1E293B inside")
+        .alignment("center")
         .gap(6.0)
         .margin(Margin::x(8.0))
         .children((
             group()
                 .width(6.0)
                 .height(6.0)
-                .radius(Radius::max())
+                .radius("max")
                 .fill(color)
                 .margin(Margin::left(8.0)),
             text(label)
                 .size(11.0)
                 .weight(600)
-                .color(Color::hex(0x94A3B8)),
+                .color(0x94A3B8),
             text(val)
                 .size(11.0)
                 .weight(700)
@@ -374,7 +375,7 @@ fn build_equalizer_bars(t_sig: Signal<f32>) -> Vec<Element> {
                     Size::Fixed(raw.max(12.0))
                 }
             })
-            .radius(Radius::scalar(6.0))
+            .radius(6.0)
             .fill(if i % 2 == 0 {
                 Color::hex(0x38BDF8)
             } else {

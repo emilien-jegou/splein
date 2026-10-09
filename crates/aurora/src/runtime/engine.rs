@@ -42,6 +42,12 @@ pub struct Engine {
     caret_last_seen: Option<(NodeId, TextSelection)>,
     /// Animation time the caret last changed; the blink phase counts from here.
     caret_epoch: f32,
+    /// Panic message from the last frame that unwound, if any. Set when the
+    /// frame boundary catches a panic (binding eval, ticker, paint); cleared
+    /// on the next clean frame. Surfaces in the HUD and survives for
+    /// hot-reload loops to display. Surviving a frame is the point: a bad
+    /// literal or a buggy handler drops one frame, never the app.
+    last_frame_error: Option<String>,
 }
 
 impl Engine {
@@ -74,6 +80,7 @@ impl Engine {
             caret_blink_on: true,
             caret_last_seen: None,
             caret_epoch: 0.0,
+            last_frame_error: None,
         }
     }
 
@@ -177,23 +184,51 @@ impl Engine {
     }
 
     /// Replaces the declarative root node and marks layout dirty.
+    ///
+    /// A panicking rebuild does not propagate either: the old root is kept,
+    /// the error is logged (and visible via [`Engine::last_frame_error`]),
+    /// and a full repaint is scheduled. This is the remount half of the
+    /// hot-reload story — `frame()` is the per-frame half.
     pub fn set_root(&mut self, element: Element) {
         let _ambient = crate::reactive::ambient_guard(&self.runtime());
         let key = element.key();
-        let root = reconcile(
-            &self.scheduler.runtime,
-            &mut self.scheduler.arena,
-            &mut self.scheduler.router,
-            Some(self.scheduler.root),
-            element,
-        );
-        self.scheduler.arena.bind_key(key, root);
-        self.scheduler.root = root;
-        self.scheduler.arena.mark_dirty(root, DirtyFlags::LAYOUT);
-        self.scheduler.dirty_nodes_this_frame.push(root);
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            reconcile(
+                &self.scheduler.runtime,
+                &mut self.scheduler.arena,
+                &mut self.scheduler.router,
+                Some(self.scheduler.root),
+                element,
+            )
+        }));
+        match outcome {
+            Ok(root) => {
+                self.scheduler.arena.bind_key(key, root);
+                self.scheduler.root = root;
+                self.scheduler.arena.mark_dirty(root, DirtyFlags::LAYOUT);
+                self.scheduler.dirty_nodes_this_frame.push(root);
+            }
+            Err(payload) => {
+                let msg = crate::dsl::panic_message(&payload);
+                tracing::error!("aurora: set_root panicked ({msg}); keeping previous root");
+                self.last_frame_error = Some(msg);
+                let (w, h) = self.logical_size;
+                self.pending_damage.push(ResolvedRect::new(0.0, 0.0, w as f32, h as f32));
+            }
+        }
     }
 
     /// Runs the frame passes, committing bounds and compiling the display list scene.
+    ///
+    /// A panicking pass does not propagate: the boundary catches it, keeps the
+    /// last good scene (callers present what `scene()` still holds), records
+    /// the error for [`Engine::last_frame_error`], and schedules a full
+    /// repaint so the next clean frame redraws from a consistent tree. The
+    /// scene may be half-rebuilt at the catch point — presenting it would
+    /// flash a partial frame, so callers should skip presenting a frame whose
+    /// report follows an error. `RefCell`-based runtime state is not poisoned
+    /// by unwinds, and no `borrow_mut` is held across the boundary: the
+    /// `&mut` scheduler reborrow ends as the stack unwinds.
     #[tracing::instrument(skip_all, fields(w = self.logical_size.0, h = self.logical_size.1))]
     pub fn frame(&mut self) -> FrameReport {
         // Ambient for everything a frame runs: tickers, effects, post-layout
@@ -222,23 +257,49 @@ impl Engine {
 
         let root = self.scheduler.root;
         let caret_visible = self.caret_blink_on;
-        let (stats, diag) = run_frame_passes(
-            &mut self.scheduler,
-            root,
-            &mut self.scene,
-            w,
-            h,
-            self.frame_counter,
-            frame_damage,
-            self.pending_preserved_canvas_rect.take(),
-            caret_visible,
-        );
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            run_frame_passes(
+                &mut self.scheduler,
+                root,
+                &mut self.scene,
+                w,
+                h,
+                self.frame_counter,
+                frame_damage,
+                self.pending_preserved_canvas_rect.take(),
+                caret_visible,
+            )
+        }));
+        let (stats, diag) = match outcome {
+            Ok(ok) => {
+                self.last_frame_error = None;
+                ok
+            }
+            Err(payload) => {
+                let msg = crate::dsl::panic_message(&payload);
+                tracing::error!("aurora: frame {} panicked ({msg}); keeping last good scene", self.frame_counter);
+                self.last_frame_error = Some(msg);
+                // The tree may hold partial pass state; repaint everything
+                // next frame so recovery starts from a consistent tree.
+                self.pending_damage.push(ResolvedRect::new(0.0, 0.0, w as f32, h as f32));
+                Default::default()
+            }
+        };
 
         FrameReport {
             stats,
             layers: self.collect_dirtied_layers(),
             diagnostics: diag,
         }
+    }
+
+    /// Panic message from the last frame that unwound, if any.
+    ///
+    /// `Some` means the most recent `frame()` call caught a panic and kept the
+    /// previous scene: skip presenting and show this instead (the HUD reads
+    /// it). Cleared by the next clean frame.
+    pub fn last_frame_error(&self) -> Option<&str> {
+        self.last_frame_error.as_deref()
     }
 
     /// Queues a key press for dispatch at the start of the next frame.

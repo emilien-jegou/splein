@@ -20,7 +20,7 @@ fn main() {
 
     cli.app_config("Aurora — Web 01 · Press feedback")
         .font("Inter", include_bytes!("../assets/inter-var.ttf"))
-        .background(Color::hex(PAGE))
+        .background(PAGE)
         .run(Page);
 }
 
@@ -35,7 +35,7 @@ pub fn Page() -> impl IntoElement {
     let pressed = use_signal(false);
     let presses = use_signal(0u32);
 
-    let down = Transition::ease(90.ms(), Ease::OutCubic).on(pressed.clone().map(|p| {
+    let down = Transition::from_str("out-cubic 90ms").on(pressed.clone().map(|p| {
         if p {
             HELD
         } else {
@@ -43,7 +43,7 @@ pub fn Page() -> impl IntoElement {
         }
     }));
     let up =
-        Transition::spring(Spring::bouncy()).on(pressed.clone().map(|p| if p { 1.0 } else { 1.0 }));
+        Transition::from_str("spring:bouncy").on(pressed.clone().map(|p| if p { 1.0 } else { 1.0 }));
 
     // Whichever stream owns the current state drives the view; the other sits at 1.0.
     // Plain closure: reads three signals, subscribes to all three, no .map()/.combine().
@@ -67,11 +67,11 @@ pub fn Page() -> impl IntoElement {
                 stat("RELEASE", "Spring::bouncy"),
             ),
             group()
-                .direction(Direction::Vertical)
-                .width(Size::fill())
-                .height(Size::fill())
-                .alignment(Alignment::Center)
-                .distribution(Distribution::Center)
+                .direction("vertical")
+                .width("fill")
+                .height("fill")
+                .alignment("center")
+                .distribution("center")
                 .gap(18.0)
                 .children((
                     button(pressed.clone(), presses.clone(), active),
@@ -79,11 +79,11 @@ pub fn Page() -> impl IntoElement {
                         format!("pressed {n} time{}", if n == 1 { "" } else { "s" })
                     }))
                     .size(13.0)
-                    .color(Color::hex(BODY))
+                    .color(BODY)
                     .into_element(),
                     text("press and hold the button")
                         .size(12.0)
-                        .color(Color::hex(MUTED))
+                        .color(MUTED)
                         .into_element(),
                 )),
         )),
@@ -103,10 +103,10 @@ fn button(pressed: Signal<bool>, presses: Signal<u32>, scale: Derived<f32>) -> G
     group()
         .key("cta")
         .height(52.0)
-        .radius(Radius::max())
-        .fill(Color::hex(ACCENT))
-        .alignment(Alignment::Center)
-        .distribution(Distribution::Center)
+        .radius("max")
+        .fill(ACCENT)
+        .alignment("center")
+        .distribution("center")
         .scale(scale)
         .on_pointer_down(move |_| down.set(true))
         .on_pointer_up(move |_| up.set(false))

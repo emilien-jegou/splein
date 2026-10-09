@@ -56,37 +56,37 @@ fn main() {
         .title("Aurora — Demo 2 (Paper HUD Dock)")
         .size(WIDTH, HEIGHT)
         .font("Inter", include_bytes!("../assets/inter-var.ttf"))
-        .background(Color::hex(0x141414))
+        .background(0x141414)
         .run(move || build_ui(&icons));
 }
 
 fn build_ui(icons: &Icons) -> impl IntoElement {
     group()
-        .direction(Direction::Vertical)
-        .width(Size::fill())
-        .height(Size::fill())
-        .fill(Color::hex(0x444444))
-        .alignment(Alignment::Center)
-        .distribution(Distribution::Center)
+        .direction("vertical")
+        .width("fill")
+        .height("fill")
+        .fill(0x444444)
+        .alignment("center")
+        .distribution("center")
         .children([group()
-            .direction(Direction::Vertical)
+            .direction("vertical")
             .width(461.0)
             .height(108.0)
             .children([
                 group()
-                    .direction(Direction::Horizontal)
-                    .width(Size::fit())
+                    .direction("horizontal")
+                    .width("fit")
                     .height(48.0)
                     .fill(Color::BLACK)
                     .radius(14.0)
                     .gap(6.0)
-                    .margin(Margin::all(3.0))
-                    .alignment(Alignment::Center)
+                    .margin(3.0)
+                    .alignment("center")
                     .children((
                         handle(&icons.handle),
                         group()
-                            .direction(Direction::Horizontal)
-                            .width(Size::fit())
+                            .direction("horizontal")
+                            .width("fit")
                             .height(42.0)
                             .gap(10.0)
                             .children((
@@ -99,22 +99,22 @@ fn build_ui(icons: &Icons) -> impl IntoElement {
                             )),
                         divider(),
                         group()
-                            .direction(Direction::Horizontal)
-                            .width(Size::fit())
+                            .direction("horizontal")
+                            .width("fit")
                             .height(42.0)
                             .gap(4.0)
                             .children((btn_action(&icons.trash), btn_action(&icons.more))),
                     )),
                 group()
-                    .direction(Direction::Horizontal)
-                    .width(Size::fit())
+                    .direction("horizontal")
+                    .width("fit")
                     .height(47.0)
                     .fill(Color::BLACK)
                     .radius(14.0)
                     .gap(10.0)
                     .margin(Margin::left(117.5))
                     .margin(Margin::top(10.0))
-                    .alignment(Alignment::Center)
+                    .alignment("center")
                     .children((
                         btn(&icons.sub_line, "a"),
                         btn(&icons.sub_diag, "s"),
@@ -129,8 +129,8 @@ fn btn(icon: &Arc<VectorGraphic>, k: &'static str) -> impl IntoElement {
         .width(42.0)
         .height(42.0)
         .radius(12.0)
-        .alignment(Alignment::Center)
-        .distribution(Distribution::Center)
+        .alignment("center")
+        .distribution("center")
         .children((
             svg(icon).size(28.0, 28.0),
             text(k)
@@ -149,8 +149,8 @@ fn btn_arrow(
         .width(46.0)
         .height(42.0)
         .radius(12.0)
-        .alignment(Alignment::Center)
-        .distribution(Distribution::Center)
+        .alignment("center")
+        .distribution("center")
         .children((
             svg(icon).size(28.0, 28.0),
             svg(arrow)
@@ -178,13 +178,13 @@ fn btn_active(icon: &Arc<VectorGraphic>, k: &'static str) -> impl IntoElement {
             0.0,
             Color::hex_alpha(0x54F554, 0.18),
         ))
-        .alignment(Alignment::Center)
-        .distribution(Distribution::Center)
+        .alignment("center")
+        .distribution("center")
         .children((
             svg(icon).size(28.0, 28.0),
             text(k)
                 .size(10.0)
-                .color(Color::hex(0x226F22))
+                .color(0x226F22)
                 .anchor(Anchor::BottomRight),
         ))
 }
@@ -194,8 +194,8 @@ fn btn_action(icon: &Arc<VectorGraphic>) -> impl IntoElement {
         .width(42.0)
         .height(42.0)
         .radius(12.0)
-        .alignment(Alignment::Center)
-        .distribution(Distribution::Center)
+        .alignment("center")
+        .distribution("center")
         .children([svg(icon).size(28.0, 28.0)])
 }
 
@@ -203,8 +203,8 @@ fn handle(icon: &Arc<VectorGraphic>) -> impl IntoElement {
     group()
         .width(36.0)
         .height(42.0)
-        .alignment(Alignment::Center)
-        .distribution(Distribution::Center)
+        .alignment("center")
+        .distribution("center")
         .children([svg(icon).size(28.0, 28.0)])
 }
 

@@ -7,6 +7,9 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, ItemFn};
 
+mod props;
+mod view;
+
 /// Marks a function as a component.
 ///
 /// The body may call the `use_*` hooks with no arguments, because it runs inside the ambient
@@ -20,24 +23,81 @@ use syn::{parse_macro_input, ItemFn};
 /// }
 /// ```
 ///
-/// The body runs once per mount. Aurora does not re-run a component to animate it: a signal
+/// The body runs once per mount inside a scope keyed by `module_path!()::Name`,
+/// so ordinal hooks survive remounts and rebuilds while call order is
+/// unchanged. Aurora does not re-run a component to animate it: a signal
 /// captured in a property binding is re-read every frame, so a component holds no state of
 /// its own beyond the signals it allocated.
+///
+/// An alternate engine can reuse the macro by naming its own scope entry point — a
+/// function taking the body closure the way `component_scope` does:
+///
+/// ```ignore
+/// #[component(scope = ::my_engine::enter_component)]
+/// fn Card() -> impl my_engine::IntoElement { /* ... */ }
+/// ```
+///
+/// Without arguments the expansion is exactly as before (`::aurora` paths, concrete
+/// `::aurora::dsl::Element` return). With `scope`, the wrapper returns `impl IntoElement`
+/// instead, resolved from whatever the caller imported.
 #[proc_macro_attribute]
 pub fn component(attr: TokenStream, item: TokenStream) -> TokenStream {
-    if !attr.is_empty() {
-        return syn::Error::new_spanned(
-            proc_macro2::TokenStream::from(attr.clone()),
-            "#[component] takes no arguments",
-        )
-        .to_compile_error()
-        .into();
-    }
+    let scope = match parse_scope_arg(attr) {
+        Ok(scope) => scope,
+        Err(err) => return err.to_compile_error().into(),
+    };
 
     let input = parse_macro_input!(item as ItemFn);
-    match expand(input) {
+    match expand(input, scope) {
         Ok(tokens) => tokens.into(),
         Err(err) => err.to_compile_error().into(),
+    }
+}
+
+/// RSX over the builder DSL: `<Group width={x}>…</Group>`.
+///
+/// See `view.rs`. Single root only (Aurora has no fragment node); components
+/// resolve to the `{Tag}Props` builder their `#[component]` generated.
+#[proc_macro]
+pub fn view(tokens: TokenStream) -> TokenStream {
+    match view::expand(tokens.into()) {
+        Ok(t) => t.into(),
+        Err(e) => e.to_compile_error().into(),
+    }
+}
+
+/// Optional `scope = ::path::to::scope_fn` argument.
+///
+/// Empty means the default (`::aurora::dsl::component_scope`); anything else must be a
+/// single `scope = <path>` assignment.
+fn parse_scope_arg(attr: TokenStream) -> syn::Result<Option<syn::Path>> {
+    if attr.is_empty() {
+        return Ok(None);
+    }
+    let parsed: ScopeArg = syn::parse(attr)?;
+    Ok(Some(parsed.path))
+}
+
+/// Parsed `scope = ::path` assignment.
+struct ScopeArg {
+    path: syn::Path,
+}
+
+impl syn::parse::Parse for ScopeArg {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let ident: syn::Ident = input.parse()?;
+        if ident != "scope" {
+            return Err(syn::Error::new_spanned(
+                ident,
+                "#[component] takes only `scope = ::path::to::scope_fn`",
+            ));
+        }
+        let _eq: syn::Token![=] = input.parse()?;
+        let path: syn::Path = input.parse()?;
+        if !input.is_empty() {
+            return Err(syn::Error::new(input.span(), "unexpected tokens after scope path"));
+        }
+        Ok(Self { path })
     }
 }
 
@@ -45,7 +105,10 @@ pub fn component(attr: TokenStream, item: TokenStream) -> TokenStream {
 ///
 /// The body keeps its original name and return type so its own type checking is untouched,
 /// and the wrapper is what callers see: it enters the scope and converts the result.
-fn expand(input: ItemFn) -> syn::Result<proc_macro2::TokenStream> {
+/// With no `scope` argument the wrapper is byte-identical to the historical expansion;
+/// with one, the scope path is swapped and the return becomes `impl IntoElement` (named
+/// by the caller's own imports, since the macro cannot know the other engine's type).
+fn expand(input: ItemFn, scope: Option<syn::Path>) -> syn::Result<proc_macro2::TokenStream> {
     if input.sig.asyncness.is_some() {
         return Err(syn::Error::new_spanned(
             input.sig.asyncness,
@@ -79,21 +142,49 @@ fn expand(input: ItemFn) -> syn::Result<proc_macro2::TokenStream> {
     // yields: a mountable element. The body's own `impl IntoElement` return is still checked
     // by the compiler, inside the body function, so the opaque type is verified rather than
     // erased. syn's `Signature` carries its own `fn` token, so it is emitted whole.
+    //
+    // A custom scope cannot name the other engine's element type, so the return falls back
+    // to `impl IntoElement`, resolved from the caller's imports.
+    // Typed props for view!: additive and non-breaking; custom-scope components
+    // (other engines) skip it since the builder names Aurora paths.
+    let custom_scope = scope.is_some();
     let mut wrapper_sig = sig.clone();
-    wrapper_sig.output = syn::parse_quote!(-> ::aurora::dsl::Element);
+    let scope_call;
+    if let Some(path) = scope {
+        wrapper_sig.output = syn::parse_quote!(-> impl IntoElement);
+        scope_call = quote! { #path(|| #body_name(#(#arg_names),*)) };
+    } else {
+        wrapper_sig.output = syn::parse_quote!(-> ::aurora::dsl::Element);
+        // Stable identity: module path + component name, so ordinal hooks
+        // survive remounts and rebuilds while call order is unchanged.
+        // Siblings disambiguate by child index; modules can't collide.
+        scope_call = quote! { ::aurora::dsl::component_scope_named(
+            ::std::concat!(::std::module_path!(), "::", ::std::stringify!(#name)),
+            || #body_name(#(#arg_names),*)
+        ) };
+    }
 
     let wrapper = quote! {
         #[doc(hidden)]
         #[allow(non_snake_case)]
         #(#attrs)*
         #vis #wrapper_sig #where_clause {
-            ::aurora::dsl::component_scope(|| #body_name(#(#arg_names),*))
+            #scope_call
         }
+    };
+
+    // Typed props for view!: additive and non-breaking; custom-scope components
+    // (other engines) skip it since the builder names Aurora paths.
+    let props_tokens = if custom_scope {
+        quote! {}
+    } else {
+        props::expand_props(&input)?.unwrap_or_else(|| quote! {})
     };
 
     Ok(quote! {
         #body_fn
         #wrapper
+        #props_tokens
     })
 }
 

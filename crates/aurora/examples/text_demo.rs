@@ -19,7 +19,7 @@ fn main() {
     cli.init_telemetry();
     cli.app_config("Aurora — Text Layout")
         .font("Inter", include_bytes!("../assets/inter-var.ttf"))
-        .background(Color::hex(0x0B1020))
+        .background(0x0B1020)
         .run(build_ui);
 }
 
@@ -31,7 +31,7 @@ fn heading(content: &'static str) -> TextDef {
         .weight(700)
         .letter_spacing(1.6)
         .line_height_multiple(1.2)
-        .color(Color::hex(0x6C8CFF))
+        .color(0x6C8CFF)
         .margin(Margin::x(48.0))
 }
 
@@ -41,8 +41,8 @@ fn body(content: &'static str) -> TextDef {
         .font_family("Inter")
         .size(15.0)
         .line_height_multiple(1.6)
-        .color(Color::hex(0xAEB9CC))
-        .width(Size::fill())
+        .color(0xAEB9CC)
+        .width("fill")
         .margin(Margin::x(48.0))
 }
 
@@ -51,17 +51,17 @@ fn sample(content: &'static str) -> TextDef {
     text(content)
         .font_family("Inter")
         .size(15.0)
-        .color(Color::hex(0xE2E8F0))
-        .width(Size::fill())
+        .color(0xE2E8F0)
+        .width("fill")
         .margin(Margin::x(48.0))
 }
 
 fn build_ui() -> impl IntoElement {
     group()
-        .direction(Direction::Vertical)
-        .width(Size::fill())
-        .height(Size::fill())
-        .fill(Color::hex(0x0B1020))
+        .direction("vertical")
+        .width("fill")
+        .height("fill")
+        .fill(0x0B1020)
         .gap(14.0)
         .children([
             text("Typography")
@@ -82,7 +82,7 @@ fn build_ui() -> impl IntoElement {
             heading("04 · TRACKING · WEIGHTS · ITALIC"),
             sample("Wide tracking through the whole run.")
                 .letter_spacing(3.0)
-                .color(Color::hex(0x8FE3C0)),
+                .color(0x8FE3C0),
             sample("Light weight 300").weight(300),
             sample("Bold weight 700").weight(700),
             sample("Italic face for emphasis.").italic(),

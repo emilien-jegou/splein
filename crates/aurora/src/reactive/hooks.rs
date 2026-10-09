@@ -138,7 +138,7 @@ impl Cx {
         self.enter_scope(instance, stable, body)
     }
 
-    /// Runs `body` as a component instance named `key`, so its hook state survives a rebuild.
+    /// Runs `body` as a component instance named `path`, so its hook state survives a rebuild.
     ///
     /// This is what makes a component inside a reactive child list keep its state: the list is
     /// rebuilt by re-running its builder, and without a name the rebuild allocates fresh
@@ -147,6 +147,41 @@ impl Cx {
     /// would inherit the state of whichever item took its index.
     pub fn enter_keyed<R>(&self, key: impl AsRef<str>, body: impl FnOnce() -> R) -> R {
         self.enter_scope(Rc::from(key.as_ref()), true, body)
+    }
+
+    /// Runs `body` as a named component, combining [`Cx::enter_keyed`] stability
+    /// with [`Cx::enter`] sibling disambiguation. This is what `#[component]`
+    /// expands to (with `path` = `module_path!()::Name`).
+    ///
+    /// Identity rules, in order:
+    /// - Under a stable parent: `{parent}#{child_index}={path}` — positional
+    ///   like `enter` (so same-name siblings never alias), stable like
+    ///   `enter_keyed`. The path suffix is debuggability, not identity.
+    /// - At the root (no parent): `path` verbatim — the component declares its
+    ///   own stability, which cascades positionally to its whole subtree.
+    /// - Under an *unstable* parent: `{path}#{child_index}`, unique within this
+    ///   build but not recalled later (an unstable parent promises nothing).
+    pub fn enter_named<R>(&self, path: &'static str, body: impl FnOnce() -> R) -> R {
+        let (instance, stable) = CURRENT.with(|stack| {
+            let mut stack = stack.borrow_mut();
+            match stack.last_mut() {
+                Some(parent) if parent.stable => {
+                    let n = parent.children.get();
+                    parent.children.set(n + 1);
+                    (
+                        Rc::from(format!("{}#{n}={path}", parent.instance)),
+                        true,
+                    )
+                }
+                Some(parent) => {
+                    let n = parent.children.get();
+                    parent.children.set(n + 1);
+                    (Rc::from(format!("{path}#{n}")), false)
+                }
+                None => (Rc::from(path), true),
+            }
+        });
+        self.enter_scope(instance, stable, body)
     }
 
     fn enter_scope<R>(&self, instance: Rc<str>, stable: bool, body: impl FnOnce() -> R) -> R {
@@ -554,19 +589,17 @@ fn remember_keyed<T: Clone + 'static>(scope: &HookScope, key: &'static str, valu
 
 /// Allocates a signal with call-site identity, safe under conditionals.
 ///
-/// `use_signal!(init)` derives the key from `file!():line!()` — collision-proof
-/// across a file, but moving the line resets the hook's state.
-/// `use_signal!("name", init)` uses an explicit name namespaced by file — stable
-/// across moves, but two identical names in one component panic (see below).
+/// The key must be an explicit literal namespaced by file — stable across
+/// moves, unlike the removed `file!():line!()` derivation, which silently
+/// reset the hook's state every time the line shifted. Prefer this over
+/// ordinal [`use_signal`] when the hook sits inside a conditional or after an
+/// early return, so builds that skip an earlier hook still recall correctly.
 ///
-/// Either way the key must be unique per component build: a hook in a loop shares
-/// its call site across iterations and panics naming the key, as does a pasted
+/// The key must be unique per component build: a hook in a loop shares its
+/// call site across iterations and panics naming the key, as does a pasted
 /// duplicate. Use keyed lists for repeated hooks.
 #[macro_export]
 macro_rules! use_signal {
-    ($init:expr) => {
-        $crate::reactive::use_signal_keyed(concat!(file!(), ":", line!()), $init)
-    };
     ($key:literal, $init:expr) => {
         $crate::reactive::use_signal_keyed(concat!(file!(), "#", $key), $init)
     };

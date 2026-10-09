@@ -103,7 +103,7 @@ fn main() {
 
     cli.app_config("Aurora — Text · Selection showcase")
         .font("Inter", include_bytes!("../assets/inter-var.ttf"))
-        .background(Color::hex(PAGE))
+        .background(PAGE)
         .runtime(runtime)
         .extension(debugger)
         .extension(monitor)
@@ -119,8 +119,8 @@ pub fn Page(status: Signal<String>, clipboard: Signal<String>) -> impl IntoEleme
         "Every paragraph below is selectable body copy. Drag inside one, or sweep across several: the highlight spans runs, Shift-click extends from the anchor, and Ctrl+C copies to the OS clipboard.",
         content(
             group()
-                .direction(Direction::Vertical)
-                .width(Size::fill())
+                .direction("vertical")
+                .width("fill")
                 .gap(12.0)
                 .children((
                     para("show-a", "Aurora keeps one layout and compositor engine under a reactive DSL, so a paragraph is shaped once and every caret, word edge, and highlight rect derives from that same layout."),
@@ -139,27 +139,27 @@ fn para(key: &'static str, copy: &'static str) -> impl IntoElement {
         .selectable(true)
         .size(13.0)
         .line_height(20.0)
-        .color(Color::hex(BODY))
-        .width(Size::fill())
+        .color(BODY)
+        .width("fill")
         .into_element()
 }
 
 fn status_card(status: Signal<String>, clipboard: Signal<String>) -> GroupDef {
     surface()
-        .direction(Direction::Vertical)
-        .width(Size::fill())
+        .direction("vertical")
+        .width("fill")
         .gap(6.0)
-        .margin(Margin::all(16.0))
+        .margin(16.0)
         .children((
             eyebrow("LIVE SELECTION"),
-            text(status).size(12.0).color(Color::hex(INK)),
+            text(status).size(12.0).color(INK),
             eyebrow("OS CLIPBOARD"),
-            text(clipboard).size(12.0).color(Color::hex(INK)),
+            text(clipboard).size(12.0).color(INK),
         ))
 }
 
 fn cheat_sheet() -> GroupDef {
-    group().direction(Direction::Vertical).gap(2.0).children((
+    group().direction("vertical").gap(2.0).children((
         hint("drag — select chars · across runs spans them"),
         hint("double-click — word · triple-click — paragraph"),
         hint("shift+click — extend from the anchor"),
@@ -168,5 +168,5 @@ fn cheat_sheet() -> GroupDef {
 }
 
 fn hint(copy: &'static str) -> impl IntoElement {
-    text(copy).size(11.0).color(Color::hex(MUTED)).into_element()
+    text(copy).size(11.0).color(MUTED).into_element()
 }

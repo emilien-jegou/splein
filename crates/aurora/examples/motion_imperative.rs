@@ -20,7 +20,7 @@ fn main() {
 
     cli.app_config("Aurora — Motion 03 · Reactive targets")
         .font("Inter", include_bytes!("../assets/inter-var.ttf"))
-        .background(Color::hex(PAGE))
+        .background(PAGE)
         .run(Page);
 }
 
@@ -34,14 +34,14 @@ pub fn Page() -> impl IntoElement {
     let outward = use_interval_toggle(STEP_SECS);
 
     // Panel: one tween, applied to each property independently.
-    let panel_ease = Transition::ease(650.ms(), Ease::OutQuint);
+    let panel_ease = Transition::from_str("out-quint 650ms");
     let x = panel_ease.on(outward.map(|out| if out { 0.0 } else { TRAVEL }));
     let opacity = panel_ease.on(outward.map(|out| if out { 1.0 } else { 0.4 }));
     let scale = panel_ease.on(outward.map(|out| if out { 1.0 } else { 0.9 }));
 
     // Badge: a spring, so it carries no duration at all and arrives on its own terms.
     let badge_scale =
-        Transition::spring(Spring::bouncy()).on(outward.map(|out| if out { 1.25 } else { 1.0 }));
+        Transition::from_str("spring:bouncy").on(outward.map(|out| if out { 1.25 } else { 1.0 }));
 
     page(
         "MOTION · 03 — REACTIVE TARGETS",
@@ -62,19 +62,19 @@ pub fn Page() -> impl IntoElement {
 
 fn body() -> GroupDef {
     group()
-        .direction(Direction::Vertical)
-        .width(Size::fill())
-        .height(Size::fill())
+        .direction("vertical")
+        .width("fill")
+        .height("fill")
 }
 
 fn panel_card() -> GroupDef {
     group()
         .key("panel")
-        .direction(Direction::Vertical)
+        .direction("vertical")
         .width(280.0)
-        .height(Size::fill())
+        .height("fill")
         .radius(14.0)
-        .fill(Color::hex(ACCENT))
+        .fill(ACCENT)
         .shadow(Shadow::web_like(
             0.0,
             10.0,
@@ -82,8 +82,8 @@ fn panel_card() -> GroupDef {
             0.0,
             Color::hex_alpha(ACCENT, 0.30),
         ))
-        .alignment(Alignment::Center)
-        .distribution(Distribution::Center)
+        .alignment("center")
+        .distribution("center")
         .gap(6.0)
         .children((
             text("MULTI-PROPERTY")
@@ -100,15 +100,15 @@ fn panel_card() -> GroupDef {
 fn badge() -> GroupDef {
     group()
         .key("badge")
-        .direction(Direction::Vertical)
+        .direction("vertical")
         .width(96.0)
         .height(96.0)
-        .radius(Radius::max())
-        .fill(Color::hex(0x10B981))
+        .radius("max")
+        .fill(0x10B981)
         .anchor(Anchor::TopRight)
-        .margin(Margin::all(24.0))
-        .alignment(Alignment::Center)
-        .distribution(Distribution::Center)
+        .margin(24.0)
+        .alignment("center")
+        .distribution("center")
         .gap(4.0)
         .children((
             text("SPRING")

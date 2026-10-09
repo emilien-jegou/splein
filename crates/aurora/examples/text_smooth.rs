@@ -28,7 +28,7 @@ fn main() {
 
     cli.app_config("Aurora — Text smooth drift repro")
         .font("Inter", include_bytes!("../assets/inter-var.ttf"))
-        .background(Color::hex(PAGE))
+        .background(PAGE)
         .run(Page);
 }
 
@@ -59,9 +59,9 @@ pub fn Page() -> impl IntoElement {
         "Four runs drift at ~15px/s: X, Y and diagonal at 15px (hinted), Y at 22px (unhinted). Step a frame at a time (F8, then '.') — each press advances 1/8px, so every press should visibly blend, never jump. Rest frames stay pixel-crisp.",
         content(
             group()
-                .direction(Direction::Vertical)
-                .width(Size::fill())
-                .height(Size::fill())
+                .direction("vertical")
+                .width("fill")
+                .height("fill")
                 .gap(16.0)
                 .children((
                     drift_row("X · 15PX", group().children([drift_text()]).x(x)),
@@ -82,24 +82,24 @@ pub fn Page() -> impl IntoElement {
 /// Fixed-height track holding one drifting run.
 fn drift_row(label: &'static str, element: impl IntoElement) -> GroupDef {
     group()
-        .direction(Direction::Horizontal)
-        .width(Size::fill())
+        .direction("horizontal")
+        .width("fill")
         .height(64.0)
-        .alignment(Alignment::Center)
+        .alignment("center")
         .gap(16.0)
         .children((
             group()
                 .width(96.0)
-                .height(Size::fill())
-                .alignment(Alignment::Center)
+                .height("fill")
+                .alignment("center")
                 .children([eyebrow(label)]),
             group()
-                .width(Size::fill())
-                .height(Size::fill())
+                .width("fill")
+                .height("fill")
                 .radius(12.0)
-                .fill(Color::hex(SURFACE))
+                .fill(SURFACE)
                 .stroke(Stroke::inside(1.0, hairline()))
-                .alignment(Alignment::Center)
+                .alignment("center")
                 .children([element]),
         ))
 }
@@ -109,7 +109,7 @@ fn drift_text() -> TextDef {
     text("Pack my box with five dozen liquor jugs 0123456789")
         .size(15.0)
         .weight(500)
-        .color(Color::hex(INK))
+        .color(INK)
 }
 
 /// Same copy above the hint cutoff (16px): unhinted linear outlines.
@@ -117,5 +117,5 @@ fn drift_text_big() -> TextDef {
     text("Pack my box with five dozen liquor jugs 0123456789")
         .size(22.0)
         .weight(500)
-        .color(Color::hex(INK))
+        .color(INK)
 }

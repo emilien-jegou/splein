@@ -113,6 +113,80 @@ impl Transition {
         self
     }
 
+    /// Parses a transition literal, so motion reads like any other prop:
+    /// `Transition::from_str("spring")`, `.x(Transition::from_str("ease-out 300ms").on(target))`.
+    ///
+    /// Grammar (case-insensitive):
+    /// - `"spring"` / `"spring:<preset>"` / `"spring <preset>"` — physics
+    ///   (`snappy` default, `bouncy`, `smooth`, or `stiffness damping [mass]`)
+    /// - `"<ease> <duration>"` / `"<duration> <ease>"` — timed, e.g.
+    ///   `"ease-out 300ms"`, `"0.3s linear"`
+    /// - `"<duration>"` alone — timed with the default (`out-cubic`) ease
+    ///
+    /// Durations: `300ms`, `0.3s`, or a bare number (seconds).
+    ///
+    /// Named `from_str` (not `from`) because the inherent playback builder
+    /// `from()` would shadow `From::from` at the call site.
+    ///
+    /// Never panics: an unparseable string degrades to a snappy spring (same
+    /// no-crash contract as foundation literals) and logs loudly.
+    pub fn from_str(s: &str) -> Self {
+        match Self::parse(s) {
+            Some(t) => t,
+            None => {
+                tracing::error!("aurora: invalid transition `{s}`; expected `spring[:preset]`, `<ease> <duration>`, or `<duration>`; using snappy spring");
+                Self::spring(Spring::snappy())
+            }
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        let s = s.trim();
+        if s.is_empty() {
+            return None;
+        }
+        let lower = s.to_lowercase();
+        if lower == "spring" {
+            return Some(Self::spring(Spring::snappy()));
+        }
+        if let Some(rest) = lower.strip_prefix("spring:").or_else(|| lower.strip_prefix("spring ")) {
+            return Spring::parse(rest.trim()).map(Self::spring);
+        }
+        // Timed: split ease and duration in either order.
+        let parts: Vec<&str> = lower.split_whitespace().collect();
+        let dur = |p: &str| {
+            if let Some(ms) = p.strip_suffix("ms") {
+                ms.trim().parse::<f32>().ok().map(|v| v / 1000.0)
+            } else if let Some(sec) = p.strip_suffix('s') {
+                sec.trim().parse::<f32>().ok()
+            } else {
+                p.parse::<f32>().ok()
+            }
+        };
+        match parts.as_slice() {
+            [single] => {
+                if let Some(d) = dur(single) {
+                    return Some(Self::ease(d, Ease::default()));
+                }
+                // A bare ease name with an implicit 300ms.
+                if let Some(e) = Ease::parse(single) {
+                    return Some(Self::ease(0.3, e));
+                }
+                None
+            }
+            [a, b] => {
+                if let (Some(d), Some(e)) = (dur(a), Ease::parse(b)) {
+                    return Some(Self::ease(d, e));
+                }
+                if let (Some(e), Some(d)) = (Ease::parse(a), dur(b)) {
+                    return Some(Self::ease(d, e));
+                }
+                None
+            }
+            _ => None,
+        }
+    }
+
     /// Duration a playback run takes, or `None` when this transition is a spring.
     fn playback_duration(&self) -> Option<f32> {
         match self.mode {
@@ -187,6 +261,23 @@ impl Transition {
                 elapsed: 0.0,
             }));
         (handle.output(), handle)
+    }
+}
+
+impl std::str::FromStr for Transition {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, String> {
+        Self::parse(s).ok_or_else(|| {
+            format!("invalid transition `{s}`; expected `spring[:preset]`, `<ease> <duration>`, or `<duration>` (e.g. `spring`, `spring:bouncy`, `ease-out 300ms`)")
+        })
+    }
+}
+
+impl From<&str> for Transition {
+    fn from(s: &str) -> Self {
+        // NOTE: call as `Transition::from_str(s)`; the inherent playback
+        // builder `from()` shadows `From::from` in `Transition::from(..)` syntax.
+        Self::from_str(s)
     }
 }
 

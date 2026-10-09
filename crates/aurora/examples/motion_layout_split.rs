@@ -22,7 +22,7 @@ fn main() {
 
     cli.app_config("Aurora — Motion 01 · Layout vs compositor transform")
         .font("Inter", include_bytes!("../assets/inter-var.ttf"))
-        .background(Color::hex(PAGE))
+        .background(PAGE)
         .run(Page);
 }
 
@@ -44,19 +44,19 @@ pub fn Page() -> impl IntoElement {
         "The card holds a fixed 280-wide box at a fixed origin. Only its compositor transform moves, so the layout boundary never re-executes and damage stays inside its old and new bounds.",
         content(
             surface()
-                .direction(Direction::Vertical)
-                .width(Size::fill())
-                .height(Size::fill())
+                .direction("vertical")
+                .width("fill")
+                .height("fill")
                 .children((
                     strip(
                         stat("LAYOUT", "fixed box, computed once"),
                         stat("COMPOSITOR", "translate(sin t) x 120px"),
                     ),
-                    group().width(Size::fill()).height(1.0).fill(hairline()),
+                    group().width("fill").height(1.0).fill(hairline()),
                     group()
-                        .width(Size::fill())
-                        .height(Size::fill())
-                        .margin(Margin::all(20.0))
+                        .width("fill")
+                        .height("fill")
+                        .margin(20.0)
                         .children([arena(card().x(travel))]),
                 )),
         ),
@@ -67,11 +67,11 @@ pub fn Page() -> impl IntoElement {
 fn card() -> GroupDef {
     group()
         .key("card")
-        .direction(Direction::Vertical)
+        .direction("vertical")
         .width(280.0)
-        .height(Size::fill())
+        .height("fill")
         .radius(14.0)
-        .fill(Color::hex(ACCENT))
+        .fill(ACCENT)
         .shadow(Shadow::web_like(
             0.0,
             10.0,
@@ -79,8 +79,8 @@ fn card() -> GroupDef {
             0.0,
             Color::hex_alpha(ACCENT, 0.35),
         ))
-        .alignment(Alignment::Center)
-        .distribution(Distribution::Center)
+        .alignment("center")
+        .distribution("center")
         .gap(6.0)
         .children((
             text("STABLE VIEW")

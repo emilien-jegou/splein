@@ -4,11 +4,11 @@ use aurora::prelude::*;
 
 pub fn render_floating_hud() -> impl IntoElement {
     group()
-        .direction(Direction::Horizontal)
-        .width(Size::fit())
+        .direction("horizontal")
+        .width("fit")
         .height(48.0)
-        .radius(Radius::max())
-        .fill(Color::hex(0x0A0A0A))
+        .radius("max")
+        .fill(0x0A0A0A)
         .stroke(Stroke::inside(1.0, Color::white_alpha(0.15)))
         .shadow(Shadow::web_like(
             0.0,
@@ -21,44 +21,44 @@ pub fn render_floating_hud() -> impl IntoElement {
         .margin(Margin::bottom(12.0))
         .overlay(true)
         .z_index(100)
-        .alignment(Alignment::Center)
+        .alignment("center")
         .gap(10.0)
         .margin(Margin::x(6.0))
         .children((
             group()
-                .direction(Direction::Horizontal)
+                .direction("horizontal")
                 .width(280.0)
                 .height(36.0)
-                .radius(Radius::max())
+                .radius("max")
                 .stroke(Stroke::inside(1.0, Color::white_alpha(0.15)))
-                .alignment(Alignment::Center)
+                .alignment("center")
                 .children((
                     text("The King asks the Queen to Risk a foxy Gift.")
                         .size(13.0)
                         .color(Color::WHITE)
                         .margin(Margin::left(10.0)),
-                    group().width(Size::fill()),
+                    group().width("fill"),
                     text("Reset")
                         .size(11.0)
-                        .color(Color::hex(0x9B9B9B))
+                        .color(0x9B9B9B)
                         .margin(Margin::right(10.0)),
                 )),
             group()
-                .direction(Direction::Horizontal)
+                .direction("horizontal")
                 .width(180.0)
                 .height(36.0)
-                .radius(Radius::max())
+                .radius("max")
                 .fill(Color::white_alpha(0.10))
-                .alignment(Alignment::Center)
+                .alignment("center")
                 .gap(8.0)
                 .children((
                     text("W")
                         .size(10.0)
                         .weight(700)
-                        .color(Color::hex(0x999999))
+                        .color(0x999999)
                         .margin(Margin::left(8.0)),
                     group()
-                        .width(Size::fill())
+                        .width("fill")
                         .height(6.0)
                         .radius(3.0)
                         .fill(Color::white_alpha(0.20)),
@@ -74,8 +74,8 @@ pub fn render_floating_hud() -> impl IntoElement {
                 .height(16.0)
                 .fill(Color::white_alpha(0.15)),
             group()
-                .direction(Direction::Horizontal)
-                .alignment(Alignment::Center)
+                .direction("horizontal")
+                .alignment("center")
                 .gap(4.0)
                 .children((hud_button("I"), hud_button("AA"), hud_button("U"))),
         ))
@@ -83,18 +83,18 @@ pub fn render_floating_hud() -> impl IntoElement {
 
 fn hud_stepper(label: &'static str, val: &'static str) -> impl IntoElement {
     group()
-        .direction(Direction::Horizontal)
+        .direction("horizontal")
         .height(36.0)
-        .radius(Radius::max())
+        .radius("max")
         .fill(Color::white_alpha(0.10))
-        .alignment(Alignment::Center)
+        .alignment("center")
         .gap(4.0)
         .margin(Margin::x(8.0))
         .children((
             text(label)
                 .size(10.0)
                 .weight(700)
-                .color(Color::hex(0x999999)),
+                .color(0x999999),
             text("-").size(12.0).color(Color::WHITE),
             text(val).size(11.0).color(Color::WHITE),
             text("+").size(12.0).color(Color::WHITE),
@@ -105,8 +105,8 @@ fn hud_button(label: &'static str) -> impl IntoElement {
     group()
         .width(28.0)
         .height(28.0)
-        .radius(Radius::max())
-        .alignment(Alignment::Center)
-        .distribution(Distribution::Center)
+        .radius("max")
+        .alignment("center")
+        .distribution("center")
         .children([text(label).size(12.0).color(Color::white_alpha(0.70))])
 }

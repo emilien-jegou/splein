@@ -141,3 +141,43 @@ impl SpringState {
         self.position += self.velocity * step;
     }
 }
+
+impl Spring {
+    /// Parses a preset (`snappy` (default), `bouncy`, `smooth`) or explicit
+    /// `stiffness damping [mass]`, e.g. `"400 34"` / `"400 34 1"`.
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_lowercase().as_str() {
+            "" | "default" | "snappy" => Some(Self::snappy()),
+            "bouncy" => Some(Self::bouncy()),
+            "smooth" => Some(Self::smooth()),
+            nums => {
+                let v: Vec<f32> = nums.split_whitespace().map(str::parse).collect::<Result<_, _>>().ok()?;
+                match v.as_slice() {
+                    [k, d] => Some(Self::new(*k, *d, 1.0)),
+                    [k, d, m] => Some(Self::new(*k, *d, *m)),
+                    _ => None,
+                }
+            }
+        }
+    }
+}
+
+impl std::str::FromStr for Spring {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, String> {
+        Self::parse(s).ok_or_else(|| format!("invalid spring `{s}`; expected snappy, bouncy, smooth, or `stiffness damping [mass]`"))
+    }
+}
+
+impl From<&str> for Spring {
+    fn from(s: &str) -> Self {
+        match Self::parse(s) {
+            Some(v) => v,
+            // Same no-crash contract as foundation literals.
+            None => {
+                tracing::error!("aurora: invalid spring `{s}`; expected snappy, bouncy, smooth, or `stiffness damping [mass]`; using snappy");
+                Self::snappy()
+            }
+        }
+    }
+}

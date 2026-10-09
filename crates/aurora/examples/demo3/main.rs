@@ -32,9 +32,9 @@ fn main() {
         .background(Color::WHITE)
         .run(move || {
             group()
-                .direction(Direction::Horizontal)
-                .width(Size::fill())
-                .height(Size::fill())
+                .direction("horizontal")
+                .width("fill")
+                .height("fill")
                 .fill(Color::WHITE)
                 .children((
                     render_sidebar(&icons),
