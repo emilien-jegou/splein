@@ -136,13 +136,16 @@ pub fn execute_commands(
                 layout,
                 color,
             } => {
+                // Same allocation round-tripped, so the line cache's Arc-identity
+                // keys stay stable.
+                let layout = aurora::text::TextLayout::view_arc(layout);
                 render_text(
                     target,
                     ctx.text_ctx,
                     TextRenderParams {
                         origin: *origin,
-                        layout,
-                        layout_arc: Some(std::sync::Arc::clone(layout)),
+                        layout: &layout,
+                        layout_arc: Some(layout.clone()),
                         color: *color,
                         opacity: cur_op,
                         transform: cur_tx,

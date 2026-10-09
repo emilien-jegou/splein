@@ -5,7 +5,6 @@ use aurora_foundation::{Constraints, IntrinsicSize, ResolvedRect};
 use crate::scene::context::PaintContext;
 use crate::scene::vector::VectorGraphic;
 use crate::tree::Primitive;
-use std::sync::Arc;
 
 struct SvgPrimitive {
     graphic: VectorGraphic,
@@ -39,16 +38,4 @@ pub fn svg(graphic: impl Into<VectorGraphic>) -> CustomDef {
         height: g.height,
         graphic: g,
     })
-}
-
-impl From<Arc<VectorGraphic>> for VectorGraphic {
-    fn from(v: Arc<VectorGraphic>) -> Self {
-        (*v).clone()
-    }
-}
-
-impl From<&Arc<VectorGraphic>> for VectorGraphic {
-    fn from(v: &Arc<VectorGraphic>) -> Self {
-        (**v).clone()
-    }
 }

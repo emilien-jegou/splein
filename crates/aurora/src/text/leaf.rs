@@ -155,9 +155,13 @@ impl TextConfig {
                 .flat_map(|line| decoration_rules(line, self.size, self.decoration))
                 .collect()
         };
+        // Struct fields are not coercion sites (and inference unifies backwards
+        // through Arc::clone): clone concretely, then coerce via annotation.
+        let owned: Arc<TextLayout> = Arc::clone(layout);
+        let layout_view: Arc<dyn aurora_scene::TextLayoutView> = owned;
         chunk.push(SceneCommand::DrawText {
             origin: Point::ZERO,
-            layout: Arc::clone(layout),
+            layout: layout_view,
             color: self.color,
         });
         for rect in decorations {

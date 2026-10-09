@@ -7,3 +7,7 @@ description = "Aurora UI engine: aurora-scene (split from aurora facade)"
 license = "GPL-3.0"
 
 [dependencies]
+aurora-foundation = { path = "../aurora-foundation", version = "0.0.1-rc.1" }
+smallvec = "1.16.1"
+resvg = "0.42"
+rustc-hash = "2.1.3"

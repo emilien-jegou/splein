@@ -34,6 +34,18 @@ impl VectorGraphic {
     }
 }
 
+impl From<Arc<VectorGraphic>> for VectorGraphic {
+    fn from(v: Arc<VectorGraphic>) -> Self {
+        (*v).clone()
+    }
+}
+
+impl From<&Arc<VectorGraphic>> for VectorGraphic {
+    fn from(v: &Arc<VectorGraphic>) -> Self {
+        (**v).clone()
+    }
+}
+
 impl std::fmt::Debug for VectorGraphic {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("VectorGraphic")

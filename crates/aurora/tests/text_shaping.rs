@@ -42,11 +42,14 @@ fn draw_runs(engine: &Engine) -> Vec<(Point, f32, f32)> {
                         offset = Point::new(offset.x - p.x, offset.y - p.y);
                     }
                 }
-                SceneCommand::DrawText { origin, layout, .. } => runs.push((
-                    Point::new(offset.x + origin.x, offset.y + origin.y),
-                    layout.total_size.width,
-                    layout.total_size.height,
-                )),
+                SceneCommand::DrawText { origin, layout, .. } => {
+                    let shaped = aurora::text::TextLayout::view_ref(layout);
+                    runs.push((
+                        Point::new(offset.x + origin.x, offset.y + origin.y),
+                        shaped.total_size.width,
+                        shaped.total_size.height,
+                    ))
+                }
                 _ => {}
             }
         }
@@ -137,7 +140,7 @@ fn fixed_width_text_wraps_at_that_width_in_a_vertical_group() {
     for chunk in &engine.scene().chunks {
         for cmd in chunk.commands.iter() {
             if let SceneCommand::DrawText { layout, .. } = cmd {
-                for line in &layout.lines {
+                for line in &aurora::text::TextLayout::view_ref(layout).lines {
                     assert!(
                         line.width <= 561.0,
                         "wrapped line {} exceeds 560",
@@ -171,7 +174,7 @@ fn fill_width_text_wraps_within_parent_minus_margins() {
     for chunk in &engine.scene().chunks {
         for cmd in chunk.commands.iter() {
             if let SceneCommand::DrawText { layout, .. } = cmd {
-                for line in &layout.lines {
+                for line in &aurora::text::TextLayout::view_ref(layout).lines {
                     assert!(
                         line.width <= 665.0,
                         "line {} exceeds 760 - 2*48",
@@ -245,8 +248,9 @@ fn row_text_wraps_at_assigned_width_not_parent_width() {
     for chunk in &engine.scene().chunks {
         for cmd in chunk.commands.iter() {
             if let SceneCommand::DrawText { layout, .. } = cmd {
-                assert!(layout.lines.len() > 1, "row text should wrap at 300px");
-                for line in &layout.lines {
+                let shaped = aurora::text::TextLayout::view_ref(layout);
+                assert!(shaped.lines.len() > 1, "row text should wrap at 300px");
+                for line in &shaped.lines {
                     assert!(line.width <= 301.0, "row line {} exceeds 300", line.width);
                 }
                 checked += 1;

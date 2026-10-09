@@ -176,7 +176,8 @@ pub fn compile_vello_chunk(
                 layout,
                 color,
             } => {
-                glyph_cache.render_text(scene, text_ctx, *origin, layout, *color, cur_tx);
+                let layout = aurora::text::TextLayout::view_arc(layout);
+                glyph_cache.render_text(scene, text_ctx, *origin, &layout, *color, cur_tx);
             }
             SceneCommand::BeginLayer { rect, .. } => {
                 let local_shape = build_kurbo_rect(rect);

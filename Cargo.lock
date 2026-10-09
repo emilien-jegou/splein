@@ -182,6 +182,7 @@ dependencies = [
  "aurora-foundation",
  "aurora-macros",
  "aurora-reactive",
+ "aurora-scene",
  "aurora-tiny-skia",
  "aurora-vello",
  "bon",
@@ -269,6 +270,12 @@ version = "0.0.1-rc.1"
 [[package]]
 name = "aurora-scene"
 version = "0.0.1-rc.1"
+dependencies = [
+ "aurora-foundation",
+ "resvg",
+ "rustc-hash 2.1.3",
+ "smallvec",
+]
 
 [[package]]
 name = "aurora-text"

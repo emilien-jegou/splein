@@ -1,11 +1,10 @@
 // Single responsibility: Scoped builder context for emitting display list commands directly into chunks.
 
 use aurora_foundation::{Appearance, Color, Point, Radius, ResolvedRect, Transform};
-use crate::scene::chunk::SceneChunk;
-use crate::scene::command::SceneCommand;
-use crate::scene::image::ImageSource;
-use crate::scene::vector::VectorGraphic;
-use crate::text::layout::TextLayout;
+use crate::chunk::SceneChunk;
+use crate::command::{SceneCommand, TextLayoutView};
+use crate::image::ImageSource;
+use crate::vector::VectorGraphic;
 use std::sync::Arc;
 
 /// Context provided to custom primitives to record display list commands directly into a chunk.
@@ -36,7 +35,7 @@ impl<'a> PaintContext<'a> {
     }
 
     /// Appends a shaped typography run command.
-    pub fn draw_text(&mut self, origin: Point, layout: Arc<TextLayout>, color: Color) {
+    pub fn draw_text(&mut self, origin: Point, layout: Arc<dyn TextLayoutView>, color: Color) {
         self.chunk.push(SceneCommand::DrawText {
             origin,
             layout,
