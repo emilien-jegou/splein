@@ -10,6 +10,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use aurora::app::{AppExtension, VisualDebugger};
+use aurora::app::switcher::{BootCtx, BootedDemo};
 use aurora::dsl::component::ProviderProps;
 use aurora::initContext;
 use aurora::prelude::*;
@@ -96,6 +97,27 @@ impl AppExtension for SelectionMonitor {
             redraw = true;
         }
         redraw
+    }
+}
+
+/// Rebuilds the selection world on a fresh runtime for in-window switching.
+///
+/// The standalone main adds its own debugger; here the switcher already owns
+/// the shared one, so only the selection monitor is installed.
+pub(crate) fn boot(ctx: &BootCtx) -> BootedDemo {
+    let runtime = Rc::clone(&ctx.runtime);
+    let status = Signal::new(Rc::clone(&runtime), String::new());
+    let clipboard = Signal::new(Rc::clone(&runtime), String::new());
+    let monitor = SelectionMonitor::new(status.clone(), clipboard.clone());
+
+    let cx = Cx::new(runtime);
+    let root = cx
+        .enter_keyed("root", move || Page(status.clone(), clipboard.clone()))
+        .into_element();
+    BootedDemo {
+        root,
+        background: 0xF4F5F7u32.into(),
+        extensions: vec![Box::new(monitor)],
     }
 }
 

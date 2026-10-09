@@ -8,6 +8,7 @@ use std::rc::Rc;
 use std::time::Instant;
 
 use aurora::app::AppExtension;
+use aurora::app::switcher::{BootCtx, BootedDemo};
 use aurora::prelude::*;
 use aurora::reactive::ReactiveRuntime;
 use aurora::scene::VectorGraphic;
@@ -116,6 +117,30 @@ impl AppExtension for DvdPhysicsDriver {
         }
 
         self.pos_signal.set((self.pos_x, self.pos_y));
+    }
+}
+
+/// Rebuilds the DVD world on a fresh runtime for in-window demo switching.
+pub(crate) fn boot(ctx: &BootCtx) -> BootedDemo {
+    let runtime = Rc::clone(&ctx.runtime);
+    let pos_signal = Signal::new(Rc::clone(&runtime), (60.0f32, 60.0f32));
+    let color_signal = Signal::new(Rc::clone(&runtime), Color::hex(BOUNCE_HEX[0]));
+
+    let driver = DvdPhysicsDriver::new(
+        ctx.engine_w as f32,
+        ctx.engine_h as f32,
+        pos_signal.clone(),
+        color_signal.clone(),
+    );
+
+    let cx = Cx::new(runtime);
+    let root = cx
+        .enter_keyed("root", move || build_ui(pos_signal.clone(), color_signal.clone()))
+        .into_element();
+    BootedDemo {
+        root,
+        background: Color::WHITE,
+        extensions: vec![Box::new(driver)],
     }
 }
 

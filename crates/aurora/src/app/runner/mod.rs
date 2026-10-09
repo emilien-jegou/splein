@@ -3,7 +3,7 @@
 mod adapters;
 pub mod backend;
 pub mod clipboard;
-mod frame_flow;
+pub(crate) mod frame_flow;
 pub mod pacing;
 pub mod pointer;
 

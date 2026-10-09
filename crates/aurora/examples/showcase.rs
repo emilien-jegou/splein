@@ -8,6 +8,7 @@ use std::rc::Rc;
 use std::time::Instant;
 
 use aurora::app::AppExtension;
+use aurora::app::switcher::{BootCtx, BootedDemo};
 use aurora::prelude::*;
 use aurora::reactive::ReactiveRuntime;
 use common::ExampleCli;
@@ -37,6 +38,25 @@ impl AppExtension for MissionControlTicker {
         let elapsed = self.start.elapsed().as_secs_f32();
         self.time_sig.set(elapsed);
         self.counter_sig.set((elapsed * 1250.0) as u64); // ~1,250 packets/sec
+    }
+}
+
+/// Rebuilds the mission-control world on a fresh runtime for in-window switching.
+pub(crate) fn boot(ctx: &BootCtx) -> BootedDemo {
+    let runtime = Rc::clone(&ctx.runtime);
+    let time_sig = Signal::new(Rc::clone(&runtime), 0.0f32);
+    let counter_sig = Signal::new(Rc::clone(&runtime), 0u64);
+
+    let ticker = MissionControlTicker::new(time_sig.clone(), counter_sig.clone());
+
+    let cx = Cx::new(runtime);
+    let root = cx
+        .enter_keyed("root", move || build_ui(time_sig.clone(), counter_sig.clone()))
+        .into_element();
+    BootedDemo {
+        root,
+        background: 0x06090Fu32.into(),
+        extensions: vec![Box::new(ticker)],
     }
 }
 

@@ -22,7 +22,7 @@ fn main() {
         .run(build_ui);
 }
 
-fn build_ui() -> impl IntoElement {
+pub(crate) fn build_ui() -> impl IntoElement {
     view! {
         <Group
             direction="vertical"

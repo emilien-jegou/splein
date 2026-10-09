@@ -6,7 +6,7 @@ use std::sync::Arc;
 const WIDTH: u32 = 480;
 const HEIGHT: u32 = 130;
 
-struct Icons {
+pub(crate) struct Icons {
     handle: Arc<VectorGraphic>,
     pen: Arc<VectorGraphic>,
     pencil: Arc<VectorGraphic>,
@@ -24,7 +24,7 @@ struct Icons {
 }
 
 impl Icons {
-    fn load() -> Self {
+pub(crate) fn load() -> Self {
         Self {
             handle: Arc::new(VectorGraphic::from_str(HANDLE_SVG).unwrap()),
             pen: Arc::new(VectorGraphic::from_str(PEN_SVG).unwrap()),
@@ -60,7 +60,7 @@ fn main() {
         .run(move || build_ui(&icons));
 }
 
-fn build_ui(icons: &Icons) -> impl IntoElement {
+pub(crate) fn build_ui(icons: &Icons) -> impl IntoElement {
     view! {
         <Group
             direction="vertical"

@@ -145,20 +145,20 @@ pub type MultiBackendFactories = [Option<BackendFactory>; 4];
 
 /// Builder for a multi-backend demo window set.
 pub struct MultiBackendConfig {
-    title: String,
-    width: u32,
-    height: u32,
-    fullscreen: bool,
-    fonts: Vec<Vec<u8>>,
-    background: Color,
-    initial: RenderBackend,
-    combine_on_boot: bool,
-    show_hud: bool,
-    fps_limit: FpsLimit,
-    extensions: Vec<Box<dyn AppExtension>>,
-    runtime: Option<Rc<RefCell<ReactiveRuntime>>>,
-    factories: MultiBackendFactories,
-    quad_factory: Option<BackendFactory>,
+    pub(crate) title: String,
+    pub(crate) width: u32,
+    pub(crate) height: u32,
+    pub(crate) fullscreen: bool,
+    pub(crate) fonts: Vec<Vec<u8>>,
+    pub(crate) background: Color,
+    pub(crate) initial: RenderBackend,
+    pub(crate) combine_on_boot: bool,
+    pub(crate) show_hud: bool,
+    pub(crate) fps_limit: FpsLimit,
+    pub(crate) extensions: Vec<Box<dyn AppExtension>>,
+    pub(crate) runtime: Option<Rc<RefCell<ReactiveRuntime>>>,
+    pub(crate) factories: MultiBackendFactories,
+    pub(crate) quad_factory: Option<BackendFactory>,
 }
 
 impl MultiBackendConfig {

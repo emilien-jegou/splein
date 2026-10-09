@@ -8,6 +8,7 @@
 #[path = "common/mod.rs"]
 mod common;
 
+use aurora::app::switcher::{BootCtx, BootedDemo};
 use aurora::prelude::*;
 use aurora::reactive::DynamicProp;
 use aurora::reactive::ReactiveRuntime;
@@ -123,11 +124,9 @@ fn button(label: DynamicProp<String>, on_press: impl Fn() + 'static) -> Element 
     }
 }
 
-fn main() {
-    let cli = ExampleCli::parse(980, 700);
-    cli.init_telemetry();
-
-    let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
+/// Rebuilds the studio world on a fresh runtime for in-window switching.
+pub(crate) fn boot(ctx: &BootCtx) -> BootedDemo {
+    let runtime = Rc::clone(&ctx.runtime);
     let mk = |v: f32| Signal::new(Rc::clone(&runtime), v);
     let (ox, oy, blur, spread, opacity, elevation) =
         (mk(3.0), mk(6.0), mk(6.0), mk(0.0), mk(0.35), mk(12.0));
@@ -224,11 +223,9 @@ fn main() {
         })
     };
 
-    cli.app_config_multi("Aurora — Shadow Studio")
-        .font("Inter", include_bytes!("../assets/inter-var.ttf"))
-        .background(0xE8E6E1)
-        .runtime(Rc::clone(&runtime))
-        .run(move || {
+    let cx = Cx::new(Rc::clone(&runtime));
+    let root = cx
+        .enter_keyed("root", move || {
             let fpx: Rc<dyn Fn(f32) -> String> = Rc::new(|v| format!("{v:.1}px"));
             let fop: Rc<dyn Fn(f32) -> String> = Rc::new(|v| format!("{v:.2}"));
             let rt = Rc::clone(&runtime);
@@ -360,7 +357,13 @@ fn main() {
                     </Group>
                 </Group>
             }
-        });
+        })
+        .into_element();
+    BootedDemo {
+        root,
+        background: 0xE8E6E1u32.into(),
+        extensions: vec![],
+    }
 }
 
 /// A tint swatch button writing `color` (alpha preserved from current).
@@ -381,4 +384,28 @@ fn swatch(tint: Signal<Color>, color: impl Into<Color>) -> Element {
             }}
         />
     }
+}
+
+fn main() {
+    let cli = ExampleCli::parse(980, 700);
+    cli.init_telemetry();
+    // Standalone keeps the classic single-demo runner on the same boot the
+    // switchable studio uses: one runtime shared by signals and engine.
+    let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
+    let ctx = BootCtx {
+        runtime: Rc::clone(&runtime),
+        engine_w: cli.width,
+        engine_h: cli.height,
+        demos: vec![],
+        menu: None,
+    };
+    let booted = boot(&ctx);
+    // `root_fn` is invoked once; Cell moves the prebuilt root into it while
+    // still satisfying `Fn`.
+    let root = std::cell::Cell::new(Some(booted.root));
+    cli.app_config_multi("Aurora — Shadow Studio")
+        .font("Inter", include_bytes!("../assets/inter-var.ttf"))
+        .background(0xE8E6E1)
+        .runtime(runtime)
+        .run(move || root.take().expect("root built once"));
 }

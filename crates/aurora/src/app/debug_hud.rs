@@ -48,7 +48,7 @@ pub fn time_scale_color(scale: f32) -> u32 {
 
 /// Always-on keybind strip for the demo runner (switch/combine + time controls).
 pub fn keybind_hint() -> &'static str {
-    "1-4 ENGINE  TAB CYCLE  C COMBINE  H HUD  F8 FREEZE  . STEP  [ ] SPEED  F9/F11/F12 VIEW  S CAP"
+    "F5 DEMOS  F6 QUAD  F7 ENGINE  F8 FREEZE  . STEP  [ ] SPEED  F9/F11/F12 VIEW  S CAP  ESC EXIT"
 }
 
 /// Renders HUD diagnostic telemetry panel with active backend name and metrics breakdown.

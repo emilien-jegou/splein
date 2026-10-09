@@ -327,7 +327,7 @@ impl QuadBackend {
             }
         };
         let title = format!(
-            "QUAD COMBINE  ·  one scene, four rasterizers  ·  {composite_fps:.0} fps  ·  1-4 single  Tab cycle  C single  Esc exit"
+            "QUAD COMBINE  ·  one scene, four rasterizers  ·  {composite_fps:.0} fps  ·  F5 demos  F6 single  F7 engine  Esc exit"
         );
         self.legend_text(title, 16.0, 8.0, Color::hex(0xE2E8F0));
         for i in 0..4 {

@@ -56,7 +56,7 @@ fn sample(content: &'static str) -> TextDef {
         .margin(Margin::x(48.0))
 }
 
-fn build_ui() -> impl IntoElement {
+pub(crate) fn build_ui() -> impl IntoElement {
     view! {
         <Group direction="vertical" width="fill" height="fill" fill={0x0B1020} gap={14.0}>
             <Text

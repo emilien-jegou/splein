@@ -20,7 +20,7 @@ use common::ExampleCli;
 const DEFAULT_WIDTH: u32 = 1280;
 const DEFAULT_HEIGHT: u32 = 640;
 
-const PANEL_BG: u32 = 0xF1CFFC;
+pub(crate) const PANEL_BG: u32 = 0xF1CFFC;
 const LABEL_COLOR: u32 = 0x483050;
 
 #[component]
@@ -39,7 +39,7 @@ fn Card(label: &'static str, shadow: Shadow) -> impl IntoElement {
     }
 }
 
-fn build_ui() -> impl IntoElement {
+pub(crate) fn build_ui() -> impl IntoElement {
     // The pink panel is the full background: no outer card, just the
     // two labeled cards centered with the reference's 96v/48h breathing room.
     view! {

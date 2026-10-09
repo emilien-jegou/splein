@@ -81,6 +81,7 @@ pub mod extension;
 pub mod multibackend;
 pub mod painter;
 pub mod runner;
+pub mod switcher;
 pub mod telemetry;
 
 pub use debug::{InspectorMode, VisualDebugger};
