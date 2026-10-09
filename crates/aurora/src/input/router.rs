@@ -304,7 +304,8 @@ impl PointerRouter {
                     self.press_chain = press_chain;
                     // A drag only exists for content that can be dragged. If nobody
                     // in the pressed chain handles drags, this press stays a press no
-                    // matter how far it moves, and release still clicks — the web's
+                    // matter how far it moves, and release still clicks as long as it
+                    // lands back on the press chain — the web's
                     // `dragstart`-only-if-draggable rule, and what keeps an ordinary
                     // click that drifts past the threshold from dying silently.
                     // Selectable text is natively draggable (selection drag needs
@@ -397,6 +398,12 @@ impl PointerRouter {
                 // under the pointer now, so a click cannot land on a different view.
                 // Same target-first (bubbling) order as the press: the press bound
                 // target-outward, so the release unwinds the same chain.
+                //
+                // Clicks additionally need the pointer: only press-chain nodes still
+                // under the pointer click (the web's common-ancestor rule). A press
+                // that drifts but releases on its target still clicks; a drag
+                // released elsewhere must not toggle what it started on.
+                // `self.chain` was just re-resolved at the release position above.
                 for &id in self.press_chain.iter() {
                     let (fired_up, stopped_up) =
                         fire(&*arena, id, |h| h.fire_pointer_up(event));
@@ -404,7 +411,7 @@ impl PointerRouter {
                     if stopped_up {
                         break;
                     }
-                    if click > 0 {
+                    if click > 0 && self.chain.iter().any(|hit| hit.id == id) {
                         let info = ClickInfo {
                             position: event.position,
                             click_count: click,

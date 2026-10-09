@@ -505,6 +505,8 @@ fn test_screen_overlay_modal_unmount_restores_underlying_content() {
         if show_modal {
             children.push(
                 group()
+                    .absolute()
+                    .anchor(Anchor::TopLeft)
                     .margin(Margin::left(350.0))
                     .margin(Margin::top(250.0))
                     .width(100.0)
