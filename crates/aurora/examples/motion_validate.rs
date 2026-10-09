@@ -47,31 +47,40 @@ pub fn Page() -> impl IntoElement {
         }
     }));
 
-    page(
-        "WEB · 03 — GROWING ACTION",
-        "The button pushes the field instead of covering it.",
-        "The width is a spring in the component, and the label reads that same animated signal. One value drives both the box and its text, so the word always fits the box it is drawn in.",
-        content(panel(
-            strip(stat("ROW", "fit width"), stat("MOTION", "spring width signal")),
-            body(width, expanded),
-        )),
-    )
+    view! {
+        <Shell
+            eyebrow_label="WEB · 03 — GROWING ACTION"
+            title="The button pushes the field instead of covering it."
+            copy="The width is a spring in the component, and the label reads that same animated signal. One value drives both the box and its text, so the word always fits the box it is drawn in."
+        >
+            <Content>
+                <Panel
+                    head={<Strip
+                        left={<Stat label="ROW" value="fit width" />}
+                        right={<Stat label="MOTION" value="spring width signal" />}
+                    />}
+                >
+                    <Body width={width} expanded={expanded} />
+                </Panel>
+            </Content>
+        </Shell>
+    }
 }
 
-fn body(width: Signal<f32>, expanded: Signal<bool>) -> GroupDef {
-    group()
-        .direction("vertical")
-        .width("fill")
-        .height("fill")
-        .distribution("center")
-        .gap(20.0)
-        .children((
-            row(width, expanded),
-            text("press the action to expand it")
-                .size(12.0)
-                .color(MUTED)
-                .into_element(),
-        ))
+#[component]
+fn Body(width: Signal<f32>, expanded: Signal<bool>) -> impl IntoElement {
+    view! {
+        <Group
+            direction="vertical"
+            width="fill"
+            height="fill"
+            distribution="center"
+            gap={20.0}
+        >
+            <Row width={width} expanded={expanded} />
+            <Text size={12.0} color={MUTED}>"press the action to expand it"</Text>
+        </Group>
+    }
 }
 
 /// Fit-width row, so growth pushes content rather than squeezing it.
@@ -79,57 +88,65 @@ fn body(width: Signal<f32>, expanded: Signal<bool>) -> GroupDef {
 /// No motion declared here. The width arriving is already an animated signal, so the row simply
 /// lays out at whatever value it currently holds, and every frame of the growth is a real layout
 /// rather than an animated box hiding a static one.
-fn row(width: Signal<f32>, expanded: Signal<bool>) -> GroupDef {
-    group()
-        .direction("horizontal")
-        .width("fit")
-        .height(52.0)
-        .gap(12.0)
-        .alignment("center")
-        .children((action(width, expanded), field()))
+#[component]
+fn Row(width: Signal<f32>, expanded: Signal<bool>) -> impl IntoElement {
+    view! {
+        <Group direction="horizontal" width="fit" height={52.0} gap={12.0} alignment="center">
+            <Action width={width} expanded={expanded} />
+            <Field />
+        </Group>
+    }
 }
 
 /// The action button, which owns its own toggle.
-fn action(width: Signal<f32>, expanded: Signal<bool>) -> GroupDef {
+#[component]
+fn Action(width: Signal<f32>, expanded: Signal<bool>) -> impl IntoElement {
     let state = expanded;
     // The label reads the animated width, not the target. Crossing the midpoint therefore
     // happens partway through the spring, exactly when the box is actually wide enough for the
     // longer word.
     let label = width.clone();
 
-    group()
-        .key("action")
-        .width(width)
-        .height("fill")
-        .radius("max")
-        .clip(true)
-        .fill(ACCENT)
-        .alignment("center")
-        .distribution("center")
-        .on_click(move |_| state.update(|open| *open = !*open))
-        .children([text(label.map(|w| {
-            if w > (COLLAPSED + EXPANDED) * 0.5 {
-                String::from("Validate")
-            } else {
-                String::from("Go")
-            }
-        }))
-        .size(14.0)
-        .weight(700)
-        .color(Color::WHITE)])
+    view! {
+        <Group
+            key="action"
+            width={width}
+            height="fill"
+            radius="max"
+            clip={true}
+            fill={ACCENT}
+            alignment="center"
+            distribution="center"
+            on:click={{
+                move |_| state.update(|open| *open = !*open)
+            }}
+        >
+            <Text size={14.0} weight={700u16} color={Color::WHITE}>
+                {label.map(|w| {
+                    if w > (COLLAPSED + EXPANDED) * 0.5 {
+                        String::from("Validate")
+                    } else {
+                        String::from("Go")
+                    }
+                })}
+            </Text>
+        </Group>
+    }
 }
 
-fn field() -> GroupDef {
-    group()
-        .direction("horizontal")
-        .width(320.0)
-        .height("fill")
-        .radius("max")
-        .fill(0xF7F8FA)
-        .stroke(Stroke::inside(1.0, hairline()))
-        .alignment("center")
-        .children([text("you@example.com")
-            .size(14.0)
-            .color(MUTED)
-            .margin(Margin::x(16.0))])
+#[component]
+fn Field() -> impl IntoElement {
+    view! {
+        <Group
+            direction="horizontal"
+            width={320.0}
+            height="fill"
+            radius="max"
+            fill={0xF7F8FA}
+            stroke={Stroke::inside(1.0, hairline())}
+            alignment="center"
+        >
+            <Text size={14.0} color={MUTED} margin={Margin::x(16.0)}>"you@example.com"</Text>
+        </Group>
+    }
 }

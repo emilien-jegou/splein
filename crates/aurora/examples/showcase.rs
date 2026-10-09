@@ -59,273 +59,345 @@ fn main() {
 }
 
 fn build_ui(time_sig: Signal<f32>, counter_sig: Signal<u64>) -> impl IntoElement {
-    group().direction("horizontal")
-        .width("fill").height("fill")
-        .fill(0x06090F) // Void dark background
-        .children((
+    view! {
+        <Group direction="horizontal" width="fill" height="fill" fill={0x06090F}>
             // =========================================================================
             // 1. LEFT NAVIGATION SIDEBAR (Static complex UI tree, $0 CPU cost)
             // =========================================================================
-            group().direction("vertical")
-                .width(260.0)
-                .height("fill")
-                .fill(0x0C101A)
-                .stroke("1.0 #1A2234 inside")
-                .margin(16.0)
-                .children((
-                    // Logo Header
-                    group().direction("horizontal").width("fill").alignment("center").gap(10.0).margin(Margin::x(8.0)).children((
-                        group().width(28.0).height(28.0).radius(8.0).fill(0x38BDF8).alignment("center").distribution("center").children([
-                            text("▲").size(14.0).color(0x06090F),
-                        ]),
-                        text("AURORA CORE").size(15.0).weight(700).color(Color::WHITE),
-                    )),
+            <Group
+                direction="vertical"
+                width={260.0}
+                height="fill"
+                fill={0x0C101A}
+                stroke="1.0 #1A2234 inside"
+                margin={16.0}
+            >
+                // Logo Header
+                <Group direction="horizontal" width="fill" alignment="center" gap={10.0} margin={Margin::x(8.0)}>
+                    <Group
+                        width={28.0}
+                        height={28.0}
+                        radius={8.0}
+                        fill={0x38BDF8}
+                        alignment="center"
+                        distribution="center"
+                    >
+                        <Text size={14.0} color={0x06090F}>"▲"</Text>
+                    </Group>
+                    <Text size={15.0} weight={700u16} color={Color::WHITE}>"AURORA CORE"</Text>
+                </Group>
 
-                    group().width("fill").height(1.0).fill(0x1A2234).margin(Margin::y(12.0)),
+                <Group width="fill" height={1.0} fill={0x1A2234} margin={Margin::y(12.0)} />
 
-                    // Sidebar Navigation Links
-                    group().direction("vertical").width("fill").gap(4.0).children((
-                        nav_link("Mission Overview", true),
-                        nav_link("Telemetry Stream", false),
-                        nav_link("Spatial Damage", false),
-                        nav_link("Layout Boundaries", false),
-                        nav_link("GPU Compute Vello", false),
-                    )),
+                // Sidebar Navigation Links
+                <Group direction="vertical" width="fill" gap={4.0}>
+                    <NavLink label="Mission Overview" active={true} />
+                    <NavLink label="Telemetry Stream" active={false} />
+                    <NavLink label="Spatial Damage" active={false} />
+                    <NavLink label="Layout Boundaries" active={false} />
+                    <NavLink label="GPU Compute Vello" active={false} />
+                </Group>
 
-                    group().height("fill"),
+                <Group height="fill" />
 
-                    // System Architecture Specs Card
-                    group()
-                        .width("fill")
-                        .radius(12.0)
-                        .fill(0x111726)
-                        .stroke("1.0 #1E293B inside")
-                        .margin(12.0)
-                        .children([
-                            group().direction("vertical").gap(6.0).children([
-                                text("ENGINE SPECS").size(11.0).weight(700).color(0x38BDF8),
-                                text("Pipeline: 7-Stage Retained").size(11.0).color(0x94A3B8),
-                                text("Reactivity: $0 Atomic Contention").size(11.0).color(0x94A3B8),
-                                text("Layout: O(1) Boundary Cascades").size(11.0).color(0x94A3B8),
-                                text("Presentation: Hardware SIMD").size(11.0).color(0x94A3B8),
-                            ]),
-                        ]),
-                )),
+                // System Architecture Specs Card
+                <Group
+                    width="fill"
+                    radius={12.0}
+                    fill={0x111726}
+                    stroke="1.0 #1E293B inside"
+                    margin={12.0}
+                >
+                    <Group direction="vertical" gap={6.0}>
+                        <Text size={11.0} weight={700u16} color={0x38BDF8}>"ENGINE SPECS"</Text>
+                        <Text size={11.0} color={0x94A3B8}>"Pipeline: 7-Stage Retained"</Text>
+                        <Text size={11.0} color={0x94A3B8}>"Reactivity: $0 Atomic Contention"</Text>
+                        <Text size={11.0} color={0x94A3B8}>"Layout: O(1) Boundary Cascades"</Text>
+                        <Text size={11.0} color={0x94A3B8}>"Presentation: Hardware SIMD"</Text>
+                    </Group>
+                </Group>
+            </Group>
 
             // =========================================================================
             // 2. MAIN MISSION CONTROL DASHBOARD
             // =========================================================================
-            group().direction("vertical")
-                .width("fill").height("fill")
-                .margin(16.0)
-                .gap(16.0)
-                .children((
-                    // Top Metrics Banner (Mixed Fit / Fill, Badges)
-                    group().direction("horizontal").width("fill").height("fit").distribution("space-between").alignment("center").children((
-                        group().direction("vertical").gap(4.0).children([
-                            text("Active Mission Telemetry").size(22.0).weight(700).color(Color::WHITE),
-                            text("Press [F11] to verify Layout Boundaries | [F12] for Damage Heatmaps | [F9] for Stacking")
-                                .size(13.0)
-                                .color(0x64748B),
-                        ]),
-                        group().direction("horizontal").gap(8.0).children((
-                            status_badge("PIPELINE", "ONLINE", 0x22C55E),
-                            status_badge("VSYNC", "LOCKED", 0x38BDF8),
-                        )),
-                    )),
+            <Group direction="vertical" width="fill" height="fill" margin={16.0} gap={16.0}>
+                // Top Metrics Banner (Mixed Fit / Fill, Badges)
+                <Group
+                    direction="horizontal"
+                    width="fill"
+                    height="fit"
+                    distribution="space-between"
+                    alignment="center"
+                >
+                    <Group direction="vertical" gap={4.0}>
+                        <Text size={22.0} weight={700u16} color={Color::WHITE}>
+                            "Active Mission Telemetry"
+                        </Text>
+                        <Text size={13.0} color={0x64748B}>
+                            "Press [F11] to verify Layout Boundaries | [F12] for Damage Heatmaps | [F9] for Stacking"
+                        </Text>
+                    </Group>
+                    <Group direction="horizontal" gap={8.0}>
+                        {status_badge("PIPELINE", "ONLINE", 0x22C55E)}
+                        {status_badge("VSYNC", "LOCKED", 0x38BDF8)}
+                    </Group>
+                </Group>
 
-                    // Grid Layout (2x2 Modular Telemetry Cards)
-                    group().direction("horizontal").width("fill").height("fill").gap(16.0).children((
-                        // -------------------------------------------------------------
-                        // CARD 1: LIVE AUDIO HARMONICS EQUALIZER (16 Live Dynamic Bars)
-                        // Proves: 16 dynamic flex elements updating without dirtying outer layout
-                        // -------------------------------------------------------------
-                        group()
-                            .width(Size::percent(0.5))
-                            .height("fill")
-                            .radius(16.0)
-                            .fill(0x0C101A)
-                            .stroke("1.0 #1A2234 inside")
-                            .margin(16.0)
-                            .children([
-                                group().direction("vertical").width("fill").height("fill").children((
-                                    group().direction("horizontal").width("fill").distribution("space-between").alignment("center").children((
-                                        text("Dynamic Harmonics Spectrum").size(15.0).weight(600).color(Color::WHITE),
-                                        text("16 Isolated Signals").size(12.0).color(0x38BDF8),
-                                    )),
-                                    text("Mutating flex heights inside an isolated layout boundary ($O(K)$ updates)")
-                                        .size(12.0)
-                                        .color(0x64748B)
-                                        .margin(Margin::bottom(16.0)),
+                // Grid Layout (2x2 Modular Telemetry Cards)
+                <Group direction="horizontal" width="fill" height="fill" gap={16.0}>
+                    // -------------------------------------------------------------
+                    // CARD 1: LIVE AUDIO HARMONICS EQUALIZER (16 Live Dynamic Bars)
+                    // Proves: 16 dynamic flex elements updating without dirtying outer layout
+                    // -------------------------------------------------------------
+                    <Group
+                        width={Size::percent(0.5)}
+                        height="fill"
+                        radius={16.0}
+                        fill={0x0C101A}
+                        stroke="1.0 #1A2234 inside"
+                        margin={16.0}
+                    >
+                        <Group direction="vertical" width="fill" height="fill">
+                            <Group
+                                direction="horizontal"
+                                width="fill"
+                                distribution="space-between"
+                                alignment="center"
+                            >
+                                <Text size={15.0} weight={600u16} color={Color::WHITE}>
+                                    "Dynamic Harmonics Spectrum"
+                                </Text>
+                                <Text size={12.0} color={0x38BDF8}>"16 Isolated Signals"</Text>
+                            </Group>
+                            <Text size={12.0} color={0x64748B} margin={Margin::bottom(16.0)}>
+                                "Mutating flex heights inside an isolated layout boundary ($O(K)$ updates)"
+                            </Text>
 
-                                    // The 16 Animated Equalizer Bars
-                                    group().direction("horizontal")
-                                        .width("fill").height("fill")
-                                        .alignment("center")
-                                        .distribution("space-between")
-                                        .children(build_equalizer_bars(time_sig.clone())),
-                                )),
-                            ]),
+                            // The 16 Animated Equalizer Bars
+                            <Group
+                                direction="horizontal"
+                                width="fill"
+                                height="fill"
+                                alignment="center"
+                                distribution="space-between"
+                            >
+                                {build_equalizer_bars(time_sig.clone())}
+                            </Group>
+                        </Group>
+                    </Group>
 
-                        // -------------------------------------------------------------
-                        // CARD 2: 360° ORBITAL RADAR SCANNER (Continuous Transform in O(1))
-                        // Proves: Pure affine rotation without ANY layout or text remeasuring
-                        // -------------------------------------------------------------
-                        group()
-                            .width(Size::percent(0.5))
-                            .height("fill")
-                            .radius(16.0)
-                            .fill(0x0C101A)
-                            .stroke("1.0 #1A2234 inside")
-                            .margin(16.0)
-                            .children([
-                                group().direction("vertical").width("fill").height("fill").children((
-                                    group().direction("horizontal").width("fill").distribution("space-between").alignment("center").children((
-                                        text("Orbital Vector Scanner").size(15.0).weight(600).color(Color::WHITE),
-                                        text("360° Continuous Matrix").size(12.0).color(0xEC4899),
-                                    )),
-                                    text("Affine rotation matrices executed with $0 CPU layout calculations")
-                                        .size(12.0)
-                                        .color(0x64748B),
+                    // -------------------------------------------------------------
+                    // CARD 2: 360° ORBITAL RADAR SCANNER (Continuous Transform in O(1))
+                    // Proves: Pure affine rotation without ANY layout or text remeasuring
+                    // -------------------------------------------------------------
+                    <Group
+                        width={Size::percent(0.5)}
+                        height="fill"
+                        radius={16.0}
+                        fill={0x0C101A}
+                        stroke="1.0 #1A2234 inside"
+                        margin={16.0}
+                    >
+                        <Group direction="vertical" width="fill" height="fill">
+                            <Group
+                                direction="horizontal"
+                                width="fill"
+                                distribution="space-between"
+                                alignment="center"
+                            >
+                                <Text size={15.0} weight={600u16} color={Color::WHITE}>
+                                    "Orbital Vector Scanner"
+                                </Text>
+                                <Text size={12.0} color={0xEC4899}>"360° Continuous Matrix"</Text>
+                            </Group>
+                            <Text size={12.0} color={0x64748B}>
+                                "Affine rotation matrices executed with $0 CPU layout calculations"
+                            </Text>
 
-                                    // Radar Visualizer Container
-                                    group()
-                                        .width("fill").height("fill")
-                                        .alignment("center").distribution("center")
-                                        .children([
-                                            // Concentric Target Rings
-                                            group().width(220.0).height(220.0).radius("max").stroke("1.0 #1E293B inside").alignment("center").distribution("center").children([
-                                                group().width(140.0).height(140.0).radius("max").stroke("1.0 #1E293B inside").alignment("center").distribution("center").children([
-                                                    group().width(60.0).height(60.0).radius("max").fill(0x111726),
-                                                ]),
-                                            ]),
-                                            // Rotating Radar Line
-                                            group()
-                                                .width(200.0).height(2.0)
-                                                .fill(0x38BDF8)
-                                                .shadow(Shadow::from("0 0 8 0 #38BDF8"))
-                                                .anchor(Anchor::Center)
-                                                .transform({
-                                                    let t = time_sig.clone();
-                                                    move || {
-                                                        let angle = t.get() * 90.0; // 90 deg/sec
-                                                        Transform::from_rotation_degrees(angle)
-                                                    }
-                                                }),
-                                            // Orbiting Satellite Beacon
-                                            group()
-                                                .width(14.0).height(14.0)
-                                                .radius("max")
-                                                .fill(0xEC4899)
-                                                .shadow(Shadow::from("0 0 10 0 #EC4899"))
-                                                .anchor(Anchor::Center)
-                                                .transform({
-                                                    let t = time_sig.clone();
-                                                    move || {
-                                                        let elapsed = t.get() * 1.5;
-                                                        let ox = elapsed.cos() * 85.0;
-                                                        let oy = elapsed.sin() * 85.0;
-                                                        Transform::from_translation(ox, oy)
-                                                    }
-                                                }),
-                                        ]),
-                                )),
-                            ]),
-                    )),
+                            // Radar Visualizer Container
+                            <Group
+                                width="fill"
+                                height="fill"
+                                alignment="center"
+                                distribution="center"
+                            >
+                                // Concentric Target Rings
+                                <Group
+                                    width={220.0}
+                                    height={220.0}
+                                    radius="max"
+                                    stroke="1.0 #1E293B inside"
+                                    alignment="center"
+                                    distribution="center"
+                                >
+                                    <Group
+                                        width={140.0}
+                                        height={140.0}
+                                        radius="max"
+                                        stroke="1.0 #1E293B inside"
+                                        alignment="center"
+                                        distribution="center"
+                                    >
+                                        <Group width={60.0} height={60.0} radius="max" fill={0x111726} />
+                                    </Group>
+                                </Group>
+                                // Rotating Radar Line
+                                <Group
+                                    width={200.0}
+                                    height={2.0}
+                                    fill={0x38BDF8}
+                                    shadow="0 0 8 0 #38BDF8"
+                                    anchor={Anchor::Center}
+                                    transform={{
+                                        let t = time_sig.clone();
+                                        move || {
+                                            let angle = t.get() * 90.0; // 90 deg/sec
+                                            Transform::from_rotation_degrees(angle)
+                                        }
+                                    }}
+                                />
+                                // Orbiting Satellite Beacon
+                                <Group
+                                    width={14.0}
+                                    height={14.0}
+                                    radius="max"
+                                    fill={0xEC4899}
+                                    shadow="0 0 10 0 #EC4899"
+                                    anchor={Anchor::Center}
+                                    transform={{
+                                        let t = time_sig.clone();
+                                        move || {
+                                            let elapsed = t.get() * 1.5;
+                                            let ox = elapsed.cos() * 85.0;
+                                            let oy = elapsed.sin() * 85.0;
+                                            Transform::from_translation(ox, oy)
+                                        }
+                                    }}
+                                />
+                            </Group>
+                        </Group>
+                    </Group>
+                </Group>
 
-                    // Bottom Row (High-Frequency Realtime Throughput Stream)
-                    group().direction("horizontal").width("fill").height(120.0).gap(16.0).children((
-                        // Live Stream Counter Card
-                        group()
-                            .width(Size::percent(0.5))
-                            .height("fill")
-                            .radius(16.0)
-                            .fill(0x0C101A)
-                            .stroke("1.0 #1A2234 inside")
-                            .margin(16.0)
-                            .children([
-                                group().direction("horizontal").width("fill").height("fill").alignment("center").distribution("space-between").children((
-                                    group().direction("vertical").gap(4.0).children([
-                                        text("TELEMETRY INGESTION STREAM").size(11.0).weight(700).color(0x94A3B8),
-                                        text("High-frequency reactive string buffer mutations").size(12.0).color(0x64748B),
-                                    ]),
-                                    text({
-                                        let c = counter_sig.clone();
-                                        move || format!("{:09} PKTS", c.get())
-                                    })
-                                    .size(24.0)
-                                    .weight(700)
-                                    .color(0x22C55E),
-                                )),
-                            ]),
+                // Bottom Row (High-Frequency Realtime Throughput Stream)
+                <Group direction="horizontal" width="fill" height={120.0} gap={16.0}>
+                    // Live Stream Counter Card
+                    <Group
+                        width={Size::percent(0.5)}
+                        height="fill"
+                        radius={16.0}
+                        fill={0x0C101A}
+                        stroke="1.0 #1A2234 inside"
+                        margin={16.0}
+                    >
+                        <Group
+                            direction="horizontal"
+                            width="fill"
+                            height="fill"
+                            alignment="center"
+                            distribution="space-between"
+                        >
+                            <Group direction="vertical" gap={4.0}>
+                                <Text size={11.0} weight={700u16} color={0x94A3B8}>
+                                    "TELEMETRY INGESTION STREAM"
+                                </Text>
+                                <Text size={12.0} color={0x64748B}>
+                                    "High-frequency reactive string buffer mutations"
+                                </Text>
+                            </Group>
+                            <Text size={24.0} weight={700u16} color={0x22C55E}>
+                                {{
+                                    let c = counter_sig.clone();
+                                    move || format!("{:09} PKTS", c.get())
+                                }}
+                            </Text>
+                        </Group>
+                    </Group>
 
-                        // Live Memory / Frame Budget Health Card
-                        group()
-                            .width(Size::percent(0.5))
-                            .height("fill")
-                            .radius(16.0)
-                            .fill(0x0C101A)
-                            .stroke("1.0 #1A2234 inside")
-                            .margin(16.0)
-                            .children([
-                                group().direction("horizontal").width("fill").height("fill").alignment("center").distribution("space-between").children((
-                                    group().direction("vertical").gap(4.0).children([
-                                        text("16.6ms FRAME BUDGET HEALTH").size(11.0).weight(700).color(0x94A3B8),
-                                        text("CPU Compute Time: < 0.4ms (97.6% Headroom)").size(12.0).color(0x22C55E),
-                                    ]),
-                                    group()
-                                        .width(160.0)
-                                        .height(8.0)
-                                        .radius("max")
-                                        .fill(0x1E293B)
-                                        .children([
-                                            group().width(Size::percent(0.04)).height("fill").radius("max").fill(0x22C55E),
-                                        ]),
-                                )),
-                            ]),
-                    )),
-                )),
-        ))
+                    // Live Memory / Frame Budget Health Card
+                    <Group
+                        width={Size::percent(0.5)}
+                        height="fill"
+                        radius={16.0}
+                        fill={0x0C101A}
+                        stroke="1.0 #1A2234 inside"
+                        margin={16.0}
+                    >
+                        <Group
+                            direction="horizontal"
+                            width="fill"
+                            height="fill"
+                            alignment="center"
+                            distribution="space-between"
+                        >
+                            <Group direction="vertical" gap={4.0}>
+                                <Text size={11.0} weight={700u16} color={0x94A3B8}>
+                                    "16.6ms FRAME BUDGET HEALTH"
+                                </Text>
+                                <Text size={12.0} color={0x22C55E}>
+                                    "CPU Compute Time: < 0.4ms (97.6% Headroom)"
+                                </Text>
+                            </Group>
+                            <Group width={160.0} height={8.0} radius="max" fill={0x1E293B}>
+                                <Group
+                                    width={Size::percent(0.04)}
+                                    height="fill"
+                                    radius="max"
+                                    fill={0x22C55E}
+                                />
+                            </Group>
+                        </Group>
+                    </Group>
+                </Group>
+            </Group>
+        </Group>
+    }
 }
 
 // -----------------------------------------------------------------------------
 // HELPER COMPONENT BUILDERS
 // -----------------------------------------------------------------------------
 
-fn nav_link(label: &'static str, active: bool) -> impl IntoElement {
-    group()
-        .direction("horizontal")
-        .width("fill")
-        .height(36.0)
-        .radius(8.0)
-        .fill(if active {
-            Color::hex_alpha(0x38BDF8, 0.12)
-        } else {
-            Color::TRANSPARENT
-        })
-        .alignment("center")
-        .margin(Margin::x(8.0))
-        .children((
-            group()
-                .width(6.0)
-                .height(6.0)
-                .radius("max")
-                .fill(if active {
+#[component]
+fn NavLink(label: &'static str, active: bool) -> impl IntoElement {
+    view! {
+        <Group
+            direction="horizontal"
+            width="fill"
+            height={36.0}
+            radius={8.0}
+            fill={if active {
+                Color::hex_alpha(0x38BDF8, 0.12)
+            } else {
+                Color::TRANSPARENT
+            }}
+            alignment="center"
+            margin={Margin::x(8.0)}
+        >
+            <Group
+                width={6.0}
+                height={6.0}
+                radius="max"
+                fill={if active {
                     Color::hex(0x38BDF8)
                 } else {
                     Color::hex(0x334155)
-                })
-                .margin(Margin::left(12.0)),
-            text(label)
-                .size(13.0)
-                .weight(if active { 600 } else { 400 })
-                .color(if active {
+                }}
+                margin={Margin::left(12.0)}
+            />
+            <Text
+                size={13.0}
+                weight={if active { 600u16 } else { 400u16 }}
+                color={if active {
                     Color::WHITE
                 } else {
                     Color::hex(0x94A3B8)
-                })
-                .margin(Margin::left(10.0)),
-        ))
+                }}
+                margin={Margin::left(10.0)}
+            >{label}</Text>
+        </Group>
+    }
 }
 
 fn status_badge(label: &'static str, val: &'static str, color: impl Into<Color>) -> impl IntoElement {

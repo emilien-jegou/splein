@@ -57,64 +57,75 @@ pub fn Page() -> impl IntoElement {
         })
     };
 
-    page(
-        "WEB · 01 — PRESS FEEDBACK",
-        "Down in 90ms, back on a spring.",
-        "The press is a short eased squeeze; the release is a spring, so it overshoots slightly on the way home. Nothing requests frames while the button is at rest.",
-        content(panel(
-            strip(
-                stat("GESTURE", "pointer down / up"),
-                stat("RELEASE", "Spring::bouncy"),
-            ),
-            group()
-                .direction("vertical")
-                .width("fill")
-                .height("fill")
-                .alignment("center")
-                .distribution("center")
-                .gap(18.0)
-                .children((
-                    button(pressed.clone(), presses.clone(), active),
-                    text(presses.map(|n| {
-                        format!("pressed {n} time{}", if n == 1 { "" } else { "s" })
-                    }))
-                    .size(13.0)
-                    .color(BODY)
-                    .into_element(),
-                    text("press and hold the button")
-                        .size(12.0)
-                        .color(MUTED)
-                        .into_element(),
-                )),
-        )),
-    )
+    view! {
+        <Shell
+            eyebrow_label="WEB · 01 — PRESS FEEDBACK"
+            title="Down in 90ms, back on a spring."
+            copy="The press is a short eased squeeze; the release is a spring, so it overshoots slightly on the way home. Nothing requests frames while the button is at rest."
+        >
+            <Content>
+                <Panel
+                    head={<Strip
+                        left={<Stat label="GESTURE" value="pointer down / up" />}
+                        right={<Stat label="RELEASE" value="Spring::bouncy" />}
+                    />}
+                >
+                    <Group
+                        direction="vertical"
+                        width="fill"
+                        height="fill"
+                        alignment="center"
+                        distribution="center"
+                        gap={18.0}
+                    >
+                        <Button pressed={pressed.clone()} presses={presses.clone()} scale={active} />
+                        <Text size={13.0} color={BODY}>
+                            {presses.map(|n| format!("pressed {n} time{}", if n == 1 { "" } else { "s" }))}
+                        </Text>
+                        <Text size={12.0} color={MUTED}>"press and hold the button"</Text>
+                    </Group>
+                </Panel>
+            </Content>
+        </Shell>
+    }
 }
 
 /// The button declares its own interaction, so nothing outside the tree has to know it exists.
 ///
 /// Leaving the surface counts as a release, otherwise a pointer-down that slides off would
 /// leave the button stuck in its pressed state.
-fn button(pressed: Signal<bool>, presses: Signal<u32>, scale: Derived<f32>) -> GroupDef {
+#[component]
+fn Button(pressed: Signal<bool>, presses: Signal<u32>, scale: Derived<f32>) -> impl IntoElement {
     let down = pressed.clone();
     let up = pressed.clone();
     let drop = pressed;
     let counted = presses;
 
-    group()
-        .key("cta")
-        .height(52.0)
-        .radius("max")
-        .fill(ACCENT)
-        .alignment("center")
-        .distribution("center")
-        .scale(scale)
-        .on_pointer_down(move |_| down.set(true))
-        .on_pointer_up(move |_| up.set(false))
-        .on_pointer_leave(move |_| drop.set(false))
-        .on_click(move |info| counted.update(|n| *n += info.click_count as u32))
-        .children([text("Continue")
-            .size(15.0)
-            .weight(700)
-            .color(Color::WHITE)
-            .margin(Margin::x(28.0))])
+    view! {
+        <Group
+            key="cta"
+            height={52.0}
+            radius="max"
+            fill={ACCENT}
+            alignment="center"
+            distribution="center"
+            scale={scale}
+            on:pointer-down={{
+                move |_| down.set(true)
+            }}
+            on:pointer-up={{
+                move |_| up.set(false)
+            }}
+            on:pointer-leave={{
+                move |_| drop.set(false)
+            }}
+            on:click={{
+                move |info| counted.update(|n| *n += info.click_count as u32)
+            }}
+        >
+            <Text size={15.0} weight={700u16} color={Color::WHITE} margin={Margin::x(28.0)}>
+                "Continue"
+            </Text>
+        </Group>
+    }
 }

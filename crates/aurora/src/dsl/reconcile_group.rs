@@ -26,13 +26,13 @@ pub fn reconcile_group(
 ) -> NodeId {
     let id = existing.unwrap_or_else(|| arena.insert(LayoutNode::default()));
 
-    // A reactive child list needs a measure subscriber of its own. Without one a node whose only
-    // reactive input is `children_of` would allocate nothing to track against, read its list
+    // A reactive child segment needs a measure subscriber of its own. Without one a node whose only
+    // reactive input is dynamic children would allocate nothing to track against, read its list
     // once at mount, and never hear about a reorder.
     let has_dyn_measure = def.width.as_ref().is_some_and(|p| p.is_dynamic())
         || def.height.as_ref().is_some_and(|p| p.is_dynamic())
         || def.presence.as_ref().is_some_and(|p| p.is_dynamic())
-        || def.children_builder.is_some();
+        || def.has_dynamic_segments();
     let has_dyn_paint = def.fill.as_ref().is_some_and(|p| p.is_dynamic())
         || def.opacity.as_ref().is_some_and(|p| p.is_dynamic())
         || def.shadow.as_ref().is_some_and(|p| p.is_dynamic())
@@ -62,7 +62,9 @@ pub fn reconcile_group(
         presence: def.presence.as_ref().and_then(|p| p.dynamic_closure()),
         z_index: def.z_index.as_ref().and_then(|p| p.dynamic_closure()),
         pose: pose_bindings(&def),
-        children: def.children_builder.clone(),
+        children: def
+            .has_dynamic_segments()
+            .then(|| def.child_segments.clone()),
     };
     // Pose components compose into the single transform the tree stores, so the hot path
     // keeps one value per node while the DSL exposes them independently.
@@ -74,6 +76,8 @@ pub fn reconcile_group(
     // which moves `def.handlers` out and so would leave `def` partially moved.
     let props = ResolvedProps::evaluate(&def, pose.as_ref(), m_sub, p_sub, runtime);
     let change = ChangeSet::detect(arena.get(id), &def, &props);
+    // Hoisted before the writes below move fields out of `def`.
+    let has_dynamics = def.has_dynamic_segments();
 
     let bindings = NodeBindings::from_store(store);
     // Handlers ride alongside the bindings: both are per-node closures that reconciliation
@@ -133,35 +137,43 @@ pub fn reconcile_group(
     node.style.appearance.light_override = def.light_override;
     node.style.appearance.radius = def.radius;
 
-    // A node either declares its children statically or builds them from reactive state.
-    // Both paths reconcile now, inside the measure observer, so a dynamic list subscribes to
-    // the signals it reads on the very first build rather than only on a later re-mount.
-    let (children, child_keys) = match &def.children_builder {
-        Some(build) => {
-            // A reactive list is rebuilt during reconciliation, not during mount, so no
-            // ambient hook scope is installed. A child that is a `#[component]` calling
-            // `use_signal` would therefore panic with "hook called outside a component body"
-            // the first time its parent re-rendered. Entering the scope here makes the two
-            // compose: the list can be rebuilt as often as its signals change.
-            let cx = crate::reactive::Cx::new(Rc::clone(runtime));
-            let spec = if let Some(sub) = m_sub.or(p_sub) {
-                runtime
-                    .borrow_mut()
-                    .push_observer(Observer::Subscriber(sub));
-                let built = cx.enter(|| build());
-                runtime.borrow_mut().pop_observer();
-                built
-            } else {
-                cx.enter(|| build())
+    // Children merge in declaration order: static segments splice in place,
+    // dynamic segments build now, inside the measure observer, so a builder
+    // subscribes to the signals it reads on the very first build rather than
+    // only on a later re-mount. Static-only nodes skip all of this: the merged
+    // vec moves out with no cloning and no subscription.
+    let (children, child_keys) = if has_dynamics {
+        // A reactive segment is rebuilt during reconciliation, not during mount, so no
+        // ambient hook scope is installed. A child that is a `#[component]` calling
+        // `use_signal` would therefore panic with "hook called outside a component body"
+        // the first time its parent re-rendered. Entering the scope here makes the two
+        // compose: the list can be rebuilt as often as its signals change.
+        let cx = crate::reactive::Cx::new(Rc::clone(runtime));
+        let spec = if let Some(sub) = m_sub.or(p_sub) {
+            runtime
+                .borrow_mut()
+                .push_observer(Observer::Subscriber(sub));
+            let built = cx.enter(|| crate::dsl::group::flatten_segments(&def.child_segments));
+            runtime.borrow_mut().pop_observer();
+            built
+        } else {
+            cx.enter(|| crate::dsl::group::flatten_segments(&def.child_segments))
+        };
+        let keys = spec.iter().map(|e| e.key()).collect();
+        (spec, keys)
+    } else {
+        let mut merged = Vec::new();
+        for seg in def.child_segments {
+            let crate::dsl::group::ChildSegment::Static(els) = seg else {
+                unreachable!("has_dynamic_segments was false")
             };
-            let keys = spec.iter().map(|e| e.key()).collect();
-            (spec, keys)
+            merged.extend(els);
         }
-        None => (def.children, Vec::new()),
+        (merged, Vec::new())
     };
 
     reconcile_children(runtime, arena, router, id, children);
-    if def.children_builder.is_some() {
+    if has_dynamics {
         arena.get_mut(id).state.core.child_keys = child_keys;
     }
     id

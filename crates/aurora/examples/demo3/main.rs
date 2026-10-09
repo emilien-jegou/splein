@@ -31,15 +31,17 @@ fn main() {
         .font("Inter", include_bytes!("../../assets/inter-var.ttf"))
         .background(Color::WHITE)
         .run(move || {
-            group()
-                .direction("horizontal")
-                .width("fill")
-                .height("fill")
-                .fill(Color::WHITE)
-                .children((
-                    render_sidebar(&icons),
-                    render_canvas(&icons),
-                    render_inspector(&icons),
-                ))
+            view! {
+                <Group
+                    direction="horizontal"
+                    width="fill"
+                    height="fill"
+                    fill={Color::WHITE}
+                >
+                    {render_sidebar(&icons)}
+                    {render_canvas(&icons)}
+                    {render_inspector(&icons)}
+                </Group>
+            }
         });
 }

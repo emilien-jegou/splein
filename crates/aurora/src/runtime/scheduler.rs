@@ -204,19 +204,21 @@ impl FrameScheduler {
                     effective.insert(flags & (DirtyFlags::MEASURE | DirtyFlags::LAYOUT));
                 }
 
-                // A node that builds its children from reactive state re-evaluates them here, inside the
-                // observer, so any signal the builder reads is tracked and will bring us
-                // back. Comparing keys rather than element contents is what makes a two-row
+                // Segments carrying reactive builders re-merge here, inside the
+                // observer, so any signal any nested builder reads is tracked and will bring us
+                // back. Comparing merged keys rather than element contents is what makes a two-row
                 // swap cost one diff, and is why rows must be keyed by identity rather than
-                // by position.
+                // by position. Static segments merge in place around them.
                 if flags.contains(DirtyFlags::MEASURE) || flags.contains(DirtyFlags::LAYOUT) {
-                    if let Some(build) = bindings.children_builder().cloned() {
+                    if let Some(segments) = bindings.children_builder().cloned() {
                         // Entered here for the same reason as in `reconcile_group`: a list is
                         // rebuilt during a frame rather than at mount, so nothing has installed
                         // a hook scope for a `#[component]` child to allocate its signals on.
                         // Entering it is what lets a reactive list contain components at all.
                         let runtime = Rc::clone(&self.runtime);
-                        let spec = crate::reactive::Cx::new(runtime).enter(|| build());
+                        let spec = crate::reactive::Cx::new(runtime).enter(|| {
+                            crate::dsl::group::flatten_segments(&segments)
+                        });
                         let keys: Vec<Option<Key>> = spec.iter().map(|e| e.key()).collect();
                         pending_children = Some((spec, keys));
                     }

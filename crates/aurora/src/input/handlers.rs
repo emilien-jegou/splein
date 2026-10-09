@@ -23,7 +23,7 @@ pub enum Propagation {
 /// node with no handlers costs a null check. Nothing here invalidates layout: a handler that
 /// wants to change the tree writes to a signal, and ordinary reactive propagation decides
 /// what that dirties.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct HandlerSet {
     pub click: Option<Rc<dyn Fn(&ClickInfo) -> Propagation>>,
     pub pointer_down: Option<Rc<dyn Fn(&PointerEvent) -> Propagation>>,

@@ -38,38 +38,34 @@ pub fn Page() -> impl IntoElement {
     let spring = Transition::from_str("spring");
     let scale = spring.on(enabled.map(|on| if on { 1.18 } else { 1.0 }));
 
-    page(
-        "MOTION · 02 — SIGNAL TRANSITIONS",
-        "One signal. Three streams. No engine involvement.",
-        "Each property wraps its own target in a transition, so a tween and a spring can drive different properties of the same view off one boolean. Nothing animates implicitly: what is declared is exactly what moves.",
-        content(
-            group()
-                .direction("horizontal")
-                .width("fill")
-                .height("fill")
-                .gap(20.0)
-                .children((
-                    panel(
-                        strip(
-                            eyebrow("TWEEN"),
-                            text("Transition::from_str(\"out-cubic 200ms\")")
-                                .size(12.0)
-                                .color(BODY),
-                        ),
-                        tile("fade + slide", ACCENT).opacity(opacity).x(slide_x),
-                    ),
-                    panel(
-                        strip(
-                            eyebrow("SPRING"),
-                            text("Transition::from_str(\"spring\")")
-                                .size(12.0)
-                                .color(BODY),
-                        ),
-                        tile("settle", 0x10B981).scale(scale),
-                    ),
-                )),
-        ),
-    )
+    view! {
+        <Shell
+            eyebrow_label="MOTION · 02 — SIGNAL TRANSITIONS"
+            title="One signal. Three streams. No engine involvement."
+            copy="Each property wraps its own target in a transition, so a tween and a spring can drive different properties of the same view off one boolean. Nothing animates implicitly: what is declared is exactly what moves."
+        >
+            <Content>
+                <Group direction="horizontal" width="fill" height="fill" gap={20.0}>
+                    <Panel
+                        head={<Strip
+                            left={<Eyebrow label="TWEEN" />}
+                            right={text("Transition::from_str(\"out-cubic 200ms\")").size(12.0).color(BODY)}
+                        />}
+                    >
+                        {tile("fade + slide", ACCENT).opacity(opacity).x(slide_x)}
+                    </Panel>
+                    <Panel
+                        head={<Strip
+                            left={<Eyebrow label="SPRING" />}
+                            right={text("Transition::from_str(\"spring\")").size(12.0).color(BODY)}
+                        />}
+                    >
+                        {tile("settle", 0x10B981).scale(scale)}
+                    </Panel>
+                </Group>
+            </Content>
+        </Shell>
+    }
 }
 
 /// Accent tile used by both panels, sized so scaling never reaches the arena edge.

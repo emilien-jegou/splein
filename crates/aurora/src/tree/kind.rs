@@ -32,6 +32,6 @@ pub enum NodeKind {
     Group,
     /// Styled typography node.
     Text(TextConfig),
-    /// User-defined layout and drawing primitive.
-    Custom(Box<dyn Primitive>),
+    /// User-defined layout and drawing primitive (shared: primitives are stateless).
+    Custom(std::rc::Rc<dyn Primitive>),
 }

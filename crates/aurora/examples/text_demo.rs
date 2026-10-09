@@ -57,40 +57,37 @@ fn sample(content: &'static str) -> TextDef {
 }
 
 fn build_ui() -> impl IntoElement {
-    group()
-        .direction("vertical")
-        .width("fill")
-        .height("fill")
-        .fill(0x0B1020)
-        .gap(14.0)
-        .children([
-            text("Typography")
-                .font_family("Inter")
-                .size(34.0)
-                .weight(700)
-                .line_height_multiple(1.1)
-                .color(Color::WHITE)
-                .margin(Margin::sides(26.0, 0.0, 12.0, 48.0)),
-            heading("01 · SOFT WRAP · RELATIVE LINE HEIGHT"),
-            body(WRAP),
-            heading("02 · ALIGNMENT"),
-            sample("Aurora").text_align(TextAlign::Start),
-            sample("Aurora").text_align(TextAlign::Center),
-            sample("Aurora").text_align(TextAlign::End),
-            heading("03 · JUSTIFY"),
-            body(JUSTIFY).text_align(TextAlign::Justify),
-            heading("04 · TRACKING · WEIGHTS · ITALIC"),
-            sample("Wide tracking through the whole run.")
+    view! {
+        <Group direction="vertical" width="fill" height="fill" fill={0x0B1020} gap={14.0}>
+            <Text
+                font_family="Inter"
+                size={34.0}
+                weight={700u16}
+                line_height_multiple={1.1}
+                color={Color::WHITE}
+                margin={Margin::sides(26.0, 0.0, 12.0, 48.0)}
+            >"Typography"</Text>
+            {heading("01 · SOFT WRAP · RELATIVE LINE HEIGHT")}
+            {body(WRAP)}
+            {heading("02 · ALIGNMENT")}
+            {sample("Aurora").text_align(TextAlign::Start)}
+            {sample("Aurora").text_align(TextAlign::Center)}
+            {sample("Aurora").text_align(TextAlign::End)}
+            {heading("03 · JUSTIFY")}
+            {body(JUSTIFY).text_align(TextAlign::Justify)}
+            {heading("04 · TRACKING · WEIGHTS · ITALIC")}
+            {sample("Wide tracking through the whole run.")
                 .letter_spacing(3.0)
-                .color(0x8FE3C0),
-            sample("Light weight 300").weight(300),
-            sample("Bold weight 700").weight(700),
-            sample("Italic face for emphasis.").italic(),
-            heading("05 · DECORATION"),
-            sample("Underlined value").underline(),
-            sample("Struck-through value").strikethrough(),
-            sample("Overlined value").overline(),
-            heading("06 · ELLIPSIS · MAX LINES 2"),
-            sample(ELLIPSIS).max_lines(2),
-        ])
+                .color(0x8FE3C0)}
+            {sample("Light weight 300").weight(300)}
+            {sample("Bold weight 700").weight(700)}
+            {sample("Italic face for emphasis.").italic()}
+            {heading("05 · DECORATION")}
+            {sample("Underlined value").underline()}
+            {sample("Struck-through value").strikethrough()}
+            {sample("Overlined value").overline()}
+            {heading("06 · ELLIPSIS · MAX LINES 2")}
+            {sample(ELLIPSIS).max_lines(2)}
+        </Group>
+    }
 }

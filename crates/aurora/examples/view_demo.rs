@@ -53,14 +53,19 @@ pub fn Page(
     copy: String,
     children: Vec<Element>,
 ) -> impl IntoElement {
-    view! {
-        <Group direction={"vertical"} width={"fill"} height={"fill"} gap={16.0}>
-            <Text size={11.0} color={MUTED}>{eyebrow_label}</Text>
-            <Text size={20.0} color={INK}>{title}</Text>
-            <Text size={13.0} color={BODY}>{copy}</Text>
-            {children}
-        </Group>
-    }
+    // Flat-forwarded children: an RSX `{children}` splice would interpose a
+    // wrapper group (see motion_ui::Arena), so the vec is concatenated here.
+    let mut kids = Vec::with_capacity(children.len() + 3);
+    kids.push(text(eyebrow_label).size(11.0).color(MUTED).into_element());
+    kids.push(text(title).size(20.0).color(INK).into_element());
+    kids.push(text(copy).size(13.0).color(BODY).into_element());
+    kids.extend(children);
+    group()
+        .direction("vertical")
+        .width("fill")
+        .height("fill")
+        .gap(16.0)
+        .children(kids)
 }
 
 #[component]

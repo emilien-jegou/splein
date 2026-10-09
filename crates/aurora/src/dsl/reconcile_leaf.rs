@@ -99,7 +99,7 @@ pub fn reconcile_custom(
         0
     };
     let node = arena.get_mut(id);
-    node.kind = NodeKind::Custom(def.primitive);
+    node.kind = NodeKind::Custom(def.primitive.clone());
     node.style.width = def.width.unwrap_or(Size::Fit);
     node.style.height = def.height.unwrap_or(Size::Fit);
     node.style.margin = def.margin;

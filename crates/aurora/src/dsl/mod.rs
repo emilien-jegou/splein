@@ -83,7 +83,7 @@ pub use diff::ChildOp;
 pub use element::Element;
 pub use element_ref::ElementRef;
 pub use flip::{use_flip, use_follow, use_ref, FollowHandle, Trigger};
-pub use group::{group, Behavior, GroupDef};
+pub use group::{group, index_keyed_list, keyed_list, Behavior, ChildSegment, GroupDef};
 pub use image::image;
 pub use reconciler::reconcile;
 pub use svg::svg;

@@ -11,6 +11,7 @@ use crate::reactive::prop::{DynamicProp, IntoProp};
 use crate::reactive::readable::Readable;
 
 /// Declarative flex container builder with reactive properties and styling modifiers.
+#[derive(Clone)]
 pub struct GroupDef {
     pub key: Option<Key>,
     pub width: Option<DynamicProp<Size>>,
@@ -47,9 +48,26 @@ pub struct GroupDef {
     pub handlers: HandlerSet,
     /// Hit-test participation for this node (and, for passthrough, its subtree).
     pub hit_test: HitTest,
-    /// Builds children from reactive state, when the list is not static.
-    pub children_builder: Option<Rc<dyn Fn() -> Vec<Element>>>,
-    pub children: Vec<Element>,
+    /// Ordered child sources: static elements and reactive builders interleaved.
+    ///
+    /// Control-flow nodes (`<for>`, `<if>`, `<match>`) contribute `Dynamic`
+    /// segments directly into their parent — never carrier nodes — so rows and
+    /// branches stack in the parent's layout with nothing between. A node with
+    /// no `Dynamic` segment reconciles exactly as before.
+    pub child_segments: Vec<ChildSegment>,
+}
+
+/// One ordered child source of a group.
+///
+/// `Static` holds eager elements; `Dynamic` holds a builder re-evaluated when
+/// any signal it reads changes (reconciliation then diffs the merged key
+/// sequence, so an unchanged rebuild costs one comparison). Builders run under
+/// the owning node's observer, however deeply nested, so every read
+/// subscribes the owner.
+#[derive(Clone)]
+pub enum ChildSegment {
+    Static(Vec<Element>),
+    Dynamic(Rc<dyn Fn() -> Vec<ChildSegment>>),
 }
 
 pub fn group() -> GroupDef {
@@ -80,8 +98,7 @@ pub fn group() -> GroupDef {
         element_ref: None,
         handlers: HandlerSet::default(),
         hit_test: HitTest::Auto,
-        children_builder: None,
-        children: Vec::new(),
+        child_segments: Vec::new(),
     }
 }
 
@@ -238,9 +255,29 @@ impl GroupDef {
         self.element_ref = Some(handle);
         self
     }
+    /// Appends static children. Repeated calls accumulate in order (they do
+    /// not replace); interleaving with the `children_*` builders keeps
+    /// declaration order, statics and dynamics alike.
     pub fn children<C: IntoChildList>(mut self, c: C) -> Self {
-        self.children = c.into_child_list();
+        self.child_segments
+            .push(ChildSegment::Static(c.into_child_list()));
         self
+    }
+
+    /// Appends pre-built child segments (static elements and reactive builders
+    /// interleaved). This is what `view!` emits for child lists containing
+    /// control-flow nodes; handwritten code should prefer [`Self::children`]
+    /// plus the `children_*` builders, which cover the same ground.
+    pub fn child_segments(mut self, segs: Vec<ChildSegment>) -> Self {
+        self.child_segments.extend(segs);
+        self
+    }
+
+    /// Whether any segment rebuilds from reactive state.
+    pub fn has_dynamic_segments(&self) -> bool {
+        self.child_segments
+            .iter()
+            .any(|s| matches!(s, ChildSegment::Dynamic(_)))
     }
 
     /// Builds this node's children from reactive state.
@@ -253,7 +290,9 @@ impl GroupDef {
     /// Rows should be keyed by identity rather than by position, otherwise a reorder reads
     /// as "every row changed" instead of "these two rows swapped".
     pub fn children_of(mut self, build: impl Fn() -> Vec<Element> + 'static) -> Self {
-        self.children_builder = Some(Rc::new(build));
+        self.child_segments.push(ChildSegment::Dynamic(Rc::new(move || {
+            vec![ChildSegment::Static(build())]
+        })));
         self
     }
 
@@ -267,14 +306,16 @@ impl GroupDef {
         S: Clone + 'static,
         F: Fn(usize, S) -> Element + 'static,
     {
-        self.children_builder = Some(Rc::new(move || {
-            items
-                .read()
-                .into_iter()
-                .enumerate()
-                .map(|(i, s)| row(i, s))
-                .collect()
-        }));
+        self.child_segments.push(ChildSegment::Dynamic(Rc::new(move || {
+            vec![ChildSegment::Static(
+                items
+                    .read()
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, s)| row(i, s))
+                    .collect(),
+            )]
+        })));
         self
     }
 
@@ -298,26 +339,28 @@ impl GroupDef {
         K: Fn(&S) -> String + 'static,
         F: Fn(usize, S) -> Element + 'static,
     {
-        self.children_builder = Some(Rc::new(move || {
-            items
-                .read()
-                .into_iter()
-                .enumerate()
-                .map(|(i, s)| {
-                    // The row runs in a hook scope named after its item, so `use_signal`
-                    // inside a row component finds the signal it allocated last time. The
-                    // scope is the one the list is already being built in, which is why this
-                    // needs no runtime of its own.
-                    let key = key_of(&s);
-                    match crate::reactive::Cx::current() {
-                        Some(cx) => cx.enter_keyed(key, || row(i, s)),
-                        // Built outside any scope, e.g. by a caller that only wants the shape.
-                        // The rows still work; they just cannot preserve hook state.
-                        None => row(i, s),
-                    }
-                })
-                .collect()
-        }));
+        self.child_segments.push(ChildSegment::Dynamic(Rc::new(move || {
+            vec![ChildSegment::Static(
+                items
+                    .read()
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, s)| {
+                        // The row runs in a hook scope named after its item, so `use_signal`
+                        // inside a row component finds the signal it allocated last time. The
+                        // scope is the one the list is already being built in, which is why this
+                        // needs no runtime of its own.
+                        let key = key_of(&s);
+                        match crate::reactive::Cx::current() {
+                            Some(cx) => cx.enter_keyed(key, || row(i, s)),
+                            // Built outside any scope, e.g. by a caller that only wants the shape.
+                            // The rows still work; they just cannot preserve hook state.
+                            None => row(i, s),
+                        }
+                    })
+                    .collect(),
+            )]
+        })));
         self
     }
 
@@ -553,4 +596,113 @@ impl IntoElement for GroupDef {
     fn into_element(self) -> Element {
         Element::Group(self)
     }
+}
+
+/// Keyed-list free function for programmatic (non-RSX) use.
+///
+/// Thin wrapper over [`GroupDef::children_labels_keyed`]: `key_of` names an
+/// item *instance* (stable + unique, not position), `row` builds one `Element`
+/// from `(index, item)`. Rows run in `enter_keyed` scopes so row-component
+/// hooks survive list changes. RSX code should prefer `<for>`, which splices
+/// rows directly into the parent with no carrier node.
+pub fn keyed_list<S, R, K, F>(items: R, key_of: K, row: F) -> Element
+where
+    R: Readable<Vec<S>> + 'static,
+    S: Clone + 'static,
+    K: Fn(&S) -> String + 'static,
+    F: Fn(usize, S) -> Element + 'static,
+{
+    crate::dsl::group()
+        .children_labels_keyed(items, key_of, row)
+        .into_element()
+}
+
+/// Index-keyed variant for programmatic (non-RSX) use.
+///
+/// Correct for static lists (never reorder/filter/insert); rows reset state on
+/// reorder by design. Prefer [`keyed_list`] with a per-item key otherwise.
+pub fn index_keyed_list<S, R, F>(items: R, row: F) -> Element
+where
+    R: Readable<Vec<S>> + 'static,
+    S: Clone + 'static,
+    F: Fn(usize, S) -> Element + 'static,
+{
+    crate::dsl::group()
+        .children_of(move || {
+            items
+                .read()
+                .into_iter()
+                .enumerate()
+                .map(|(i, s)| match crate::reactive::Cx::current() {
+                    Some(cx) => cx.enter_keyed(format!("index-{i}"), || row(i, s)),
+                    None => row(i, s),
+                })
+                .collect()
+        })
+        .into_element()
+}
+
+impl ChildSegment {
+    /// Keyed-list segment backing `view!`'s `<for>` node: rows splice directly
+    /// into the parent, with no carrier node between.
+    ///
+    /// `key_of` names an item *instance* and each row builds a segment vec
+    /// (usually one element; nested control flow stays nested and flattens at
+    /// build). Row scopes mirror [`GroupDef::children_labels_keyed`].
+    pub fn keyed<S, R, K, F>(items: R, key_of: K, row: F) -> Self
+    where
+        R: Readable<Vec<S>> + 'static,
+        S: Clone + 'static,
+        K: Fn(&S) -> String + 'static,
+        F: Fn(usize, S) -> Vec<ChildSegment> + 'static,
+    {
+        Self::Dynamic(Rc::new(move || {
+            items
+                .read()
+                .into_iter()
+                .enumerate()
+                .flat_map(|(i, s)| {
+                    let key = key_of(&s);
+                    match crate::reactive::Cx::current() {
+                        Some(cx) => cx.enter_keyed(key, || row(i, s)),
+                        None => row(i, s),
+                    }
+                })
+                .collect()
+        }))
+    }
+
+    /// Index-keyed segment for `<for>` without `key=` (see [`index_keyed_list`]).
+    pub fn keyed_index<S, R, F>(items: R, row: F) -> Self
+    where
+        R: Readable<Vec<S>> + 'static,
+        S: Clone + 'static,
+        F: Fn(usize, S) -> Vec<ChildSegment> + 'static,
+    {
+        Self::Dynamic(Rc::new(move || {
+            items
+                .read()
+                .into_iter()
+                .enumerate()
+                .flat_map(|(i, s)| match crate::reactive::Cx::current() {
+                    Some(cx) => cx.enter_keyed(format!("index-{i}"), || row(i, s)),
+                    None => row(i, s),
+                })
+                .collect()
+        }))
+    }
+}
+
+/// Flattens ordered segments to elements, resolving nested dynamics
+/// recursively. Runs under the caller's observer, so every signal any nested
+/// builder reads subscribes the owning node.
+pub fn flatten_segments(segments: &[ChildSegment]) -> Vec<Element> {
+    let mut out = Vec::new();
+    for seg in segments {
+        match seg {
+            ChildSegment::Static(els) => out.extend(els.iter().cloned()),
+            ChildSegment::Dynamic(build) => out.extend(flatten_segments(&build())),
+        }
+    }
+    out
 }

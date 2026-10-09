@@ -23,27 +23,27 @@ fn main() {
 }
 
 fn build_ui() -> impl IntoElement {
-    group()
-        .direction("vertical")
-        .width("fill")
-        .height("fill")
-        .fill(Color::WHITE)
-        .alignment("center")
-        .distribution("center")
-        .children([
-            text("Selectable (readonly, mouse-only)")
-                .size(13.0)
-                .color(0x666666),
-            text(LOREM)
-                .key("selectable-body")
-                .selectable(true)
-                .size(17.0)
-                .line_height(26.0)
-                .color(Color::BLACK)
-                .width(Size::fixed(520.0)),
-            text("This label stays click-transparent: dragging over it selects nothing.")
-                .size(13.0)
-                .color(0x666666)
-                .width(Size::fixed(520.0)),
-        ])
+    view! {
+        <Group
+            direction="vertical"
+            width="fill"
+            height="fill"
+            fill={Color::WHITE}
+            alignment="center"
+            distribution="center"
+        >
+            <Text size={13.0} color={0x666666}>"Selectable (readonly, mouse-only)"</Text>
+            <Text
+                key="selectable-body"
+                selectable={true}
+                size={17.0}
+                line_height={26.0}
+                color={Color::BLACK}
+                width={Size::fixed(520.0)}
+            >{LOREM}</Text>
+            <Text size={13.0} color={0x666666} width={Size::fixed(520.0)}>
+                "This label stays click-transparent: dragging over it selects nothing."
+            </Text>
+        </Group>
+    }
 }

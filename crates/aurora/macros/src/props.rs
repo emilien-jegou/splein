@@ -103,12 +103,10 @@ struct Field {
     is_children: bool,
 }
 
-/// Emits `{Name}Props` + builder, or `None` when the function takes no args.
+/// Emits `{Name}Props` + builder. Argless components get an empty props
+/// struct, so `<Tag />` works uniformly without a special case.
 pub fn expand_props(input: &ItemFn) -> syn::Result<Option<TokenStream2>> {
     let name = &input.sig.ident;
-    if input.sig.inputs.is_empty() {
-        return Ok(None);
-    }
     // Type names are CamelCase even when the component fn is snake_case
     // (`item` → `ItemProps`, not `itemProps`).
     let type_stem = {

@@ -311,6 +311,36 @@ fn a_component_can_nest_inside_another_components_scope() {
     press(&mut engine, 30.0, 55.0);
 }
 
+/// A component taking a whole element as a prop, for nested-RSX attributes.
+#[component]
+fn Headed(head: Element) -> impl IntoElement {
+    view! {
+        <Group direction="vertical" width={400.0} height={400.0}>
+            <Group direction="horizontal" width="fill" height={40.0}>
+                {head}
+            </Group>
+        </Group>
+    }
+}
+
+#[test]
+#[ntest::timeout(5_000)]
+fn an_attribute_holds_a_nested_element() {
+    let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
+    let cx = Cx::new(Rc::clone(&runtime));
+    let view: aurora::dsl::Element = cx.enter(|| view! {
+        <Headed head={<Row label="nested-attr" width={50.0} />} />
+    });
+
+    let mut engine = Engine::with_runtime(Rc::clone(&runtime), view, 400, 400);
+    engine.advance(1.0 / 60.0);
+    engine.frame();
+    assert!(
+        engine.rect("row-nested-attr").is_some(),
+        "a nested element in attribute position must build and mount"
+    );
+}
+
 #[test]
 #[ntest::timeout(5_000)]
 fn the_hand_written_component_trait_still_works() {
@@ -326,4 +356,233 @@ fn the_hand_written_component_trait_still_works() {
     engine.advance(1.0 / 60.0);
     engine.frame();
     assert_eq!(engine.logical_size(), (100, 100));
+}
+
+/// A `<for>` list: one keyed row per item, state following identity across reorder.
+#[component]
+fn ForList(items: Signal<Vec<String>>) -> impl IntoElement {
+    view! {
+        <Group direction="vertical" width={400.0} height={400.0}>
+            <for (_i, s) in items key={.clone()}>
+                <Group key={s.clone()} width={400.0} height={20.0} />
+            </for>
+        </Group>
+    }
+}
+
+#[test]
+#[ntest::timeout(5_000)]
+fn for_node_builds_a_keyed_row_per_item() {
+    let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
+    let items: Signal<Vec<String>> =
+        Cx::new(Rc::clone(&runtime)).enter(|| use_signal(vec!["one".to_string(), "two".to_string()]));
+    let cx = Cx::new(Rc::clone(&runtime));
+    let view: aurora::dsl::Element = cx.enter(|| ForList(items.clone()));
+
+    let mut engine = Engine::with_runtime(Rc::clone(&runtime), view, 400, 400);
+    engine.advance(1.0 / 60.0);
+    engine.frame();
+
+    for key in ["one", "two"] {
+        assert!(engine.rect(key).is_some(), "<for> must build a keyed row for {key}");
+    }
+
+    // Reorder: rows follow identity, not position.
+    items.set(vec!["two".to_string(), "one".to_string()]);
+    engine.advance(1.0 / 60.0);
+    engine.frame();
+    for key in ["one", "two"] {
+        assert!(engine.rect(key).is_some(), "<for> must keep row {key} across reorder");
+    }
+}
+
+/// Static siblings around a `<for>`: order interleaves, dynamics stay live.
+#[component]
+fn MixedList(items: Signal<Vec<String>>) -> impl IntoElement {
+    view! {
+        <Group direction="vertical" width={400.0} height={400.0}>
+            <Group key="head" width={400.0} height={20.0} />
+            <for (_i, s) in items key={.clone()}>
+                <Group key={s.clone()} width={400.0} height={20.0} />
+            </for>
+            <Group key="foot" width={400.0} height={20.0} />
+        </Group>
+    }
+}
+
+#[test]
+#[ntest::timeout(5_000)]
+fn static_and_dynamic_siblings_interleave_in_order() {
+    let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
+    let items: Signal<Vec<String>> =
+        Cx::new(Rc::clone(&runtime)).enter(|| use_signal(vec!["one".to_string(), "two".to_string()]));
+    let cx = Cx::new(Rc::clone(&runtime));
+    let view: aurora::dsl::Element = cx.enter(|| MixedList(items.clone()));
+
+    let mut engine = Engine::with_runtime(Rc::clone(&runtime), view, 400, 400);
+    engine.advance(1.0 / 60.0);
+    engine.frame();
+
+    let y_of = |engine: &Engine, key: &str| engine.rect(key).map(|r| r.y);
+    let (head, one, foot) = (y_of(&engine, "head"), y_of(&engine, "one"), y_of(&engine, "foot"));
+    assert!(
+        matches!((head, one, foot), (Some(h), Some(o), Some(f)) if h < o && o < f),
+        "static head, dynamic row, static foot must stack in order, got {head:?} {one:?} {foot:?}"
+    );
+
+    // Reordering the dynamic segment keeps static siblings put.
+    items.set(vec!["two".to_string(), "one".to_string()]);
+    engine.advance(1.0 / 60.0);
+    engine.frame();
+    assert_eq!(y_of(&engine, "head"), head, "static head must not move on reorder");
+    assert_eq!(y_of(&engine, "foot"), foot, "static foot must not move on reorder");
+    let (two, one) = (y_of(&engine, "two"), y_of(&engine, "one"));
+    assert!(
+        matches!((two, one), (Some(t), Some(o)) if t < o),
+        "rows must swap order, got two={two:?} one={one:?}"
+    );
+}
+
+/// Control flow nested in control flow: an `<if>` inside each `<for>` row.
+#[component]
+fn NestedBranch(items: Signal<Vec<String>>, show: Signal<bool>) -> impl IntoElement {
+    view! {
+        <Group direction="vertical" width={400.0} height={400.0}>
+            <for (i, s) in items key={.clone()}>
+                <Group key={s.clone()} width={400.0} height={20.0}>
+                    <if show.get()>
+                        <Group key={format!("tag-{s}")} width={20.0} height={20.0} />
+                    </if>
+                </Group>
+            </for>
+        </Group>
+    }
+}
+
+#[test]
+#[ntest::timeout(5_000)]
+fn control_nodes_nest_without_carriers() {
+    let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
+    let items: Signal<Vec<String>> =
+        Cx::new(Rc::clone(&runtime)).enter(|| use_signal(vec!["one".to_string()]));
+    let show: Signal<bool> = Cx::new(Rc::clone(&runtime)).enter(|| use_signal(false));
+    let cx = Cx::new(Rc::clone(&runtime));
+    let view: aurora::dsl::Element =
+        cx.enter(|| NestedBranch(items.clone(), show.clone()));
+
+    let mut engine = Engine::with_runtime(Rc::clone(&runtime), view, 400, 400);
+    engine.advance(1.0 / 60.0);
+    engine.frame();
+    assert!(engine.rect("one").is_some(), "row must mount");
+    assert!(engine.rect("tag-one").is_none(), "nested branch starts hidden");
+
+    show.set(true);
+    engine.advance(1.0 / 60.0);
+    engine.frame();
+    assert!(engine.rect("tag-one").is_some(), "nested branch must appear per row");
+}
+
+/// An `<if>` branch: swaps children when the signal flips, remounting.
+#[component]
+fn IfBranch(open: Signal<bool>) -> impl IntoElement {
+    view! {
+        <Group direction="vertical" width={400.0} height={400.0}>
+            <if open.get()>
+                <Group key="open-branch" width={400.0} height={20.0} />
+                <else>
+                    <Group key="closed-branch" width={400.0} height={20.0} />
+                </else>
+            </if>
+        </Group>
+    }
+}
+
+#[test]
+#[ntest::timeout(5_000)]
+fn if_node_swaps_branches_on_signal_change() {
+    let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
+    let open: Signal<bool> =
+        Cx::new(Rc::clone(&runtime)).enter(|| use_signal(false));
+    let cx = Cx::new(Rc::clone(&runtime));
+    let view: aurora::dsl::Element = cx.enter(|| IfBranch(open.clone()));
+
+    let mut engine = Engine::with_runtime(Rc::clone(&runtime), view, 400, 400);
+    engine.advance(1.0 / 60.0);
+    engine.frame();
+    assert!(engine.rect("closed-branch").is_some(), "<if> must render the else arm");
+    assert!(engine.rect("open-branch").is_none(), "<if> must not render the then arm");
+
+    open.set(true);
+    engine.advance(1.0 / 60.0);
+    engine.frame();
+    assert!(engine.rect("open-branch").is_some(), "<if> must swap to the then arm");
+    assert!(engine.rect("closed-branch").is_none(), "<if> must unmount the else arm");
+}
+
+#[derive(Clone, PartialEq)]
+enum LoadState {
+    Loading,
+    Ready(String),
+    Failed,
+}
+
+/// A `<match>` branch: patterns bind, guards filter, `_` catches the rest.
+#[component]
+fn MatchBranch(state: Signal<LoadState>) -> impl IntoElement {
+    view! {
+        <Group direction="vertical" width={400.0} height={400.0}>
+            <match state.get()>
+                <case LoadState::Loading>
+                    <Group key="loading" width={400.0} height={20.0} />
+                </case>
+                <case LoadState::Ready(title) if title.len() > 3>
+                    <Group key="ready-long" width={400.0} height={20.0} />
+                </case>
+                <case LoadState::Ready(_)>
+                    <Group key="ready-short" width={400.0} height={20.0} />
+                </case>
+                <case _>
+                    <Group key="other" width={400.0} height={20.0} />
+                </case>
+            </match>
+        </Group>
+    }
+}
+
+#[test]
+#[ntest::timeout(5_000)]
+fn match_node_dispatches_arms_guards_and_wildcard() {
+    let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
+    let state: Signal<LoadState> =
+        Cx::new(Rc::clone(&runtime)).enter(|| use_signal(LoadState::Loading));
+    let cx = Cx::new(Rc::clone(&runtime));
+    let view: aurora::dsl::Element = cx.enter(|| MatchBranch(state.clone()));
+
+    let mut engine = Engine::with_runtime(Rc::clone(&runtime), view, 400, 400);
+    let shown = |engine: &Engine| {
+        for key in ["loading", "ready-long", "ready-short", "other"] {
+            if engine.rect(key).is_some() {
+                return key;
+            }
+        }
+        "none"
+    };
+    engine.advance(1.0 / 60.0);
+    engine.frame();
+    assert_eq!(shown(&engine), "loading");
+
+    state.set(LoadState::Ready("hi".to_string()));
+    engine.advance(1.0 / 60.0);
+    engine.frame();
+    assert_eq!(shown(&engine), "ready-short", "guard must reject short titles");
+
+    state.set(LoadState::Ready("hello".to_string()));
+    engine.advance(1.0 / 60.0);
+    engine.frame();
+    assert_eq!(shown(&engine), "ready-long", "guard must pass long titles");
+
+    state.set(LoadState::Failed);
+    engine.advance(1.0 / 60.0);
+    engine.frame();
+    assert_eq!(shown(&engine), "other", "wildcard must catch the rest");
 }

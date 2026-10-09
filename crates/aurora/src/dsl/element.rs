@@ -7,6 +7,7 @@ use crate::dsl::text::TextDef;
 use crate::foundation::Key;
 
 /// Ephemeral element enum representing declarative UI tree specifications.
+#[derive(Clone)]
 pub enum Element {
     Group(GroupDef),
     Text(TextDef),

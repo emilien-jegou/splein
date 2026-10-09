@@ -17,11 +17,15 @@ pub struct DynamicBindings {
     /// Stacking order evaluator, when the node declares a dynamic one.
     pub z_index: Option<Rc<dyn Fn() -> i32>>,
     pub pose: Option<PoseBindings>,
-    /// Builds this node's children from reactive state.
+    /// Retained child segments, when any rebuild from reactive state.
     ///
-    /// Reconciling on the key sequence rather than on every read is what makes a reorder
-    /// cost one diff: an unchanged list re-evaluates to the same keys and nothing happens.
-    pub children: Option<Rc<dyn Fn() -> Vec<crate::dsl::element::Element>>>,
+    /// `None` means static-only (today's fast path: children reconcile once at
+    /// mount and never rebuild). `Some` retains the full ordered segment list —
+    /// statics included — so the scheduler can re-merge on any nested change.
+    /// Reconciling on the merged key sequence rather than on every read is what
+    /// makes a reorder cost one diff: an unchanged rebuild re-evaluates to the
+    /// same keys and nothing happens.
+    pub children: Option<Vec<crate::dsl::group::ChildSegment>>,
 }
 
 /// Independent pose components, each bound to its own animated signal.
@@ -141,13 +145,13 @@ impl NodeBindings {
             .map_or(Transform::IDENTITY, PoseBindings::compose)
     }
 
-    /// Builds this node's children from reactive state, if a dynamic list was declared.
+    /// Builds this node's dynamic child segments from reactive state, if any were declared.
     #[inline(always)]
-    pub fn children_builder(&self) -> Option<&Rc<dyn Fn() -> Vec<crate::dsl::element::Element>>> {
+    pub fn children_builder(&self) -> Option<&Vec<crate::dsl::group::ChildSegment>> {
         self.inner.as_deref().and_then(|b| b.children.as_ref())
     }
 
-    /// Whether this node builds its children from reactive state.
+    /// Whether any child segment rebuilds from reactive state.
     #[inline(always)]
     pub fn has_children_builder(&self) -> bool {
         self.children_builder().is_some()

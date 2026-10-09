@@ -23,93 +23,93 @@ const DEFAULT_HEIGHT: u32 = 640;
 const PANEL_BG: u32 = 0xF1CFFC;
 const LABEL_COLOR: u32 = 0x483050;
 
-fn card(label: &'static str, shadow: Shadow) -> Element {
-    group()
-        .direction("vertical")
-        .gap(24.0)
-        .alignment("center")
-        .children((
-            text(label)
-                .size(16.0)
-                .weight(500)
-                .color(LABEL_COLOR),
-            group()
-                .width(150.0)
-                .height(150.0)
-                .radius(8.0)
-                .fill(Color::WHITE)
-                .shadow(shadow),
-        ))
-        .into_element()
+#[component]
+fn Card(label: &'static str, shadow: Shadow) -> impl IntoElement {
+    view! {
+        <Group direction="vertical" gap={24.0} alignment="center">
+            <Text size={16.0} weight={500u16} color={LABEL_COLOR}>{label}</Text>
+            <Group
+                width={150.0}
+                height={150.0}
+                radius={8.0}
+                fill={Color::WHITE}
+                shadow={shadow}
+            />
+        </Group>
+    }
 }
 
 fn build_ui() -> impl IntoElement {
     // The pink panel is the full background: no outer card, just the
     // two labeled cards centered with the reference's 96v/48h breathing room.
-    group()
-        .direction("vertical")
-        .width("fill")
-        .height("fill")
-        .fill(PANEL_BG)
-        .alignment("center")
-        .distribution("center")
-        .children([group()
-            .direction("horizontal")
-            .width("fill")
-            .gap(48.0)
-            .margin("96.0 48.0")
-            .alignment("center")
-            .distribution("center")
-            .children([
-                card(
-                    "Typical Shadow",
-                    Shadow::web_like(3.0, 6.0, 6.0, 0.0, Color::rgba(0.0, 0.0, 0.0, 0.35)),
-                ),
+    view! {
+        <Group
+            direction="vertical"
+            width="fill"
+            height="fill"
+            fill={PANEL_BG}
+            alignment="center"
+            distribution="center"
+        >
+            <Group
+                direction="horizontal"
+                width="fill"
+                gap={48.0}
+                margin="96.0 48.0"
+                alignment="center"
+                distribution="center"
+            >
+                <Card
+                    label="Typical Shadow"
+                    shadow={Shadow::web_like(3.0, 6.0, 6.0, 0.0, Color::rgba(0.0, 0.0, 0.0, 0.35))}
+                />
                 // TEMPORARY diagnostics (remove after): zero offset isolates
                 // whether the bottom band follows the offset; big offset
                 // tests whether any hole scales with oy.
-                card(
-                    "probe zero-offset",
-                    Shadow::web_like(0.0, 0.0, 6.0, 0.0, Color::rgba(0.0, 0.0, 0.0, 0.35)),
-                ),
-                card(
-                    "probe big-offset",
-                    Shadow::web_like(0.0, 20.0, 6.0, 0.0, Color::rgba(0.0, 0.0, 0.0, 0.35)),
-                ),
+                <Card
+                    label="probe zero-offset"
+                    shadow={Shadow::web_like(0.0, 0.0, 6.0, 0.0, Color::rgba(0.0, 0.0, 0.0, 0.35))}
+                />
+                <Card
+                    label="probe big-offset"
+                    shadow={Shadow::web_like(0.0, 20.0, 6.0, 0.0, Color::rgba(0.0, 0.0, 0.0, 0.35))}
+                />
                 // TEMPORARY isolation (remove after): single layers tell
                 // whether squareness lives in one layer (geometry) or only
                 // in the stack (profile/stacking interaction).
-                card(
-                    "probe single big",
-                    Shadow::layered(Color::rgba(
+                <Card
+                    label="probe single big"
+                    shadow={Shadow::layered(Color::rgba(
                         122.0 / 255.0,
                         61.0 / 255.0,
                         143.0 / 255.0,
                         0.15,
                     ))
-                    .drop(8.0, 16.0, 16.0),
-                ),
-                card(
-                    "probe single small",
-                    Shadow::layered(Color::rgba(
+                    .drop(8.0, 16.0, 16.0)}
+                />
+                <Card
+                    label="probe single small"
+                    shadow={Shadow::layered(Color::rgba(
                         122.0 / 255.0,
                         61.0 / 255.0,
                         143.0 / 255.0,
                         0.15,
                     ))
-                    .drop(0.5, 1.0, 1.0),
-                ),
-                card(
-                    "Optimized Shadow",
-                    Shadow::layered(Color::rgba(
+                    .drop(0.5, 1.0, 1.0)}
+                />
+                <Card
+                    label="Optimized Shadow"
+                    shadow={Shadow::layered(Color::rgba(
                         122.0 / 255.0,
                         61.0 / 255.0,
                         143.0 / 255.0,
                         0.15,
                     ))
-                    .drop(8.0, 16.0, 16.0),
-                ),
-            ])])
+                    .drop(8.0, 16.0, 16.0)}
+                />
+            </Group>
+        </Group>
+    }
 }
 
 fn main() {

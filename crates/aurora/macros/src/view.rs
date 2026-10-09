@@ -47,7 +47,7 @@ fn node_name_string(name: &NodeName) -> String {
 }
 
 /// `on:click` → `on_click`; `ref` → `bind_ref`; `foo-bar` → `foo_bar`; else identity.
-fn attr_method(key: &str) -> String {
+pub(crate) fn attr_method(key: &str) -> String {
     if key == "ref" {
         return "bind_ref".to_string();
     }
@@ -71,12 +71,72 @@ fn attr_value_tokens(attr: &KeyedAttribute) -> TokenStream2 {
                 strip_braces(&b.block)
             }
             KVAttributeValue::Expr(e) => quote! { #e },
-            KVAttributeValue::InvalidBraced(b) => quote! { #b },
+            KVAttributeValue::InvalidBraced(b) => nested_element_value(&b.body),
         },
         KeyedAttributeValue::None => {
             // Bare `<X flag>` means boolean true.
             quote! { true }
         }
+    }
+}
+
+/// Attr values holding a single nested element: `head={<Strip …/>}`.
+///
+/// Braced RSX fails Rust parsing, so rstml recovers it as `InvalidBraced` and
+/// the inner tokens re-enter the element pipeline here — recursively, so
+/// nesting composes to any depth. Non-`<` bodies keep the old passthrough so
+/// genuine Rust errors still surface natively. A bare control node here is
+/// rejected with a pointer (it must be a direct child); control nodes deeper
+/// inside a nested element resolve through local tables, so
+/// `{<Group><for/></Group>}` works wherever a single element fits.
+fn nested_element_value(body: &TokenStream2) -> TokenStream2 {
+    let is_rsx = matches!(
+        body.clone().into_iter().next(),
+        Some(proc_macro2::TokenTree::Punct(p)) if p.as_char() == '<'
+    );
+    if !is_rsx {
+        return quote! { {#body} };
+    }
+    let mut flow = FlowTables::default();
+    let rewritten = flow.extract(body.clone());
+    flow.warn();
+    let config = rstml::ParserConfig::default().recover_block(true);
+    let parser = rstml::Parser::new(config);
+    let (nodes, errors) = parser.parse_recoverable(rewritten).split_vec();
+    let mut out = quote! {};
+    for e in errors {
+        let t = e.emit_as_expr_tokens();
+        out = quote! { #out #t; };
+    }
+    match nodes.as_slice() {
+        [Node::Element(el)] => {
+            let tag = node_name_string(el.name());
+            if matches!(tag.as_str(), "for" | "if" | "match" | "else" | "case") {
+                return quote! {
+                    #out ::std::compile_error!(
+                        "view!: control nodes (`<for>`, `<if>`, `<match>`) must be direct children — drop the surrounding `{…}`"
+                    )
+                };
+            }
+            match element_expr(el, &flow) {
+                Ok(e) => {
+                    let e = match flow.splice(e) {
+                        Ok(spliced) => spliced,
+                        Err(err) => err.to_compile_error(),
+                    };
+                    quote! { #out (#e) }
+                }
+                Err(err) => {
+                    let compile = err.to_compile_error();
+                    quote! { #out #compile }
+                }
+            }
+        }
+        _ => quote! {
+            #out ::std::compile_error!(
+                "view!: an attribute holds one nested element — `<Panel head={<Strip …/>}>`; anything else goes in `{…}` as Rust"
+            )
+        },
     }
 }
 
@@ -93,18 +153,89 @@ fn strip_braces(block: &syn::Block) -> TokenStream2 {
     block.to_token_stream()
 }
 
-fn children_vec(children: &[ViewNode]) -> syn::Result<TokenStream2> {
+pub(crate) fn children_vec(children: &[ViewNode], flow: &FlowTables) -> syn::Result<TokenStream2> {
+    // Component children stay elements: control nodes compose under Groups,
+    // never as direct component children (components forward `Vec<Element>`).
+    for c in children {
+        if is_control_child(c) {
+            return Err(syn::Error::new_spanned(
+                c,
+                "view!: control nodes (`<for>`, `<if>`, `<match>`) compose under `<Group>` children, not as direct component children — hoist the node above the component or wrap it in a `<Group>`",
+            ));
+        }
+    }
     let mut items = Vec::new();
     for c in children {
-        items.push(child_expr(c)?);
+        items.push(child_expr(c, flow)?);
     }
     Ok(quote! { ::std::vec![#(#items),*] })
 }
 
-fn child_expr(node: &ViewNode) -> syn::Result<TokenStream2> {
+/// Whether a child is a control-flow placeholder (`{__aurora_for_N}` etc.).
+/// Placeholder idents only originate in the pre-pass, so a user `{…}` block
+/// can only match by naming one literally — which then resolves the same way.
+pub(crate) fn is_control_child(node: &ViewNode) -> bool {
+    match node {
+        Node::Block(b) => {
+            let inner = match b {
+                rstml::node::NodeBlock::ValidBlock(block) => block,
+                _ => return false,
+            };
+            if inner.stmts.len() != 1 {
+                return false;
+            }
+            match inner.stmts.first() {
+                Some(syn::Stmt::Expr(syn::Expr::Path(p), None)) => p
+                    .path
+                    .get_ident()
+                    .is_some_and(|id| crate::flow_util::is_control_placeholder(&id.to_string())),
+                _ => false,
+            }
+        }
+        _ => false,
+    }
+}
+
+/// Emits one child as a segment expression: control placeholders resolve to
+/// their `Dynamic` segment, anything else wraps in `Static`. Callers collect
+/// these into the `vec![…]` that `.child_segments()` takes.
+pub(crate) fn child_segment(
+    node: &ViewNode,
+    flow: &FlowTables,
+) -> syn::Result<TokenStream2> {
+    if is_control_child(node) {
+        // Resolve through the shared tables: the placeholder ident expands to
+        // a `ChildSegment::Dynamic` expression in place.
+        let ident_ts: TokenStream2 = match node {
+            Node::Block(rstml::node::NodeBlock::ValidBlock(block)) => {
+                quote! { #block }
+            }
+            _ => unreachable!("is_control_child was true"),
+        };
+        return flow.splice(ident_ts);
+    }
+    let e = child_expr(node, flow)?;
+    let e = flow.splice(e)?;
+    Ok(quote! { ::aurora::dsl::ChildSegment::Static(::std::vec![#e]) })
+}
+
+/// Emits already-parsed children as a `vec![…]` of segments, for `<Group>`
+/// (whose `.child_segments()` takes them flat, with no carrier node).
+pub(crate) fn children_segments_vec(
+    children: &[ViewNode],
+    flow: &FlowTables,
+) -> syn::Result<TokenStream2> {
+    let mut items = Vec::new();
+    for c in children {
+        items.push(child_segment(c, flow)?);
+    }
+    Ok(quote! { ::std::vec![#(#items),*] })
+}
+
+fn child_expr(node: &ViewNode, flow: &FlowTables) -> syn::Result<TokenStream2> {
     match node {
         Node::Element(el) => {
-            let e = element_expr(el)?;
+            let e = element_expr(el, flow)?;
             Ok(quote! { ::aurora::dsl::IntoElement::into_element(#e) })
         }
         Node::Text(t) => {
@@ -121,7 +252,7 @@ fn child_expr(node: &ViewNode) -> syn::Result<TokenStream2> {
             Ok(quote! { ::aurora::dsl::view_child(#inner) })
         }
         Node::Fragment(f) => {
-            let kids = children_vec(&f.children)?;
+            let kids = children_vec(&f.children, flow)?;
             Ok(quote! { ::aurora::dsl::view_child(#kids) })
         }
         Node::Comment(_) | Node::Doctype(_) => Err(syn::Error::new_spanned(
@@ -160,7 +291,7 @@ fn apply_attrs(base: TokenStream2, el: &Element) -> syn::Result<TokenStream2> {
     Ok(out)
 }
 
-fn element_expr(el: &Element) -> syn::Result<TokenStream2> {
+pub(crate) fn element_expr(el: &Element, flow: &FlowTables) -> syn::Result<TokenStream2> {
     let tag = node_name_string(el.name());
     // Reject namespaced/lowercase tags early with a helpful message.
     if tag.contains("::") || tag.chars().next().is_some_and(|c| c.is_lowercase()) {
@@ -181,10 +312,23 @@ fn element_expr(el: &Element) -> syn::Result<TokenStream2> {
         ));
     }
     if is_primitive(&tag) {
+        // `Group` children merge as ordered segments: statics wrap in
+        // `Static`, control nodes resolve to their `Dynamic` segments, and no
+        // carrier node ever sits between parent and rows. Other primitives
+        // take no children (native error if given any, as before).
+        if tag == "Group" {
+            let ctor = primitive_ctor(&tag).unwrap();
+            let mut out = apply_attrs(ctor, el)?;
+            if !el.children.is_empty() {
+                let kids = children_segments_vec(&el.children, flow)?;
+                out = quote! { #out.child_segments(#kids) };
+            }
+            return Ok(out);
+        }
         let ctor = primitive_ctor(&tag).unwrap();
         let mut out = apply_attrs(ctor, el)?;
         if !el.children.is_empty() {
-            let kids = children_vec(&el.children)?;
+            let kids = children_vec(&el.children, flow)?;
             out = quote! { #out.children(#kids) };
         }
         return Ok(out);
@@ -216,7 +360,7 @@ fn element_expr(el: &Element) -> syn::Result<TokenStream2> {
         }
     }
     if !el.children.is_empty() {
-        let kids = children_vec(&el.children)?;
+        let kids = children_vec(&el.children, flow)?;
         chain = quote! { #chain.children(#kids) };
     }
     Ok(quote! { #chain.build() })
@@ -255,13 +399,21 @@ fn text_expr(el: &Element) -> syn::Result<TokenStream2> {
                 let s = t.value_string();
                 Some(quote! { #s })
             }
-            Node::Block(b) => Some({
-                let inner = match b {
-                    rstml::node::NodeBlock::ValidBlock(block) => strip_braces(block),
-                    other => quote! { #other },
-                };
-                quote! { #inner }
-            }),
+            Node::Block(b) => {
+                if is_control_child(single) {
+                    return Err(syn::Error::new_spanned(
+                        single,
+                        "view!: control nodes (`<for>`, `<if>`, `<match>`) compose under `<Group>` children — a `<Text>` holds one string/signal, never branches",
+                    ));
+                }
+                Some({
+                    let inner = match b {
+                        rstml::node::NodeBlock::ValidBlock(block) => strip_braces(block),
+                        other => quote! { #other },
+                    };
+                    quote! { #inner }
+                })
+            }
             Node::Element(_) | Node::Fragment(_) => {
                 return Err(syn::Error::new_spanned(
                     single,
@@ -306,9 +458,137 @@ fn text_expr(el: &Element) -> syn::Result<TokenStream2> {
 }
 
 pub fn expand(tokens: TokenStream2) -> syn::Result<TokenStream2> {
+    expand_inner(tokens)
+}
+
+/// Parses child-list tokens with control-flow extraction, returning parser
+/// diagnostics plus the parsed nodes. Group children and control bodies share
+/// it; what differs is how each child is emitted (elements vs segments).
+pub(crate) fn parse_child_nodes(
+    tokens: TokenStream2,
+    flow: &mut FlowTables,
+) -> syn::Result<(TokenStream2, Vec<ViewNode>)> {
+    let rewritten = flow.extract(tokens);
     let config = rstml::ParserConfig::default().recover_block(true);
     let parser = rstml::Parser::new(config);
-    let (nodes, errors) = parser.parse_recoverable(tokens).split_vec();
+    let (nodes, errors) = parser.parse_recoverable(rewritten).split_vec();
+    let mut error_out = quote! {};
+    for e in errors {
+        let t = e.emit_as_expr_tokens();
+        error_out = quote! { #error_out #t; };
+    }
+    Ok((error_out, nodes))
+}
+
+/// Emits a `Vec<ChildSegment>` expression (braced with any parser
+/// diagnostics): statics wrap in `Static`, control nodes resolve to their
+/// `Dynamic` segments. Group children and control bodies (arm/row vecs for
+/// `children_of`-style closures) share it.
+pub(crate) fn expand_children_vec(tokens: TokenStream2) -> syn::Result<TokenStream2> {
+    let mut flow = FlowTables::default();
+    let (errors, nodes) = parse_child_nodes(tokens, &mut flow)?;
+    let mut items = Vec::new();
+    for c in &nodes {
+        items.push(child_segment(c, &flow)?);
+    }
+    Ok(quote! { { #errors ::std::vec![#(#items),*] } })
+}
+
+/// Side tables for every control-flow node extracted from one `view!` input.
+/// Extraction order is irrelevant: bodies re-enter [`expand_children_vec`],
+/// which re-runs all extracts, so cross-kind nesting falls out of recursion.
+#[derive(Default)]
+pub(crate) struct FlowTables {
+    pub for_nodes: Vec<crate::for_node::ForNode>,
+    pub if_nodes: Vec<crate::if_node::IfNode>,
+    pub match_nodes: Vec<crate::match_node::MatchNode>,
+    /// Stashed raw attr-nested RSX (`attr_node`), expanded at splice time.
+    pub attr_raw: Vec<TokenStream2>,
+}
+
+impl FlowTables {
+    pub fn extract(&mut self, tokens: TokenStream2) -> TokenStream2 {
+        let t = crate::for_node::extract(tokens, &mut self.for_nodes);
+        let t = crate::if_node::extract(t, &mut self.if_nodes);
+        let t = crate::match_node::extract(t, &mut self.match_nodes);
+        crate::attr_node::extract(t, &mut self.attr_raw)
+    }
+
+    pub fn splice(&self, body: TokenStream2) -> syn::Result<TokenStream2> {
+        crate::flow_util::splice_with(body, &|kind, n, span| self.resolve(kind, n, span))
+    }
+
+    /// Splices with `for`/`if`/`match` resolved locally and `attr`
+    /// references delegated to `outer` (used by eager attr expansion, whose
+    /// nested references always point at smaller, already-stashed indices).
+    pub fn splice_attr_ref(
+        &self,
+        body: TokenStream2,
+        outer: &FlowTables,
+    ) -> syn::Result<TokenStream2> {
+        crate::flow_util::splice_with(body, &|kind, n, span| match kind {
+            "attr" => outer
+                .attr_raw
+                .get(n)
+                .ok_or_else(|| syn::Error::new(span, "view!: stale `<attr>` placeholder"))
+                .and_then(|raw| crate::attr_node::expand_attr(raw, outer)),
+            _ => self.resolve(kind, n, span),
+        })
+    }
+
+    fn resolve(&self, kind: &str, n: usize, span: proc_macro2::Span) -> syn::Result<TokenStream2> {
+        match kind {
+            "for" => {
+                let node = self.for_nodes.get(n).ok_or_else(|| {
+                    syn::Error::new(span, "view!: stale `<for>` placeholder")
+                })?;
+                Ok(crate::for_node::expand(node))
+            }
+            "if" => {
+                let node = self.if_nodes.get(n).ok_or_else(|| {
+                    syn::Error::new(span, "view!: stale `<if>` placeholder")
+                })?;
+                crate::if_node::expand(node)
+            }
+            "match" => {
+                let node = self.match_nodes.get(n).ok_or_else(|| {
+                    syn::Error::new(span, "view!: stale `<match>` placeholder")
+                })?;
+                crate::match_node::expand(node)
+            }
+            "attr" => self
+                .attr_raw
+                .get(n)
+                .ok_or_else(|| syn::Error::new(span, "view!: stale `<attr>` placeholder"))
+                .and_then(|raw| crate::attr_node::expand_attr(raw, self)),
+            _ => Err(syn::Error::new(span, "view!: stale control-flow placeholder")),
+        }
+    }
+
+    /// `<for>` without `key=` falls back to index identity: warn once per site.
+    pub fn warn(&self) {
+        for _n in self
+            .for_nodes
+            .iter()
+            .filter(|n| matches!(n.key, crate::for_node::ForKey::Default))
+        {
+            proc_macro::Diagnostic::spanned(
+                proc_macro2::Span::call_site().unwrap(),
+                proc_macro::Level::Warning,
+                "<for> without `key=` uses row index as identity — rows reset state on reorder. Add `key={.id}` (unique per item) if this list reorders, filters, or inserts.",
+            )
+            .emit();
+        }
+    }
+}
+
+fn expand_inner(tokens: TokenStream2) -> syn::Result<TokenStream2> {
+    let mut flow = FlowTables::default();
+    let rewritten = flow.extract(tokens);
+    flow.warn();
+    let config = rstml::ParserConfig::default().recover_block(true);
+    let parser = rstml::Parser::new(config);
+    let (nodes, errors) = parser.parse_recoverable(rewritten).split_vec();
     let mut out = quote! {};
     for e in errors {
         let t = e.emit_as_expr_tokens();
@@ -320,8 +600,18 @@ pub fn expand(tokens: TokenStream2) -> syn::Result<TokenStream2> {
             "view!: expected at least one element, string, or `{expr}` block",
         )),
         [single] => {
-            let e = child_expr(single)?;
-            Ok(quote! { #out ::aurora::dsl::IntoElement::into_element(#e) })
+            // Control nodes are never layout nodes, so they can never be the
+            // root: there is no element to return. Wrap in a `<Group>`.
+            if is_control_child(single) {
+                return Err(syn::Error::new_spanned(
+                    single,
+                    "view!: control nodes (`<for>`, `<if>`, `<match>`) are never layout nodes — wrap them in a `<Group>`",
+                ));
+            }
+            let e = child_expr(single, &flow)?;
+            let body = quote! { ::aurora::dsl::IntoElement::into_element(#e) };
+            let body = flow.splice(body)?;
+            Ok(quote! { #out #body })
         }
         _ => Err(syn::Error::new(
             proc_macro2::Span::call_site(),

@@ -3,10 +3,19 @@
 //
 // Single responsibility: procedural macros exposing Aurora's declarative API.
 
+//! Procedural macros exposing Aurora's declarative API.
+
+#![feature(proc_macro_diagnostic)]
+
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, ItemFn};
 
+mod attr_node;
+mod flow_util;
+mod for_node;
+mod if_node;
+mod match_node;
 mod props;
 mod view;
 

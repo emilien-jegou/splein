@@ -25,6 +25,23 @@ pub fn hairline() -> Color {
     Color::hex_alpha(HAIRLINE, 0.06)
 }
 
+/// Rust-callable twins of the leaf components, for `{...}` splices.
+/// Prefer tags in RSX — including nested in attributes
+/// (`head={<Strip left={<Stat …/>} />}`).
+pub fn eyebrow(label: &'static str) -> Element {
+    Eyebrow(label)
+}
+
+/// Rust-callable twin of [`Heading`].
+pub fn heading(title: &'static str) -> Element {
+    Heading(title)
+}
+
+/// Rust-callable twin of [`Blurb`].
+pub fn blurb(copy: &'static str) -> Element {
+    Blurb(copy)
+}
+
 /// White card with the shared border and radius, lifted by page contrast rather than shadow.
 pub fn surface() -> GroupDef {
     group()
@@ -34,53 +51,70 @@ pub fn surface() -> GroupDef {
 }
 
 /// Uppercase eyebrow label; pass an already-uppercased literal.
-pub fn eyebrow(label: &'static str) -> TextDef {
-    text(label).size(11.0).weight(700).color(MUTED)
+#[component]
+pub fn Eyebrow(label: &'static str) -> impl IntoElement {
+    view! {
+        <Text size={11.0} weight={700u16} color={MUTED}>{label}</Text>
+    }
 }
 
 /// Page heading.
 ///
 /// Selectable body content: headings carry no handlers, so selecting never
 /// swallows a click.
-pub fn heading(title: &'static str) -> TextDef {
-    text(title)
-        .size(24.0)
-        .weight(700)
-        .color(INK)
-        .selectable(true)
+#[component]
+pub fn Heading(title: &'static str) -> impl IntoElement {
+    view! {
+        <Text size={24.0} weight={700u16} color={INK} selectable={true}>{title}</Text>
+    }
 }
 
 /// Muted body copy wrapping inside its container.
-pub fn blurb(copy: &'static str) -> TextDef {
-    text(copy)
-        .size(13.0)
-        .line_height(20.0)
-        .color(BODY)
-        .width("fill")
-        .selectable(true)
+#[component]
+pub fn Blurb(copy: &'static str) -> impl IntoElement {
+    view! {
+        <Text size={13.0} line_height={20.0} color={BODY} width="fill" selectable={true}>{copy}</Text>
+    }
 }
 
 /// Label and value stacked with the shared spacing rhythm.
-pub fn stat(label: &'static str, value: &'static str) -> GroupDef {
-    group().direction("vertical").gap(2.0).children((
-        eyebrow(label),
-        text(value).size(13.0).weight(500).color(INK),
-    ))
+#[component]
+pub fn Stat(label: &'static str, value: &'static str) -> impl IntoElement {
+    view! {
+        <Group direction="vertical" gap={2.0}>
+            <Eyebrow label={label} />
+            <Text size={13.0} weight={500u16} color={INK}>{value}</Text>
+        </Group>
+    }
 }
 
 /// Fixed-height card header holding two elements apart.
-pub fn strip(left: impl IntoElement, right: impl IntoElement) -> GroupDef {
-    group()
-        .direction("horizontal")
-        .width("fill")
-        .height(52.0)
-        .alignment("center")
-        .margin(Margin::x(20.0))
-        .children((left, group().width("fill"), right))
+#[component]
+pub fn Strip(left: Element, right: Element) -> impl IntoElement {
+    view! {
+        <Group
+            direction="horizontal"
+            width="fill"
+            height={52.0}
+            alignment="center"
+            margin={Margin::x(20.0)}
+        >
+            {left}
+            <Group width="fill" />
+            {right}
+        </Group>
+    }
 }
 
 /// Dark inset arena that bounds a moving element's travel.
-pub fn arena(content: impl IntoElement) -> GroupDef {
+///
+/// NOTE: bodies forward `children` through builder `.children()` (flat) rather
+/// than an RSX `{children}` splice — the splice would route through
+/// `Vec<Element>: IntoElement`, interposing an anonymous wrapper group and
+/// shifting layout. RSX *nesting* at call sites stays free: `view!` hands the
+/// vec straight to the props builder.
+#[component]
+pub fn Arena(children: Vec<Element>) -> impl IntoElement {
     group()
         .direction("vertical")
         .width("fill")
@@ -95,11 +129,12 @@ pub fn arena(content: impl IntoElement) -> GroupDef {
             .height("fill")
             .margin(16.0)
             .alignment("center")
-            .children([content])])
+            .children(children)])
 }
 
 /// Dark status chip carrying a live label, in the floating-HUD idiom.
-pub fn status_chip(label: impl IntoElement) -> GroupDef {
+#[component]
+pub fn StatusChip(children: Vec<Element>) -> impl IntoElement {
     group()
         .direction("horizontal")
         .width("fit")
@@ -112,15 +147,19 @@ pub fn status_chip(label: impl IntoElement) -> GroupDef {
             .height("fill")
             .alignment("center")
             .margin(Margin::x(12.0))
-            .children([label])])
+            .children(children)])
 }
 
 /// White card holding a labelled header, a hairline and a bounded arena.
-pub fn panel(head: impl IntoElement, body: impl IntoElement) -> GroupDef {
-    surface()
+#[component]
+pub fn Panel(head: Element, children: Vec<Element>) -> impl IntoElement {
+    group()
         .direction("vertical")
         .width("fill")
         .height("fill")
+        .radius(16.0)
+        .fill(SURFACE)
+        .stroke(Stroke::inside(1.0, hairline()))
         .children((
             head,
             group().width("fill").height(1.0).fill(hairline()),
@@ -128,27 +167,29 @@ pub fn panel(head: impl IntoElement, body: impl IntoElement) -> GroupDef {
                 .width("fill")
                 .height("fill")
                 .margin(20.0)
-                .children([arena(body)]),
+                .children([Arena(children)]),
         ))
 }
 
 /// Height-filling content area beneath the header; clipped so nothing paints past it.
-pub fn content(body: impl IntoElement) -> GroupDef {
+#[component]
+pub fn Content(children: Vec<Element>) -> impl IntoElement {
     group()
         .direction("vertical")
         .width("fill")
         .height("fill")
         .clip(true)
         .margin(24.0)
-        .children([body])
+        .children(children)
 }
 
 /// Page shell: header block, hairline, then the bounded content area.
-pub fn page(
+#[component]
+pub fn Shell(
     eyebrow_label: &'static str,
     title: &'static str,
     copy: &'static str,
-    body: impl IntoElement,
+    children: Vec<Element>,
 ) -> impl IntoElement {
     group()
         .direction("vertical")
@@ -161,8 +202,8 @@ pub fn page(
                 .width("fill")
                 .gap(8.0)
                 .margin(Margin::sides(28.0, 28.0, 20.0, 28.0))
-                .children((eyebrow(eyebrow_label), heading(title), blurb(copy))),
+                .children((Eyebrow(eyebrow_label), Heading(title), Blurb(copy))),
             group().width("fill").height(1.0).fill(hairline()),
-            content(body),
+            Content(children),
         ))
 }

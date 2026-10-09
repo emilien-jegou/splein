@@ -53,55 +53,62 @@ pub fn Page() -> impl IntoElement {
     let xy = t.clone().map(|v| Transform::from_translation(v * TRAVEL, v * TRAVEL));
     let y_big = t.map(|v| v * TRAVEL);
 
-    page(
-        "TEXT · SMOOTH DRIFT",
-        "Slow text repro.",
-        "Four runs drift at ~15px/s: X, Y and diagonal at 15px (hinted), Y at 22px (unhinted). Step a frame at a time (F8, then '.') — each press advances 1/8px, so every press should visibly blend, never jump. Rest frames stay pixel-crisp.",
-        content(
-            group()
-                .direction("vertical")
-                .width("fill")
-                .height("fill")
-                .gap(16.0)
-                .children((
-                    drift_row("X · 15PX", group().children([drift_text()]).x(x)),
-                    drift_row("Y · 15PX", group().children([drift_text()]).y(y)),
-                    drift_row(
-                        "X+Y · 15PX",
-                        group().children([drift_text()]).transform(xy),
-                    ),
-                    drift_row(
-                        "Y · 22PX",
-                        group().children([drift_text_big()]).y(y_big),
-                    ),
-                )),
-        ),
-    )
+    view! {
+        <Shell
+            eyebrow_label="TEXT · SMOOTH DRIFT"
+            title="Slow text repro."
+            copy="Four runs drift at ~15px/s: X, Y and diagonal at 15px (hinted), Y at 22px (unhinted). Step a frame at a time (F8, then '.') — each press advances 1/8px, so every press should visibly blend, never jump. Rest frames stay pixel-crisp."
+        >
+            <Content>
+                <Group direction="vertical" width="fill" height="fill" gap={16.0}>
+                    <DriftRow
+                        label="X · 15PX"
+                        element={group().children([drift_text()]).x(x)}
+                    />
+                    <DriftRow
+                        label="Y · 15PX"
+                        element={group().children([drift_text()]).y(y)}
+                    />
+                    <DriftRow
+                        label="X+Y · 15PX"
+                        element={group().children([drift_text()]).transform(xy)}
+                    />
+                    <DriftRow
+                        label="Y · 22PX"
+                        element={group().children([drift_text_big()]).y(y_big)}
+                    />
+                </Group>
+            </Content>
+        </Shell>
+    }
 }
 
 /// Fixed-height track holding one drifting run.
-fn drift_row(label: &'static str, element: impl IntoElement) -> GroupDef {
-    group()
-        .direction("horizontal")
-        .width("fill")
-        .height(64.0)
-        .alignment("center")
-        .gap(16.0)
-        .children((
-            group()
-                .width(96.0)
-                .height("fill")
-                .alignment("center")
-                .children([eyebrow(label)]),
-            group()
-                .width("fill")
-                .height("fill")
-                .radius(12.0)
-                .fill(SURFACE)
-                .stroke(Stroke::inside(1.0, hairline()))
-                .alignment("center")
-                .children([element]),
-        ))
+#[component]
+fn DriftRow(label: &'static str, element: Element) -> impl IntoElement {
+    view! {
+        <Group
+            direction="horizontal"
+            width="fill"
+            height={64.0}
+            alignment="center"
+            gap={16.0}
+        >
+            <Group width={96.0} height="fill" alignment="center">
+                <Eyebrow label={label} />
+            </Group>
+            <Group
+                width="fill"
+                height="fill"
+                radius={12.0}
+                fill={SURFACE}
+                stroke={Stroke::inside(1.0, hairline())}
+                alignment="center"
+            >
+                {element}
+            </Group>
+        </Group>
+    }
 }
 
 /// Shared sample copy so all three axes render identical glyphs.

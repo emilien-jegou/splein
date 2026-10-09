@@ -1,7 +1,6 @@
 // Single responsibility: Accordion panels, headers, and the reveal they animate.
 
 use aurora::prelude::*;
-use aurora::reactive::Readable;
 
 use super::motion_ui::*;
 
@@ -38,18 +37,24 @@ pub const OPEN: f32 = 168.0;
 /// component serves both the running demo and a test that drives the signal directly.
 #[component]
 pub fn Page(open: Signal<Option<usize>>) -> impl IntoElement {
-    page(
-        "WEB · 02 — ACCORDION",
-        "One panel open at a time.",
-        "Each item animates its own height from a spring, and the copy fades on the same clock. Because the height is a real layout value rather than an animated box, every sibling below is laid out at the live height and nothing has to be revealed by a clip.",
-        content(panel(
-            strip(
-                stat("LAYOUT", "animated height per item"),
-                stat("MOTION", "spring signal"),
-            ),
-            list(open),
-        )),
-    )
+    view! {
+        <Shell
+            eyebrow_label="WEB · 02 — ACCORDION"
+            title="One panel open at a time."
+            copy="Each item animates its own height from a spring, and the copy fades on the same clock. Because the height is a real layout value rather than an animated box, every sibling below is laid out at the live height and nothing has to be revealed by a clip."
+        >
+            <Content>
+                <Panel
+                    head={<Strip
+                        left={<Stat label="LAYOUT" value="animated height per item" />}
+                        right={<Stat label="MOTION" value="spring signal" />}
+                    />}
+                >
+                    <List open={open} />
+                </Panel>
+            </Content>
+        </Shell>
+    }
 }
 
 /// The four stacked items.
@@ -57,25 +62,43 @@ pub fn Page(open: Signal<Option<usize>>) -> impl IntoElement {
 /// Nothing here declares motion. Each item animates its own height, and this container lays out
 /// at whatever those heights currently are, so a sibling below is positioned by the live height
 /// rather than by an animated box offset from a settled one.
-fn list(open: Signal<Option<usize>>) -> GroupDef {
-    group()
-        .direction("vertical")
-        .width("fill")
-        .height("fill")
-        .gap(12.0)
-        .children((
-            item(0, "What is Aurora?", "A retained layout and compositor engine for Wayland overlays, with a reactive DSL on top.", open.clone()),
-            item(1, "Why does motion not reflow?", "Transforms and opacity are compositor overrides, so they invalidate paint only and never reach the layout pass.", open.clone()),
-            item(2, "Where does the motion live?", "In the component. A spring drives a signal, layout reads that signal, and the engine only lays out and paints what it is given.", open.clone()),
-            item(3, "How do springs settle?", "A damped spring integrates toward its target and reports settled once position and velocity are both inside tolerance.", open),
-        ))
+#[component]
+fn List(open: Signal<Option<usize>>) -> impl IntoElement {
+    view! {
+        <Group direction="vertical" width="fill" height="fill" gap={12.0}>
+            <Item
+                index={0usize}
+                title="What is Aurora?"
+                copy="A retained layout and compositor engine for Wayland overlays, with a reactive DSL on top."
+                open={open.clone()}
+            />
+            <Item
+                index={1usize}
+                title="Why does motion not reflow?"
+                copy="Transforms and opacity are compositor overrides, so they invalidate paint only and never reach the layout pass."
+                open={open.clone()}
+            />
+            <Item
+                index={2usize}
+                title="Where does the motion live?"
+                copy="In the component. A spring drives a signal, layout reads that signal, and the engine only lays out and paints what it is given."
+                open={open.clone()}
+            />
+            <Item
+                index={3usize}
+                title="How do springs settle?"
+                copy="A damped spring integrates toward its target and reports settled once position and velocity are both inside tolerance."
+                open={open}
+            />
+        </Group>
+    }
 }
 
 /// One accordion row whose height is a pure function of the open index.
 ///
 /// Its header owns the click, so nothing outside the tree has to know this item exists.
 #[component]
-fn item(
+fn Item(
     index: usize,
     title: &'static str,
     copy: &'static str,
@@ -94,52 +117,59 @@ fn item(
         }
     }));
 
-    group()
-        .key(format!("panel-{index}"))
-        .direction("vertical")
-        .width("fill")
-        .height(height)
-        .radius(12.0)
-        .clip(true)
-        .fill(SURFACE)
-        .stroke(Stroke::inside(1.0, hairline()))
-        .children((
-            header(index, title, is_open.clone(), open.clone()),
-            panel_body(index, copy, is_open),
-        ))
+    view! {
+        <Group
+            key={format!("panel-{index}")}
+            direction="vertical"
+            width="fill"
+            height={height}
+            radius={12.0}
+            clip={true}
+            fill={SURFACE}
+            stroke={Stroke::inside(1.0, hairline())}
+        >
+            <Header index={index} title={title} is_open={is_open.clone()} open={open} />
+            <PanelBody index={index} copy={copy} is_open={is_open} />
+        </Group>
+    }
 }
 
 /// Clickable header row carrying the item key and its rotating chevron.
-fn header(
+#[component]
+fn Header(
     index: usize,
     title: &'static str,
     is_open: Derived<bool>,
     open: Signal<Option<usize>>,
-) -> GroupDef {
+) -> impl IntoElement {
     let toggle_open = open.clone();
     let toggle_state = is_open.clone();
     let degrees = is_open.map(move |open| if open { 180.0 } else { 0.0 });
 
-    group()
-        .key(format!("item-{index}"))
-        .direction("horizontal")
-        .width("fill")
-        .height(HEADER)
-        .alignment("center")
-        .margin(Margin::x(20.0))
-        .gap(12.0)
-        .on_click(move |_| {
-            toggle_open.set(if toggle_state.get() {
-                None
-            } else {
-                Some(index)
-            });
-        })
-        .children((
-            text(title).size(14.0).weight(600).color(INK),
-            group().width("fill"),
-            chevron(degrees),
-        ))
+    view! {
+        <Group
+            key={format!("item-{index}")}
+            direction="horizontal"
+            width="fill"
+            height={HEADER}
+            alignment="center"
+            margin={Margin::x(20.0)}
+            gap={12.0}
+            on:click={{
+                move |_| {
+                    toggle_open.set(if toggle_state.get() {
+                        None
+                    } else {
+                        Some(index)
+                    });
+                }
+            }}
+        >
+            <Text size={14.0} weight={600u16} color={INK}>{title}</Text>
+            <Group width="fill" />
+            <Chevron degrees={degrees} />
+        </Group>
+    }
 }
 
 /// Revealed copy that fades with this item's own open state.
@@ -150,37 +180,53 @@ fn header(
 /// The copy is selectable body text: press-drag highlights it natively. The header title
 /// above deliberately stays plain — it owns the open/close click, and a selectable title
 /// would turn every drifted press into a drag and swallow the toggle.
-fn panel_body(index: usize, copy: &'static str, is_open: Derived<bool>) -> impl IntoElement {
+#[component]
+fn PanelBody(index: usize, copy: &'static str, is_open: Derived<bool>) -> impl IntoElement {
     // The copy fades on the same clock as the box, so it never appears before the reveal.
     let reveal =
-        Transition::from_str("out-cubic 180ms")
-            .on(is_open.map(move |open| if open { 1.0 } else { 0.0 }));
-    group()
-        .direction("vertical")
-        .width("fill")
-        .height("fill")
-        // Centre on the main axis, which for a column is vertical. This is what gives the box's
-        // travel something to reveal: the copy is uncovered from both edges at once instead of
-        // sitting under the header with the whole lower half of the panel to fill.
-        .distribution("center")
-        .margin(Margin::sides(0.0, 20.0, BODY_PAD, 20.0))
-        .opacity(reveal)
-        .children([text(copy)
-            .key(format!("copy-{index}"))
-            .selectable(true)
-            .size(13.0)
-            .line_height(COPY_LINE)
-            .color(BODY)
-            .width("fill")])
+        Transition::from_str("out-cubic 180ms").on(is_open.map(move |open| {
+            if open {
+                1.0
+            } else {
+                0.0
+            }
+        }));
+    view! {
+        <Group
+            direction="vertical"
+            width="fill"
+            height="fill"
+            // Centre on the main axis, which for a column is vertical. This is what gives the box's
+            // travel something to reveal: the copy is uncovered from both edges at once instead of
+            // sitting under the header with the whole lower half of the panel to fill.
+            distribution="center"
+            margin={Margin::sides(0.0, 20.0, BODY_PAD, 20.0)}
+            opacity={reveal}
+        >
+            <Text
+                key={format!("copy-{index}")}
+                selectable={true}
+                size={13.0}
+                line_height={COPY_LINE}
+                color={BODY}
+                width="fill"
+            >{copy}</Text>
+        </Group>
+    }
 }
 
 /// Rotating chevron driven by the item's own animated angle.
-fn chevron(degrees: impl Readable<f32> + 'static) -> impl IntoElement {
-    group()
-        .width(18.0)
-        .height(18.0)
-        .alignment("center")
-        .distribution("center")
-        .rotate_degrees_from(degrees)
-        .children([text("^").size(13.0).weight(700).color(MUTED)])
+#[component]
+fn Chevron(degrees: Derived<f32>) -> impl IntoElement {
+    view! {
+        <Group
+            width={18.0}
+            height={18.0}
+            alignment="center"
+            distribution="center"
+            rotate_degrees_from={degrees}
+        >
+            <Text size={13.0} weight={700u16} color={MUTED}>"^"</Text>
+        </Group>
+    }
 }

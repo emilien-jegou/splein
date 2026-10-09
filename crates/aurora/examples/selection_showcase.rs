@@ -111,62 +111,85 @@ fn main() {
 }
 
 /// Page body: selectable copy, a live status card, and the gesture cheat sheet.
-#[allow(non_snake_case)]
+#[component]
 pub fn Page(status: Signal<String>, clipboard: Signal<String>) -> impl IntoElement {
-    page(
-        "TEXT · 01 — SELECTION",
-        "One gesture, many runs.",
-        "Every paragraph below is selectable body copy. Drag inside one, or sweep across several: the highlight spans runs, Shift-click extends from the anchor, and Ctrl+C copies to the OS clipboard.",
-        content(
-            group()
-                .direction("vertical")
-                .width("fill")
-                .gap(12.0)
-                .children((
-                    para("show-a", "Aurora keeps one layout and compositor engine under a reactive DSL, so a paragraph is shaped once and every caret, word edge, and highlight rect derives from that same layout."),
-                    para("show-b", "Transforms and opacity are compositor overrides: they invalidate paint only and never reach the layout pass, which is why dragging a selection over animated chrome stays exact."),
-                    para("show-c", "A spring drives a signal, layout reads that signal, and the engine only lays out and paints what it is given — press into the copy while panels animate and the anchor still resolves."),
-                    status_card(status, clipboard),
-                    cheat_sheet(),
-                )),
-        ),
-    )
+    view! {
+        <Shell
+            eyebrow_label="TEXT · 01 — SELECTION"
+            title="One gesture, many runs."
+            copy="Every paragraph below is selectable body copy. Drag inside one, or sweep across several: the highlight spans runs, Shift-click extends from the anchor, and Ctrl+C copies to the OS clipboard."
+        >
+            <Content>
+                <Group direction="vertical" width="fill" gap={12.0}>
+                    <Para
+                        hk="show-a"
+                        copy="Aurora keeps one layout and compositor engine under a reactive DSL, so a paragraph is shaped once and every caret, word edge, and highlight rect derives from that same layout."
+                    />
+                    <Para
+                        hk="show-b"
+                        copy="Transforms and opacity are compositor overrides: they invalidate paint only and never reach the layout pass, which is why dragging a selection over animated chrome stays exact."
+                    />
+                    <Para
+                        hk="show-c"
+                        copy="A spring drives a signal, layout reads that signal, and the engine only lays out and paints what it is given — press into the copy while panels animate and the anchor still resolves."
+                    />
+                    <StatusCard status={status} clipboard={clipboard} />
+                    <CheatSheet />
+                </Group>
+            </Content>
+        </Shell>
+    }
 }
 
-fn para(key: &'static str, copy: &'static str) -> impl IntoElement {
-    text(copy)
-        .key(key)
-        .selectable(true)
-        .size(13.0)
-        .line_height(20.0)
-        .color(BODY)
-        .width("fill")
-        .into_element()
+#[component]
+fn Para(hk: &'static str, copy: &'static str) -> impl IntoElement {
+    view! {
+        <Text
+            key={hk}
+            selectable={true}
+            size={13.0}
+            line_height={20.0}
+            color={BODY}
+            width="fill"
+        >{copy}</Text>
+    }
 }
 
-fn status_card(status: Signal<String>, clipboard: Signal<String>) -> GroupDef {
-    surface()
-        .direction("vertical")
-        .width("fill")
-        .gap(6.0)
-        .margin(16.0)
-        .children((
-            eyebrow("LIVE SELECTION"),
-            text(status).size(12.0).color(INK),
-            eyebrow("OS CLIPBOARD"),
-            text(clipboard).size(12.0).color(INK),
-        ))
+#[component]
+fn StatusCard(status: Signal<String>, clipboard: Signal<String>) -> impl IntoElement {
+    view! {
+        <Group
+            direction="vertical"
+            width="fill"
+            gap={6.0}
+            margin={16.0}
+            radius={16.0}
+            fill={SURFACE}
+            stroke={Stroke::inside(1.0, hairline())}
+        >
+            <Eyebrow label="LIVE SELECTION" />
+            <Text size={12.0} color={INK}>{status}</Text>
+            <Eyebrow label="OS CLIPBOARD" />
+            <Text size={12.0} color={INK}>{clipboard}</Text>
+        </Group>
+    }
 }
 
-fn cheat_sheet() -> GroupDef {
-    group().direction("vertical").gap(2.0).children((
-        hint("drag — select chars · across runs spans them"),
-        hint("double-click — word · triple-click — paragraph"),
-        hint("shift+click — extend from the anchor"),
-        hint("ctrl+C — copy to OS clipboard · escape — collapse"),
-    ))
+#[component]
+fn CheatSheet() -> impl IntoElement {
+    view! {
+        <Group direction="vertical" gap={2.0}>
+            <Hint copy="drag — select chars · across runs spans them" />
+            <Hint copy="double-click — word · triple-click — paragraph" />
+            <Hint copy="shift+click — extend from the anchor" />
+            <Hint copy="ctrl+C — copy to OS clipboard · escape — collapse" />
+        </Group>
+    }
 }
 
-fn hint(copy: &'static str) -> impl IntoElement {
-    text(copy).size(11.0).color(MUTED).into_element()
+#[component]
+fn Hint(copy: &'static str) -> impl IntoElement {
+    view! {
+        <Text size={11.0} color={MUTED}>{copy}</Text>
+    }
 }

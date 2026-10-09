@@ -4,11 +4,15 @@ use crate::dsl::component::IntoElement;
 use crate::dsl::element::Element;
 use crate::foundation::{Anchor, Key, Margin, Size};
 use crate::tree::Primitive;
+use std::rc::Rc;
 
 /// Declarative element builder for custom primitives with layout and anchoring.
+#[derive(Clone)]
 pub struct CustomDef {
     pub key: Option<Key>,
-    pub primitive: Box<dyn Primitive>,
+    /// Shared render primitive. Cloning shares rather than duplicates: primitives
+    /// are stateless (`measure`/`paint` take `&self`), so a refcount bump is exact.
+    pub primitive: Rc<dyn Primitive>,
     pub width: Option<Size>,
     pub height: Option<Size>,
     pub margin: Margin,
@@ -22,7 +26,7 @@ pub struct CustomDef {
 pub fn custom<P: Primitive + 'static>(primitive: P) -> CustomDef {
     CustomDef {
         key: None,
-        primitive: Box::new(primitive),
+        primitive: Rc::new(primitive),
         width: None,
         height: None,
         margin: Margin::ZERO,

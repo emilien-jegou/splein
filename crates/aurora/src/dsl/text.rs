@@ -10,6 +10,7 @@ use crate::text::{
 };
 
 /// Declarative element builder for configured typography nodes.
+#[derive(Clone)]
 pub struct TextDef {
     /// Optional diffing reconciliation key.
     pub key: Option<Key>,

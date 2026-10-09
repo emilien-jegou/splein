@@ -55,62 +55,72 @@ fn slider(
         let fmt = Rc::clone(&fmt);
         move || fmt(value.get())
     });
-    group()
-        .direction("vertical")
-        .gap(4.0)
-        .children((
-            group()
-                .direction("horizontal")
-                .gap(8.0)
-                .alignment("center")
-                .children((
-                    text(label).size(13.0).color(0x333333),
-                    text(readout).size(13.0).color(0x111111),
-                )),
-            group()
-                .width(TRACK_W)
-                .height(TRACK_H)
-                .radius(6.0)
-                .fill(0xD8D5D0)
-                .hit_test(HitTest::Opaque)
-                .on_drag_start({
-                    let (value, start_val, start_x) = (value.clone(), start_val.clone(), start_x.clone());
+    let track_value = value.clone();
+    let step_value = value.clone();
+    let start = start_val.clone();
+    let start_x_handle = start_x.clone();
+    view! {
+        <Group direction="vertical" gap={4.0}>
+            <Group direction="horizontal" gap={8.0} alignment="center">
+                <Text size={13.0} color={0x333333}>{label}</Text>
+                <Text size={13.0} color={0x111111}>{readout}</Text>
+            </Group>
+            <Group
+                width={TRACK_W}
+                height={TRACK_H}
+                radius={6.0}
+                fill={0xD8D5D0}
+                hit_test={HitTest::Opaque}
+                on:drag-start={{
                     move |info: &DragInfo| {
-                        start_val.set(value.get());
+                        start_val.set(track_value.get());
                         start_x.set(info.position.x);
                     }
-                })
-                .on_drag_step(move |info: &DragInfo| {
-                    let travel = info.position.x - start_x.get();
-                    value.set((start_val.get() + travel * (max - min) / TRACK_W).clamp(min, max));
-                })
-                .children([group()
-                    .width(THUMB_W)
-                    .height(20.0)
-                    .radius(7.0)
-                    .fill(0x483050)
-                    .x(thumb_x)
+                }}
+                on:drag-step={{
+                    move |info: &DragInfo| {
+                        let travel = info.position.x - start_x_handle.get();
+                        step_value.set(
+                            (start.get() + travel * (max - min) / TRACK_W).clamp(min, max),
+                        );
+                    }
+                }}
+            >
+                <Group
+                    width={THUMB_W}
+                    height={20.0}
+                    radius={7.0}
+                    fill={0x483050}
+                    x={thumb_x}
                     // Static pose values are dropped by the reconciler;
                     // positions must be closures.
-                    .y(move || 4.0)
-                    .hit_test(HitTest::Passthrough)]),
-        ))
-        .into_element()
+                    y={{move || 4.0}}
+                    hit_test={HitTest::Passthrough}
+                />
+            </Group>
+        </Group>
+    }
+    .into_element()
 }
 
 /// A small labeled button.
 fn button(label: DynamicProp<String>, on_press: impl Fn() + 'static) -> Element {
-    group()
-        .width(150.0)
-        .height(34.0)
-        .radius(8.0)
-        .fill(0x483050)
-        .alignment("center")
-        .distribution("center")
-        .hit_test(HitTest::Opaque)
-        .on_click(move |_| on_press())
-        .children([text(label).size(13.0).color(Color::WHITE)])
-        .into_element()
+    view! {
+        <Group
+            width={150.0}
+            height={34.0}
+            radius={8.0}
+            fill={0x483050}
+            alignment="center"
+            distribution="center"
+            hit_test={HitTest::Opaque}
+            on:click={{
+                move |_| on_press()
+            }}
+        >
+            <Text size={13.0} color={Color::WHITE}>{label}</Text>
+        </Group>
+    }
 }
 
 fn main() {
@@ -230,154 +240,145 @@ fn main() {
                 let mode = mode.clone();
                 move || mode.get() == 1
             });
-            group()
-                .direction("horizontal")
-                .width("fill")
-                .height("fill")
-                .fill(0xE8E6E1)
-                .alignment("center")
-                .children([
+            view! {
+                <Group
+                    direction="horizontal"
+                    width="fill"
+                    height="fill"
+                    fill={0xE8E6E1}
+                    alignment="center"
+                >
                     // Control panel.
-                    group()
-                        .direction("vertical")
-                        .gap(12.0)
-                        .margin(28.0)
-                        .children((
-                            button(mode_name.clone(), {
-                                let mode = mode.clone();
-                                move || mode.set((mode.get() + 1) % 3)
-                            }),
-                            group()
-                                .direction("vertical")
-                                .gap(12.0)
-                                .visible(in_web.clone())
-                                .children((
-                                    slider(&rt, "offset X", ox.clone(), -40.0, 40.0, fpx.clone()),
-                                    slider(&rt, "offset Y", oy.clone(), -40.0, 40.0, fpx.clone()),
-                                    slider(&rt, "blur", blur.clone(), 0.0, 40.0, fpx.clone()),
-                                )),
-                            group()
-                                .direction("vertical")
-                                .gap(12.0)
-                                .visible(in_elev.clone())
-                                .children([slider(
-                                    &rt,
-                                    "elevation",
-                                    elevation.clone(),
-                                    0.0,
-                                    32.0,
-                                    fpx.clone(),
-                                )]),
-                            slider(&rt, "spread", spread.clone(), -12.0, 24.0, fpx.clone()),
-                            slider(&rt, "opacity", opacity.clone(), 0.0, 1.0, fop.clone()),
-                            group()
-                                .direction("horizontal")
-                                .gap(8.0)
-                                .children([
-                                    swatch(tint.clone(), Color::BLACK),
-                                    swatch(tint.clone(), 0x7A3D8F),
-                                    swatch(tint.clone(), 0x2563EB),
-                                ]),
-                            button(
-                                {
-                                    let falloff_idx = falloff_idx.clone();
-                                    computed(move || {
-                                        format!(
-                                            "falloff: {}",
-                                            FALLOFFS[falloff_idx.get().clamp(0, 2) as usize].1
-                                        )
-                                    })
-                                },
-                                {
-                                    let falloff_idx = falloff_idx.clone();
-                                    move || falloff_idx.set((falloff_idx.get() + 1) % 3)
-                                },
-                            ),
-                            button(
-                                {
-                                    let multiply = multiply.clone();
-                                    computed(move || {
-                                        if multiply.get() {
-                                            "blend: multiply".to_string()
-                                        } else {
-                                            "blend: normal".to_string()
-                                        }
-                                    })
-                                },
-                                {
-                                    let multiply = multiply.clone();
-                                    move || multiply.set(!multiply.get())
-                                },
-                            ),
-                            button(
-                                {
-                                    let alpha_shape = alpha_shape.clone();
-                                    computed(move || {
-                                        if alpha_shape.get() {
-                                            "shape: alpha".to_string()
-                                        } else {
-                                            "shape: box".to_string()
-                                        }
-                                    })
-                                },
-                                {
-                                    let alpha_shape = alpha_shape.clone();
-                                    move || alpha_shape.set(!alpha_shape.get())
-                                },
-                            ),
-                            text(css.clone()).size(12.0).color(0x555555),
-                        )),
+                    <Group direction="vertical" gap={12.0} margin={28.0}>
+                        {button(mode_name.clone(), {
+                            let mode = mode.clone();
+                            move || mode.set((mode.get() + 1) % 3)
+                        })}
+                        <Group direction="vertical" gap={12.0} visible={in_web.clone()}>
+                            {slider(&rt, "offset X", ox.clone(), -40.0, 40.0, fpx.clone())}
+                            {slider(&rt, "offset Y", oy.clone(), -40.0, 40.0, fpx.clone())}
+                            {slider(&rt, "blur", blur.clone(), 0.0, 40.0, fpx.clone())}
+                        </Group>
+                        <Group direction="vertical" gap={12.0} visible={in_elev.clone()}>
+                            {slider(
+                                &rt,
+                                "elevation",
+                                elevation.clone(),
+                                0.0,
+                                32.0,
+                                fpx.clone(),
+                            )}
+                        </Group>
+                        {slider(&rt, "spread", spread.clone(), -12.0, 24.0, fpx.clone())}
+                        {slider(&rt, "opacity", opacity.clone(), 0.0, 1.0, fop.clone())}
+                        <Group direction="horizontal" gap={8.0}>
+                            {swatch(tint.clone(), Color::BLACK)}
+                            {swatch(tint.clone(), 0x7A3D8F)}
+                            {swatch(tint.clone(), 0x2563EB)}
+                        </Group>
+                        {button(
+                            {
+                                let falloff_idx = falloff_idx.clone();
+                                computed(move || {
+                                    format!(
+                                        "falloff: {}",
+                                        FALLOFFS[falloff_idx.get().clamp(0, 2) as usize].1
+                                    )
+                                })
+                            },
+                            {
+                                let falloff_idx = falloff_idx.clone();
+                                move || falloff_idx.set((falloff_idx.get() + 1) % 3)
+                            },
+                        )}
+                        {button(
+                            {
+                                let multiply = multiply.clone();
+                                computed(move || {
+                                    if multiply.get() {
+                                        "blend: multiply".to_string()
+                                    } else {
+                                        "blend: normal".to_string()
+                                    }
+                                })
+                            },
+                            {
+                                let multiply = multiply.clone();
+                                move || multiply.set(!multiply.get())
+                            },
+                        )}
+                        {button(
+                            {
+                                let alpha_shape = alpha_shape.clone();
+                                computed(move || {
+                                    if alpha_shape.get() {
+                                        "shape: alpha".to_string()
+                                    } else {
+                                        "shape: box".to_string()
+                                    }
+                                })
+                            },
+                            {
+                                let alpha_shape = alpha_shape.clone();
+                                move || alpha_shape.set(!alpha_shape.get())
+                            },
+                        )}
+                        <Text size={12.0} color={0x555555}>{css.clone()}</Text>
+                    </Group>
                     // Preview stage.
-                    group()
-                        .width("fill")
-                        .height("fill")
-                        .fill(0xF1CFFC)
-                        .alignment("center")
-                        .distribution("center")
-                        .children([group()
-                            .direction("horizontal")
-                            .gap(48.0)
-                            .alignment("center")
-                            .children((
-                                group()
-                                    .width(150.0)
-                                    .height(150.0)
-                                    .radius(8.0)
-                                    .fill(Color::WHITE)
-                                    .shadow(shadow.clone()),
-                                group()
-                                    .light(LightEnvironment::from_angles(270.0, 45.0))
-                                    .direction("vertical")
-                                    .gap(8.0)
-                                    .alignment("center")
-                                    .children((
-                                        group()
-                                            .width(110.0)
-                                            .height(110.0)
-                                            .radius(8.0)
-                                            .fill(Color::WHITE)
-                                            .shadow(12.0),
-                                        text("light az 270")
-                                            .size(12.0)
-                                            .color(0x483050),
-                                    )),
-                            ))]),
-                ])
+                    <Group
+                        width="fill"
+                        height="fill"
+                        fill={0xF1CFFC}
+                        alignment="center"
+                        distribution="center"
+                    >
+                        <Group direction="horizontal" gap={48.0} alignment="center">
+                            <Group
+                                width={150.0}
+                                height={150.0}
+                                radius={8.0}
+                                fill={Color::WHITE}
+                                shadow={shadow.clone()}
+                            />
+                            <Group
+                                light={LightEnvironment::from_angles(270.0, 45.0)}
+                                direction="vertical"
+                                gap={8.0}
+                                alignment="center"
+                            >
+                                <Group
+                                    width={110.0}
+                                    height={110.0}
+                                    radius={8.0}
+                                    fill={Color::WHITE}
+                                    shadow={12.0}
+                                />
+                                <Text size={12.0} color={0x483050}>"light az 270"</Text>
+                            </Group>
+                        </Group>
+                    </Group>
+                </Group>
+            }
         });
 }
 
 /// A tint swatch button writing `color` (alpha preserved from current).
 fn swatch(tint: Signal<Color>, color: impl Into<Color>) -> Element {
     let color = color.into();
-    group()
-        .width(36.0)
-        .height(28.0)
-        .radius(6.0)
-        .fill(color)
-        .hit_test(HitTest::Opaque)
-        .on_click(move |_| {
-            let a = tint.get().a;
-            tint.set(color.with_alpha(a));
-        })
-        .into_element()
+    view! {
+        <Group
+            width={36.0}
+            height={28.0}
+            radius={6.0}
+            fill={color}
+            hit_test={HitTest::Opaque}
+            on:click={{
+                move |_| {
+                    let a = tint.get().a;
+                    tint.set(color.with_alpha(a));
+                }
+            }}
+        />
+    }
 }

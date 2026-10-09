@@ -42,46 +42,45 @@ pub fn Page() -> impl IntoElement {
 
     let x = Transition::from_str("spring").on(target);
 
-    page(
-        "MOTION · 03C — INTERRUPTION",
-        "Retarget mid-flight without a single pop.",
-        "A snappy spring needs roughly 600ms to settle, but it is retargeted every 450ms. Each retarget adopts the live position and velocity, so the card never jumps.",
-        content(panel(
-            strip(
-                stat("CADENCE", "retarget every 450ms"),
-                stat("CARRY", "position + velocity"),
-            ),
-            card().x(x),
-        )),
-    )
+    view! {
+        <Shell
+            eyebrow_label="MOTION · 03C — INTERRUPTION"
+            title="Retarget mid-flight without a single pop."
+            copy="A snappy spring needs roughly 600ms to settle, but it is retargeted every 450ms. Each retarget adopts the live position and velocity, so the card never jumps."
+        >
+            <Content>
+                <Panel
+                    head={<Strip
+                        left={<Stat label="CADENCE" value="retarget every 450ms" />}
+                        right={<Stat label="CARRY" value="position + velocity" />}
+                    />}
+                >
+                    <Card x={x} />
+                </Panel>
+            </Content>
+        </Shell>
+    }
 }
 
-fn card() -> GroupDef {
-    group()
-        .key("card")
-        .direction("vertical")
-        .width(180.0)
-        .height("fill")
-        .radius(16.0)
-        .fill(ACCENT)
-        .shadow(Shadow::web_like(
-            0.0,
-            10.0,
-            30.0,
-            0.0,
-            Color::hex_alpha(ACCENT, 0.30),
-        ))
-        .alignment("center")
-        .distribution("center")
-        .gap(6.0)
-        .children((
-            text("SPRING")
-                .size(11.0)
-                .weight(700)
-                .color(Color::white_alpha(0.70)),
-            text("snappy").size(18.0).weight(700).color(Color::WHITE),
-            text("retargeted 450ms")
-                .size(12.0)
-                .color(Color::white_alpha(0.72)),
-        ))
+#[component]
+fn Card(x: Signal<f32>) -> impl IntoElement {
+    view! {
+        <Group
+            key="card"
+            direction="vertical"
+            width={180.0}
+            height="fill"
+            radius={16.0}
+            fill={ACCENT}
+            shadow={Shadow::web_like(0.0, 10.0, 30.0, 0.0, Color::hex_alpha(ACCENT, 0.30))}
+            alignment="center"
+            distribution="center"
+            gap={6.0}
+            x={x}
+        >
+            <Text size={11.0} weight={700u16} color={Color::white_alpha(0.70)}>"SPRING"</Text>
+            <Text size={18.0} weight={700u16} color={Color::WHITE}>"snappy"</Text>
+            <Text size={12.0} color={Color::white_alpha(0.72)}>"retargeted 450ms"</Text>
+        </Group>
+    }
 }

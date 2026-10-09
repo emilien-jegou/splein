@@ -89,18 +89,24 @@ pub fn Page() -> impl IntoElement {
         list: use_ref(),
     });
 
-    page(
-        "WEB · 04 — DRAG TO REORDER",
-        "Grab a row, drop it anywhere in the list.",
-        "While held, the row follows the pointer as a compositor transform, so layout never runs. Crossing a row swaps the list once, and every other row springs from where it was to where layout now puts it. All of it is measured, so squashing the window mid-drag stays exact.",
-        content(panel(
-            strip(
-                stat("DRAG", "compositor transform"),
-                stat("SWAP", "measured FLIP"),
-            ),
-            list(drag),
-        )),
-    )
+    view! {
+        <Shell
+            eyebrow_label="WEB · 04 — DRAG TO REORDER"
+            title="Grab a row, drop it anywhere in the list."
+            copy="While held, the row follows the pointer as a compositor transform, so layout never runs. Crossing a row swaps the list once, and every other row springs from where it was to where layout now puts it. All of it is measured, so squashing the window mid-drag stays exact."
+        >
+            <Content>
+                <Panel
+                    head={<Strip
+                        left={<Stat label="DRAG" value="compositor transform" />}
+                        right={<Stat label="SWAP" value="measured FLIP" />}
+                    />}
+                >
+                    {list(drag)}
+                </Panel>
+            </Content>
+        </Shell>
+    }
 }
 
 /// The state the gesture needs, shared by every row.
@@ -176,10 +182,11 @@ impl Drag {
 
 /// The list, whose rows are rebuilt whenever the order signal changes.
 ///
-/// Rows are keyed by label through `children_labels_keyed`, which is what lets each row's hook
-/// state — its FLIP above all — survive the rebuild. Keyed by position instead, a reorder would
-/// hand each row the animation of whichever item moved into its index.
-fn list(drag: Rc<Drag>) -> GroupDef {
+/// Rows are keyed by label through `<for>`, which is what lets each row's hook
+/// state — its FLIP above all — survive the rebuild. Keyed by position instead,
+/// a reorder would hand each row the animation of whichever item moved into
+/// its index.
+fn list(drag: Rc<Drag>) -> impl IntoElement {
     let rows = drag.order.clone();
     let items = rows.map({
         let drag = drag.clone();
@@ -193,18 +200,25 @@ fn list(drag: Rc<Drag>) -> GroupDef {
                 .collect::<Vec<_>>()
         }
     });
+    let list_ref = drag.list.clone();
 
-    group()
-        .key("list")
-        .direction("vertical")
-        .width("fill")
-        .height("fill")
-        .gap(GAP)
-        // Bound so the gesture can read the row boxes. Nothing is published into a signal: the
-        // gesture reads them when the pointer moves, and a measurement that invalidated
-        // subscribers would keep the redraw loop awake over a list that is not moving.
-        .bind_ref(drag.list.clone())
-        .children_labels_keyed(items, |spec: &RowSpec| spec.label.clone(), Row)
+    view! {
+        <Group
+            key="list"
+            direction="vertical"
+            width="fill"
+            height="fill"
+            gap={GAP}
+            // Bound so the gesture can read the row boxes. Nothing is published into a signal: the
+            // gesture reads them when the pointer moves, and a measurement that invalidated
+            // subscribers would keep the redraw loop awake over a list that is not moving.
+            ref={list_ref}
+        >
+            <for (i, spec) in items key={.label.clone()}>
+                <Row index={i} spec={spec} />
+            </for>
+        </Group>
+    }
 }
 
 /// One row: its own FLIP, its own pointer follow, and the two summed into one transform.
