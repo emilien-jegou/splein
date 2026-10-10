@@ -34,7 +34,7 @@ use crate::dsl::component::IntoElement;
 use crate::dsl::element::Element;
 use crate::foundation::{Color, Key as NodeKey};
 use crate::input::CursorIcon;
-use crate::reactive::{Cx, ReactiveRuntime, Signal};
+use crate::reactive::{ambient_guard, Cx, ReactiveRuntime, Signal};
 use crate::runtime::Engine;
 
 /// Id of the grub-style menu demo (never listed in the menu itself).
@@ -512,6 +512,16 @@ fn run_switchable_loop(
                     .as_ref()
                     .is_some_and(|d| d.window.id() == window_id);
                 if to_debug {
+                    // Guard the debug runtime: panel signals resolve against
+                    // it even though the app engine framed last (or vice
+                    // versa). Without this, any panel signal touch outside
+                    // the debug engine's driven regions panics on epoch
+                    // mismatch.
+                    let rt = debug
+                        .as_ref()
+                        .map(|d| Rc::clone(&d.runtime))
+                        .expect("debug routed without window");
+                    let _dbg_guard = ambient_guard(&rt);
                     match event {
                         WindowEvent::KeyboardInput { event: key, .. }
                             if key.state == ElementState::Pressed
@@ -573,6 +583,12 @@ fn run_switchable_loop(
                     }
                     return;
                 }
+                // Guard the session runtime for the whole app branch: menu
+                // state, boots (whose derived values evaluate eagerly) and
+                // extension touches all resolve session signals outside any
+                // driven region here. Nesting the engine's own guards inside
+                // frames/dispatch is harmless (same runtime).
+                let _app_guard = ambient_guard(&runtime);
                 // Window-level keys first: menu, combine, cycle, exit.
                 if let WindowEvent::KeyboardInput { event: key, .. } = &event {
                     let switch = key.state == ElementState::Pressed

@@ -146,3 +146,52 @@ fn external_access_needs_no_guard_single_engine() {
     flag.update(|v| *v = !*v);
     assert!(flag.get());
 }
+
+/// With two live runtimes, an unguarded touch resolves against whatever ran
+/// last and panics on mismatch. This is the studio F5 crash shape: menu
+/// signals touched from the event loop after the debug engine's frames
+/// moved the last-active record elsewhere.
+#[test]
+#[ntest::timeout(5_000)]
+#[should_panic(expected = "outside its engine")]
+fn unguarded_touch_after_other_engine_framed_panics() {
+    let rt_a = Rc::new(RefCell::new(ReactiveRuntime::new()));
+    let sig_a = Signal::new(Rc::clone(&rt_a), 0u32);
+    let rt_b = Rc::new(RefCell::new(ReactiveRuntime::new()));
+    let _sig_b = Signal::new(Rc::clone(&rt_b), 0u32);
+    // B framed last: the last-active record now names B.
+    {
+        let _guard = aurora::reactive::ambient_guard(&rt_b);
+    }
+    // Untouched by any guard, A's handle no longer resolves.
+    sig_a.set(1);
+}
+
+/// The remedy the panic message prescribes: guarding the owning runtime
+/// makes loop-level signal touches resolve regardless of who framed last.
+/// The studio event loop guards per window (app arm: session runtime,
+/// debug arm: debug runtime) for exactly this reason.
+#[test]
+#[ntest::timeout(5_000)]
+fn guarded_access_works_despite_stale_last_record() {
+    let rt_a = Rc::new(RefCell::new(ReactiveRuntime::new()));
+    let sig_a = Signal::new(Rc::clone(&rt_a), 0u32);
+    let rt_b = Rc::new(RefCell::new(ReactiveRuntime::new()));
+    let sig_b = Signal::new(Rc::clone(&rt_b), 0u32);
+    // B framed last.
+    {
+        let _guard = aurora::reactive::ambient_guard(&rt_b);
+    }
+    // Guarded app-arm access resolves A.
+    {
+        let _guard = aurora::reactive::ambient_guard(&rt_a);
+        sig_a.set(1);
+        assert_eq!(sig_a.get(), 1);
+    }
+    // And the other arm still resolves B.
+    {
+        let _guard = aurora::reactive::ambient_guard(&rt_b);
+        sig_b.set(2);
+        assert_eq!(sig_b.get(), 2);
+    }
+}
