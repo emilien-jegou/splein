@@ -18,7 +18,7 @@ extern crate aurora_shared as aurora;
 use aurora::dsl::IntoElement;
 use aurora::hot_reload::remote::{
     RemoteDirection, RemoteNode, RemoteSize, RemoteSnapshot, RemoteStateDecl, RemoteText,
-    StateWrite,
+    StateWrite, REMOTE_ABI_VERSION,
 };
 use aurora::hot_reload::COMPONENT_ABI_VERSION;
 use aurora::prelude::*;
@@ -83,9 +83,14 @@ pub extern "Rust" fn aurora_component_root() -> aurora::dsl::Element {
 }
 
 /// State keys and the values fresh keys start at. Live values always win over these.
+/// Remote-protocol version the host checks before installing entry points.
 #[no_mangle]
-pub extern "Rust" fn aurora_remote_state() -> RemoteStateDecl {
-    RemoteStateDecl {
+pub extern "Rust" fn aurora_remote_version() -> u32 {
+    REMOTE_ABI_VERSION
+}
+
+#[no_mangle]
+pub extern "Rust" fn aurora_remote_state() -> RemoteStateDecl {    RemoteStateDecl {
         f32s: vec![("taps".to_string(), 0.0)],
         strings: vec![],
         bools: vec![("open".to_string(), false)],

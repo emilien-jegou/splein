@@ -39,6 +39,9 @@ pub struct ComponentReloadExtension {
     /// Current root entry point, read by the installed factory on every rebuild.
     shared_root: Rc<Cell<Option<ComponentRootFn>>>,
     factory_installed: bool,
+    /// A fresh library was observed where no engine was available (idle poll). Latched
+    /// so the next frame swaps instead of the observation being lost.
+    pending_activation: bool,
 }
 
 impl ComponentReloadExtension {
@@ -48,6 +51,7 @@ impl ComponentReloadExtension {
             dev: DevLoop::new(config),
             shared_root: Rc::new(Cell::new(None)),
             factory_installed: false,
+            pending_activation: false,
         }
     }
 
@@ -116,15 +120,39 @@ impl ComponentReloadExtension {
 
 impl AppExtension for ComponentReloadExtension {
     /// Wakes the loop while the dev cycle needs frames (build running or sources changed).
+    /// A `LibraryReady` observed here latches `pending_activation` (no engine access to
+    /// swap with) so the next frame swaps instead of dropping the observation.
     fn on_idle(&mut self) -> bool {
-        !matches!(self.dev.poll(), PollOutcome::Idle)
-    }
-
-    fn on_update(&mut self, engine: &mut Engine) -> bool {
+        if self.pending_activation {
+            return true;
+        }
         match self.dev.poll() {
-            PollOutcome::LibraryReady => self.activate_fresh_library(engine),
+            PollOutcome::LibraryReady => {
+                self.pending_activation = true;
+                true
+            }
             PollOutcome::Building | PollOutcome::Settled => true,
             PollOutcome::Idle => false,
         }
+    }
+
+    fn on_update(&mut self, engine: &mut Engine) -> bool {
+        let mut redraw = false;
+        if self.pending_activation {
+            self.pending_activation = false;
+            redraw |= self.activate_fresh_library(engine);
+        }
+        match self.dev.poll() {
+            PollOutcome::LibraryReady => redraw |= self.activate_fresh_library(engine),
+            PollOutcome::Building | PollOutcome::Settled => redraw = true,
+            PollOutcome::Idle => {}
+        }
+        // A failed build explains itself through stats (HUD/panel read these); the loop
+        // itself waits for the next save rather than retrying blindly.
+        if let Some((cause, log)) = self.dev.take_build_error() {
+            engine.hot_reload_mut().record_build_failure(cause, log);
+            redraw = true;
+        }
+        redraw
     }
 }

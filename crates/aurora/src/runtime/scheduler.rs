@@ -182,6 +182,11 @@ impl FrameScheduler {
         let mut effective = DirtyFlags::NONE;
         let mut pending_children: Option<(Vec<crate::dsl::element::Element>, Vec<Option<Key>>)> =
             None;
+        // Generation-scoped rebuild tracking: opened when builders below run, closed
+        // after reconciliation. Declared here (not in the branch) so the close below
+        // always sees them.
+        let mut rebuild_open = false;
+        let mut note_mark = 0;
         {
             // The guard covers binding evaluation, so signal writes are attributed to the
             // subscriber that caused them rather than to reconciliation.
@@ -212,6 +217,11 @@ impl FrameScheduler {
                 // back. Comparing merged keys rather than element contents is what makes a two-row
                 // swap cost one diff, and is why rows must be keyed by identity rather than
                 // by position. Static segments merge in place around them.
+                //
+                // The rebuild runs in a generation-scoped window: component bodies allocate
+                // signals, clocks, and timers as they run, and without ownership a rebuild
+                // would stack twins beside the live ones on every reorder. The window closes
+                // after reconciliation below, sweeping only rebuilt scopes (see below).
                 if flags.contains(DirtyFlags::MEASURE) || flags.contains(DirtyFlags::LAYOUT) {
                     if let Some(segments) = bindings.children_builder().cloned() {
                         // Entered here for the same reason as in `reconcile_group`: a list is
@@ -219,11 +229,33 @@ impl FrameScheduler {
                         // a hook scope for a `#[component]` child to allocate its signals on.
                         // Entering it is what lets a reactive list contain components at all.
                         let runtime = Rc::clone(&self.runtime);
-                        let spec = crate::reactive::Cx::new(runtime).enter(|| {
-                            crate::dsl::group::flatten_segments(&segments)
-                        });
-                        let keys: Vec<Option<Key>> = spec.iter().map(|e| e.key()).collect();
-                        pending_children = Some((spec, keys));
+                        runtime.borrow_mut().begin_build_window();
+                        note_mark =
+                            crate::hot_reload::registry::pending_note_len();
+                        // Reads track against the outer subscriber guard (unchanged):
+                        // the window only tags registrations, never observations.
+                        let outcome = std::panic::catch_unwind(
+                            std::panic::AssertUnwindSafe(|| {
+                                crate::reactive::Cx::new(Rc::clone(&runtime)).enter(|| {
+                                    crate::dsl::group::flatten_segments(&segments)
+                                })
+                            }),
+                        );
+                        match outcome {
+                            Ok(spec) => {
+                                let keys: Vec<Option<Key>> =
+                                    spec.iter().map(|e| e.key()).collect();
+                                pending_children = Some((spec, keys));
+                                rebuild_open = true;
+                            }
+                            Err(payload) => {
+                                // Close with prejudice (drops this build's partial
+                                // registrations) and preserve the existing propagation:
+                                // frame-boundary recovery, not silent recovery.
+                                self.runtime.borrow_mut().end_build_window(false);
+                                std::panic::resume_unwind(payload);
+                            }
+                        }
                     }
                 }
             }
@@ -265,6 +297,19 @@ impl FrameScheduler {
                 arena.mark_dirty(node, DirtyFlags::MEASURE | DirtyFlags::LAYOUT);
                 effective.insert(DirtyFlags::MEASURE | DirtyFlags::LAYOUT);
             }
+        }
+        // Close the rebuild window opened above, whether or not the keys changed:
+        // builders ran either way and their registrations tagged this generation. Only
+        // scopes that actually rebuilt (plus unstable ones) are swept; live registrations
+        // elsewhere in the tree — including reload-installed ones — survive untouched.
+        if rebuild_open {
+            let rebuilt: rustc_hash::FxHashSet<Box<str>> =
+                crate::hot_reload::registry::peek_note_instances_since(note_mark)
+                    .into_iter()
+                    .collect();
+            self.runtime
+                .borrow_mut()
+                .close_rebuilt_window(&rebuilt);
         }
 
         if effective.is_empty() {

@@ -20,7 +20,8 @@ pub use crate::hot_reload::{
     DevLoop, DevLoopConfig, DylibReloader, FileWatcher, HotReload, HotReloadStats, PollOutcome,
     ReloadReport, RemoteBuildFn, RemoteDirection, RemoteEventFn, RemoteHost, RemoteKind,
     RemoteNode, RemoteReloadExtension, RemoteSize, RemoteSnapshot, RemoteStateDecl,
-    RemoteStateFn, RemoteText, StateWrite, COMPONENT_ABI_VERSION,
+    RemoteStateFn, RemoteText, RemoteVersionFn, StateWrite, COMPONENT_ABI_VERSION,
+    REMOTE_ABI_VERSION,
 };
 pub use crate::input::{ClickInfo, CursorIcon, DragInfo, HitTest, HoverInfo, KeyCode, KeyEvent, PointerButton, PointerEvent, PointerPhase, Propagation};
 pub use crate::reactive::{

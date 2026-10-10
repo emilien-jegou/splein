@@ -171,6 +171,26 @@ fn selftest_body(version_fn: usize, root_fn: usize) -> i32 {
         let stats = engine.hot_reload_stats();
         check(stats.reloads_total == 1, "exactly one reload recorded")?;
         check(stats.last_error.is_none(), "no reload error recorded")?;
+
+        // A dylib panic must unwind catchably across the boundary, never abort the
+        // process: calling the entry outside any hook scope panics inside dylib code
+        // ("hook called outside a component body"). If personalities disagree, this
+        // kills the process instead of returning Err — that outcome fails loudly here
+        // rather than in production. The payload must also survive as data.
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| root_fn()));
+        check(outcome.is_err(), "unscoped entry call panics")?;
+        let msg = match outcome {
+            Err(payload) => payload
+                .downcast_ref::<&str>()
+                .map(|s| s.to_string())
+                .or_else(|| payload.downcast_ref::<String>().cloned())
+                .unwrap_or_default(),
+            Ok(_) => String::new(),
+        };
+        check(
+            msg.contains("component body"),
+            "panic payload crosses the boundary intact",
+        )?;
         Ok(())
     };
     match run() {

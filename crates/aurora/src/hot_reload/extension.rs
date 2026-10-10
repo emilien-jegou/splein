@@ -17,7 +17,6 @@
 //     workspace_root: PathBuf::from("/path/to/splein"),
 //     watch_dir: None,
 //     lib_path: None,
-//     ui_source: None,
 //     auto_build: true,
 // });
 // App::config().extension(ext).run(placeholder);
@@ -30,7 +29,9 @@
 use crate::app::extension::AppExtension;
 use crate::dsl::{group, text, IntoElement};
 use crate::hot_reload::dev_loop::{DevLoop, DevLoopConfig, PollOutcome};
-use crate::hot_reload::remote::{RemoteBuildFn, RemoteEventFn, RemoteHost, RemoteStateFn};
+use crate::hot_reload::remote::{
+    RemoteBuildFn, RemoteEventFn, RemoteHost, RemoteStateFn, RemoteVersionFn, REMOTE_ABI_VERSION,
+};
 use crate::hot_reload::SharedFactory;
 use crate::runtime::Engine;
 use std::cell::Cell;
@@ -43,6 +44,9 @@ pub struct RemoteReloadExtension {
     /// Current entry points, read by the installed root factory on every rebuild.
     shared_fns: Rc<Cell<Option<(RemoteStateFn, RemoteBuildFn, RemoteEventFn)>>>,
     factory_installed: bool,
+    /// A fresh library was observed where no engine was available (idle poll). Latched
+    /// so the next frame swaps instead of the observation being lost.
+    pending_activation: bool,
 }
 
 impl RemoteReloadExtension {
@@ -53,6 +57,7 @@ impl RemoteReloadExtension {
             host: Rc::new(RemoteHost::new()),
             shared_fns: Rc::new(Cell::new(None)),
             factory_installed: false,
+            pending_activation: false,
         }
     }
 
@@ -71,7 +76,25 @@ impl RemoteReloadExtension {
     fn activate_fresh_library(&mut self, engine: &mut Engine) -> bool {
         // Copy the entry points out of the symbols: raw fn pointers carry no lifetime,
         // and the loader (plus its retired images) keeps the code mapped for the session.
+        // The version check comes first so protocol drift fails closed with a message
+        // instead of misinterpreting a foreign description.
         let fns = unsafe {
+            let version: libloading::Symbol<RemoteVersionFn> =
+                match self.dev.loader().get(b"aurora_remote_version") {
+                    Ok(s) => s,
+                    Err(e) => {
+                        tracing::warn!("aurora: hot-ui missing `aurora_remote_version` ({e})");
+                        return true;
+                    }
+                };
+            if version() != REMOTE_ABI_VERSION {
+                tracing::warn!(
+                    "aurora: hot-ui remote protocol version {} != host {}; keeping previous UI",
+                    version(),
+                    REMOTE_ABI_VERSION
+                );
+                return true;
+            }
             let state: libloading::Symbol<RemoteStateFn> =
                 match self.dev.loader().get(b"aurora_remote_state") {
                     Ok(s) => s,
@@ -138,15 +161,33 @@ impl AppExtension for RemoteReloadExtension {
     ///
     /// An idle app presents no frames, so `on_update` alone would never poll the watcher:
     /// this requests redraws until the fresh library is live, then goes quiet again.
+    /// A `LibraryReady` observed here cannot activate (no engine access) — it latches
+    /// `pending_activation` so the next `on_update` swaps instead of dropping it.
     fn on_idle(&mut self) -> bool {
-        !matches!(self.dev.poll(), PollOutcome::Idle)
+        if self.pending_activation {
+            return true;
+        }
+        match self.dev.poll() {
+            PollOutcome::LibraryReady => {
+                self.pending_activation = true;
+                true
+            }
+            PollOutcome::Building | PollOutcome::Settled => true,
+            PollOutcome::Idle => false,
+        }
     }
 
     fn on_update(&mut self, engine: &mut Engine) -> bool {
+        // An idle poll may have latched a fresh library; swap first so it is never lost.
+        let mut redraw = false;
+        if self.pending_activation {
+            self.pending_activation = false;
+            redraw |= self.activate_fresh_library(engine);
+        }
         // Interaction first: clicks from the last presented frame become state writes now,
         // so the UI answers in one frame whether or not a build is in flight.
         let actions = self.host.drain_actions();
-        let mut redraw = !actions.is_empty();
+        redraw |= !actions.is_empty();
         if !actions.is_empty() {
             if let Some((_, _, event)) = self.shared_fns.get() {
                 let mut writes = Vec::new();
@@ -162,6 +203,12 @@ impl AppExtension for RemoteReloadExtension {
             PollOutcome::LibraryReady => redraw |= self.activate_fresh_library(engine),
             PollOutcome::Building | PollOutcome::Settled => redraw = true,
             PollOutcome::Idle => {}
+        }
+        // A failed build explains itself through stats (HUD/panel read these); the loop
+        // itself waits for the next save rather than retrying blindly.
+        if let Some((cause, log)) = self.dev.take_build_error() {
+            engine.hot_reload_mut().record_build_failure(cause, log);
+            redraw = true;
         }
         redraw
     }

@@ -351,6 +351,82 @@ impl ReactiveRuntime {
         }
     }
 
+    /// Closes a scheduler rebuild window, sweeping only rebuilt subtrees.
+    ///
+    /// Unlike [`Self::end_build_window`] (which drops every older-tagged registration),
+    /// this drops older-tagged registrations whose instance was rebuilt in this window, plus
+    /// older-tagged registrations from unstable scopes (anonymous identities can never be
+    /// recalled, so their twins are always safe to drop). Live registrations from scopes
+    /// that did not rebuild are untouched — that is what keeps reload-installed timers
+    /// running across unrelated reactive rebuilds. Unstable hook state swept along the way
+    /// is dropped too (unrecallable by construction); stable hook state is always kept.
+    ///
+    /// Like `end_build_window`, inner closes only decrement the depth; unmatched closes
+    /// are ignored.
+    pub(crate) fn close_rebuilt_window(&mut self, rebuilt: &FxHashSet<Box<str>>) {
+        if self.build_depth == 0 {
+            return;
+        }
+        self.build_depth -= 1;
+        if self.build_depth > 0 {
+            return;
+        }
+        let Some(gen) = self.build_tag.take() else {
+            return;
+        };
+        // A registration dies here when a newer twin from a rebuilt scope supersedes it,
+        // or when its unstable scope guarantees nothing can ever recall it.
+        self.tickers.retain_owned(|owner| match owner {
+            None => true,
+            Some(tag) => {
+                let key: &str = &tag.instance;
+                !(tag.gen != gen && (rebuilt.contains(key) || !tag.stable))
+            }
+        });
+        let mut dropped_unstable: FxHashSet<Box<str>> = FxHashSet::default();
+        let stale_effects: Vec<SubscriberId> = self
+            .effect_owners
+            .iter()
+            .filter(|(_, tag)| {
+                let key: &str = &tag.instance;
+                tag.gen != gen && (rebuilt.contains(key) || !tag.stable)
+            })
+            .map(|(id, _)| *id)
+            .collect();
+        for id in stale_effects {
+            if let Some(tag) = self.effect_owners.get(&id) {
+                if !tag.stable {
+                    let key: &str = &tag.instance;
+                    dropped_unstable.insert(key.into());
+                }
+            }
+            self.dispose_effect(id);
+        }
+        let stale_listeners: Vec<SubscriberId> = self
+            .listener_owners
+            .iter()
+            .filter(|(_, tag)| {
+                let key: &str = &tag.instance;
+                tag.gen != gen && (rebuilt.contains(key) || !tag.stable)
+            })
+            .map(|(id, _)| *id)
+            .collect();
+        for id in stale_listeners {
+            if let Some(tag) = self.listener_owners.get(&id) {
+                if !tag.stable {
+                    let key: &str = &tag.instance;
+                    dropped_unstable.insert(key.into());
+                }
+            }
+            self.dispose_subscriber(id);
+        }
+        for instance in dropped_unstable {
+            let key: &str = &instance;
+            self.hook_states.remove(key);
+            self.keyed_hook_states.remove(key);
+        }
+    }
+
     /// The ownership tag for a registration made right now, if a reload build is running.
     ///
     /// Needs the ambient component scope: engine-level registrations (no scope) stay
@@ -361,6 +437,7 @@ impl ReactiveRuntime {
         Some(BuildTag {
             instance: scope.instance,
             gen,
+            stable: scope.stable,
         })
     }
 

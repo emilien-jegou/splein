@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use aurora::hot_reload::remote::{
-    RemoteBuildFn, RemoteEventFn, RemoteHost, RemoteStateFn,
+    RemoteBuildFn, RemoteEventFn, RemoteHost, RemoteStateFn, RemoteVersionFn, REMOTE_ABI_VERSION,
 };
 use aurora::hot_reload::DylibReloader;
 use aurora::prelude::*;
@@ -71,6 +71,17 @@ fn real_dylib_drives_interaction_and_survives_rebuild() {
     assert!(loader.is_loaded());
 
     // Copy the entry points out of their symbols: raw fn pointers, no lifetimes.
+    // The version handshake mirrors the extension: drift fails closed, never silently.
+    let version_fn: RemoteVersionFn = unsafe {
+        *loader
+            .get(b"aurora_remote_version")
+            .expect("aurora_remote_version")
+    };
+    assert_eq!(
+        version_fn(),
+        REMOTE_ABI_VERSION,
+        "protocol handshake across the boundary"
+    );
     let (state_fn, build_fn, event_fn): (RemoteStateFn, RemoteBuildFn, RemoteEventFn) = unsafe {
         (
             *loader

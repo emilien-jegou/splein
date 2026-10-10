@@ -90,7 +90,8 @@ pub fn init_dev_logging() {
 pub use registry::ComponentRegistry;
 pub use remote::{
     RemoteBuildFn, RemoteDirection, RemoteEventFn, RemoteHost, RemoteKind, RemoteNode,
-    RemoteSize, RemoteSnapshot, RemoteStateDecl, RemoteStateFn, RemoteText, StateWrite,
+    RemoteSize, RemoteSnapshot, RemoteStateDecl, RemoteStateFn, RemoteText, RemoteVersionFn,
+    StateWrite, REMOTE_ABI_VERSION,
 };
 pub use watcher::FileWatcher;
 
@@ -120,16 +121,25 @@ struct PendingReload {
 }
 
 /// Outcome of one executed reload, for stats and debug-panel feedback.
+///
+/// `laid_out` / `nodes_dirtied` / `damage_rects` describe what the reload frame actually
+/// did (filled in after the frame passes run): a color-only reload repaints without
+/// re-laying-out siblings, which is what makes scoped reloads observable rather than
+/// merely reported.
 #[derive(Clone, Debug)]
 pub struct ReloadReport {
     /// Component identities named by the request (`["*"]` for a full reload).
     pub reloaded: Vec<String>,
-    /// Source files implicated, if the reload came from the watcher.
-    pub files: Vec<PathBuf>,
-    /// How long the rebuild + reconcile took.
+    /// How long the rebuild + reconcile took (frame passes excluded).
     pub duration: Duration,
     /// `Some` when the rebuild panicked and the previous tree was kept.
     pub error: Option<String>,
+    /// Whether the reload frame ran layout.
+    pub laid_out: bool,
+    /// Nodes dirtied during the reload frame.
+    pub nodes_dirtied: usize,
+    /// Damaged rects the reload frame produced.
+    pub damage_rects: usize,
 }
 
 /// Cumulative hot-reload telemetry.
@@ -147,6 +157,17 @@ pub struct HotReloadStats {
     pub last_reloaded: Vec<String>,
     /// Error from the last reload, if it failed.
     pub last_error: Option<String>,
+    /// Error from the last failed *build* (cargo exit), if any. Rebuild panics land in
+    /// `last_error` instead; this is the compile that never produced a library.
+    pub last_build_error: Option<String>,
+    /// Stderr tail of the last failed build, newest last. Empty unless a build failed.
+    pub last_build_log: Vec<String>,
+    /// Whether the last reload's frame ran layout.
+    pub last_laid_out: bool,
+    /// Nodes dirtied by the last reload's frame.
+    pub last_nodes_dirtied: usize,
+    /// Damaged rects produced by the last reload's frame.
+    pub last_damage_rects: usize,
     /// Mounted component identities known to the registry.
     pub components_tracked: usize,
 }
@@ -161,8 +182,6 @@ pub struct HotReload {
     watcher: FileWatcher,
     root_factory: Option<SharedFactory>,
     pending: Vec<PendingReload>,
-    /// Changed files implicated by pending reloads (parallel to `pending`).
-    pending_files: Vec<Vec<PathBuf>>,
     /// Last time each path triggered a reload (debounce).
     last_trigger: FxHashMap<PathBuf, Instant>,
     /// Minimum interval between two reloads triggered by the same path.
@@ -178,7 +197,6 @@ impl HotReload {
             watcher: FileWatcher::new(),
             root_factory: None,
             pending: Vec::new(),
-            pending_files: Vec::new(),
             last_trigger: FxHashMap::default(),
             debounce: Duration::from_millis(150),
             stats: HotReloadStats::default(),
@@ -203,7 +221,6 @@ impl HotReload {
         self.pending.push(PendingReload {
             kind: ReloadKind::Full,
         });
-        self.pending_files.push(Vec::new());
     }
 
     /// Queues a reload scoped to `instance` (a stable `module_path!()::Name`).
@@ -214,7 +231,6 @@ impl HotReload {
         self.pending.push(PendingReload {
             kind: ReloadKind::Component(instance.as_ref().into()),
         });
-        self.pending_files.push(Vec::new());
     }
 
     /// Queues reloads for every component expanded from `path`.
@@ -287,7 +303,6 @@ impl HotReload {
                 }
             }
         }
-        self.pending_files.clear();
         if full {
             Some(vec!["*".to_string()])
         } else {
@@ -303,8 +318,8 @@ impl HotReload {
 
     /// Drains thread-local component build notes into the registry.
     pub(crate) fn drain_build_notes(&mut self) {
-        for (instance, file) in registry::take_build_notes() {
-            self.registry.note_built(instance, file);
+        for note in registry::take_build_notes() {
+            self.registry.note_built(note.path.into(), note.file);
         }
         self.stats.components_tracked = self.registry.len();
     }
@@ -347,8 +362,7 @@ impl HotReload {
     }
 
     /// Records a completed reload in stats.
-    pub(crate) fn record_report(&mut self, report: &ReloadReport) {
-        if report.error.is_some() {
+    pub(crate) fn record_report(&mut self, report: &ReloadReport) {        if report.error.is_some() {
             self.stats.reloads_failed += 1;
         } else {
             self.stats.reloads_total += 1;
@@ -356,7 +370,20 @@ impl HotReload {
         self.stats.last_duration_ms = report.duration.as_secs_f64() * 1000.0;
         self.stats.last_reloaded = report.reloaded.clone();
         self.stats.last_error = report.error.clone();
+        self.stats.last_laid_out = report.laid_out;
+        self.stats.last_nodes_dirtied = report.nodes_dirtied;
+        self.stats.last_damage_rects = report.damage_rects;
         self.stats.reloaded_log.extend(report.reloaded.iter().cloned());
+    }
+
+    /// Records a failed *build* (cargo exit) in stats.
+    ///
+    /// Separate from rebuild panics (`last_error`): the library was never produced, so
+    /// the previous UI stays mounted untouched. Read by debug surfaces; the loop itself
+    /// waits for the next save rather than retrying.
+    pub(crate) fn record_build_failure(&mut self, cause: String, log: Vec<String>) {
+        self.stats.last_build_error = Some(cause);
+        self.stats.last_build_log = log;
     }
 
     /// Component identities whose registered source file matches `changed`.

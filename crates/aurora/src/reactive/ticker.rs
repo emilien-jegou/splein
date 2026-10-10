@@ -58,6 +58,12 @@ impl TickerRegistry {
         self.entries.retain(|(e, _, _)| *e == epoch);
     }
 
+    /// Retains tickers by ownership predicate. Untagged tickers (registered outside any
+    /// build window) always pass — callers decide the fate of tagged ones.
+    pub(crate) fn retain_owned(&mut self, keep: impl Fn(Option<&BuildTag>) -> bool) {
+        self.entries.retain(|(_, owner, _)| keep(owner.as_ref()));
+    }
+
     /// Settles one reload build: on commit keeps untagged tickers plus this build's own
     /// (older tagged ones belong to superseded builds); on abort drops exactly this
     /// build's registrations and keeps everything else.

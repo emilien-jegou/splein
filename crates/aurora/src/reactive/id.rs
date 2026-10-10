@@ -29,13 +29,17 @@ pub struct SubscriberId(pub usize);
 /// Ownership tag for a registration made while a reload build ran.
 ///
 /// `instance` is the innermost component scope that was ambient at registration time
-/// (forensics and future per-component teardown); `gen` is the reload build that produced
-/// it, and is what commit/abort sweeps match on. Registrations made outside any reload
-/// build carry no tag and are never swept.
+/// (forensics and per-subtree sweeps); `gen` is the reload build that produced it, and
+/// is what commit/abort sweeps match on; `stable` records whether hook state filed under
+/// the instance can ever be recalled (anonymous scopes cannot — their registrations are
+/// always safe to sweep). Registrations made outside any reload build carry no tag and
+/// are never swept.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BuildTag {
     /// Component scope ambient at registration (`module_path!()::Name`, possibly anonymous).
     pub instance: std::rc::Rc<str>,
     /// Reload build generation that produced this registration.
     pub gen: u64,
+    /// Whether the scope's hook state survives rebuilds.
+    pub stable: bool,
 }

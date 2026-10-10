@@ -10,24 +10,62 @@ thread_local! {
     /// The wrapper knows its stable identity (`module_path!()::Name`, emitted by
     /// `#[component]`) and its source file (`file!()` at the expansion site), but it
     /// has no handle to the engine — so it files the note here and the engine's
-    /// `HotReload` drains it at the start of the next frame.
-    static PENDING_NOTES: RefCell<Vec<(Box<str>, &'static str)>> =
-        const { RefCell::new(Vec::new()) };
+    /// `HotReload` drains it at the start of the next frame. Filed from *inside* the
+    /// entered scope so the note carries the full scope identity (parent chain plus
+    /// child index), which is what rebuild sweeps match on — not just the path.
+    static PENDING_NOTES: RefCell<Vec<BuildNote>> = const { RefCell::new(Vec::new()) };
 }
 
-/// Files a build note for a component that just ran.
+/// One component build: filed by `component_scope_named`, consumed by the registry
+/// drain (file mapping) and by rebuild sweeps (instance matching).
+#[derive(Clone)]
+pub(crate) struct BuildNote {
+    /// Full scope identity the body ran under (e.g. `root#0=shop::Card`).
+    pub instance: Box<str>,
+    /// Component path (`module_path!()::Name` or an explicit `name = …`).
+    pub path: &'static str,
+    /// Source file at the expansion site.
+    pub file: &'static str,
+}
+
+/// Files a build note for a component that just started running.
 ///
-/// Called by `component_scope_named` on every build (mount and rebuild alike). Cheap:
-/// one small allocation per component build, drained once per frame.
-pub(crate) fn note_build(instance: &str, source_file: &'static str) {
+/// Called once per body run, from inside the entered scope. Cheap: small allocations
+/// per component build, drained once per frame (registry) or per rebuild (sweeps).
+pub(crate) fn note_build(instance: Box<str>, path: &'static str, source_file: &'static str) {
     PENDING_NOTES.with(|notes| {
-        notes.borrow_mut().push((instance.into(), source_file));
+        notes.borrow_mut().push(BuildNote {
+            instance,
+            path,
+            file: source_file,
+        });
     });
 }
 
 /// Takes all pending build notes, leaving the queue empty.
-pub(crate) fn take_build_notes() -> Vec<(Box<str>, &'static str)> {
+pub(crate) fn take_build_notes() -> Vec<BuildNote> {
     PENDING_NOTES.with(|notes| std::mem::take(&mut *notes.borrow_mut()))
+}
+
+/// Number of pending (undrained) build notes.
+pub(crate) fn pending_note_len() -> usize {
+    PENDING_NOTES.with(|notes| notes.borrow().len())
+}
+
+/// Clones the full instances of notes filed since `mark`, without draining.
+///
+/// Lets a rebuild sweep match exactly the scopes that ran, while the notes stay queued
+/// for the registry drain. Single-threaded by construction (the runtime is `!Sync`).
+pub(crate) fn peek_note_instances_since(mark: usize) -> Vec<Box<str>> {
+    PENDING_NOTES.with(|notes| {
+        let notes = notes.borrow();
+        notes
+            .get(mark..)
+            .unwrap_or(&[])
+            .iter()
+            .map(|note| note.instance.clone())
+            .collect()
+    })
 }
 
 /// Which components are mounted, and which source file each came from.

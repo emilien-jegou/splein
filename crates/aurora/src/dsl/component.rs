@@ -156,6 +156,10 @@ pub fn component_scope<T: IntoElement>(body: impl FnOnce() -> T) -> Element {
 /// must rebuild. Every build — mount or rebuild — files a note; the engine drains them
 /// once per frame.
 ///
+/// The note files from *inside* the entered scope so it carries the full scope identity
+/// (parent chain plus child index), not just the component path: rebuild sweeps match on
+/// instances to drop superseded registrations without touching live ones.
+///
 /// Same panic contract as [`component_scope`]: outside a scope it panics
 /// loudly; a panicking body mounts an empty placeholder.
 pub fn component_scope_named<T: IntoElement>(
@@ -163,9 +167,17 @@ pub fn component_scope_named<T: IntoElement>(
     source_file: &'static str,
     body: impl FnOnce() -> T,
 ) -> Element {
-    crate::hot_reload::registry::note_build(path, source_file);
     let cx = Cx::expect_current();
-    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| cx.enter_named(path, body))) {
+    let scoped = || {
+        // Filed first inside the scope: even a panicking body leaves its note, and the
+        // instance is the entered one (ancestors included), never the parent's.
+        if let Some(scope) = crate::reactive::hooks::current_scope() {
+            let instance: Box<str> = Box::<str>::from(&*scope.instance);
+            crate::hot_reload::registry::note_build(instance, path, source_file);
+        }
+        body()
+    };
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| cx.enter_named(path, scoped))) {
         Ok(built) => built.into_element(),
         Err(payload) => {
             tracing::error!(

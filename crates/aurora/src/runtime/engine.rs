@@ -2,6 +2,7 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::time::Duration;
 
 use crate::dsl::element::Element;
 use crate::dsl::reconcile_group::replace_child;
@@ -76,10 +77,18 @@ impl Engine {
         let _ambient = crate::reactive::ambient_guard(&runtime);
         let (mut arena, mut router) = (TreeArena::new(), SubscriberRouter::new());
         let root_key = root.key();
-        // Join-only: when the caller opened a build window (AppConfig::run does, spanning
-        // the factory and this reconcile), registrations tag with its generation. Standalone
-        // use opens no window and behaves exactly as before.
+        // Join-only when the caller opened a build window (AppConfig::run spans the
+        // factory and this reconcile under one generation); otherwise open and commit
+        // our own, so the initial tree's registrations are sweepable by later reloads.
+        // Standalone use with no window behaves exactly as before (untracked).
+        let joined = runtime.borrow().build_window_open();
+        if !joined {
+            runtime.borrow_mut().begin_build_window();
+        }
         let root_id = reconcile(&runtime, &mut arena, &mut router, None, root);
+        if !joined {
+            runtime.borrow_mut().end_build_window(true);
+        }
         // The root's key has to be registered here as well as on re-mount, or a keyed root
         // would be unreachable from every key-based lookup while its own subtree worked.
         arena.bind_key(root_key, root_id);
@@ -220,6 +229,13 @@ impl Engine {
     pub fn set_root(&mut self, element: Element) {
         let _ambient = crate::reactive::ambient_guard(&self.runtime());
         let key = element.key();
+        // Join-only when a window is already open (reload drain, demo switch); otherwise
+        // open and commit our own so remount registrations are sweepable by later reloads.
+        // A panicking reconcile closes without committing (drops its partials).
+        let joined = self.scheduler.runtime.borrow().build_window_open();
+        if !joined {
+            self.scheduler.runtime.borrow_mut().begin_build_window();
+        }
         let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             reconcile(
                 &self.scheduler.runtime,
@@ -231,12 +247,18 @@ impl Engine {
         }));
         match outcome {
             Ok(root) => {
+                if !joined {
+                    self.scheduler.runtime.borrow_mut().end_build_window(true);
+                }
                 self.scheduler.arena.bind_key(key, root);
                 self.scheduler.root = root;
                 self.scheduler.arena.mark_dirty(root, DirtyFlags::LAYOUT);
                 self.scheduler.dirty_nodes_this_frame.push(root);
             }
             Err(payload) => {
+                if !joined {
+                    self.scheduler.runtime.borrow_mut().end_build_window(false);
+                }
                 let msg = crate::dsl::panic_message(&payload);
                 tracing::error!("aurora: set_root panicked ({msg}); keeping previous root");
                 self.last_frame_error = Some(msg);
@@ -336,6 +358,11 @@ impl Engine {
     /// the error.
     pub fn set_root_at(&mut self, parent: NodeId, slot: usize, element: Element) {
         let _ambient = crate::reactive::ambient_guard(&self.runtime());
+        // Join-or-open like `set_root`: remount registrations stay sweepable.
+        let joined = self.scheduler.runtime.borrow().build_window_open();
+        if !joined {
+            self.scheduler.runtime.borrow_mut().begin_build_window();
+        }
         let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             replace_child(
                 &self.scheduler.runtime,
@@ -348,9 +375,15 @@ impl Engine {
         }));
         match outcome {
             Ok(_) => {
+                if !joined {
+                    self.scheduler.runtime.borrow_mut().end_build_window(true);
+                }
                 self.scheduler.dirty_nodes_this_frame.push(parent);
             }
             Err(payload) => {
+                if !joined {
+                    self.scheduler.runtime.borrow_mut().end_build_window(false);
+                }
                 let msg = crate::dsl::panic_message(&payload);
                 tracing::error!("aurora: set_root_at panicked ({msg}); keeping previous subtree");
                 self.last_frame_error = Some(msg);
@@ -362,23 +395,31 @@ impl Engine {
 
     /// Drains hot-reload work at the start of a frame: build notes, watcher events, queued
     /// rebuilds. Runs before input dispatch so a reloaded tree sees this frame's passes.
-    fn drain_hot_reload(&mut self) {
+    ///
+    /// Returns the executed rebuild's report when one ran, with impact fields still zero:
+    /// `frame()` fills them from the pass stats and records the report, so impact
+    /// describes what the reload frame actually did.
+    fn drain_hot_reload(&mut self) -> Option<ReloadReport> {
         self.hot_reload.drain_build_notes();
         let _watched_changed = self.hot_reload.drain_watcher();
         let Some(targets) = self.hot_reload.take_collapsed_pending() else {
-            return;
+            return None;
         };
         let t0 = std::time::Instant::now();
+        let mut report = ReloadReport {
+            reloaded: targets,
+            duration: Duration::ZERO,
+            error: None,
+            laid_out: false,
+            nodes_dirtied: 0,
+            damage_rects: 0,
+        };
         let Some(factory) = self.hot_reload.root_factory() else {
-            let report = ReloadReport {
-                reloaded: targets,
-                files: Vec::new(),
-                duration: t0.elapsed(),
-                error: Some("no root factory installed; call Engine::set_root_factory".to_string()),
-            };
+            report.error = Some("no root factory installed; call Engine::set_root_factory".to_string());
+            report.duration = t0.elapsed();
             tracing::warn!("aurora: hot-reload requested ({})", report.error.as_deref().unwrap_or(""));
             self.hot_reload.record_report(&report);
-            return;
+            return None;
         };
         let _ambient = crate::reactive::ambient_guard(&self.runtime());
         // Generation-scoped build window: everything the factory registers tags with this
@@ -393,33 +434,25 @@ impl Engine {
             Ok(element) => {
                 self.set_root(element);
                 self.scheduler.runtime.borrow_mut().end_build_window(true);
-                let report = ReloadReport {
-                    reloaded: targets,
-                    files: Vec::new(),
-                    duration: t0.elapsed(),
-                    error: None,
-                };
+                report.duration = t0.elapsed();
                 tracing::info!(
                     "aurora: hot-reload rebuilt [{}] in {:.1}ms",
                     report.reloaded.join(", "),
                     report.duration.as_secs_f64() * 1000.0
                 );
-                self.hot_reload.record_report(&report);
+                Some(report)
             }
             Err(payload) => {
                 self.scheduler.runtime.borrow_mut().end_build_window(false);
                 let msg = crate::dsl::panic_message(&payload);
                 tracing::error!("aurora: hot-reload rebuild panicked ({msg}); keeping previous tree");
                 self.staged_reload_error = Some(msg.clone());
-                let report = ReloadReport {
-                    reloaded: targets,
-                    files: Vec::new(),
-                    duration: t0.elapsed(),
-                    error: Some(msg),
-                };
+                report.error = Some(msg);
+                report.duration = t0.elapsed();
                 self.hot_reload.record_report(&report);
                 let (w, h) = self.logical_size;
                 self.pending_damage.push(ResolvedRect::new(0.0, 0.0, w as f32, h as f32));
+                None
             }
         }
     }
@@ -445,8 +478,9 @@ impl Engine {
         self.frame_counter = self.frame_counter.wrapping_add(1);
 
         // Hot-reload rebuilds land before anything else: the new tree is reconciled first,
-        // so this frame's tick, input, react, and layout passes all see it at once.
-        self.drain_hot_reload();
+        // so this frame's tick, input, react, and layout passes all see it at once. A
+        // returned report is completed from the pass stats below and recorded there.
+        let pending_report = self.drain_hot_reload();
 
         // The clock ticks before input dispatch, so queued events advance
         // against this frame's own deltas: pointer velocity measures the
@@ -499,6 +533,16 @@ impl Engine {
         // above and stays visible for exactly one presented frame.
         if let Some(msg) = self.staged_reload_error.take() {
             self.last_frame_error = Some(msg);
+        }
+        // Complete a reload executed at frame start with what the passes actually did.
+        // A panicking pass leaves zeros (the tree state is suspect; impact is meaningless).
+        if let Some(mut report) = pending_report {
+            if self.last_frame_error.is_none() {
+                report.laid_out = stats.laid_out;
+                report.nodes_dirtied = stats.nodes_dirtied;
+                report.damage_rects = diag.spatial.damaged_rects.len();
+            }
+            self.hot_reload.record_report(&report);
         }
 
         FrameReport {

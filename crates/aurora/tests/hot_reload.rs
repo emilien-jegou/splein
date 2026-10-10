@@ -159,6 +159,11 @@ fn reload_patches_color_and_preserves_hook_state() {
     assert_eq!(stats.reloads_total, 1, "one successful reload recorded");
     assert_eq!(stats.last_reloaded, vec!["*".to_string()]);
     assert!(stats.last_error.is_none());
+    // Impact: the frame re-laid out (root remount marks layout), dirtied nodes, and
+    // produced damage for the repainted swatch.
+    assert!(stats.last_laid_out, "reload frame ran layout");
+    assert!(stats.last_nodes_dirtied >= 1, "reload dirtied nodes");
+    assert!(stats.last_damage_rects >= 1, "reload repainted");
 }
 
 #[test]
@@ -206,6 +211,10 @@ fn panicking_rebuild_keeps_the_previous_tree() {
     assert_eq!(stats.reloads_failed, 1);
     assert!(stats.last_error.is_some(), "the failure is recorded");
     assert!(engine.last_frame_error().is_some(), "the HUD can show it");
+    // No frame impact: the rebuild never reached the passes.
+    assert!(!stats.last_laid_out);
+    assert_eq!(stats.last_nodes_dirtied, 0);
+    assert_eq!(stats.last_damage_rects, 0);
 }
 
 #[test]
@@ -366,5 +375,81 @@ fn explicitly_named_component_keeps_state_across_reloads() {
     assert!(
         (kept - 51.0).abs() < 0.5,
         "pinned identity recalls across the reload"
+    );
+}
+
+/// A keyed row holding a frame registration: re-running its body must not stack timers.
+#[component]
+fn TickingRow(_index: usize, label: String) -> impl IntoElement {
+    // A period no test reaches: the timer lives purely to be counted.
+    use_interval(3600.0, || {});
+    group()
+        .key(format!("trow-{label}"))
+        .width(Size::fill())
+        .height(40.0)
+}
+
+/// Reactive rebuilds (reorder, insert) re-run row bodies; superseded registrations must
+/// be swept so ticker counts track live rows instead of rebuild history.
+///
+/// NOTE (residual, pre-existing): removing a row purges its nodes but nothing re-runs
+/// its body, so no sweep targets its registrations — a removed row's timer lives until
+/// a ticker-epoch retire, exactly as before this machinery existed. Closing that needs
+/// a node-to-instance index the reconciler does not keep; deliberately out of scope.
+#[test]
+#[ntest::timeout(30_000)]
+fn reactive_rebuilds_do_not_accumulate_registrations() {
+    let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
+    let labels = Signal::new(Rc::clone(&runtime), vec!["a".to_string(), "b".to_string()]);
+    // One build window spans the factory and the engine creation, mirroring AppConfig:
+    // row bodies run during the initial reconcile inside this same generation.
+    runtime.borrow_mut().begin_build_window();
+    let cx = Cx::new(Rc::clone(&runtime));
+    let root: Element = cx.enter_keyed("root", || {
+        group()
+            .width(400.0)
+            .height(400.0)
+            .direction(Direction::Vertical)
+            .children_labels_keyed(labels.clone(), |s: &String| s.clone(), TickingRow)
+            .into_element()
+    });
+    let mut engine = Engine::with_runtime(Rc::clone(&runtime), root, 400, 400);
+    runtime.borrow_mut().end_build_window(true);
+    engine.advance(1.0 / 60.0);
+    engine.frame();
+    engine.advance(1.0 / 60.0);
+    engine.frame();
+    let initial = ticker_count(&engine);
+    assert_eq!(initial, 2, "one timer per mounted row, nothing else");
+
+    // Reorder: every row body re-runs, keyed nodes are reused, twins must die.
+    labels.set(vec!["b".to_string(), "a".to_string()]);
+    engine.advance(1.0 / 60.0);
+    engine.frame();
+    engine.advance(1.0 / 60.0);
+    engine.frame();
+    assert_eq!(
+        ticker_count(&engine),
+        initial,
+        "reordered rows must not stack timers"
+    );
+
+    // Insert: the new row mounts once; a further reorder changes nothing.
+    labels.set(vec!["b".to_string(), "a".to_string(), "c".to_string()]);
+    engine.advance(1.0 / 60.0);
+    engine.frame();
+    engine.advance(1.0 / 60.0);
+    engine.frame();
+    let grown = ticker_count(&engine);
+    assert_eq!(grown, initial + 1, "exactly the new row adds a timer");
+    labels.set(vec!["c".to_string(), "a".to_string(), "b".to_string()]);
+    engine.advance(1.0 / 60.0);
+    engine.frame();
+    engine.advance(1.0 / 60.0);
+    engine.frame();
+    assert_eq!(
+        ticker_count(&engine),
+        grown,
+        "steady after insert: rebuilds replace, never accumulate"
     );
 }

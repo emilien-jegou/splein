@@ -207,6 +207,14 @@ pub type RemoteStateFn = extern "Rust" fn() -> RemoteStateDecl;
 pub type RemoteBuildFn = extern "Rust" fn(&RemoteSnapshot) -> RemoteNode;
 /// Maps a named click action to state writes. Implemented dylib-side.
 pub type RemoteEventFn = extern "Rust" fn(&str) -> Vec<StateWrite>;
+/// Reports the UI crate's remote-protocol version. Implemented dylib-side.
+///
+/// Separate symbol from the component path's `aurora_hot_version` (one image may serve
+/// both loops): each loop checks its own contract and refuses drift loudly.
+pub type RemoteVersionFn = extern "Rust" fn() -> u32;
+
+/// Remote-protocol version both sides agree on. Bump on any signature change.
+pub const REMOTE_ABI_VERSION: u32 = 1;
 
 /// Host side of remote UI: owns every signal, interprets descriptions into elements.
 ///
