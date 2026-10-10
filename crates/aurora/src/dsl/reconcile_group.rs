@@ -2,7 +2,8 @@
 
 use crate::dsl::group::GroupDef;
 use crate::dsl::reconcile_children::reconcile_children;
-use crate::dsl::reconciler::evaluate_prop;
+use crate::dsl::reconciler::{evaluate_prop, reconcile};
+use crate::dsl::element::Element;
 use crate::foundation::{Fill, LayoutPresence, Shadow, Size, Transform};
 use crate::input::handlers::NodeHandlers;
 use crate::reactive::id::SubscriberId;
@@ -194,6 +195,43 @@ pub fn reconcile_group(
         arena.get_mut(id).state.core.child_keys = child_keys;
     }
     id
+}
+
+/// Replaces a single child slot of `parent` with a freshly built element.
+///
+/// This is the surgical half of hot-reload: re-running one component factory yields one new
+/// element tree, and only the slot it belongs to is re-reconciled — siblings keep their
+/// `NodeId`s, their layout caches, and their state. `slot` past the end appends.
+///
+/// Returns the (possibly reused) child node.
+pub fn replace_child(
+    runtime: &Rc<RefCell<ReactiveRuntime>>,
+    arena: &mut TreeArena,
+    router: &mut SubscriberRouter,
+    parent: NodeId,
+    slot: usize,
+    element: Element,
+) -> NodeId {
+    let key = element.key();
+    let mut children: Vec<NodeId> = arena.children(parent).to_vec();
+    let child = if slot < children.len() {
+        let old = children[slot];
+        let id = reconcile(runtime, arena, router, Some(old), element);
+        if id != old {
+            children[slot] = id;
+            arena.set_children(parent, children);
+        }
+        id
+    } else {
+        let id = reconcile(runtime, arena, router, None, element);
+        // Pad with nothing: callers pass exact slots; beyond-the-end appends.
+        children.push(id);
+        arena.set_children(parent, children);
+        id
+    };
+    arena.bind_key(key, child);
+    arena.mark_dirty(parent, DirtyFlags::MEASURE | DirtyFlags::LAYOUT);
+    child
 }
 
 /// Collects the pose component evaluators a group declared, if any.

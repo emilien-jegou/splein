@@ -51,6 +51,11 @@ pub struct VisualDebugger {
     time_scale: f32,
     /// Whether a single-frame step was requested since the last update.
     step_requested: bool,
+    /// Whether a hot-reload was requested since the last update (`F6` key or panel button).
+    ///
+    /// Latched in `on_event` (which has no engine access) and consumed in `on_update`
+    /// (which does) by queueing a state-preserving rebuild.
+    reload_requested: bool,
     /// Whether the next presented frame should be written out as a PNG.
     capture_pending: bool,
     /// Path of the most recently written capture (PNG or scene dump).
@@ -89,6 +94,7 @@ impl Default for VisualDebugger {
             backend_name: "CPU".into(),
             time_scale: 1.0,
             step_requested: false,
+            reload_requested: false,
             capture_pending: false,
             last_capture: None,
             captures: 0,
@@ -180,6 +186,14 @@ impl VisualDebugger {
             }
             C::Capture => {
                 self.capture_pending = true;
+                true
+            }
+            C::ReloadAll => {
+                engine.queue_full_reload();
+                true
+            }
+            C::ReloadComponent(instance) => {
+                engine.queue_component_reload(instance);
                 true
             }
             // Pick arming and selection live in the event loop.
@@ -284,6 +298,15 @@ impl AppExtension for VisualDebugger {
                     self.capture_pending = true;
                     return true;
                 }
+                // F6 queues a state-preserving hot-reload rebuild (consumed in `on_update`,
+                // which is where engine access lives). Same path as the panel's reload button.
+                if key.state == winit::event::ElementState::Pressed
+                    && key.logical_key
+                        == winit::keyboard::Key::Named(winit::keyboard::NamedKey::F6)
+                {
+                    self.reload_requested = true;
+                    return true;
+                }
             }
         }
         handled
@@ -291,6 +314,12 @@ impl AppExtension for VisualDebugger {
 
     fn on_update(&mut self, engine: &mut Engine) -> bool {
         let mut redraw = false;
+        if self.reload_requested {
+            self.reload_requested = false;
+            engine.queue_full_reload();
+            // The rebuild runs at the start of the next frame; ask for that frame now.
+            redraw = true;
+        }
         if self.step_requested {
             self.step_requested = false;
             engine.step_animation();

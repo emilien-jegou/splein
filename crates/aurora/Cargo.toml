@@ -37,6 +37,10 @@ tracing-subscriber = { version = "0.3", features = ["fmt", "registry", "env-filt
 tracy-client = { version = "0.19", features = ["enable"], optional = true }
 tracing-tracy = { version = "0.12", features = ["enable"], optional = true }
 
+# Hot-reload: file watching + dynamic library code-swap (dev loop only).
+notify = "8"
+libloading = "0.8"
+
 [dev-dependencies]
 ntest = "0.9"
 aurora-tiny-skia = { path = "../aurora-tiny-skia", version = "0.0.1-rc.1" }

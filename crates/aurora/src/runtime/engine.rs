@@ -4,9 +4,11 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::dsl::element::Element;
+use crate::dsl::reconcile_group::replace_child;
 use crate::dsl::reconciler::reconcile;
 use crate::dsl::IntoElement;
 use crate::foundation::{Color, DamageRegion, DamageRing, Key, Point, ResolvedRect, Transform};
+use crate::hot_reload::{HotReload, HotReloadStats, ReloadReport, SharedFactory};
 use crate::input::{CursorIcon, KeyEvent, PointerEvent, PointerOutcome};
 use crate::reactive::{Cx, ReactiveRuntime, Signal};
 use crate::runtime::diagnostics::EngineDiagnostics;
@@ -48,6 +50,18 @@ pub struct Engine {
     /// hot-reload loops to display. Surviving a frame is the point: a bad
     /// literal or a buggy handler drops one frame, never the app.
     last_frame_error: Option<String>,
+    /// Hot-reload orchestrator: queued rebuilds, component registry, file watcher.
+    ///
+    /// Dormant until used — with no factory and nothing queued, the per-frame drain is a
+    /// flag check. See [`crate::hot_reload`].
+    hot_reload: HotReload,
+    /// Hot-reload failure staged for the end of the frame.
+    ///
+    /// A failed rebuild must stay visible in [`Self::last_frame_error`] for a full frame:
+    /// recording it in the drain and letting the pass below clear it would hide it inside
+    /// the same `frame()` call. Applied after the pass outcome so it wins over the clean
+    /// slate, then clears on the next clean frame like any other frame error.
+    staged_reload_error: Option<String>,
 }
 
 impl Engine {
@@ -81,6 +95,8 @@ impl Engine {
             caret_last_seen: None,
             caret_epoch: 0.0,
             last_frame_error: None,
+            hot_reload: HotReload::new(),
+            staged_reload_error: None,
         }
     }
 
@@ -255,6 +271,136 @@ impl Engine {
         self.scheduler.runtime.borrow_mut().clear_hook_state();
     }
 
+    /// Installs (or swaps) the root factory re-run on every hot-reload.
+    ///
+    /// `AppConfig::run` installs the app's root builder; a dylib host swaps in a fresh
+    /// factory after its reloader reports a new library. See [`crate::hot_reload`].
+    pub fn set_root_factory(&mut self, factory: SharedFactory) {
+        self.hot_reload.set_root_factory(factory);
+    }
+
+    /// Queues a state-preserving full rebuild for the start of the next frame.
+    ///
+    /// The root factory re-runs under the same stable `"root"` hook scope, so every
+    /// `use_signal`, `use_transition`, and ticker survives. The reconciler then patches
+    /// only what changed. No-op without a factory (recorded in stats as a failure).
+    pub fn queue_full_reload(&mut self) {
+        self.hot_reload.queue_full_reload();
+    }
+
+    /// Queues a reload scoped to one stable component identity.
+    ///
+    /// Resolves to a root rebuild reported under that identity — the reconciler still
+    /// patches only what changed, so scoping is about reporting, not cost.
+    pub fn queue_component_reload(&mut self, instance: impl AsRef<str>) {
+        self.hot_reload.queue_component_reload(instance);
+    }
+
+    /// Cumulative hot-reload telemetry.
+    pub fn hot_reload_stats(&self) -> HotReloadStats {
+        self.hot_reload.stats().clone()
+    }
+
+    /// Direct access to the hot-reload orchestrator (watcher registration, factory swap).
+    pub fn hot_reload_mut(&mut self) -> &mut HotReload {
+        &mut self.hot_reload
+    }
+
+    /// Direct read access to the hot-reload orchestrator.
+    pub fn hot_reload(&self) -> &HotReload {
+        &self.hot_reload
+    }
+
+    /// Replaces a single child slot of `parent` with a freshly built element.
+    ///
+    /// The surgical primitive behind component-scoped reloads: only the named slot is
+    /// re-reconciled, so siblings keep their `NodeId`s, layout caches, and state. Panic-safe
+    /// like [`Self::set_root`] — a panicking build keeps the previous subtree and records
+    /// the error.
+    pub fn set_root_at(&mut self, parent: NodeId, slot: usize, element: Element) {
+        let _ambient = crate::reactive::ambient_guard(&self.runtime());
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            replace_child(
+                &self.scheduler.runtime,
+                &mut self.scheduler.arena,
+                &mut self.scheduler.router,
+                parent,
+                slot,
+                element,
+            )
+        }));
+        match outcome {
+            Ok(_) => {
+                self.scheduler.dirty_nodes_this_frame.push(parent);
+            }
+            Err(payload) => {
+                let msg = crate::dsl::panic_message(&payload);
+                tracing::error!("aurora: set_root_at panicked ({msg}); keeping previous subtree");
+                self.last_frame_error = Some(msg);
+                let (w, h) = self.logical_size;
+                self.pending_damage.push(ResolvedRect::new(0.0, 0.0, w as f32, h as f32));
+            }
+        }
+    }
+
+    /// Drains hot-reload work at the start of a frame: build notes, watcher events, queued
+    /// rebuilds. Runs before input dispatch so a reloaded tree sees this frame's passes.
+    fn drain_hot_reload(&mut self) {
+        self.hot_reload.drain_build_notes();
+        let _watched_changed = self.hot_reload.drain_watcher();
+        let Some(targets) = self.hot_reload.take_collapsed_pending() else {
+            return;
+        };
+        let t0 = std::time::Instant::now();
+        let Some(factory) = self.hot_reload.root_factory() else {
+            let report = ReloadReport {
+                reloaded: targets,
+                files: Vec::new(),
+                duration: t0.elapsed(),
+                error: Some("no root factory installed; call Engine::set_root_factory".to_string()),
+            };
+            tracing::warn!("aurora: hot-reload requested ({})", report.error.as_deref().unwrap_or(""));
+            self.hot_reload.record_report(&report);
+            return;
+        };
+        let _ambient = crate::reactive::ambient_guard(&self.runtime());
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let cx = Cx::new(self.scheduler.runtime.clone());
+            cx.enter_keyed("root", || factory())
+        }));
+        match outcome {
+            Ok(element) => {
+                self.set_root(element);
+                let report = ReloadReport {
+                    reloaded: targets,
+                    files: Vec::new(),
+                    duration: t0.elapsed(),
+                    error: None,
+                };
+                tracing::info!(
+                    "aurora: hot-reload rebuilt [{}] in {:.1}ms",
+                    report.reloaded.join(", "),
+                    report.duration.as_secs_f64() * 1000.0
+                );
+                self.hot_reload.record_report(&report);
+            }
+            Err(payload) => {
+                let msg = crate::dsl::panic_message(&payload);
+                tracing::error!("aurora: hot-reload rebuild panicked ({msg}); keeping previous tree");
+                self.staged_reload_error = Some(msg.clone());
+                let report = ReloadReport {
+                    reloaded: targets,
+                    files: Vec::new(),
+                    duration: t0.elapsed(),
+                    error: Some(msg),
+                };
+                self.hot_reload.record_report(&report);
+                let (w, h) = self.logical_size;
+                self.pending_damage.push(ResolvedRect::new(0.0, 0.0, w as f32, h as f32));
+            }
+        }
+    }
+
     /// Runs the frame passes, committing bounds and compiling the display list scene.
     ///
     /// A panicking pass does not propagate: the boundary catches it, keeps the
@@ -274,6 +420,10 @@ impl Engine {
         let _ambient = crate::reactive::ambient_guard(&self.runtime());
         let (w, h) = self.logical_size;
         self.frame_counter = self.frame_counter.wrapping_add(1);
+
+        // Hot-reload rebuilds land before anything else: the new tree is reconciled first,
+        // so this frame's tick, input, react, and layout passes all see it at once.
+        self.drain_hot_reload();
 
         // The clock ticks before input dispatch, so queued events advance
         // against this frame's own deltas: pointer velocity measures the
@@ -322,6 +472,11 @@ impl Engine {
                 Default::default()
             }
         };
+        // A failed hot-reload rebuild stages its error here so it survives the clean pass
+        // above and stays visible for exactly one presented frame.
+        if let Some(msg) = self.staged_reload_error.take() {
+            self.last_frame_error = Some(msg);
+        }
 
         FrameReport {
             stats,

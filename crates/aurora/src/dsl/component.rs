@@ -151,9 +151,19 @@ pub fn component_scope<T: IntoElement>(body: impl FnOnce() -> T) -> Element {
 /// order is unchanged. Sibling instances of one component disambiguate by
 /// child index (see [`Cx::enter_named`]); distinct modules can't collide.
 ///
+/// `source_file` is the `file!()` at the expansion site (passed by the macro, not by
+/// hand): the hot-reload registry files it so a file change can name the components it
+/// must rebuild. Every build — mount or rebuild — files a note; the engine drains them
+/// once per frame.
+///
 /// Same panic contract as [`component_scope`]: outside a scope it panics
 /// loudly; a panicking body mounts an empty placeholder.
-pub fn component_scope_named<T: IntoElement>(path: &'static str, body: impl FnOnce() -> T) -> Element {
+pub fn component_scope_named<T: IntoElement>(
+    path: &'static str,
+    source_file: &'static str,
+    body: impl FnOnce() -> T,
+) -> Element {
+    crate::hot_reload::registry::note_build(path, source_file);
     let cx = Cx::expect_current();
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| cx.enter_named(path, body))) {
         Ok(built) => built.into_element(),

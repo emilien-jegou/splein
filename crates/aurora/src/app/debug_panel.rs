@@ -394,6 +394,14 @@ fn toolbar(ui: &PanelUi, snap: &Snapshot) -> Element {
                     notice.set("capture requested".into());
                 }
             })}
+            {text_btn(ui, "Reload", {
+                let bus = bus.clone();
+                let notice = notice.clone();
+                move || {
+                    bus.send(DebugCommand::ReloadAll);
+                    notice.set("hot-reload queued (F6)".into());
+                }
+            })}
             <Group
                 width={1.0}
                 height={16.0}
@@ -494,6 +502,27 @@ fn icon_btn(
             }}
         >
             {panel_icon(&ui.icons, icon, 14.0)}
+        </Group>
+    }
+    .into_element()
+}
+
+/// Toolbar text button in the same chrome as [`icon_btn`], for actions with no icon slot.
+fn text_btn(_ui: &PanelUi, label: &'static str, on_press: impl Fn() + 'static) -> Element {
+    view! {
+        <Group
+            height={26.0}
+            radius={5.0}
+            fill={Color::hex_alpha(0xFFFFFF, 0.03)}
+            stroke={Stroke::inside(1.0, Color::hex_alpha(0xFFFFFF, 0.05))}
+            alignment="center"
+            distribution="center"
+            margin={Margin::x(4.0)}
+            on:click={{
+                move |_: &ClickInfo| on_press()
+            }}
+        >
+            <Text size={11.0} color={0xBFBFBF}>{label}</Text>
         </Group>
     }
     .into_element()

@@ -169,6 +169,7 @@ fn expand(input: ItemFn, scope: Option<syn::Path>) -> syn::Result<proc_macro2::T
         // Siblings disambiguate by child index; modules can't collide.
         scope_call = quote! { ::aurora::dsl::component_scope_named(
             ::std::concat!(::std::module_path!(), "::", ::std::stringify!(#name)),
+            ::std::file!(),
             || #body_name(#(#arg_names),*)
         ) };
     }

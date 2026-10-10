@@ -15,6 +15,9 @@ pub use crate::foundation::{
     LayoutPresence, LightEnvironment, Margin, Radius, RenderDriver, Shadow,
     ShadowOffset, ShadowShape, Size, Stroke, StrokeAlign, Transform,
 };
+pub use crate::hot_reload::{
+    ComponentRegistry, DylibReloader, FileWatcher, HotReload, HotReloadStats, ReloadReport,
+};
 pub use crate::input::{ClickInfo, CursorIcon, DragInfo, HitTest, HoverInfo, KeyCode, KeyEvent, PointerButton, PointerEvent, PointerPhase, Propagation};
 pub use crate::reactive::{
     ambient_guard, batch, computed, use_frame_clock, use_interval, use_interval_toggle,

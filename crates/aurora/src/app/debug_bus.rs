@@ -119,6 +119,14 @@ pub enum DebugCommand {
     ArmPick,
     /// Clear the picked node.
     ClearSelection,
+    /// Rebuild the UI from the root factory, preserving all reactive state.
+    ///
+    /// Queued for the next frame; a panicking rebuild keeps the previous tree.
+    ReloadAll,
+    /// Reload scoped to one stable component identity (`module_path!()::Name`).
+    ///
+    /// Unknown or currently unmounted identities report without failing.
+    ReloadComponent(String),
 }
 
 /// Shared handle: latest snapshot cell + command channel.
@@ -207,10 +215,17 @@ mod tests {
         let (bus, rx) = DebugBus::new();
         bus.send(DebugCommand::StepOnce);
         bus.send(DebugCommand::SetTimeScale(0.5));
+        bus.send(DebugCommand::ReloadAll);
+        bus.send(DebugCommand::ReloadComponent("app::Card".to_string()));
         assert!(matches!(rx.recv().unwrap(), DebugCommand::StepOnce));
         assert!(matches!(
             rx.recv().unwrap(),
             DebugCommand::SetTimeScale(_)
+        ));
+        assert!(matches!(rx.recv().unwrap(), DebugCommand::ReloadAll));
+        assert!(matches!(
+            rx.recv().unwrap(),
+            DebugCommand::ReloadComponent(_)
         ));
     }
 }

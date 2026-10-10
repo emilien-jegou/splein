@@ -101,6 +101,7 @@ use winit::window::WindowBuilder;
 
 use crate::dsl::component::IntoElement;
 use crate::foundation::Color;
+use crate::hot_reload::SharedFactory;
 use crate::reactive::{Cx, ReactiveRuntime};
 use crate::render::RenderBackend;
 use crate::runtime::Engine;
@@ -221,8 +222,13 @@ impl AppConfig {
         // positionally: every component under the root derives a reproducible
         // identity (see `Cx::enter_named`). One runtime hosts one app, so one
         // `"root"` key is enough; tests that need stability name their own.
+        //
+        // The builder is kept as a shared factory for hot-reload: re-running it under the
+        // same `"root"` scope rebuilds the tree with every signal, spring, and ticker
+        // intact (see `crate::hot_reload`).
+        let root_factory: SharedFactory = Rc::new(move || root_fn().into_element());
         let cx = Cx::new(Rc::clone(&runtime));
-        let root = cx.enter_keyed("root", root_fn).into_element();
+        let root = cx.enter_keyed("root", || root_factory()).into_element();
 
         // The engine, the backend surface, and pointer input all run in
         // physical pixels (the viewport is later kept from `Resized`, which
@@ -235,6 +241,7 @@ impl AppConfig {
 
         let mut engine = Engine::with_runtime(Rc::clone(&runtime), root, pw, ph);
         engine.set_background(self.background);
+        engine.set_root_factory(Rc::clone(&root_factory));
         for f in &self.fonts {
             engine.load_font(f);
         }

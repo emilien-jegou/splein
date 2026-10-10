@@ -11,6 +11,7 @@ pub mod anim;
 pub mod app;
 pub mod dsl;
 pub mod foundation;
+pub mod hot_reload;
 pub mod input;
 pub mod layout;
 pub mod pipeline;
