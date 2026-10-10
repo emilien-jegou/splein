@@ -26,6 +26,7 @@ use crate::app::runner::{clipboard::OsClipboardSync, FpsLimit};
 use crate::app::VisualDebugger;
 use crate::dsl::component::IntoElement;
 use crate::foundation::{Color, DamageRegion, ResolvedRect};
+use crate::hot_reload::SharedFactory;
 use crate::input::CursorIcon;
 use crate::reactive::{Cx, ReactiveRuntime};
 use crate::render::RenderBackend;
@@ -357,13 +358,15 @@ fn sizes_for(mode: DisplayMode, demo_w: u32, demo_h: u32) -> (u32, u32, u32, u32
 fn run_multi<E: IntoElement, F: Fn() -> E + 'static>(config: MultiBackendConfig, root_fn: F) {
     let event_loop = EventLoopBuilder::with_user_event()
         .build()
-        .expect("Display init failed");
+        .unwrap_or_else(crate::app::runner::fail_display_init);
     let proxy = event_loop.create_proxy();
     let runtime = config
         .runtime
         .unwrap_or_else(|| Rc::new(RefCell::new(ReactiveRuntime::new())));
+    let root_factory: SharedFactory = Rc::new(move || root_fn().into_element());
     let cx = Cx::new(Rc::clone(&runtime));
-    let root = cx.enter_keyed("root", root_fn).into_element();
+    runtime.borrow_mut().begin_build_window();
+    let root = cx.enter_keyed("root", || root_factory()).into_element();
 
     let initial_slot = BACKEND_ORDER
         .iter()
@@ -388,6 +391,8 @@ fn run_multi<E: IntoElement, F: Fn() -> E + 'static>(config: MultiBackendConfig,
     let mut engine =
         Engine::with_runtime(Rc::clone(&runtime), root, boot_eng_w, boot_eng_h);
     engine.set_background(config.background);
+    engine.set_root_factory(Rc::clone(&root_factory));
+    runtime.borrow_mut().end_build_window(true);
     for f in &config.fonts {
         engine.load_font(f);
     }

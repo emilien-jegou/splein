@@ -74,7 +74,7 @@ pub fn build_ui() -> impl IntoElement {
                         width={140.0}
                         height={164.0}
                         radius="max"
-                        fill={0x4900FF}
+                        fill={0xFF00FF}
                         stroke={Stroke::inside(3.0, Color::BLACK)}
                         alignment="center"
                         distribution="center"

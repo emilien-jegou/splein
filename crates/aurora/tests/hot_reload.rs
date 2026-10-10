@@ -166,6 +166,63 @@ fn reload_patches_color_and_preserves_hook_state() {
     assert!(stats.last_damage_rects >= 1, "reload repainted");
 }
 
+/// A text color edit must repaint: `reconcile_text` marks PAINT alongside
+/// measure/layout because the layout pass clears the latter before damage reads
+/// them. Without PAINT the new color reconciles into the arena and is never
+/// repainted (observed: edited text staying the old color with `damage=0`).
+#[test]
+#[ntest::timeout(30_000)]
+fn reload_patches_text_color_and_requests_repaint() {
+    let ink = Rc::new(RefCell::new(Color::WHITE));
+    let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
+    runtime.borrow_mut().begin_build_window();
+    let cx = Cx::new(Rc::clone(&runtime));
+    let factory: SharedFactory = {
+        let ink = Rc::clone(&ink);
+        Rc::new(move || {
+            group()
+                .width(400.0)
+                .height(400.0)
+                .children([text("caption")
+                    .key("caption")
+                    .size(16.0)
+                    .color(*ink.borrow())])
+                .into_element()
+        })
+    };
+    let root: Element = cx.enter_keyed("root", || factory());
+    let mut engine = Engine::with_runtime(Rc::clone(&runtime), root, 400, 400);
+    runtime.borrow_mut().end_build_window(true);
+    engine.set_root_factory(Rc::clone(&factory));
+    engine.advance(1.0 / 60.0);
+    engine.frame();
+
+    // "Edit the source": the text color changes, then a reload rebuilds.
+    *ink.borrow_mut() = Color::BLACK;
+    engine.queue_full_reload();
+    engine.advance(1.0 / 60.0);
+    engine.frame();
+
+    let inked = engine.with_arena(|arena, _| {
+        let key: aurora::foundation::Key = "caption".into();
+        arena.node_for_key(&key).map(|id| match &arena.get(id).kind {
+            aurora::tree::NodeKind::Text(t) => t.color,
+            _ => panic!("caption must stay a text node"),
+        })
+    });
+    assert_eq!(
+        inked,
+        Some(Color::BLACK),
+        "the edited text color lands on the live node"
+    );
+    let stats = engine.hot_reload_stats();
+    assert_eq!(stats.reloads_total, 1);
+    assert!(
+        stats.last_damage_rects >= 1,
+        "text repaint was requested, not silently dropped"
+    );
+}
+
 #[test]
 #[ntest::timeout(30_000)]
 fn reload_applies_structural_changes_without_resetting_state() {

@@ -67,8 +67,10 @@ pub mod registry;
 pub mod remote;
 pub mod watcher;
 
-pub use component::{ComponentReloadExtension, ComponentRootFn, ComponentVersionFn, COMPONENT_ABI_VERSION};
-pub use dev_loop::{DevLoop, DevLoopConfig, PollOutcome};
+pub use component::{
+    ComponentReloadExtension, ComponentRootFn, ComponentVersionFn, component_abi_fingerprint,
+};
+pub use dev_loop::{DevLoop, DevLoopConfig, DevLoopState, PollOutcome};
 pub use dylib::DylibReloader;
 pub use extension::RemoteReloadExtension;
 
@@ -91,13 +93,62 @@ pub use registry::ComponentRegistry;
 pub use remote::{
     RemoteBuildFn, RemoteDirection, RemoteEventFn, RemoteHost, RemoteKind, RemoteNode,
     RemoteSize, RemoteSnapshot, RemoteStateDecl, RemoteStateFn, RemoteText, RemoteVersionFn,
-    StateWrite, REMOTE_ABI_VERSION,
+    StateWrite, remote_abi_fingerprint,
 };
 pub use watcher::FileWatcher;
 
 use crate::dsl::element::Element;
 use rustc_hash::FxHashMap;
 use std::path::{Path, PathBuf};
+
+/// Identity of the toolchain that compiled this image (`rustc -vV`, via `build.rs`).
+///
+/// Folded into both ABI fingerprints, so a host and UI built by different toolchains
+/// fail the handshake with a message instead of disagreeing silently across the
+/// `extern "Rust"` boundary (today: SIGABRT on unwind). Falls back to `"unknown"` for
+/// exotic non-cargo builds, where the layout half of the fingerprint still guards.
+pub fn toolchain_id() -> &'static str {
+    option_env!("AURORA_TOOLCHAIN_ID").unwrap_or("unknown-toolchain")
+}
+
+/// FNV-1a over one `u64`, for fingerprint folding. Deterministic across processes
+/// (unlike `DefaultHasher`, whose random keys would never agree across images).
+pub(crate) fn fold_u64(hash: u64, value: u64) -> u64 {
+    let mut h = hash;
+    for b in value.to_le_bytes() {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    h
+}
+
+/// FNV-1a over bytes, for fingerprint folding. See [`fold_u64`].
+pub(crate) fn fold_bytes(hash: u64, bytes: &[u8]) -> u64 {
+    let mut h = hash;
+    for b in bytes {
+        h ^= *b as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    h
+}
+
+/// FNV-1a offset basis.
+pub(crate) const FNV_OFFSET: u64 = 0xcbf29ce484222325;
+
+/// `dlopen`-scope sentinel: its address is compared across the boundary at activation.
+///
+/// A host and UI sharing one runtime instance resolve this to the same address; a
+/// statically-linked driver that mapped a second `libaurora_shared.so` sees two
+/// different addresses — and that is exactly the configuration whose component bodies
+/// panic on an empty scope stack. Never called; existence plus address is the contract.
+#[no_mangle]
+pub extern "Rust" fn aurora_runtime_sentinel() {}
+
+/// This image's address of the sentinel. Compare against the address the fresh library
+/// binds to (see `DylibReloader::bound_address`).
+pub fn host_sentinel_address() -> usize {
+    aurora_runtime_sentinel as *const () as usize
+}
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
@@ -170,6 +221,9 @@ pub struct HotReloadStats {
     pub last_damage_rects: usize,
     /// Mounted component identities known to the registry.
     pub components_tracked: usize,
+    /// What the dev loop is doing, published every update lap by the extensions.
+    /// A stuck loop is visible here instead of inferable from missing log lines.
+    pub dev_state: crate::hot_reload::dev_loop::DevLoopState,
 }
 
 /// Hot-reload orchestrator owned by [`crate::runtime::Engine`].
@@ -181,6 +235,9 @@ pub struct HotReload {
     registry: ComponentRegistry,
     watcher: FileWatcher,
     root_factory: Option<SharedFactory>,
+    /// Debug summary of the last reload's factory output, for before/after IR
+    /// logging in the drain. Human eyes only; never read for decisions.
+    last_tree_summary: Option<String>,
     pending: Vec<PendingReload>,
     /// Last time each path triggered a reload (debounce).
     last_trigger: FxHashMap<PathBuf, Instant>,
@@ -196,6 +253,7 @@ impl HotReload {
             registry: ComponentRegistry::default(),
             watcher: FileWatcher::new(),
             root_factory: None,
+            last_tree_summary: None,
             pending: Vec::new(),
             last_trigger: FxHashMap::default(),
             debounce: Duration::from_millis(150),
@@ -384,6 +442,22 @@ impl HotReload {
     pub(crate) fn record_build_failure(&mut self, cause: String, log: Vec<String>) {
         self.stats.last_build_error = Some(cause);
         self.stats.last_build_log = log;
+    }
+
+    /// Publishes what the dev loop is doing, written every update lap by the
+    /// extensions. Read by debug surfaces through [`HotReloadStats::dev_state`].
+    pub(crate) fn set_dev_state(&mut self, state: crate::hot_reload::dev_loop::DevLoopState) {
+        self.stats.dev_state = state;
+    }
+
+    /// Debug summary of the last reload's tree, for before/after logging.
+    pub(crate) fn last_tree_summary(&self) -> Option<&str> {
+        self.last_tree_summary.as_deref()
+    }
+
+    /// Records the debug summary of the latest reload's tree.
+    pub(crate) fn set_last_tree_summary(&mut self, summary: String) {
+        self.last_tree_summary = Some(summary);
     }
 
     /// Component identities whose registered source file matches `changed`.

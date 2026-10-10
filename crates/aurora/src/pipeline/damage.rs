@@ -59,6 +59,13 @@ impl DamagePlan {
             return plan;
         }
 
+        tracing::debug!(
+            "aurora: damage plan laid_out={} dirty_nodes={} removed={}",
+            laid_out,
+            dirty_nodes.len(),
+            plan.removed_rects.len(),
+        );
+
         // Layout path: Full / boundary tree resolution with hierarchical pruning
         let root_clip = if arena.get(root).style.clip {
             Some(ResolvedRect::new(

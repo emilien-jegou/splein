@@ -432,6 +432,21 @@ impl Engine {
         }));
         match outcome {
             Ok(element) => {
+                // Before/after IR for human diffing: the previous reload's tree
+                // against this one's. DEBUG-gated (a tree walk per reload frame);
+                // the per-node reconcile lines say what differed against retained
+                // state, these two say what the factory produced.
+                if tracing::enabled!(tracing::Level::DEBUG) {
+                    tracing::debug!(
+                        "aurora: hot-reload tree before:\n{}",
+                        self.hot_reload
+                            .last_tree_summary()
+                            .unwrap_or("<first build>")
+                    );
+                    let after = element.summarize();
+                    tracing::debug!("aurora: hot-reload tree after:\n{after}");
+                    self.hot_reload.set_last_tree_summary(after);
+                }
                 self.set_root(element);
                 self.scheduler.runtime.borrow_mut().end_build_window(true);
                 report.duration = t0.elapsed();
@@ -470,6 +485,13 @@ impl Engine {
     /// `&mut` scheduler reborrow ends as the stack unwinds.
     #[tracing::instrument(skip_all, fields(w = self.logical_size.0, h = self.logical_size.1))]
     pub fn frame(&mut self) -> FrameReport {
+        // No mutable borrow may be held across this boundary: a component body that
+        // panics while one is held would poison every later frame with
+        // `BorrowMutError`. Debug-only tripwire; release pays nothing.
+        debug_assert!(
+            self.scheduler.runtime.try_borrow_mut().is_ok(),
+            "runtime mutably borrowed across frame boundary"
+        );
         // Ambient for everything a frame runs: tickers, effects, post-layout
         // callbacks, scheduler rebuilds, and component bodies. Nested guards
         // (dispatch pushes its own below) resolve to the same runtime.
@@ -534,6 +556,12 @@ impl Engine {
         if let Some(msg) = self.staged_reload_error.take() {
             self.last_frame_error = Some(msg);
         }
+        // A panic inside the passes must not have leaked a borrow: fail fast in debug
+        // tests instead of cascading `BorrowMutError` through later frames.
+        debug_assert!(
+            self.scheduler.runtime.try_borrow_mut().is_ok(),
+            "frame passes leaked a runtime borrow across unwind"
+        );
         // Complete a reload executed at frame start with what the passes actually did.
         // A panicking pass leaves zeros (the tree state is suspect; impact is meaningless).
         if let Some(mut report) = pending_report {
@@ -542,6 +570,27 @@ impl Engine {
                 report.nodes_dirtied = stats.nodes_dirtied;
                 report.damage_rects = diag.spatial.damaged_rects.len();
             }
+            // One line per reload frame saying what the engine actually did with the
+            // new tree: `new_cmds`/`cached` tells whether compile re-emitted content
+            // or replayed retained chunks; `damage` tells whether the repaint was
+            // even requested. A changed fill with `new_cmds=0` means the scene kept
+            // stale commands; `damage=0` means the backend was never asked.
+            tracing::info!(
+                "aurora: hot-reload frame [{}] laid_out={} dirtied={} damage={} \
+                 new_cmds={} cached_chunks={} in {:.1}ms{}",
+                report.reloaded.join(","),
+                report.laid_out,
+                report.nodes_dirtied,
+                report.damage_rects,
+                diag.compile.commands_emitted,
+                diag.compile.cached_chunks,
+                report.duration.as_secs_f64() * 1000.0,
+                report
+                    .error
+                    .as_deref()
+                    .map(|e| format!(" error={e}"))
+                    .unwrap_or_default(),
+            );
             self.hot_reload.record_report(&report);
         }
 

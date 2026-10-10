@@ -207,14 +207,37 @@ pub type RemoteStateFn = extern "Rust" fn() -> RemoteStateDecl;
 pub type RemoteBuildFn = extern "Rust" fn(&RemoteSnapshot) -> RemoteNode;
 /// Maps a named click action to state writes. Implemented dylib-side.
 pub type RemoteEventFn = extern "Rust" fn(&str) -> Vec<StateWrite>;
-/// Reports the UI crate's remote-protocol version. Implemented dylib-side.
+/// Reports the UI crate's remote ABI fingerprint. Implemented dylib-side.
 ///
 /// Separate symbol from the component path's `aurora_hot_version` (one image may serve
 /// both loops): each loop checks its own contract and refuses drift loudly.
-pub type RemoteVersionFn = extern "Rust" fn() -> u32;
+pub type RemoteVersionFn = extern "Rust" fn() -> u64;
 
-/// Remote-protocol version both sides agree on. Bump on any signature change.
-pub const REMOTE_ABI_VERSION: u32 = 1;
+/// Manual protocol generation, folded into the fingerprint below. Bump on semantic
+/// contract changes that layouts alone cannot catch.
+const REMOTE_PROTO_GEN: u64 = 1;
+
+/// Fingerprint both sides must agree on before entry points install.
+///
+/// Folds the protocol generation, the size/alignment of every description type
+/// crossing the boundary (`RemoteStateDecl`, `RemoteSnapshot`, `RemoteNode`,
+/// `StateWrite`), and the compiling toolchain's identity — so signature drift and
+/// toolchain skew fail closed with a message instead of misbehaving.
+pub fn remote_abi_fingerprint() -> u64 {
+    let mut h = crate::hot_reload::FNV_OFFSET;
+    h = crate::hot_reload::fold_u64(h, REMOTE_PROTO_GEN);
+    for t in [
+        (size_of::<RemoteStateDecl>(), align_of::<RemoteStateDecl>()),
+        (size_of::<RemoteSnapshot>(), align_of::<RemoteSnapshot>()),
+        (size_of::<RemoteNode>(), align_of::<RemoteNode>()),
+        (size_of::<StateWrite>(), align_of::<StateWrite>()),
+    ] {
+        h = crate::hot_reload::fold_u64(h, t.0 as u64);
+        h = crate::hot_reload::fold_u64(h, t.1 as u64);
+    }
+    h = crate::hot_reload::fold_bytes(h, crate::hot_reload::toolchain_id().as_bytes());
+    h
+}
 
 /// Host side of remote UI: owns every signal, interprets descriptions into elements.
 ///

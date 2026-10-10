@@ -169,3 +169,17 @@ fn handle_idle_pacing(
         ));
     }
 }
+
+/// Graceful display-init failure shared by every app entry point.
+///
+/// A bare `.expect` here once ate a whole verification session in a display-less
+/// sandbox behind a one-line message. Name the cause, point at headless
+/// verification, and exit non-zero instead of panicking.
+pub fn fail_display_init<T>(err: winit::error::EventLoopError) -> T {
+    eprintln!("aurora: display init failed ({err})");
+    eprintln!(
+        "aurora: no X11/Wayland display reachable from this environment? \
+         Verify headlessly instead: aurora selftest --ui <image>."
+    );
+    std::process::exit(1);
+}

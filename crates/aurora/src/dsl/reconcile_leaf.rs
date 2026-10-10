@@ -54,8 +54,22 @@ pub fn reconcile_text(
         _ => true,
     };
 
+    tracing::debug!(
+        "aurora: reconcile text {:?} changed={} content={:?}",
+        id,
+        changed,
+        config.content,
+    );
     if changed {
-        arena.mark_dirty(id, DirtyFlags::MEASURE | DirtyFlags::LAYOUT);
+        // PAINT alongside measure/layout: `changed` covers non-geometric edits
+        // (notably `color`), and the layout pass clears MEASURE|LAYOUT before the
+        // damage pass reads them — without PAINT a color-only edit reconciles
+        // into the arena and is never repainted. Over-marking is safe: damage
+        // unions regions and the node recompiles either way.
+        arena.mark_dirty(
+            id,
+            DirtyFlags::MEASURE | DirtyFlags::LAYOUT | DirtyFlags::PAINT,
+        );
     }
     if clear_selection {
         let node = arena.get_mut(id);

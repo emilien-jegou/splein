@@ -82,6 +82,14 @@ pub fn reconcile_group(
     // which moves `def.handlers` out and so would leave `def` partially moved.
     let props = ResolvedProps::evaluate(&def, pose.as_ref(), m_sub, p_sub, runtime);
     let change = ChangeSet::detect(arena.get(id), &def, &props);
+    tracing::debug!(
+        "aurora: reconcile group {:?} fill={:?} layout={} paint={} transform={}",
+        id,
+        props.fill,
+        change.layout,
+        change.paint,
+        change.transform,
+    );
     // Hoisted before the writes below move fields out of `def`.
     let has_dynamics = def.has_dynamic_segments();
 

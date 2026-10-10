@@ -300,7 +300,7 @@ fn run_switchable_loop(
     );
     let event_loop = EventLoopBuilder::with_user_event()
         .build()
-        .expect("Display init failed");
+        .unwrap_or_else(crate::app::runner::fail_display_init);
     let proxy = event_loop.create_proxy();
     let window = Arc::new(
         WindowBuilder::new()

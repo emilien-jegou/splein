@@ -4,6 +4,7 @@
 !.envrc
 !cliff.toml
 !CHANGELOG.md
+!demo1.sh
 !.gitignore
 !Cargo.lock
 !Cargo.toml
@@ -26,6 +27,7 @@
 !crates/aurora/assets/
 !crates/aurora/assets/**/*
 !crates/aurora/Cargo.toml
+!crates/aurora/build.rs
 !crates/aurora/src/
 !crates/aurora/src/**/*
 !crates/aurora/tests/
@@ -64,6 +66,11 @@
 
 !crates/hot-stub/
 !crates/hot-stub/**/*
+
+!crates/aurora-demo1-ui/
+!crates/aurora-demo1-ui/**/*
+!crates/aurora-cli/
+!crates/aurora-cli/**/*
 
 !docs/
 !docs/**/*

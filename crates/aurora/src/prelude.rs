@@ -17,11 +17,12 @@ pub use crate::foundation::{
 };
 pub use crate::hot_reload::{
     ComponentRegistry, ComponentReloadExtension, ComponentRootFn, ComponentVersionFn,
-    DevLoop, DevLoopConfig, DylibReloader, FileWatcher, HotReload, HotReloadStats, PollOutcome,
+    DevLoop, DevLoopConfig, DevLoopState, DylibReloader, FileWatcher, HotReload, HotReloadStats,
+    PollOutcome,
     ReloadReport, RemoteBuildFn, RemoteDirection, RemoteEventFn, RemoteHost, RemoteKind,
     RemoteNode, RemoteReloadExtension, RemoteSize, RemoteSnapshot, RemoteStateDecl,
-    RemoteStateFn, RemoteText, RemoteVersionFn, StateWrite, COMPONENT_ABI_VERSION,
-    REMOTE_ABI_VERSION,
+    RemoteStateFn, RemoteText, RemoteVersionFn, StateWrite, component_abi_fingerprint,
+    host_sentinel_address, remote_abi_fingerprint, toolchain_id,
 };
 pub use crate::input::{ClickInfo, CursorIcon, DragInfo, HitTest, HoverInfo, KeyCode, KeyEvent, PointerButton, PointerEvent, PointerPhase, Propagation};
 pub use crate::reactive::{

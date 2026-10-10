@@ -28,9 +28,10 @@
 
 use crate::app::extension::AppExtension;
 use crate::dsl::{group, text, IntoElement};
-use crate::hot_reload::dev_loop::{DevLoop, DevLoopConfig, PollOutcome};
+use crate::hot_reload::dev_loop::{DevLoop, DevLoopConfig};
 use crate::hot_reload::remote::{
-    RemoteBuildFn, RemoteEventFn, RemoteHost, RemoteStateFn, RemoteVersionFn, REMOTE_ABI_VERSION,
+    RemoteBuildFn, RemoteEventFn, RemoteHost, RemoteStateFn, RemoteVersionFn,
+    remote_abi_fingerprint,
 };
 use crate::hot_reload::SharedFactory;
 use crate::runtime::Engine;
@@ -72,31 +73,56 @@ impl RemoteReloadExtension {
     }
 
     /// Resolves entry points from the fresh library and swaps the factory. Returns true
-    /// when the engine should present another frame.
-    fn activate_fresh_library(&mut self, engine: &mut Engine) -> bool {
+    /// when the engine should present another frame. Takes its state explicitly so the
+    /// shared update lap (`DevLoop::poll_update`) can drive it without borrow fights.
+    fn activate_fresh_library(
+        dev: &mut DevLoop,
+        host: &Rc<RemoteHost>,
+        shared_fns: &Rc<Cell<Option<(RemoteStateFn, RemoteBuildFn, RemoteEventFn)>>>,
+        factory_installed: &mut bool,
+        engine: &mut Engine,
+    ) -> bool {
+        // Single-instance guard first, like the component loop: an image bound to a
+        // different runtime copy would misbehave across the boundary. Refuse with a
+        // message instead; the next save rebuilds and retries.
+        match dev.loader().bound_address(b"aurora_runtime_sentinel") {
+            Ok(addr) if addr == crate::hot_reload::host_sentinel_address() => {}
+            Ok(_) => {
+                tracing::error!(
+                    "aurora: hot-ui bound aurora to a different runtime instance \
+                     (statically-linked driver?); drive via `aurora hot` + libaurora_shared.so; \
+                     keeping previous UI"
+                );
+                return true;
+            }
+            Err(e) => {
+                tracing::warn!("aurora: hot-ui exports no runtime sentinel ({e})");
+                return true;
+            }
+        }
         // Copy the entry points out of the symbols: raw fn pointers carry no lifetime,
         // and the loader (plus its retired images) keeps the code mapped for the session.
-        // The version check comes first so protocol drift fails closed with a message
-        // instead of misinterpreting a foreign description.
+        // The fingerprint check comes first so protocol drift fails closed with a
+        // message instead of misinterpreting a foreign description.
         let fns = unsafe {
             let version: libloading::Symbol<RemoteVersionFn> =
-                match self.dev.loader().get(b"aurora_remote_version") {
+                match dev.loader().get(b"aurora_remote_version") {
                     Ok(s) => s,
                     Err(e) => {
                         tracing::warn!("aurora: hot-ui missing `aurora_remote_version` ({e})");
                         return true;
                     }
                 };
-            if version() != REMOTE_ABI_VERSION {
+            if version() != remote_abi_fingerprint() {
                 tracing::warn!(
-                    "aurora: hot-ui remote protocol version {} != host {}; keeping previous UI",
+                    "aurora: hot-ui remote ABI fingerprint {:x} != host {:x}; keeping previous UI",
                     version(),
-                    REMOTE_ABI_VERSION
+                    remote_abi_fingerprint()
                 );
                 return true;
             }
             let state: libloading::Symbol<RemoteStateFn> =
-                match self.dev.loader().get(b"aurora_remote_state") {
+                match dev.loader().get(b"aurora_remote_state") {
                     Ok(s) => s,
                     Err(e) => {
                         tracing::warn!("aurora: hot-ui missing `aurora_remote_state` ({e})");
@@ -104,7 +130,7 @@ impl RemoteReloadExtension {
                     }
                 };
             let build: libloading::Symbol<RemoteBuildFn> =
-                match self.dev.loader().get(b"aurora_remote_build") {
+                match dev.loader().get(b"aurora_remote_build") {
                     Ok(s) => s,
                     Err(e) => {
                         tracing::warn!("aurora: hot-ui missing `aurora_remote_build` ({e})");
@@ -112,7 +138,7 @@ impl RemoteReloadExtension {
                     }
                 };
             let event: libloading::Symbol<RemoteEventFn> =
-                match self.dev.loader().get(b"aurora_remote_event") {
+                match dev.loader().get(b"aurora_remote_event") {
                     Ok(s) => s,
                     Err(e) => {
                         tracing::warn!("aurora: hot-ui missing `aurora_remote_event` ({e})");
@@ -123,17 +149,17 @@ impl RemoteReloadExtension {
         };
         // The host is shared with the installed root factory (both hold an `Rc`), and it
         // is interior-mutable throughout — attach, declare, and swap freely, even mid-frame.
-        self.host.attach_runtime(engine.runtime());
-        self.host.set_fns(fns.0, fns.1, fns.2);
-        if !self.host.ensure_state(&(fns.0)()) {
+        host.attach_runtime(engine.runtime());
+        host.set_fns(fns.0, fns.1, fns.2);
+        if !host.ensure_state(&(fns.0)()) {
             tracing::warn!("aurora: hot-ui has no runtime yet; retrying next frame");
             return true;
         }
-        self.shared_fns.set(Some(fns));
-        if !self.factory_installed {
-            self.factory_installed = true;
-            let host = Rc::clone(&self.host);
-            let shared = Rc::clone(&self.shared_fns);
+        shared_fns.set(Some(fns));
+        if !*factory_installed {
+            *factory_installed = true;
+            let host = Rc::clone(host);
+            let shared = Rc::clone(shared_fns);
             let factory: SharedFactory = Rc::new(move || {
                 let Some((_, build, _)) = shared.get() else {
                     return group()
@@ -150,7 +176,7 @@ impl RemoteReloadExtension {
         engine.queue_full_reload();
         tracing::info!(
             "aurora: hot-ui reloaded ({} retired images)",
-            self.dev.loader().retired_count()
+            dev.loader().retired_count()
         );
         true
     }
@@ -164,52 +190,39 @@ impl AppExtension for RemoteReloadExtension {
     /// A `LibraryReady` observed here cannot activate (no engine access) — it latches
     /// `pending_activation` so the next `on_update` swaps instead of dropping it.
     fn on_idle(&mut self) -> bool {
-        if self.pending_activation {
-            return true;
-        }
-        match self.dev.poll() {
-            PollOutcome::LibraryReady => {
-                self.pending_activation = true;
-                true
-            }
-            PollOutcome::Building | PollOutcome::Settled => true,
-            PollOutcome::Idle => false,
-        }
+        self.dev.poll_idle(&mut self.pending_activation)
     }
 
     fn on_update(&mut self, engine: &mut Engine) -> bool {
-        // An idle poll may have latched a fresh library; swap first so it is never lost.
-        let mut redraw = false;
-        if self.pending_activation {
-            self.pending_activation = false;
-            redraw |= self.activate_fresh_library(engine);
-        }
-        // Interaction first: clicks from the last presented frame become state writes now,
-        // so the UI answers in one frame whether or not a build is in flight.
-        let actions = self.host.drain_actions();
-        redraw |= !actions.is_empty();
-        if !actions.is_empty() {
-            if let Some((_, _, event)) = self.shared_fns.get() {
-                let mut writes = Vec::new();
-                for action in &actions {
-                    writes.extend(event(action));
+        self.dev.poll_update(
+            engine,
+            &mut self.pending_activation,
+            &mut |dev, engine| {
+                Self::activate_fresh_library(
+                    dev,
+                    &self.host,
+                    &self.shared_fns,
+                    &mut self.factory_installed,
+                    engine,
+                )
+            },
+            &mut || {
+                // Interaction first: clicks from the last presented frame become state
+                // writes now, so the UI answers in one frame whether or not a build
+                // is in flight.
+                let actions = self.host.drain_actions();
+                if actions.is_empty() {
+                    return false;
                 }
-                self.host.apply_writes(&writes);
-            }
-        }
-        // Dev cycle: watching, building, and hand-built libraries all surface here.
-        // `LibraryReady` is the only outcome that swaps entry points.
-        match self.dev.poll() {
-            PollOutcome::LibraryReady => redraw |= self.activate_fresh_library(engine),
-            PollOutcome::Building | PollOutcome::Settled => redraw = true,
-            PollOutcome::Idle => {}
-        }
-        // A failed build explains itself through stats (HUD/panel read these); the loop
-        // itself waits for the next save rather than retrying blindly.
-        if let Some((cause, log)) = self.dev.take_build_error() {
-            engine.hot_reload_mut().record_build_failure(cause, log);
-            redraw = true;
-        }
-        redraw
+                if let Some((_, _, event)) = self.shared_fns.get() {
+                    let mut writes = Vec::new();
+                    for action in &actions {
+                        writes.extend(event(action));
+                    }
+                    self.host.apply_writes(&writes);
+                }
+                true
+            },
+        )
     }
 }

@@ -203,6 +203,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "aurora-cli"
+version = "0.0.1-rc.1"
+dependencies = [
+ "clap",
+ "libc",
+ "libloading 0.8.9",
+]
+
+[[package]]
+name = "aurora-demo1-ui"
+version = "0.0.1-rc.1"
+dependencies = [
+ "aurora-shared",
+]
+
+[[package]]
 name = "aurora-hot-ui"
 version = "0.0.1-rc.1"
 dependencies = [
@@ -1476,14 +1492,6 @@ name = "hot-host"
 version = "0.0.1-rc.1"
 dependencies = [
  "aurora-shared",
-]
-
-[[package]]
-name = "hot-stub"
-version = "0.0.1-rc.1"
-dependencies = [
- "libc",
- "libloading 0.8.9",
 ]
 
 [[package]]

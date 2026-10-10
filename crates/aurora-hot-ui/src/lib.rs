@@ -18,9 +18,9 @@ extern crate aurora_shared as aurora;
 use aurora::dsl::IntoElement;
 use aurora::hot_reload::remote::{
     RemoteDirection, RemoteNode, RemoteSize, RemoteSnapshot, RemoteStateDecl, RemoteText,
-    StateWrite, REMOTE_ABI_VERSION,
+    StateWrite, remote_abi_fingerprint,
 };
-use aurora::hot_reload::COMPONENT_ABI_VERSION;
+use aurora::hot_reload::component_abi_fingerprint;
 use aurora::prelude::*;
 
 /// Click counter: hook state proving in-place continuity across reloads.
@@ -70,10 +70,10 @@ fn Page() -> impl IntoElement {
         .children([Hero()])
 }
 
-/// Protocol version the host checks before installing entry points.
+/// ABI fingerprint the host checks before installing entry points.
 #[no_mangle]
-pub extern "Rust" fn aurora_hot_version() -> u32 {
-    COMPONENT_ABI_VERSION
+pub extern "Rust" fn aurora_hot_version() -> u64 {
+    component_abi_fingerprint()
 }
 
 /// Rebuilds the interface. Re-run on every reload under the old hook scope.
@@ -83,10 +83,10 @@ pub extern "Rust" fn aurora_component_root() -> aurora::dsl::Element {
 }
 
 /// State keys and the values fresh keys start at. Live values always win over these.
-/// Remote-protocol version the host checks before installing entry points.
+/// Remote ABI fingerprint the host checks before installing entry points.
 #[no_mangle]
-pub extern "Rust" fn aurora_remote_version() -> u32 {
-    REMOTE_ABI_VERSION
+pub extern "Rust" fn aurora_remote_version() -> u64 {
+    remote_abi_fingerprint()
 }
 
 #[no_mangle]

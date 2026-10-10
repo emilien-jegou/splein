@@ -13,7 +13,8 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use aurora::hot_reload::remote::{
-    RemoteBuildFn, RemoteEventFn, RemoteHost, RemoteStateFn, RemoteVersionFn, REMOTE_ABI_VERSION,
+    RemoteBuildFn, RemoteEventFn, RemoteHost, RemoteStateFn, RemoteVersionFn,
+    remote_abi_fingerprint,
 };
 use aurora::hot_reload::DylibReloader;
 use aurora::prelude::*;
@@ -79,7 +80,7 @@ fn real_dylib_drives_interaction_and_survives_rebuild() {
     };
     assert_eq!(
         version_fn(),
-        REMOTE_ABI_VERSION,
+        remote_abi_fingerprint(),
         "protocol handshake across the boundary"
     );
     let (state_fn, build_fn, event_fn): (RemoteStateFn, RemoteBuildFn, RemoteEventFn) = unsafe {

@@ -2,7 +2,7 @@
 //
 // Built as a `dylib` linking only `aurora-shared`, so it shares the process's one aurora
 // instance with every UI cdylib. Exports a single C-compatible entry point the thin
-// `hot-stub` launcher calls; everything else (event loop, backends, reload extension) is
+// `aurora` launcher calls; everything else (event loop, backends, reload extension) is
 // ordinary aurora API resolving through the shared image.
 //
 // All arguments cross as primitives and borrowed C strings (read during the call), so no
@@ -46,6 +46,13 @@ pub extern "Rust" fn hot_host_run(
     aurora::app::App::config()
         .title(arg(title))
         .size(width.max(1), height.max(1))
+        // Without a loaded font no text node can shape: hot UI text ("Hello",
+        // counters, placeholders) would mount invisibly. Same Inter variable font
+        // the examples bundle; baked in at compile time, no extra crate needed.
+        .font(
+            "Inter",
+            include_bytes!("../../aurora/assets/inter-var.ttf"),
+        )
         .background(Color::hex(background))
         .backend(RenderBackend::TinySkia)
         .backend_factory(aurora_shared::tiny_skia::create_backend)
@@ -96,7 +103,7 @@ fn check(cond: bool, what: &str) -> Result<(), i32> {
 
 fn selftest_body(version_fn: usize, root_fn: usize) -> i32 {
     use aurora::hot_reload::{
-        ComponentRootFn, ComponentVersionFn, SharedFactory, COMPONENT_ABI_VERSION,
+        ComponentRootFn, ComponentVersionFn, SharedFactory, component_abi_fingerprint,
     };
     use std::cell::{Cell, RefCell};
     use std::rc::Rc;
@@ -106,7 +113,10 @@ fn selftest_body(version_fn: usize, root_fn: usize) -> i32 {
     let version_fn: ComponentVersionFn = unsafe { std::mem::transmute(version_fn) };
     let root_fn: ComponentRootFn = unsafe { std::mem::transmute(root_fn) };
     let run = || -> Result<(), i32> {
-        check(version_fn() == COMPONENT_ABI_VERSION, "protocol handshake agrees")?;
+        check(
+            version_fn() == component_abi_fingerprint(),
+            "protocol handshake agrees",
+        )?;
 
         let runtime = Rc::new(RefCell::new(aurora::reactive::ReactiveRuntime::new()));
         runtime.borrow_mut().begin_build_window();

@@ -6,7 +6,7 @@
 // Calling a component entry point here would resolve hooks against the wrong instance
 // (`hook called outside a component body`, then SIGABRT on unwind). Component execution
 // is therefore verified inside shared-instance land only — see `hot_host_selftest`,
-// driven headlessly by `hot-stub --selftest`. What this test pins instead:
+// driven headlessly by `aurora selftest`. What this test pins instead:
 // - the DevLoop reaches `LibraryReady` (watch → build → refresh, real cargo processes),
 // - both images load in dependency order with symbols resolving,
 // - the version handshake agrees on both sides.
@@ -17,7 +17,9 @@
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use aurora::hot_reload::{ComponentVersionFn, DevLoop, DevLoopConfig, PollOutcome, COMPONENT_ABI_VERSION};
+use aurora::hot_reload::{
+    ComponentVersionFn, DevLoop, DevLoopConfig, PollOutcome, component_abi_fingerprint,
+};
 
 fn workspace_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -44,11 +46,44 @@ fn await_library(dev: &mut DevLoop, deadline: Instant, what: &str) {
     }
 }
 
-fn version_of(ui_path: &std::path::Path) -> u32 {
+fn version_of(ui_path: &std::path::Path) -> u64 {
     let ui = unsafe { libloading::Library::new(ui_path).expect("ui image loads") };
     let version: libloading::Symbol<ComponentVersionFn> =
         unsafe { ui.get(b"aurora_hot_version").expect("version symbol") };
     version()
+}
+
+/// The two-runtime detector the extensions rely on, pinned from the failing side.
+///
+/// A cargo test binary links aurora statically, so any dlopened UI image holds a
+/// different runtime instance: the sentinel addresses must differ here (the
+/// extensions refuse to install exactly in this case; in shared-instance land the
+/// addresses are equal and activation proceeds).
+#[test]
+#[ntest::timeout(300_000)]
+fn foreign_image_binds_sentinel_elsewhere() {
+    use aurora::hot_reload::{DylibReloader, host_sentinel_address};
+
+    let ui_path = debug_dir().join("libaurora_hot_ui.so");
+    if !ui_path.exists() {
+        let status = std::process::Command::new("cargo")
+            .arg("build")
+            .arg("-p")
+            .arg("aurora-hot-ui")
+            .status()
+            .expect("cargo must run to build the hot-ui cdylib");
+        assert!(status.success(), "cargo build -p aurora-hot-ui must succeed");
+    }
+    let mut loader = DylibReloader::new(&ui_path);
+    assert!(loader.refresh(), "the ui library must load");
+    let bound = loader
+        .bound_address(b"aurora_runtime_sentinel")
+        .expect("sentinel resolves in the ui image");
+    assert_ne!(
+        bound,
+        host_sentinel_address(),
+        "test binary and dlopened image must hold different runtimes"
+    );
 }
 
 #[test]
@@ -71,7 +106,7 @@ fn dev_loop_cycles_and_handshake_agrees() {
     assert!(ui_path.exists(), "ui image present");
     assert_eq!(
         version_of(&ui_path),
-        COMPONENT_ABI_VERSION,
+        component_abi_fingerprint(),
         "protocol handshake across the boundary"
     );
 
@@ -92,7 +127,7 @@ fn dev_loop_cycles_and_handshake_agrees() {
     );
     assert_eq!(
         version_of(&ui_path),
-        COMPONENT_ABI_VERSION,
+        component_abi_fingerprint(),
         "handshake still agrees after the swap"
     );
 }
