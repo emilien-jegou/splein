@@ -9,9 +9,10 @@ use std::time::SystemTime;
 /// This is the code-swap half of hot-reload: the host builds its UI crate as a `cdylib`
 /// exposing a `#[no_mangle] pub extern "Rust" fn aurora_hot_reload_build(...)` entry point,
 /// and the dev loop calls [`DylibReloader::refresh`] (per frame, or on watcher events) to
-/// pick up fresh builds. The previous library stays mapped while symbols from it may still
-/// run — `refresh` only swaps after the new file loads — so an in-flight frame never calls
-/// into an unmapped image.
+/// pick up fresh builds. Superseded libraries stay mapped in `retired` while this reloader
+/// lives — dropping one would unmap code that in-flight frames or retained closures may
+/// still call into — so repeated reloads pin one image each, a bounded and explicitly
+/// dev-only cost.
 ///
 /// Dev-only by construction: both sides must be built by the same toolchain from the same
 /// `aurora` sources (Rust has no stable ABI), and `refresh` logs loudly rather than
@@ -20,6 +21,8 @@ pub struct DylibReloader {
     path: PathBuf,
     loaded_mtime: Option<SystemTime>,
     lib: Option<Library>,
+    /// Superseded images, kept mapped for the session. See the struct docs.
+    retired: Vec<Library>,
     /// Consecutive failed loads (mid-link file, locked on Windows). Reported, never fatal.
     consecutive_failures: u32,
 }
@@ -31,6 +34,7 @@ impl DylibReloader {
             path: path.into(),
             loaded_mtime: None,
             lib: None,
+            retired: Vec::new(),
             consecutive_failures: 0,
         }
     }
@@ -43,6 +47,11 @@ impl DylibReloader {
     /// Whether a library is currently loaded.
     pub fn is_loaded(&self) -> bool {
         self.lib.is_some()
+    }
+
+    /// How many superseded images are still mapped (one per successful reload).
+    pub fn retired_count(&self) -> usize {
+        self.retired.len()
     }
 
     /// Loads (or reloads when the file changed since the last load).
@@ -64,7 +73,9 @@ impl DylibReloader {
         // for a dev loop (a torn copy just fails this attempt and retries).
         match unsafe { Library::new(&self.path) } {
             Ok(lib) => {
-                self.lib = Some(lib);
+                if let Some(old) = self.lib.replace(lib) {
+                    self.retired.push(old);
+                }
                 self.loaded_mtime = Some(mtime);
                 if self.consecutive_failures > 0 {
                     tracing::info!(

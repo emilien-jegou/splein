@@ -53,6 +53,9 @@
 !crates/aurora-quad/
 !crates/aurora-quad/**/*
 
+!crates/aurora-hot-ui/
+!crates/aurora-hot-ui/**/*
+
 !docs/
 !docs/**/*
 

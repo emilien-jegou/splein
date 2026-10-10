@@ -17,6 +17,9 @@ pub use crate::foundation::{
 };
 pub use crate::hot_reload::{
     ComponentRegistry, DylibReloader, FileWatcher, HotReload, HotReloadStats, ReloadReport,
+    RemoteBuildFn, RemoteDirection, RemoteEventFn, RemoteHost, RemoteKind, RemoteNode,
+    RemoteReloadConfig, RemoteReloadExtension, RemoteSize, RemoteSnapshot, RemoteStateDecl,
+    RemoteStateFn, RemoteText, StateWrite,
 };
 pub use crate::input::{ClickInfo, CursorIcon, DragInfo, HitTest, HoverInfo, KeyCode, KeyEvent, PointerButton, PointerEvent, PointerPhase, Propagation};
 pub use crate::reactive::{

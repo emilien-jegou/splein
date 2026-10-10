@@ -45,6 +45,8 @@
 //! | [`registry`] | [`registry::ComponentRegistry`]: mounted identities + source-file index |
 //! | [`watcher`] | [`watcher::FileWatcher`]: `notify`-backed change polling |
 //! | [`dylib`] | [`dylib::DylibReloader`]: code-swap library loading |
+//! | [`remote`] | [`remote::RemoteHost`]: data-only remote UI schema + interpreter |
+//! | [`extension`] | [`extension::RemoteReloadExtension`]: frame-driven remote dev loop |
 //!
 //! # Pitfalls
 //!
@@ -56,11 +58,18 @@
 //!   `Engine::last_frame_error` — the app never dies for a bad edit.
 
 pub mod dylib;
+pub mod extension;
 pub mod registry;
+pub mod remote;
 pub mod watcher;
 
 pub use dylib::DylibReloader;
+pub use extension::{RemoteReloadConfig, RemoteReloadExtension};
 pub use registry::ComponentRegistry;
+pub use remote::{
+    RemoteBuildFn, RemoteDirection, RemoteEventFn, RemoteHost, RemoteKind, RemoteNode,
+    RemoteSize, RemoteSnapshot, RemoteStateDecl, RemoteStateFn, RemoteText, StateWrite,
+};
 pub use watcher::FileWatcher;
 
 use crate::dsl::element::Element;
