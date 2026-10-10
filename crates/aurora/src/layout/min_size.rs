@@ -5,8 +5,8 @@ use smallvec::SmallVec;
 use crate::foundation::{Direction, Gap};
 use crate::text::TextContext;
 use crate::tree::cache::LayoutCache;
+use crate::tree::TreeArena;
 use crate::tree::{NodeId, NodeKind};
-use crate::tree::{TreeArena};
 
 /// Smallest main-axis size a node can be shrunk to before its own content is crushed.
 ///

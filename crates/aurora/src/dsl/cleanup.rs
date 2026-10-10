@@ -1,9 +1,9 @@
 // Single responsibility: Retained node removal and subscriber disposal helpers.
 
 use crate::reactive::ReactiveRuntime;
+use crate::tree::NodeId;
 use crate::tree::SubscriberRouter;
-use crate::tree::{NodeId};
-use crate::tree::{TreeArena};
+use crate::tree::TreeArena;
 use std::cell::RefCell;
 use std::rc::Rc;
 

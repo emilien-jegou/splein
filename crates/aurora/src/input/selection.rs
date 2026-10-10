@@ -1,15 +1,15 @@
 // Single responsibility: Readonly text selection gestures: press, drag-extend, release,
 // keyboard selection, and clipboard reads.
 
+use super::router::PointerRouter;
 use crate::foundation::Point;
+use crate::input::event::PointerEvent;
 use crate::text::selection::{
     caret_at_point, expand_selection, snap_to_boundary, word_bounds, SelectionGranularity,
     TextSelection,
 };
-use crate::tree::{DirtyFlags, NodeId, NodeKind};
-use super::router::PointerRouter;
-use crate::input::event::PointerEvent;
 use crate::tree::TreeArena;
+use crate::tree::{DirtyFlags, NodeId, NodeKind};
 /// Native selection gesture state: the fixed press edge (anchor) and the
 /// moving edge (focus), each as a node plus a byte offset, with the
 /// click-count granularity latched on press.
@@ -58,7 +58,8 @@ impl PointerRouter {
     /// Handles the selection half of a press on (or off) selectable text.
     pub(crate) fn press_selection(&mut self, arena: &mut TreeArena, event: &PointerEvent) {
         // A new press starts a new gesture description for tracing.
-        self.last_extend_trace = None;        let target = self
+        self.last_extend_trace = None;
+        let target = self
             .press_chain
             .first()
             .copied()
@@ -123,9 +124,9 @@ impl PointerRouter {
                 .filter(|a| arena.is_valid(a.anchor_node))
                 .map(|a| (a.anchor_node, a.anchor, a.granularity))
                 .or_else(|| {
-                    self.focused
-                        .filter(|f| *f != node)
-                        .and_then(|f| current_selection(arena, f).map(|s| (f, s.anchor, granularity)))
+                    self.focused.filter(|f| *f != node).and_then(|f| {
+                        current_selection(arena, f).map(|s| (f, s.anchor, granularity))
+                    })
                 })
                 .or_else(|| current_selection(arena, node).map(|s| (node, s.anchor, granularity)));
             if let Some((anchor_node, anchor, gran)) = anchored {
@@ -235,8 +236,7 @@ impl PointerRouter {
                                 granularity: pending.granularity,
                                 involved: Vec::new(),
                             };
-                            let involved =
-                                paint_cross_selection(arena, root, &active, &[]);
+                            let involved = paint_cross_selection(arena, root, &active, &[]);
                             self.active_selection = Some(ActiveSelection { involved, ..active });
                             return;
                         }
@@ -282,7 +282,11 @@ impl PointerRouter {
         }
         // Only the gesture owner (the anchor run's capture) extends; other
         // drags leave it alone. The focus is free to roam onto other runs.
-        if self.tracker.capture().is_some_and(|c| c != active.anchor_node) {
+        if self
+            .tracker
+            .capture()
+            .is_some_and(|c| c != active.anchor_node)
+        {
             return;
         }
         // The focus run is whatever selectable text is on top now; over a gap
@@ -319,17 +323,18 @@ impl PointerRouter {
         };
         let involved = paint_cross_selection(arena, root, &next, &next.involved);
         self.set_focus(arena, Some(focus_node));
-        let trace_key = (
-            next.anchor_node,
-            next.focus_node,
-            next.anchor,
-            next.focus,
-        );
+        let trace_key = (next.anchor_node, next.focus_node, next.anchor, next.focus);
         if self.last_extend_trace != Some(trace_key) {
             self.last_extend_trace = Some(trace_key);
             let range = if next.is_single() {
-                expand_for(arena, next.focus_node, next.anchor, next.focus, next.granularity)
-                    .map(|s| s.normalized())
+                expand_for(
+                    arena,
+                    next.focus_node,
+                    next.anchor,
+                    next.focus,
+                    next.granularity,
+                )
+                .map(|s| s.normalized())
             } else {
                 None
             };
@@ -367,8 +372,7 @@ impl PointerRouter {
                     self.set_focus(arena, Some(pending.node));
                     self.clear_active_selection_except(arena, pending.node);
                     let root = self.root;
-                    let active =
-                        ActiveSelection::single(pending.node, caret, pending.granularity);
+                    let active = ActiveSelection::single(pending.node, caret, pending.granularity);
                     let involved = paint_cross_selection(arena, root, &active, &[]);
                     self.active_selection = Some(ActiveSelection { involved, ..active });
                 }
@@ -526,7 +530,6 @@ impl PointerRouter {
         }
         self.key_goal_x = None;
     }
-
 }
 
 /// Whether a node is opt-in selectable text.
@@ -614,7 +617,9 @@ fn cross_ranges(
                 &node_content(arena, active.anchor_node),
                 active.focus.min(content_len(arena, active.anchor_node)),
             );
-            if let Some(sel) = expand_for(arena, active.anchor_node, anchor, focus, active.granularity) {
+            if let Some(sel) =
+                expand_for(arena, active.anchor_node, anchor, focus, active.granularity)
+            {
                 return vec![(active.anchor_node, sel, active.granularity)];
             }
         }
@@ -628,9 +633,16 @@ fn cross_ranges(
     };
     if active.anchor_node == active.focus_node {
         let len = content_len(arena, active.anchor_node);
-        let anchor = snap_to_boundary(&node_content(arena, active.anchor_node), active.anchor.min(len));
-        let focus = snap_to_boundary(&node_content(arena, active.anchor_node), active.focus.min(len));
-        if let Some(sel) = expand_for(arena, active.anchor_node, anchor, focus, active.granularity) {
+        let anchor = snap_to_boundary(
+            &node_content(arena, active.anchor_node),
+            active.anchor.min(len),
+        );
+        let focus = snap_to_boundary(
+            &node_content(arena, active.anchor_node),
+            active.focus.min(len),
+        );
+        if let Some(sel) = expand_for(arena, active.anchor_node, anchor, focus, active.granularity)
+        {
             if sel.is_collapsed() {
                 return vec![(active.anchor_node, sel, active.granularity)];
             }
@@ -667,7 +679,14 @@ fn cross_ranges(
             if e > s {
                 // Store the snapped edge (s/e), direction-preserving, so the
                 // painted highlight equals the computed range exactly.
-                out.push((id, TextSelection { anchor: if forward { s } else { e }, focus: if forward { len } else { 0 } }, SelectionGranularity::Character));
+                out.push((
+                    id,
+                    TextSelection {
+                        anchor: if forward { s } else { e },
+                        focus: if forward { len } else { 0 },
+                    },
+                    SelectionGranularity::Character,
+                ));
             }
         } else if id == active.focus_node {
             let f = snap_to_boundary(&node_content(arena, id), active.focus.min(len));
@@ -687,16 +706,29 @@ fn cross_ranges(
                 (s, len)
             };
             if e > s {
-                out.push((id, TextSelection { anchor: if forward { 0 } else { len }, focus: if forward { e } else { s } }, SelectionGranularity::Character));
+                out.push((
+                    id,
+                    TextSelection {
+                        anchor: if forward { 0 } else { len },
+                        focus: if forward { e } else { s },
+                    },
+                    SelectionGranularity::Character,
+                ));
             }
         } else if len > 0 {
             let fwd = forward;
             out.push((
                 id,
                 if fwd {
-                    TextSelection { anchor: 0, focus: len }
+                    TextSelection {
+                        anchor: 0,
+                        focus: len,
+                    }
                 } else {
-                    TextSelection { anchor: len, focus: 0 }
+                    TextSelection {
+                        anchor: len,
+                        focus: 0,
+                    }
                 },
                 SelectionGranularity::Character,
             ));

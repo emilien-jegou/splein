@@ -23,7 +23,10 @@ fn probe_b() -> Signal<u32> {
 fn Stateful() -> impl IntoElement {
     let n = use_signal(0u32);
     PROBE.with(|p| *p.borrow_mut() = Some(n.clone()));
-    group().width(10.0 + n.get() as f32).height(10.0).into_element()
+    group()
+        .width(10.0 + n.get() as f32)
+        .height(10.0)
+        .into_element()
 }
 
 #[component]
@@ -94,5 +97,9 @@ fn engine_remount_preserves_component_state() {
     engine.mount(cx.enter_keyed("test-root", || Stateful()));
     engine.advance(1.0 / 60.0);
     engine.frame();
-    assert_eq!(probe().get(), 9, "remount through the engine must recall hooks");
+    assert_eq!(
+        probe().get(),
+        9,
+        "remount through the engine must recall hooks"
+    );
 }

@@ -147,7 +147,10 @@ impl TextContext {
             }
         }
         if misses.is_empty() {
-            return out.into_iter().map(|o| o.expect("hits fill every slot")).collect();
+            return out
+                .into_iter()
+                .map(|o| o.expect("hits fill every slot"))
+                .collect();
         }
         if misses.len() < PARALLEL_SHAPE_THRESHOLD {
             for i in misses {
@@ -192,7 +195,9 @@ impl TextContext {
                 out[i] = Some(layout);
             }
         }
-        out.into_iter().map(|o| o.expect("every slot is filled")).collect()
+        out.into_iter()
+            .map(|o| o.expect("every slot is filled"))
+            .collect()
     }
 
     /// Shapes text directly from configuration specification under layout constraints.
@@ -298,10 +303,10 @@ impl TextContext {
             self.bitmaps.note_miss();
             return f(None);
         };
-
         let size = f32::from_bits(rk.size_bits) * size_mul;
         let mut scaler = self.scaler.lock().unwrap();
-        let Some(font) = swash::FontRef::from_index(rk.font.data.data(), rk.font.index as usize) else {
+        let Some(font) = swash::FontRef::from_index(rk.font.data.data(), rk.font.index as usize)
+        else {
             drop(scaler);
             self.bitmaps.note_miss();
             return f(None);
@@ -347,7 +352,7 @@ impl TextContext {
         self.bitmaps.store(cache_key, phase, bitmap);
         // Borrow back out of the cache so hit and miss paths hand the closure
         // identically-owned data. Oversized entries bypass the cache: fall
-        // back to the freshly rendered image itself.
+        // back to the freshly rendered image itself (downsampled copy when SS).
         match self.bitmaps.get(&cache_key, phase) {
             Some(cached) => f(Some(GlyphBitmap {
                 left: cached.left,
@@ -382,4 +387,3 @@ impl Default for TextContext {
         Self::new()
     }
 }
-

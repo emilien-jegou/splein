@@ -87,10 +87,7 @@ impl FileWatcher {
                     continue;
                 }
             };
-            if !matches!(
-                event.kind,
-                EventKind::Modify(_) | EventKind::Create(_)
-            ) {
+            if !matches!(event.kind, EventKind::Modify(_) | EventKind::Create(_)) {
                 continue;
             }
             for path in event.paths {

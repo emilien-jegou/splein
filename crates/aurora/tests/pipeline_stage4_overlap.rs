@@ -59,7 +59,11 @@ fn test_4_3_repetitive_damage_repaints_do_not_progressively_darken() {
     ]));
     engine.frame();
 
-    let initial_alpha = raster.draw_engine(&mut engine).pixel(50, 105).unwrap().alpha();
+    let initial_alpha = raster
+        .draw_engine(&mut engine)
+        .pixel(50, 105)
+        .unwrap()
+        .alpha();
 
     for i in 0..20 {
         let val = if i % 2 == 0 {
@@ -71,7 +75,11 @@ fn test_4_3_repetitive_damage_repaints_do_not_progressively_darken() {
         engine.frame();
     }
 
-    let end_alpha = raster.draw_engine(&mut engine).pixel(50, 105).unwrap().alpha();
+    let end_alpha = raster
+        .draw_engine(&mut engine)
+        .pixel(50, 105)
+        .unwrap()
+        .alpha();
     assert_eq!(
         initial_alpha, end_alpha,
         "Scenario 4.3: Alpha must not accumulate over frames"

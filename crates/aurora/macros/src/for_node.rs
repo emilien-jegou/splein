@@ -48,8 +48,7 @@ pub fn extract(tokens: TokenStream2, out_nodes: &mut Vec<ForNode>) -> TokenStrea
             // backtrack the longest fully-parsing header (lone-`>` proof).
             let prov = flow_util::find_header_end(&toks, start);
             let from = prov.map(|h| h + 1).unwrap_or(start + 2);
-            let Some((body_end, close_end)) = flow_util::find_close(&toks, from, "for")
-            else {
+            let Some((body_end, close_end)) = flow_util::find_close(&toks, from, "for") else {
                 out.extend(toks[start..].iter().cloned());
                 break;
             };
@@ -65,7 +64,13 @@ pub fn extract(tokens: TokenStream2, out_nodes: &mut Vec<ForNode>) -> TokenStrea
             match parse_header(&header) {
                 Ok((index, item, items, key)) => {
                     let n = out_nodes.len();
-                    out_nodes.push(ForNode { index, item, items, key, body });
+                    out_nodes.push(ForNode {
+                        index,
+                        item,
+                        items,
+                        key,
+                        body,
+                    });
                     out.push(flow_util::placeholder("for", n));
                 }
                 Err(e) => {
@@ -93,12 +98,7 @@ pub fn extract(tokens: TokenStream2, out_nodes: &mut Vec<ForNode>) -> TokenStrea
 /// `<Group>` (nest one if the design needs it). `PAT` is `x` or `(i, x)`.
 fn parse_header(
     header: &[proc_macro2::TokenTree],
-) -> syn::Result<(
-    Option<syn::Ident>,
-    syn::Ident,
-    syn::Expr,
-    ForKey,
-)> {
+) -> syn::Result<(Option<syn::Ident>, syn::Ident, syn::Expr, ForKey)> {
     use proc_macro2::TokenTree::*;
     // Strip leading `<` `for` and trailing `>`.
     let inner: TokenStream2 = header[2..header.len() - 1].iter().cloned().collect();
@@ -218,7 +218,10 @@ fn parse_pattern(pat_ts: TokenStream2) -> syn::Result<(Option<syn::Ident>, syn::
 fn pat_ident(pat: &syn::Pat) -> syn::Result<syn::Ident> {
     match pat {
         syn::Pat::Ident(pi) => Ok(pi.ident.clone()),
-        other => Err(syn::Error::new_spanned(other, "view!: `<for>` pattern binds plain idents only")),
+        other => Err(syn::Error::new_spanned(
+            other,
+            "view!: `<for>` pattern binds plain idents only",
+        )),
     }
 }
 
@@ -255,7 +258,11 @@ pub fn expand(node: &ForNode) -> TokenStream2 {
     let item = &node.item;
     // Row closure params: user index name or `_i` when omitted (no unused warning:
     // explicit `_` prefix is warning-quiet by construction).
-    let idx_pat = node.index.clone().map(|i| quote! { #i }).unwrap_or_else(|| quote! { _i });
+    let idx_pat = node
+        .index
+        .clone()
+        .map(|i| quote! { #i })
+        .unwrap_or_else(|| quote! { _i });
     // Unused `item` binding is the user's own spelling; keep warning (agreed).
     let row = quote! { move |#idx_pat: usize, #item| -> ::std::vec::Vec<::aurora::dsl::ChildSegment> { #row_vec } };
     match &node.key {

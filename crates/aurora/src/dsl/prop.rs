@@ -1,6 +1,9 @@
 // Single responsibility: Declarative UI conversions from foundation types into dynamic properties.
 
-use crate::foundation::{Alignment, Color, Direction, Distribution, Fill, Gap, LayoutPresence, Margin, Radius, Shadow, Size, Stroke, Transform};
+use crate::foundation::{
+    Alignment, Color, Direction, Distribution, Fill, Gap, LayoutPresence, Margin, Radius, Shadow,
+    Size, Stroke, Transform,
+};
 use crate::reactive::derived::Derived;
 use crate::reactive::prop::{DynamicProp, IntoProp};
 use crate::reactive::signal::Signal;

@@ -42,7 +42,10 @@ fn a_panicking_remount_keeps_the_old_root() {
     engine.mount(group().children_of(|| -> Vec<aurora::dsl::Element> {
         panic!("boom in rebuild");
     }));
-    let msg = engine.last_frame_error().expect("remount must record the panic").to_string();
+    let msg = engine
+        .last_frame_error()
+        .expect("remount must record the panic")
+        .to_string();
     assert!(msg.contains("boom in rebuild"), "unexpected message: {msg}");
 
     // The kept root still frames cleanly, which clears the recorded error.
@@ -61,10 +64,15 @@ fn a_panicking_binding_is_recorded_not_propagated() {
         group()
             .width(400.0)
             .height(400.0)
-            .x(aurora::reactive::computed(|| -> f32 { panic!("boom in binding") }))
+            .x(aurora::reactive::computed(|| -> f32 {
+                panic!("boom in binding")
+            }))
             .into_element()
     }));
-    let msg = engine.last_frame_error().expect("mount must record the panic").to_string();
+    let msg = engine
+        .last_frame_error()
+        .expect("mount must record the panic")
+        .to_string();
     assert!(msg.contains("boom in binding"), "unexpected message: {msg}");
 
     // Old root survives and frames cleanly afterwards.
@@ -106,6 +114,9 @@ fn a_panic_inside_frame_passes_is_caught_and_reported() {
     tick.set(1);
     engine.advance(1.0 / 60.0);
     engine.frame(); // must return, not unwind
-    let msg = engine.last_frame_error().expect("frame must record the panic").to_string();
+    let msg = engine
+        .last_frame_error()
+        .expect("frame must record the panic")
+        .to_string();
     assert!(msg.contains("boom in frame"), "unexpected message: {msg}");
 }

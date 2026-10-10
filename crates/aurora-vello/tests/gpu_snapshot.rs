@@ -8,7 +8,7 @@
 // gross histogram skew.
 
 #[allow(dead_code)]
-#[path = "../../aurora/examples/motion_reorder.rs"]
+#[path = "../../../examples/motion_reorder/main.rs"]
 mod reorder;
 
 use aurora::dsl::*;
@@ -211,7 +211,8 @@ impl Gpu {
     }
 }
 
-fn hist(px: &[u8]) -> (usize, usize, usize) {    // (blue-ish accent, near-white text, near-black arena)
+fn hist(px: &[u8]) -> (usize, usize, usize) {
+    // (blue-ish accent, near-white text, near-black arena)
     let mut blue = 0;
     let mut white = 0;
     let mut dark = 0;
@@ -246,7 +247,9 @@ fn gpu_matches_cpu_on_translated_rows() {
 
         let (cb, cw, cd) = hist(&cpu);
         let (gb, gw, gd) = hist(&gpu_px);
-        eprintln!("{name}: cpu blue={cb} white={cw} dark={cd} | gpu blue={gb} white={gw} dark={gd}");
+        eprintln!(
+            "{name}: cpu blue={cb} white={cw} dark={cd} | gpu blue={gb} white={gw} dark={gd}"
+        );
         assert!(
             gb > cb / 2,
             "{name}: gpu lost the blue rows (cpu {cb} vs gpu {gb})"
@@ -257,10 +260,7 @@ fn gpu_matches_cpu_on_translated_rows() {
 fn full_damage(w: u32, h: u32) -> aurora::foundation::DamageRegion {
     let mut region = aurora::foundation::DamageRegion::new();
     region.push(aurora::foundation::ResolvedRect::new(
-        0.0,
-        0.0,
-        w as f32,
-        h as f32,
+        0.0, 0.0, w as f32, h as f32,
     ));
     region
 }
@@ -269,8 +269,8 @@ fn full_damage(w: u32, h: u32) -> aurora::foundation::DamageRegion {
 #[ignore]
 #[ntest::timeout(300_000)]
 fn gpu_matches_cpu_with_live_hud() {
-    use aurora::app::{AppExtension, OverlayCaps, VisualDebugger};
     use aurora::app::painter::OverlayPainter;
+    use aurora::app::{AppExtension, OverlayCaps, VisualDebugger};
     use aurora::foundation::ResolvedRect;
 
     let mut gpu = Gpu::init();
@@ -290,6 +290,7 @@ fn gpu_matches_cpu_with_live_hud() {
             backend: "GPU",
             scanline_overlays: false,
             viewport: ResolvedRect::new(0.0, 0.0, w as f32, hh as f32),
+            background: aurora::foundation::Color::WHITE,
         };
         let mut debugger = VisualDebugger::new();
         debugger.show_hud = true;
@@ -341,8 +342,8 @@ fn compare_frame(
 }
 
 fn inject_hud(h: &mut Harness, fps: u32) {
-    use aurora::app::{AppExtension, OverlayCaps, VisualDebugger};
     use aurora::app::painter::OverlayPainter;
+    use aurora::app::{AppExtension, OverlayCaps, VisualDebugger};
     use aurora::foundation::ResolvedRect;
 
     let engine = h.engine();
@@ -354,6 +355,7 @@ fn inject_hud(h: &mut Harness, fps: u32) {
         backend: "GPU",
         scanline_overlays: false,
         viewport: ResolvedRect::new(0.0, 0.0, w as f32, hh as f32),
+        background: aurora::foundation::Color::WHITE,
     };
     let mut debugger = VisualDebugger::new();
     debugger.show_hud = true;
@@ -456,8 +458,5 @@ fn gpu_matches_cpu_on_reorder_page() {
     eprintln!("page: cpu blue={cb} white={cw} dark={cd} | gpu blue={gb} white={gw} dark={gd}");
     std::fs::write("/tmp/gpu_page_cpu.bin", &cpu).unwrap();
     std::fs::write("/tmp/gpu_page_gpu.bin", &gpu_px).unwrap();
-    assert!(
-        gb > cb / 2,
-        "gpu lost the blue rows (cpu {cb} vs gpu {gb})"
-    );
+    assert!(gb > cb / 2, "gpu lost the blue rows (cpu {cb} vs gpu {gb})");
 }

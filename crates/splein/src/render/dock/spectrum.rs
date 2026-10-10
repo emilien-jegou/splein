@@ -3,12 +3,12 @@
 use tiny_skia::Color;
 
 const STOPS: [(f32, (f32, f32, f32)); 6] = [
-    (0.0,   (1.0, 0.627, 0.0)),    // Tool 0 (q): Orange #FFA000
-    (56.0,  (0.341, 0.980, 0.345)), // Tool 1 (w): Green  #57FA58
-    (108.0, (0.980, 1.0, 0.125)),   // Tool 2 (e): Yellow #FAFF20
-    (160.0, (0.0, 0.682, 1.0)),     // Tool 3 (r): Blue   #00AEFF
-    (216.0, (0.0, 0.871, 0.702)),   // Tool 4 (t): Teal   #00DEB3
-    (268.0, (1.0, 0.392, 0.831)),   // Tool 5 (y): Pink   #FF64D4
+    (0.0, (1.0, 0.627, 0.0)),      // Tool 0 (q): Orange #FFA000
+    (56.0, (0.341, 0.980, 0.345)), // Tool 1 (w): Green  #57FA58
+    (108.0, (0.980, 1.0, 0.125)),  // Tool 2 (e): Yellow #FAFF20
+    (160.0, (0.0, 0.682, 1.0)),    // Tool 3 (r): Blue   #00AEFF
+    (216.0, (0.0, 0.871, 0.702)),  // Tool 4 (t): Teal   #00DEB3
+    (268.0, (1.0, 0.392, 0.831)),  // Tool 5 (y): Pink   #FF64D4
 ];
 
 pub fn sample_spectrum(x: f32, alpha: f32) -> Color {

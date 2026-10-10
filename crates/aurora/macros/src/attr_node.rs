@@ -13,7 +13,6 @@
 /// Scope: only brace groups *starting* with `<Tag` are touched. Rust blocks
 /// containing `<` deeper (`{a < b}`, `{foo(head={<X/>})}`) are left alone —
 /// RSX inside Rust expressions inside RSX is out of scope by design.
-
 use proc_macro2::TokenStream as TokenStream2;
 
 use crate::flow_util;
@@ -53,13 +52,11 @@ fn is_any_open(toks: &[proc_macro2::TokenTree], i: usize) -> bool {
     matches!(
         toks.get(i),
         Some(Punct(p)) if p.as_char() == '<'
-    ) && matches!(
-        toks.get(i + 1),
-        Some(Ident(_))
-    ) && !matches!(
-        toks.get(i + 2),
-        Some(Punct(p)) if p.as_char() == '/'
-    )
+    ) && matches!(toks.get(i + 1), Some(Ident(_)))
+        && !matches!(
+            toks.get(i + 2),
+            Some(Punct(p)) if p.as_char() == '/'
+        )
 }
 
 /// Rewrites one header's `=` + RSX-group values in place. Groups are opaque

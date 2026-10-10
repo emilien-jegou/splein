@@ -89,7 +89,9 @@ pub mod telemetry;
 pub use debug::{InspectorMode, VisualDebugger};
 pub use debug_bus::{DebugBus, DebugCommand, NodeBrief, Snapshot};
 pub use extension::{AppExtension, OverlayCaps};
-pub use multibackend::{backend_display_name, BackendStats, DisplayMode, MultiBackend, BACKEND_ORDER};
+pub use multibackend::{
+    backend_display_name, BackendStats, DisplayMode, MultiBackend, BACKEND_ORDER,
+};
 pub use painter::OverlayPainter;
 pub use runner::FpsLimit;
 
@@ -271,26 +273,16 @@ impl AppConfig {
                     "no GPU backend factory: pass the matching create_backend via \
                      `AppConfig::backend_factory`",
                 );
-                factory(
-                    Arc::clone(&window),
-                    pw,
-                    ph,
-                    engine.text_context(),
-                )
-                .unwrap_or_else(|e| panic!("{want} backend init failed: {e:?}"))
+                factory(Arc::clone(&window), pw, ph, engine.text_context())
+                    .unwrap_or_else(|e| panic!("{want} backend init failed: {e:?}"))
             }
             RenderBackend::TinySkia => {
                 let factory = self.backend_factory.expect(
                     "no CPU backend factory: pass `aurora_tiny_skia::create_backend` \
                      via `AppConfig::backend_factory`",
                 );
-                factory(
-                    window.clone(),
-                    pw,
-                    ph,
-                    engine.text_context(),
-                )
-                .expect("CPU backend init failed")
+                factory(window.clone(), pw, ph, engine.text_context())
+                    .expect("CPU backend init failed")
             }
         };
 

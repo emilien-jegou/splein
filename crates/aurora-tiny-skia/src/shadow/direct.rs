@@ -146,7 +146,10 @@ pub fn render_direct_blur(
         }
         let (cw, ch) = (pixmap.width() as i32, pixmap.height() as i32);
         let (x0, y0) = (x0.floor().max(0.0) as i32, y0.floor().max(0.0) as i32);
-        let (x1, y1) = (x1.ceil().min(cw as f32) as i32, y1.ceil().min(ch as f32) as i32);
+        let (x1, y1) = (
+            x1.ceil().min(cw as f32) as i32,
+            y1.ceil().min(ch as f32) as i32,
+        );
         let data = temp_pixmap.data();
         let (tw_i, th_i) = (bw as i32, bh as i32);
         for dy in y0..y1 {

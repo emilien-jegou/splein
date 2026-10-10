@@ -13,8 +13,8 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use aurora::hot_reload::remote::{
-    RemoteBuildFn, RemoteEventFn, RemoteHost, RemoteStateFn, RemoteVersionFn,
-    remote_abi_fingerprint,
+    remote_abi_fingerprint, RemoteBuildFn, RemoteEventFn, RemoteHost, RemoteStateFn,
+    RemoteVersionFn,
 };
 use aurora::hot_reload::DylibReloader;
 use aurora::prelude::*;
@@ -27,7 +27,7 @@ fn lib_path() -> PathBuf {
         .join("..")
         .join("..")
         .join("target")
-        .join("debug")
+        .join(aurora::hot_reload::HOT_PROFILE)
         .join("libaurora_hot_ui.so")
 }
 
@@ -37,12 +37,23 @@ fn ensure_built() {
     }
     let status = std::process::Command::new("cargo")
         .arg("build")
+        .arg("--release")
+        .arg("-p")
+        .arg("aurora-shared")
         .arg("-p")
         .arg("aurora-hot-ui")
+        .arg("-p")
+        .arg("aurora-devkit-bin")
         .status()
         .expect("cargo must run to build the hot-ui cdylib");
-    assert!(status.success(), "cargo build -p aurora-hot-ui must succeed");
-    assert!(lib_path().exists(), "the cdylib image must exist after building");
+    assert!(
+        status.success(),
+        "cargo build -p aurora-hot-ui must succeed"
+    );
+    assert!(
+        lib_path().exists(),
+        "the cdylib image must exist after building"
+    );
 }
 
 fn press(engine: &mut Engine, x: f32, y: f32) {
@@ -88,8 +99,12 @@ fn real_dylib_drives_interaction_and_survives_rebuild() {
             *loader
                 .get(b"aurora_remote_state")
                 .expect("aurora_remote_state"),
-            *loader.get(b"aurora_remote_build").expect("aurora_remote_build"),
-            *loader.get(b"aurora_remote_event").expect("aurora_remote_event"),
+            *loader
+                .get(b"aurora_remote_build")
+                .expect("aurora_remote_build"),
+            *loader
+                .get(b"aurora_remote_event")
+                .expect("aurora_remote_event"),
         )
     };
 
@@ -134,14 +149,13 @@ fn real_dylib_drives_interaction_and_survives_rebuild() {
 
     // Re-resolve symbols (stands in for a rebuilt library) and rebuild the tree the way
     // the engine drain does: new description, same host signals.
-    let (state_fn2, build_fn2, event_fn2): (RemoteStateFn, RemoteBuildFn, RemoteEventFn) =
-        unsafe {
-            (
-                *loader.get(b"aurora_remote_state").expect("state"),
-                *loader.get(b"aurora_remote_build").expect("build"),
-                *loader.get(b"aurora_remote_event").expect("event"),
-            )
-        };
+    let (state_fn2, build_fn2, event_fn2): (RemoteStateFn, RemoteBuildFn, RemoteEventFn) = unsafe {
+        (
+            *loader.get(b"aurora_remote_state").expect("state"),
+            *loader.get(b"aurora_remote_build").expect("build"),
+            *loader.get(b"aurora_remote_event").expect("event"),
+        )
+    };
     host.set_fns(state_fn2, build_fn2, event_fn2);
     assert!(host.ensure_state(&state_fn2()));
     let node2 = build_fn2(&host.snapshot());

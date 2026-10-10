@@ -6,11 +6,10 @@ use aurora::text::{quantize_raster_scale, TextContext};
 use std::sync::Arc;
 
 use crate::clip::ClipStack;
-use crate::pipeline::{GlyphVertex, RectVertex, RRectVertex};
+use crate::pipeline::{GlyphVertex, RRectVertex, RectVertex};
 use crate::text::GlyphAtlas;
 
-static WARNED: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
+static WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 fn warn_once(msg: &str) {
     if !WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
@@ -178,7 +177,11 @@ impl Batch {
         // the previous chunk's run.
         let fresh = std::mem::replace(&mut self.barrier, false);
         let extend = match self.ops.last_mut() {
-            Some(Op::Rects { count: c, scissor: s, .. }) if *s == sc && !fresh => Some(c),
+            Some(Op::Rects {
+                count: c,
+                scissor: s,
+                ..
+            }) if *s == sc && !fresh => Some(c),
             _ => None,
         };
         match extend {
@@ -195,7 +198,11 @@ impl Batch {
         let sc = self.clip.current();
         let fresh = std::mem::replace(&mut self.barrier, false);
         let extend = match self.ops.last_mut() {
-            Some(Op::RRects { count: c, scissor: s, .. }) if *s == sc && !fresh => Some(c),
+            Some(Op::RRects {
+                count: c,
+                scissor: s,
+                ..
+            }) if *s == sc && !fresh => Some(c),
             _ => None,
         };
         match extend {
@@ -211,10 +218,7 @@ impl Batch {
     /// Translation + uniform positive scale (within epsilon): the SDF box
     /// stays axis-aligned and radii scale uniformly.
     fn tx_is_rigid(t: &Transform) -> bool {
-        t.b.abs() < 1e-6
-            && t.c.abs() < 1e-6
-            && t.a > 1e-6
-            && (t.a - t.d).abs() < 1e-6
+        t.b.abs() < 1e-6 && t.c.abs() < 1e-6 && t.a > 1e-6 && (t.a - t.d).abs() < 1e-6
     }
 
     /// Emits a rounded-rect fill + stroke through the SDF pipeline.
@@ -356,15 +360,11 @@ impl Batch {
             if x1 <= x0 || y1 <= y0 {
                 continue;
             }
-            for (px, py) in [
-                (x0, y0),
-                (x1, y0),
-                (x0, y1),
-                (x1, y0),
-                (x1, y1),
-                (x0, y1),
-            ] {
-                self.rect_verts.push(RectVertex { pos: [px, py], color: c });
+            for (px, py) in [(x0, y0), (x1, y0), (x0, y1), (x1, y0), (x1, y1), (x0, y1)] {
+                self.rect_verts.push(RectVertex {
+                    pos: [px, py],
+                    color: c,
+                });
             }
             let extend = match self.ops.last_mut() {
                 Some(Op::BaseQuads { count, .. }) => Some(count),
@@ -404,7 +404,10 @@ impl Batch {
             })
             .collect();
         for i in [0usize, 1, 2, 1, 3, 2] {
-            self.rect_verts.push(RectVertex { pos: p[i], color: c });
+            self.rect_verts.push(RectVertex {
+                pos: p[i],
+                color: c,
+            });
         }
         self.push_rect_run(6);
     }
@@ -459,33 +462,29 @@ impl Batch {
                 let phase = (binx as u8) & 3;
                 // Single raster: bitmap + bearing together (no TOCTOU).
                 // Metrics arrive in scaled px (q==1.0 at unity scale).
-                let rastered = text_ctx.raster_glyph_scaled(
-                    g.cache_key,
-                    phase,
-                    self.scale,
-                    |bmp| {
+                let rastered =
+                    text_ctx.raster_glyph_scaled(g.cache_key, phase, self.scale, |bmp| {
                         bmp.and_then(|b| {
                             if b.width == 0 || b.height == 0 {
                                 return None;
                             }
-                            let entry = atlas
-                                .get(g.cache_key, phase, sq16)
-                                .or_else(|| {
-                                    atlas.insert(
-                                        queue,
-                                        g.cache_key,
-                                        phase,
-                                        sq16,
-                                        b.width,
-                                        b.height,
-                                        b.data,
-                                    )
-                                })?;
+                            let entry = atlas.get(g.cache_key, phase, sq16).or_else(|| {
+                                atlas.insert(
+                                    queue,
+                                    g.cache_key,
+                                    phase,
+                                    sq16,
+                                    b.width,
+                                    b.height,
+                                    b.data,
+                                )
+                            })?;
                             Some((entry, b.left, b.top))
                         })
-                    },
-                );
-                let Some((e, bl, bt)) = rastered else { continue };
+                    });
+                let Some((e, bl, bt)) = rastered else {
+                    continue;
+                };
                 // Layout-space glyph rect. Placement backs out the *exact*
                 // device fractions, not the bin centers: X removes fx (the
                 // bin's baked offset plus the <=1/8px leftover, which rides
@@ -567,7 +566,9 @@ impl Batch {
                 }
                 SceneCommand::PushClip { rect, radius } => self.push_clip_local(rect, *radius),
                 SceneCommand::PopClip => self.clip.pop(),
-                SceneCommand::BeginLayer { .. } => warn_once("BeginLayer offscreen unsupported, drawing inline"),
+                SceneCommand::BeginLayer { .. } => {
+                    warn_once("BeginLayer offscreen unsupported, drawing inline")
+                }
                 SceneCommand::EndLayer { .. } => {}
                 SceneCommand::DrawRect { rect, appearance } => {
                     let plain_square = matches!(
@@ -622,4 +623,3 @@ impl Default for Batch {
         Self::new()
     }
 }
-

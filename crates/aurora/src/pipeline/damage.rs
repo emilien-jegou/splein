@@ -1,8 +1,8 @@
 // Single responsibility: Pure geometric damage analysis comparing visual bounds against history.
 
 use crate::foundation::{DamageRegion, LightEnvironment, Point, ResolvedRect, Transform};
+use crate::tree::TreeArena;
 use crate::tree::{DirtyFlags, NodeId, NodeKind};
-use crate::tree::{TreeArena};
 
 /// Damage calculation plan containing aggregated damaged regions and removed node bounds.
 #[derive(Clone, Debug, Default)]

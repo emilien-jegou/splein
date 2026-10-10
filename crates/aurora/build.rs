@@ -18,9 +18,7 @@ fn main() {
         .ok()
         .filter(|o| o.status.success())
         .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|s| {
-            s.split_whitespace().collect::<Vec<_>>().join(" ")
-        })
+        .map(|s| s.split_whitespace().collect::<Vec<_>>().join(" "))
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "unknown-toolchain".to_string());
     println!("cargo:rustc-env=AURORA_TOOLCHAIN_ID={id}");

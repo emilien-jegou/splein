@@ -63,16 +63,26 @@ pub mod component;
 pub mod dev_loop;
 pub mod dylib;
 pub mod extension;
+pub mod progress_bar;
 pub mod registry;
 pub mod remote;
 pub mod watcher;
 
 pub use component::{
-    ComponentReloadExtension, ComponentRootFn, ComponentVersionFn, component_abi_fingerprint,
+    component_abi_fingerprint, ComponentReloadExtension, ComponentRootFn, ComponentVersionFn,
 };
 pub use dev_loop::{DevLoop, DevLoopConfig, DevLoopState, PollOutcome};
 pub use dylib::DylibReloader;
 pub use extension::RemoteReloadExtension;
+pub use progress_bar::ReloadProgressBar;
+
+/// Cargo profile the whole hot loop builds under: script builds, loop-spawned
+/// rebuilds, and e2e harnesses. Exactly one profile everywhere keeps one unit
+/// family, so dylib links resolve instead of tripping over rival variants.
+/// Runtime speed matters for interactive demos, hence release over dev.
+/// Change this (and every `cargo build` invocation plus all default paths
+/// derived from it) together, or not at all.
+pub const HOT_PROFILE: &str = "release";
 
 /// Installs a `tracing_subscriber` fmt logger honoring `RUST_LOG` (default `info`).
 ///
@@ -91,9 +101,9 @@ pub fn init_dev_logging() {
 }
 pub use registry::ComponentRegistry;
 pub use remote::{
-    RemoteBuildFn, RemoteDirection, RemoteEventFn, RemoteHost, RemoteKind, RemoteNode,
-    RemoteSize, RemoteSnapshot, RemoteStateDecl, RemoteStateFn, RemoteText, RemoteVersionFn,
-    StateWrite, remote_abi_fingerprint,
+    remote_abi_fingerprint, RemoteBuildFn, RemoteDirection, RemoteEventFn, RemoteHost, RemoteKind,
+    RemoteNode, RemoteSize, RemoteSnapshot, RemoteStateDecl, RemoteStateFn, RemoteText,
+    RemoteVersionFn, StateWrite,
 };
 pub use watcher::FileWatcher;
 
@@ -420,7 +430,8 @@ impl HotReload {
     }
 
     /// Records a completed reload in stats.
-    pub(crate) fn record_report(&mut self, report: &ReloadReport) {        if report.error.is_some() {
+    pub(crate) fn record_report(&mut self, report: &ReloadReport) {
+        if report.error.is_some() {
             self.stats.reloads_failed += 1;
         } else {
             self.stats.reloads_total += 1;
@@ -431,7 +442,9 @@ impl HotReload {
         self.stats.last_laid_out = report.laid_out;
         self.stats.last_nodes_dirtied = report.nodes_dirtied;
         self.stats.last_damage_rects = report.damage_rects;
-        self.stats.reloaded_log.extend(report.reloaded.iter().cloned());
+        self.stats
+            .reloaded_log
+            .extend(report.reloaded.iter().cloned());
     }
 
     /// Records a failed *build* (cargo exit) in stats.

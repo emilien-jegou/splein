@@ -8,19 +8,19 @@ use vello::{
 };
 use winit::window::Window;
 
-use aurora::foundation::{Color, DamageRegion, Point, ResolvedRect, Transform};
-use aurora::render::error::BackendError;
-use aurora::scene::chunk::{InheritedClips, SceneChunk};
-use aurora::scene::command::{hash_commands, transform_bits};
-use vello::peniko::BlendMode;
 use crate::command::{compile_vello_chunk, VelloImageCache};
 use crate::context::GpuContext;
 use crate::shader::to_vello_color;
 use crate::shadow::VelloShadowCache;
 use crate::svg::VelloSvgCache;
 use crate::text::VelloGlyphCache;
+use aurora::foundation::{Color, DamageRegion, Point, ResolvedRect, Transform};
+use aurora::render::error::BackendError;
+use aurora::scene::chunk::{InheritedClips, SceneChunk};
+use aurora::scene::command::{hash_commands, transform_bits};
 use aurora::scene::scene::Scene;
 use aurora::text::TextContext;
+use vello::peniko::BlendMode;
 
 /// Pure reuse predicate, headless-testable: a chunk is re-encodable from
 /// cache iff damage is non-empty (known), small enough to cull, and no
@@ -86,8 +86,12 @@ pub fn local_viewport_bound(viewport: &KurboRect, placement: &Affine) -> KurboRe
         inv * vello::kurbo::Point::new(viewport.x0, viewport.y1),
         inv * vello::kurbo::Point::new(viewport.x1, viewport.y1),
     ];
-    let (mut x0, mut y0, mut x1, mut y1) =
-        (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
+    let (mut x0, mut y0, mut x1, mut y1) = (
+        f64::INFINITY,
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+        f64::NEG_INFINITY,
+    );
     for p in corners {
         x0 = x0.min(p.x);
         y0 = y0.min(p.y);
@@ -171,12 +175,11 @@ fn create_blit_pipeline(
             count: None,
         }],
     });
-    let pipeline_layout =
-        device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("aurora-vello-blit-layout-pipe"),
-            bind_group_layouts: &[&bind_layout],
-            push_constant_ranges: &[],
-        });
+    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("aurora-vello-blit-layout-pipe"),
+        bind_group_layouts: &[&bind_layout],
+        push_constant_ranges: &[],
+    });
     let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("aurora-vello-blit-pipeline"),
         layout: Some(&pipeline_layout),
@@ -300,8 +303,7 @@ impl VelloRenderer {
         .map_err(|e| BackendError::init(format!("Failed to initialize Vello engine: {e:?}")))?;
 
         let viewport_bound = KurboRect::new(0.0, 0.0, width.max(1) as f64, height.max(1) as f64);
-        let (blit_layout, blit_pipeline) =
-            create_blit_pipeline(&gpu.device, gpu.config.format);
+        let (blit_layout, blit_pipeline) = create_blit_pipeline(&gpu.device, gpu.config.format);
         Ok(Self {
             _window: window,
             gpu,
@@ -388,15 +390,13 @@ impl VelloRenderer {
                 frag.content_hash == hash && frag.placement_bits == bits
             };
             if identity_matches {
-                let placement_affine =
-                    chunk_placement_affine(&chunk.abs_origin, &chunk.placement);
+                let placement_affine = chunk_placement_affine(&chunk.abs_origin, &chunk.placement);
                 self.assemble_chunk(i, &chunk.inherited_clips, &placement_affine);
                 reused += 1;
                 continue;
             }
             // Recompile content into an isolated fragment, then assemble.
-            let placement_affine =
-                chunk_placement_affine(&chunk.abs_origin, &chunk.placement);
+            let placement_affine = chunk_placement_affine(&chunk.abs_origin, &chunk.placement);
             let local_bound = local_viewport_bound(&self.viewport_bound, &placement_affine);
             let mut frag_scene = VelloScene::new();
             compile_vello_chunk()
@@ -474,12 +474,12 @@ impl VelloRenderer {
                 &self.readback.as_ref().unwrap().2
             }
         };
-        let mut encoder =
-            self.gpu
-                .device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("aurora-vello-readback"),
-                });
+        let mut encoder = self
+            .gpu
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("aurora-vello-readback"),
+            });
         encoder.copy_texture_to_buffer(
             wgpu::ImageCopyTexture {
                 texture: &self.gpu.persistent,
@@ -543,11 +543,9 @@ impl VelloRenderer {
     ) -> Result<usize, BackendError> {
         let encoded = self.render_scene_offscreen(scene, base_color, damage)?;
 
-        let surface = self
-            .gpu
-            .surface
-            .as_ref()
-            .expect("render_frame needs a window surface; headless contexts use render_scene_offscreen");
+        let surface = self.gpu.surface.as_ref().expect(
+            "render_frame needs a window surface; headless contexts use render_scene_offscreen",
+        );
         let surface_texture = match surface.get_current_texture() {
             Ok(t) => t,
             Err(wgpu::SurfaceError::Outdated | wgpu::SurfaceError::Lost) => {
@@ -565,43 +563,41 @@ impl VelloRenderer {
 
         let (sw, sh) = (self.gpu.config.width, self.gpu.config.height);
         {
-            let surface_view = surface_texture.texture.create_view(
-                &wgpu::TextureViewDescriptor::default(),
-            );
-            let bind_group =
-                self.gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            let surface_view = surface_texture
+                .texture
+                .create_view(&wgpu::TextureViewDescriptor::default());
+            let bind_group = self
+                .gpu
+                .device
+                .create_bind_group(&wgpu::BindGroupDescriptor {
                     label: Some("aurora-vello-blit-bg"),
                     layout: &self.blit_layout,
                     entries: &[wgpu::BindGroupEntry {
                         binding: 0,
-                        resource: wgpu::BindingResource::TextureView(
-                            &self.gpu.persistent_view,
-                        ),
+                        resource: wgpu::BindingResource::TextureView(&self.gpu.persistent_view),
                     }],
                 });
-            let mut encoder = self.gpu.device.create_command_encoder(
-                &wgpu::CommandEncoderDescriptor {
-                    label: Some("aurora-vello-blit"),
-                },
-            );
-            {
-                let mut pass =
-                    encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                        label: Some("aurora-vello-blit-pass"),
-                        color_attachments: &[Some(
-                            wgpu::RenderPassColorAttachment {
-                                view: &surface_view,
-                                resolve_target: None,
-                                ops: wgpu::Operations {
-                                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                                    store: wgpu::StoreOp::Store,
-                                },
-                            },
-                        )],
-                        depth_stencil_attachment: None,
-                        occlusion_query_set: None,
-                        timestamp_writes: None,
+            let mut encoder =
+                self.gpu
+                    .device
+                    .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                        label: Some("aurora-vello-blit"),
                     });
+            {
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("aurora-vello-blit-pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &surface_view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    occlusion_query_set: None,
+                    timestamp_writes: None,
+                });
                 pass.set_pipeline(&self.blit_pipeline);
                 pass.set_bind_group(0, &bind_group, &[]);
                 pass.draw(0..6, 0..1);
@@ -632,12 +628,8 @@ impl VelloRenderer {
     fn assemble_chunk(&mut self, frag_idx: usize, clips: &InheritedClips, placement: &Affine) {
         for clip in clips.iter() {
             let shape = crate::path::build_kurbo_rounded_rect(&clip.rect, clip.radius);
-            self.vello_scene.push_layer(
-                BlendMode::default(),
-                1.0,
-                Affine::IDENTITY,
-                &shape,
-            );
+            self.vello_scene
+                .push_layer(BlendMode::default(), 1.0, Affine::IDENTITY, &shape);
         }
         let frag = &self.fragments[frag_idx];
         self.vello_scene.append(&frag.scene, Some(*placement));
@@ -695,7 +687,9 @@ mod tests {
             SceneCommand::DrawRect {
                 rect: ResolvedRect::new(0.0, 0.0, 100.0, 40.0),
                 appearance: aurora::foundation::Appearance {
-                    fill: Some(aurora::foundation::Fill::Solid(aurora::foundation::Color::BLACK)),
+                    fill: Some(aurora::foundation::Fill::Solid(
+                        aurora::foundation::Color::BLACK,
+                    )),
                     stroke: None,
                     radius: aurora::foundation::Radius::Scalar(4.0),
                     shadow: None,
@@ -770,10 +764,7 @@ mod tests {
             SceneChunk::new(ResolvedRect::new(0.0, 0.0, 1.0, 1.0), Point::new(0.0, 0.0)),
             svg,
         ];
-        assert!(matches!(
-            aa_for_chunks(chunks.iter()),
-            AaConfig::Area
-        ));
+        assert!(matches!(aa_for_chunks(chunks.iter()), AaConfig::Area));
         let _ = plain;
     }
 
@@ -785,9 +776,6 @@ mod tests {
         );
         c.commands = sample_commands().into();
         let chunks = vec![c];
-        assert!(matches!(
-            aa_for_chunks(chunks.iter()),
-            AaConfig::Area
-        ));
+        assert!(matches!(aa_for_chunks(chunks.iter()), AaConfig::Area));
     }
 }

@@ -9,12 +9,12 @@ use vello::peniko::{
 };
 use vello::Scene as VelloScene;
 
-use aurora::render::stroke_geometry::adjust_stroke_geometry;
 use crate::path::{build_kurbo_rect, build_kurbo_rounded_rect};
 use crate::shader::build_vello_brush;
 use crate::shadow::VelloShadowCache;
 use crate::svg::VelloSvgCache;
 use crate::text::VelloGlyphCache;
+use aurora::render::stroke_geometry::adjust_stroke_geometry;
 use aurora::scene::command::SceneCommand;
 use aurora::text::TextContext;
 

@@ -2,14 +2,14 @@
 
 use tiny_skia::{Pixmap, Transform as SkiaTransform};
 
-use aurora::foundation::DamageRegion;
-use aurora::render::error::BackendError;
 use crate::clip::ClipStack;
 use crate::command::{execute_commands, CommandContext};
 use crate::image::ImageCache;
-use crate::text::LineCompositeCache;
 use crate::shadow::ShadowRasterizer;
 use crate::svg::SvgCache;
+use crate::text::LineCompositeCache;
+use aurora::foundation::DamageRegion;
+use aurora::render::error::BackendError;
 use aurora::scene::scene::Scene;
 use aurora::text::TextContext;
 

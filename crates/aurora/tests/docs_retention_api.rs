@@ -185,13 +185,10 @@ fn sibling_content_change_recompiles_only_it() {
         "test setup must produce a right-side chunk"
     );
     for hash in right_before {
-        let (_, _, fresh) = after.get(&hash).expect(
-            "the untouched sibling's command bytes must survive its sibling's edit",
-        );
-        assert!(
-            !fresh,
-            "the untouched sibling must replay, not recompile"
-        );
+        let (_, _, fresh) = after
+            .get(&hash)
+            .expect("the untouched sibling's command bytes must survive its sibling's edit");
+        assert!(!fresh, "the untouched sibling must replay, not recompile");
     }
 }
 
@@ -294,10 +291,7 @@ fn dirty_offscreen_row_reveals_cleanly() {
             replayed_rows += 1;
         }
     }
-    assert_eq!(
-        fresh_rows, 1,
-        "exactly the revealed dirty row re-emits"
-    );
+    assert_eq!(fresh_rows, 1, "exactly the revealed dirty row re-emits");
     assert!(
         replayed_rows >= 4,
         "the rows that merely moved must replay, got {replayed_rows} replays"

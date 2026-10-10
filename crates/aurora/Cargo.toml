@@ -52,19 +52,3 @@ aurora-quad = { path = "../aurora-quad", version = "0.0.1-rc.1" }
 [profile.release]
 debug = true
 opt-level = 3
-
-[[example]]
-name = "demo1"
-path = "examples/demo1.rs"
-
-[[example]]
-name = "demo2"
-path = "examples/demo2.rs"
-
-[[example]]
-name = "demo3"
-path = "examples/demo3/main.rs"
-
-[[example]]
-name = "moving"
-path = "examples/moving.rs"

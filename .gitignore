@@ -4,7 +4,6 @@
 !.envrc
 !cliff.toml
 !CHANGELOG.md
-!demo1.sh
 !.gitignore
 !Cargo.lock
 !Cargo.toml
@@ -21,6 +20,9 @@
 !crates/splein/
 !crates/splein/**/*
 
+!examples/
+!examples/*
+!examples/**/*
 !crates/aurora/
 !crates/aurora/macros/
 !crates/aurora/macros/**/*
@@ -61,14 +63,12 @@
 !crates/aurora-shared/
 !crates/aurora-shared/**/*
 
-!crates/hot-host/
-!crates/hot-host/**/*
+!crates/aurora-devkit-bin/
+!crates/aurora-devkit-bin/**/*
 
 !crates/hot-stub/
 !crates/hot-stub/**/*
 
-!crates/aurora-demo1-ui/
-!crates/aurora-demo1-ui/**/*
 !crates/aurora-cli/
 !crates/aurora-cli/**/*
 

@@ -5,12 +5,12 @@ use std::rc::Rc;
 
 use tiny_skia::Pixmap;
 
+use crate::raster::{HeadlessFrame, HeadlessRaster};
+use crate::testing::snapshot::{Rgba, Snapshot};
 use aurora::foundation::{Key, Point, ResolvedRect, Transform};
 use aurora::input::{PointerButton, PointerEvent, PointerPhase};
 use aurora::reactive::{Cx, ReactiveRuntime};
 use aurora::runtime::Engine;
-use crate::raster::{HeadlessFrame, HeadlessRaster};
-use crate::testing::snapshot::{Rgba, Snapshot};
 
 /// The three boxes of a keyed view, named so they cannot be confused.
 ///

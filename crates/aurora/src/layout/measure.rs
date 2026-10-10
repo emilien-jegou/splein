@@ -3,8 +3,8 @@
 use crate::foundation::{Constraints, DesiredSize, IntrinsicSize, LayoutPresence, Size};
 use crate::layout::group_measure::measure_group_intrinsic;
 use crate::text::TextContext;
+use crate::tree::TreeArena;
 use crate::tree::{NodeId, NodeKind};
-use crate::tree::{TreeArena};
 
 /// Derives resolved pixel size from sizing intent, intrinsic size, and parent bound.
 pub fn resolve_desired_dimension(size: Size, intrinsic: f32, parent_dim: Option<f32>) -> f32 {
@@ -75,7 +75,8 @@ pub fn compute_intrinsic(
     // 2. O(1) Cache Hit (0 tracing overhead)
     if let Some(cached) = arena
         .get(node_id)
-        .state.core
+        .state
+        .core
         .cache
         .get_intrinsic(&effective_constraints)
     {
@@ -93,7 +94,13 @@ pub fn compute_intrinsic_with_constraints(
     constraints: Constraints,
     text_ctx: &TextContext,
 ) -> IntrinsicSize {
-    if let Some(cached) = arena.get(node_id).state.core.cache.get_intrinsic(&constraints) {
+    if let Some(cached) = arena
+        .get(node_id)
+        .state
+        .core
+        .cache
+        .get_intrinsic(&constraints)
+    {
         return cached;
     }
     measure_intrinsic_uncached(arena, node_id, constraints, text_ctx)
@@ -110,7 +117,8 @@ fn measure_intrinsic_uncached(
         let intrinsic = measure_group_intrinsic(arena, node_id, constraints, text_ctx);
         arena
             .get_mut(node_id)
-            .state.core
+            .state
+            .core
             .cache
             .store_intrinsic(constraints, intrinsic);
         return intrinsic;
@@ -128,7 +136,8 @@ fn measure_intrinsic_uncached(
 
     let target_node = arena.get_mut(node_id);
     target_node
-        .state.core
+        .state
+        .core
         .cache
         .store_intrinsic(constraints, intrinsic);
     if let Some(layout) = shaped_layout {

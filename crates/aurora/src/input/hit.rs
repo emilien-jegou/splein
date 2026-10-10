@@ -2,8 +2,8 @@
 
 use crate::foundation::{Point, ResolvedRect, Transform};
 use crate::tree::node::PaintLayer;
-use crate::tree::{NodeId};
-use crate::tree::{TreeArena};
+use crate::tree::NodeId;
+use crate::tree::TreeArena;
 
 /// One entry in a hit chain: a node under the pointer, plus why it matched.
 #[derive(Copy, Clone, Debug, PartialEq)]

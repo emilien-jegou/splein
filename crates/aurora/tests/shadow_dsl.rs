@@ -35,18 +35,23 @@ fn cheat_sheet_2_elevation_with_tint() {
 
 #[test]
 fn cheat_sheet_3_full_builder() {
-    let (shadow, _) = built(group().shadow(
-        Shadow::elevation(16.0)
-            .spread(-2.0)
-            .falloff(FalloffCurve::Physical)
-            .alpha()
-            .multiply(),
-    ));
+    let (shadow, _) = built(
+        group().shadow(
+            Shadow::elevation(16.0)
+                .spread(-2.0)
+                .falloff(FalloffCurve::Physical)
+                .alpha()
+                .multiply(),
+        ),
+    );
     let s = shadow.expect("shadow present");
     assert_eq!(s.spread, -2.0);
     assert_eq!(s.shape, ShadowShape::Alpha);
     assert_eq!(s.blend, BlendMode::Multiply);
-    assert!(s.layers().iter().all(|l| l.falloff == FalloffCurve::Physical));
+    assert!(s
+        .layers()
+        .iter()
+        .all(|l| l.falloff == FalloffCurve::Physical));
 }
 
 #[test]
@@ -69,9 +74,13 @@ fn cheat_sheet_4_reactive_shadow_is_paint_only() {
 
 #[test]
 fn cheat_sheet_5a_web_like_polyfill() {
-    let (shadow, _) = built(
-        group().shadow(Shadow::web_like(0.0, 4.0, 8.0, 0.0, Color::rgba8(0, 0, 0, 80))),
-    );
+    let (shadow, _) = built(group().shadow(Shadow::web_like(
+        0.0,
+        4.0,
+        8.0,
+        0.0,
+        Color::rgba8(0, 0, 0, 80),
+    )));
     let s = shadow.expect("shadow present");
     assert_eq!(s.blend, BlendMode::Normal);
     assert_eq!(s.spread, 0.0);
@@ -150,9 +159,7 @@ fn light_override_steers_shadow() {
     let (_, y_default, _, _) = shadow_bbox(&mut base, &mut raster);
 
     let mut over = Engine::headless(400, 400);
-    over.mount(card_under(Some(LightEnvironment::from_angles(
-        270.0, 45.0,
-    ))));
+    over.mount(card_under(Some(LightEnvironment::from_angles(270.0, 45.0))));
     over.frame();
     let (_, y_over, _, _) = shadow_bbox(&mut over, &mut raster);
 

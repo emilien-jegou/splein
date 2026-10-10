@@ -1,7 +1,7 @@
 // Single responsibility: TinySkia mask stack management with affine transform projection and alpha intersection.
 
-use aurora::foundation::{Radius, ResolvedRect};
 use crate::path::build_rounded_path;
+use aurora::foundation::{Radius, ResolvedRect};
 use tiny_skia::{FillRule, Mask, Transform};
 
 /// Manages stacked clipping masks projected through coordinate transformations.

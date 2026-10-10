@@ -35,8 +35,7 @@ pub fn extract(tokens: TokenStream2, out_nodes: &mut Vec<MatchNode>) -> TokenStr
             let start = i;
             let prov = flow_util::find_header_end(&toks, start);
             let from = prov.map(|h| h + 1).unwrap_or(start + 2);
-            let Some((body_end, close_end)) = flow_util::find_close(&toks, from, "match")
-            else {
+            let Some((body_end, close_end)) = flow_util::find_close(&toks, from, "match") else {
                 out.extend(toks[start..].iter().cloned());
                 break;
             };
@@ -153,17 +152,16 @@ fn split_arms(
 /// Header is `<case PAT [if GUARD]>`. `PAT` may be `|`-separated
 /// (`<case A | B>`); `if` splits at depth 0 (`if` cannot bind in patterns,
 /// so the split is unambiguous).
-fn parse_arm(
-    header: &[proc_macro2::TokenTree],
-    body: TokenStream2,
-) -> syn::Result<MatchArm> {
+fn parse_arm(header: &[proc_macro2::TokenTree], body: TokenStream2) -> syn::Result<MatchArm> {
     let (pat, guard) = parse_arm_shape(header)?;
     Ok(MatchArm { pat, guard, body })
 }
 
 /// Validates/shapes a `<case>` header without its body, so backtracking can
 /// probe candidates. Split from [`parse_arm`].
-fn parse_arm_shape(header: &[proc_macro2::TokenTree]) -> syn::Result<(syn::Pat, Option<syn::Expr>)> {
+fn parse_arm_shape(
+    header: &[proc_macro2::TokenTree],
+) -> syn::Result<(syn::Pat, Option<syn::Expr>)> {
     let inner: TokenStream2 = header[2..header.len() - 1].iter().cloned().collect();
     let inner_toks: Vec<proc_macro2::TokenTree> = inner.clone().into_iter().collect();
     let (pat_ts, guard) = match flow_util::find_ident_depth0(&inner_toks, "if") {

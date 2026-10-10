@@ -21,9 +21,7 @@ use winit::window::{Window, WindowBuilder};
 use crate::app::debug_bus::{DebugBus, DebugCommand, NodeBrief, Snapshot};
 use crate::app::debug_panel::{panel_icons, DebugPanel, PanelSync, PanelUi};
 use crate::app::extension::AppExtension;
-use crate::app::multibackend::{
-    backend_display_name, MultiBackendConfig, BACKEND_ORDER,
-};
+use crate::app::multibackend::{backend_display_name, MultiBackendConfig, BACKEND_ORDER};
 use crate::app::runner::backend::{Backend, BackendFactory};
 use crate::app::runner::clipboard::OsClipboardSync;
 use crate::app::runner::frame_flow::present_one;
@@ -193,11 +191,7 @@ fn brief_for(engine: &Engine, key: &NodeKey) -> Option<NodeBrief> {
             crate::tree::NodeKind::Custom(_) => "Custom",
         }
         .to_string();
-        let key_path = node
-            .key
-            .clone()
-            .map(|k| k.0)
-            .unwrap_or_default();
+        let key_path = node.key.clone().map(|k| k.0).unwrap_or_default();
         let mut ancestors = Vec::new();
         let mut curr = arena.parent(id);
         while let Some(pid) = curr {
@@ -325,15 +319,19 @@ fn run_switchable_loop(
     let meta: Vec<DemoMeta> = demos
         .iter()
         .enumerate()
-        .map(|(index, d)| DemoMeta { index, title: d.title })
+        .map(|(index, d)| DemoMeta {
+            index,
+            title: d.title,
+        })
         .collect();
 
     // Session runtime + engine: demos, menu and HUD share one font database
     // and one reactive graph for the whole session. Fonts load once; backend
     // text contexts cloned from here never go stale, so cross-engine glyph
     // misses are impossible by construction.
-    let runtime: Rc<RefCell<ReactiveRuntime>> =
-        config.runtime.unwrap_or_else(|| Rc::new(RefCell::new(ReactiveRuntime::new())));
+    let runtime: Rc<RefCell<ReactiveRuntime>> = config
+        .runtime
+        .unwrap_or_else(|| Rc::new(RefCell::new(ReactiveRuntime::new())));
     let mut current_id = initial_id.to_string();
     let mut extensions: Vec<Box<dyn AppExtension>>;
     let mut engine = {
@@ -376,11 +374,12 @@ fn run_switchable_loop(
         pending: Signal::new(Rc::clone(&runtime), None),
     };
 
-    let mut backend: Option<Box<dyn Backend>> = Some({
-        let physical = window.inner_size();
-        let text_ctx = engine.text_context();
-        let (bw, bh) = (physical.width.max(1), physical.height.max(1));
-        match config.factories[single_slot] {
+    let mut backend: Option<Box<dyn Backend>> =
+        Some({
+            let physical = window.inner_size();
+            let text_ctx = engine.text_context();
+            let (bw, bh) = (physical.width.max(1), physical.height.max(1));
+            match config.factories[single_slot] {
             Some(f) => f(Arc::clone(&window), bw, bh, text_ctx).unwrap_or_else(|e| {
                 tracing::error!(error = ?e, "initial backend failed, falling back to tiny-skia");
                 single_slot = 0;
@@ -392,7 +391,7 @@ fn run_switchable_loop(
             }),
             None => panic!("no factory for initial backend"),
         }
-    });
+        });
     window.request_redraw();
 
     // Debug bus + external panel. The actuator keeps inspector overlays,
@@ -411,8 +410,8 @@ fn run_switchable_loop(
     // the panel is simple UI and stays off the GPU.
     let cpu_factory = config.factories[0].expect("tiny-skia factory missing for panel");
     let open_debug_window = move |event_loop: &winit::event_loop::EventLoopWindowTarget<()>,
-                                      app_window: &Arc<Window>,
-                                      bus: &DebugBus|
+                                  app_window: &Arc<Window>,
+                                  bus: &DebugBus|
           -> Option<DebugWindows> {
         let icons = panel_icons();
         let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
@@ -427,15 +426,12 @@ fn run_switchable_loop(
         let extensions: Vec<Box<dyn AppExtension>> =
             vec![Box::new(PanelSync::new(bus.clone(), ui.version.clone()))];
         // Place right of the app window when its position is known.
-        let pos = app_window
-            .outer_position()
-            .ok()
-            .map(|p| {
-                winit::dpi::LogicalPosition::new(
-                    p.x as f64 + app_window.inner_size().width as f64 + 8.0,
-                    p.y as f64,
-                )
-            });
+        let pos = app_window.outer_position().ok().map(|p| {
+            winit::dpi::LogicalPosition::new(
+                p.x as f64 + app_window.inner_size().width as f64 + 8.0,
+                p.y as f64,
+            )
+        });
         let mut builder = WindowBuilder::new()
             .with_title("Aurora — Debug")
             .with_inner_size(winit::dpi::LogicalSize::new(DEBUG_W, DEBUG_H))
@@ -476,8 +472,11 @@ fn run_switchable_loop(
         })
     };
 
-    let mut debug: Option<DebugWindows> =
-        if config.show_hud { open_debug_window(&event_loop, &window, &bus) } else { None };
+    let mut debug: Option<DebugWindows> = if config.show_hud {
+        open_debug_window(&event_loop, &window, &bus)
+    } else {
+        None
+    };
     // Mirrors the panel window visibility (F10 / X / Esc in panel toggle it).
     let mut panel_visible = config.show_hud;
     // Set when the debug window wants another frame (interactions, snapshots).
@@ -508,9 +507,7 @@ fn run_switchable_loop(
         .run(move |event, elwt| match event {
             Event::WindowEvent { window_id, event } => {
                 // Route to the debug window when it owns this event.
-                let to_debug = debug
-                    .as_ref()
-                    .is_some_and(|d| d.window.id() == window_id);
+                let to_debug = debug.as_ref().is_some_and(|d| d.window.id() == window_id);
                 if to_debug {
                     // Guard the debug runtime: panel signals resolve against
                     // it even though the app engine framed last (or vice
@@ -542,8 +539,7 @@ fn run_switchable_loop(
                         }
                         WindowEvent::Resized(size) => {
                             if let Some(dbg) = debug.as_mut() {
-                                dbg.pending_resize =
-                                    Some((size.width.max(1), size.height.max(1)));
+                                dbg.pending_resize = Some((size.width.max(1), size.height.max(1)));
                                 dbg.window.request_redraw();
                             }
                         }
@@ -572,9 +568,7 @@ fn run_switchable_loop(
                                 if icon != dbg.cursor {
                                     dbg.cursor = icon;
                                     dbg.window.set_cursor_icon(match icon {
-                                        CursorIcon::Default => {
-                                            winit::window::CursorIcon::Default
-                                        }
+                                        CursorIcon::Default => winit::window::CursorIcon::Default,
                                         CursorIcon::Text => winit::window::CursorIcon::Text,
                                     });
                                 }
@@ -640,12 +634,11 @@ fn run_switchable_loop(
                                     prev_size: prev,
                                 });
                                 bus.push_event("menu opened".to_string());
-                                window.set_title(
-                                    "Aurora — demos  [↑↓ move | Enter open | Esc back]",
-                                );
-                                let _ = window.request_inner_size(
-                                    winit::dpi::LogicalSize::new(target_w, target_h),
-                                );
+                                window
+                                    .set_title("Aurora — demos  [↑↓ move | Enter open | Esc back]");
+                                let _ = window.request_inner_size(winit::dpi::LogicalSize::new(
+                                    target_w, target_h,
+                                ));
                                 window.request_redraw();
                             }
                             SwitchAction::CloseMenu => {
@@ -668,8 +661,10 @@ fn run_switchable_loop(
                             SwitchAction::Launch(index) => {
                                 menu.take();
                                 {
-                                    let demo =
-                                        find_demo(&demos, meta_index_id(&meta, &demos, index, initial_id));
+                                    let demo = find_demo(
+                                        &demos,
+                                        meta_index_id(&meta, &demos, index, initial_id),
+                                    );
                                     // Launched demos inherit the roomy menu
                                     // window; they lay out fill-based.
                                     mount_demo(
@@ -690,8 +685,7 @@ fn run_switchable_loop(
                             SwitchAction::MoveSelection(delta) => {
                                 menu_state.selected.update(|s| {
                                     let n = meta.len();
-                                    *s = (*s as isize + delta).rem_euclid(n as isize)
-                                        as usize
+                                    *s = (*s as isize + delta).rem_euclid(n as isize) as usize
                                 });
                                 window.request_redraw();
                             }
@@ -714,9 +708,7 @@ fn run_switchable_loop(
                                 // from an undefined canvas (black tiles).
                                 engine.request_full_repaint();
                                 tracing::info!(
-                                    engine = backend_display_name(
-                                        BACKEND_ORDER[slot]
-                                    ),
+                                    engine = backend_display_name(BACKEND_ORDER[slot]),
                                     "engine cycled"
                                 );
                                 bus.push_event(format!(
@@ -791,8 +783,7 @@ fn run_switchable_loop(
                 match event {
                     WindowEvent::CloseRequested => elwt.exit(),
                     WindowEvent::Resized(size) => {
-                        pending_resize =
-                            Some((size.width.max(1), size.height.max(1)));
+                        pending_resize = Some((size.width.max(1), size.height.max(1)));
                         redraw_pending = true;
                         window.request_redraw();
                     }
@@ -809,9 +800,8 @@ fn run_switchable_loop(
                                     selected_key = None;
                                 }
                                 _ => {
-                                    if let Some(dbg) = extensions
-                                        .iter_mut()
-                                        .find_map(|ext| ext.as_debugger())
+                                    if let Some(dbg) =
+                                        extensions.iter_mut().find_map(|ext| ext.as_debugger())
                                     {
                                         if dbg.apply_panel_command(&cmd, &mut engine) {
                                             redraw_pending = true;
@@ -835,18 +825,18 @@ fn run_switchable_loop(
                                             meta_index_id(&meta, &demos, index, initial_id),
                                         );
                                         menu = None;
-                                            mount_demo(
-                                                demo,
-                                                &meta,
-                                                None,
-                                                &mut engine,
-                                                &mut extensions,
-                                                &mut pointer,
-                                                &window,
-                                                &runtime,
-                                                &mut selected_key,
-                                            );
-                                            current_id = demo.id.to_string();
+                                        mount_demo(
+                                            demo,
+                                            &meta,
+                                            None,
+                                            &mut engine,
+                                            &mut extensions,
+                                            &mut pointer,
+                                            &window,
+                                            &runtime,
+                                            &mut selected_key,
+                                        );
+                                        current_id = demo.id.to_string();
                                     }
                                     Some(MenuAction::Back) => {
                                         if let Some(open) = menu.take() {
@@ -892,8 +882,7 @@ fn run_switchable_loop(
                                 bus.push_event(format!("capture {path}"));
                             }
                         }
-                        avg_compute =
-                            avg_compute.mul_f32(0.8) + compute_dur.mul_f32(0.2);
+                        avg_compute = avg_compute.mul_f32(0.8) + compute_dur.mul_f32(0.2);
                         last_present = Instant::now();
                         os_clipboard.sync(&engine);
                         redraw_pending = wants_redraw || engine.has_active_motion();
@@ -907,9 +896,9 @@ fn run_switchable_loop(
                                 backend.as_ref().map(|b| b.tag()),
                                 &demos,
                                 &current_id,
-                                engine.pointer_position().and_then(|pos| {
-                                    engine.hit_test(pos.x, pos.y)
-                                }),
+                                engine
+                                    .pointer_position()
+                                    .and_then(|pos| engine.hit_test(pos.x, pos.y)),
                                 selected_key.clone(),
                                 pick_armed,
                                 capture_last.clone(),
@@ -1040,7 +1029,15 @@ fn close_menu_to(
     // No synchronous engine resize: see the pairing rule in OpenMenu.
     let demo = find_demo(demos, &open.return_id);
     mount_demo(
-        demo, meta, None, engine, extensions, pointer, window, runtime, selected_key,
+        demo,
+        meta,
+        None,
+        engine,
+        extensions,
+        pointer,
+        window,
+        runtime,
+        selected_key,
     );
     *current_id = demo.id.to_string();
 }
@@ -1074,12 +1071,8 @@ fn handle_switcher_key(
             SwitchAction::Exit
         }),
         Key::Named(NamedKey::F7) if !menu_open => Some(SwitchAction::CycleEngine),
-        Key::Named(NamedKey::ArrowDown) if menu_open => {
-            Some(SwitchAction::MoveSelection(1))
-        }
-        Key::Named(NamedKey::ArrowUp) if menu_open => {
-            Some(SwitchAction::MoveSelection(-1))
-        }
+        Key::Named(NamedKey::ArrowDown) if menu_open => Some(SwitchAction::MoveSelection(1)),
+        Key::Named(NamedKey::ArrowUp) if menu_open => Some(SwitchAction::MoveSelection(-1)),
         Key::Named(NamedKey::Home) if menu_open => {
             if let Some(st) = menu_state {
                 st.selected.set(0);

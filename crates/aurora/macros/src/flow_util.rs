@@ -162,14 +162,10 @@ pub fn find_ident_depth0(toks: &[proc_macro2::TokenTree], want: &str) -> Option<
     for (idx, t) in toks.iter().enumerate() {
         match t {
             Group(_) => {}
-            Punct(p)
-                if matches!(p.as_char(), '<' | '(' | '[' | '{') =>
-            {
+            Punct(p) if matches!(p.as_char(), '<' | '(' | '[' | '{') => {
                 depth += 1;
             }
-            Punct(p)
-                if matches!(p.as_char(), '>' | ')' | ']' | '}') =>
-            {
+            Punct(p) if matches!(p.as_char(), '>' | ')' | ']' | '}') => {
                 depth -= 1;
             }
             Ident(id) if depth == 0 && id == want => return Some(idx),
@@ -195,7 +191,12 @@ pub fn unbrace(val_ts: &TokenStream2) -> TokenStream2 {
 /// Builds a `{placeholder}` splice group for side-table index `n` of `kind`
 /// (`"for"` | `"if"` | `"match"`).
 pub fn placeholder(kind: &str, n: usize) -> proc_macro2::TokenTree {
-    let ident = quote::format_ident!("__aurora_{}_{}", kind, n, span = proc_macro2::Span::call_site());
+    let ident = quote::format_ident!(
+        "__aurora_{}_{}",
+        kind,
+        n,
+        span = proc_macro2::Span::call_site()
+    );
     proc_macro2::TokenTree::Group(proc_macro2::Group::new(
         proc_macro2::Delimiter::Brace,
         quote::quote! { #ident },

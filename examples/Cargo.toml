@@ -1,0 +1,129 @@
+[package]
+name = "aurora-examples"
+version = "0.0.1-rc.1"
+edition = "2021"
+publish = false
+description = "Aurora interactive demos and showcases (release-style static binaries)"
+
+# Explicit targets only: each `<name>/view.rs` is a hot-reload source
+# (compiled into its own `examples/<name>-ui` crate), not a binary.
+autoexamples = false
+
+[dependencies]
+aurora = { path = "../crates/aurora", version = "0.0.1-rc.1" }
+aurora-tiny-skia = { path = "../crates/aurora-tiny-skia", version = "0.0.1-rc.1" }
+aurora-vello = { path = "../crates/aurora-vello", version = "0.0.1-rc.1" }
+aurora-wgpu = { path = "../crates/aurora-wgpu", version = "0.0.1-rc.1" }
+aurora-quad = { path = "../crates/aurora-quad", version = "0.0.1-rc.1" }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+winit = { version = "0.29", default-features = false, features = ["rwh_06", "x11", "wayland"] }
+
+[features]
+default = ["os-clipboard"]
+os-clipboard = ["aurora/os-clipboard"]
+tracy = ["aurora/tracy"]
+
+[[example]]
+name = "demo1"
+path = "demo1/main.rs"
+
+[[example]]
+name = "demo2"
+path = "demo2/main.rs"
+
+[[example]]
+name = "demo3"
+path = "demo3/main.rs"
+
+[[example]]
+name = "moving"
+path = "moving/main.rs"
+
+[[example]]
+name = "gallery"
+path = "gallery/main.rs"
+
+[[example]]
+name = "hot_demo"
+path = "hot_demo/main.rs"
+
+[[example]]
+name = "motion_accordion"
+path = "motion_accordion/main.rs"
+
+[[example]]
+name = "motion_imperative"
+path = "motion_imperative/main.rs"
+
+[[example]]
+name = "motion_interruption"
+path = "motion_interruption/main.rs"
+
+[[example]]
+name = "motion_layout_split"
+path = "motion_layout_split/main.rs"
+
+[[example]]
+name = "motion_playback"
+path = "motion_playback/main.rs"
+
+[[example]]
+name = "motion_press"
+path = "motion_press/main.rs"
+
+[[example]]
+name = "motion_reorder"
+path = "motion_reorder/main.rs"
+
+[[example]]
+name = "motion_signals"
+path = "motion_signals/main.rs"
+
+[[example]]
+name = "motion_transitions"
+path = "motion_transitions/main.rs"
+
+[[example]]
+name = "motion_validate"
+path = "motion_validate/main.rs"
+
+[[example]]
+name = "render_bench"
+path = "render_bench/main.rs"
+
+[[example]]
+name = "selectable_text"
+path = "selectable_text/main.rs"
+
+[[example]]
+name = "selection_showcase"
+path = "selection_showcase/main.rs"
+
+[[example]]
+name = "shadow_lab"
+path = "shadow_lab/main.rs"
+
+[[example]]
+name = "shadow_studio"
+path = "shadow_studio/main.rs"
+
+[[example]]
+name = "showcase"
+path = "showcase/main.rs"
+
+[[example]]
+name = "studio"
+path = "studio/main.rs"
+
+[[example]]
+name = "text_demo"
+path = "text_demo/main.rs"
+
+[[example]]
+name = "text_smooth"
+path = "text_smooth/main.rs"
+
+[[example]]
+name = "view_demo"
+path = "view_demo/main.rs"

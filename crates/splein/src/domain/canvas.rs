@@ -128,9 +128,28 @@ impl Stroke {
 pub enum DrawingElement {
     Stroke(Stroke),
     Highlighter(Stroke),
-    Line { start: Vec2, end: Vec2, color: Rgba, width: f32, aabb: Aabb },
-    Rect { min: Vec2, max: Vec2, color: Rgba, width: f32, aabb: Aabb },
-    Ellipse { center: Vec2, rx: f32, ry: f32, color: Rgba, width: f32, aabb: Aabb },
+    Line {
+        start: Vec2,
+        end: Vec2,
+        color: Rgba,
+        width: f32,
+        aabb: Aabb,
+    },
+    Rect {
+        min: Vec2,
+        max: Vec2,
+        color: Rgba,
+        width: f32,
+        aabb: Aabb,
+    },
+    Ellipse {
+        center: Vec2,
+        rx: f32,
+        ry: f32,
+        color: Rgba,
+        width: f32,
+        aabb: Aabb,
+    },
 }
 
 impl DrawingElement {
@@ -195,7 +214,9 @@ impl DrawingElement {
         };
         match self {
             Self::Stroke(s) | Self::Highlighter(s) => s.map_points(map),
-            Self::Line { start, end, aabb, .. } => {
+            Self::Line {
+                start, end, aabb, ..
+            } => {
                 *start = map(*start);
                 *end = map(*end);
                 aabb.min = map(aabb.min);
@@ -207,7 +228,13 @@ impl DrawingElement {
                 aabb.min = map(aabb.min);
                 aabb.max = map(aabb.max);
             }
-            Self::Ellipse { center, rx, ry, aabb, .. } => {
+            Self::Ellipse {
+                center,
+                rx,
+                ry,
+                aabb,
+                ..
+            } => {
                 let c = *center;
                 let new_c = map(c);
                 *rx = (map(Vec2::new(c.x + *rx, c.y)).x - new_c.x).abs();
@@ -222,7 +249,9 @@ impl DrawingElement {
     pub fn translate(&mut self, delta: Vec2) {
         match self {
             Self::Stroke(s) | Self::Highlighter(s) => s.translate(delta),
-            Self::Line { start, end, aabb, .. } => {
+            Self::Line {
+                start, end, aabb, ..
+            } => {
                 start.x += delta.x;
                 start.y += delta.y;
                 end.x += delta.x;
@@ -253,7 +282,13 @@ pub struct Canvas {
 }
 
 impl Canvas {
-    pub fn begin_freehand(&mut self, color: Rgba, base_width: f32, is_highlighter: bool, initial: InputSample) {
+    pub fn begin_freehand(
+        &mut self,
+        color: Rgba,
+        base_width: f32,
+        is_highlighter: bool,
+        initial: InputSample,
+    ) {
         let mut stroke = Stroke::new(color, base_width);
         stroke.push_sample(initial);
         if is_highlighter {
@@ -275,9 +310,10 @@ impl Canvas {
     /// Returns the latest baked segment for incremental pen rendering.
     pub fn take_pending_segment(&mut self) -> Option<(CubicBezierSegment, Rgba, f32)> {
         match self.active_element.as_mut() {
-            Some(DrawingElement::Stroke(s)) => {
-                s.pending_segment.take().map(|seg| (seg, s.color, s.base_width))
-            }
+            Some(DrawingElement::Stroke(s)) => s
+                .pending_segment
+                .take()
+                .map(|seg| (seg, s.color, s.base_width)),
             // The highlighter renders as one whole path, never segment by segment.
             _ => None,
         }

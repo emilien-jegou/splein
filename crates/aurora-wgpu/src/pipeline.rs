@@ -224,31 +224,30 @@ pub fn create_pipelines(
     });
 
     // Replace pipeline: identical geometry/shaders, blending disabled.
-    let rect_replace_pipeline =
-        device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("aurora-wgpu-rect-replace-pipeline"),
-            layout: Some(&rect_pipe_layout),
-            vertex: wgpu::VertexState {
-                module: &rect_shader,
-                entry_point: "vs_main",
-                compilation_options: Default::default(),
-                buffers: &[RectVertex::layout()],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &rect_shader,
-                entry_point: "fs_main",
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: target_format,
-                    blend: None,
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-        });
+    let rect_replace_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("aurora-wgpu-rect-replace-pipeline"),
+        layout: Some(&rect_pipe_layout),
+        vertex: wgpu::VertexState {
+            module: &rect_shader,
+            entry_point: "vs_main",
+            compilation_options: Default::default(),
+            buffers: &[RectVertex::layout()],
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &rect_shader,
+            entry_point: "fs_main",
+            compilation_options: Default::default(),
+            targets: &[Some(wgpu::ColorTargetState {
+                format: target_format,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
+        primitive: wgpu::PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        multiview: None,
+    });
 
     // Rounded-rect pipeline: SDF fill disc + stroke ring (same target).
     let rrect_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {

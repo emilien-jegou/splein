@@ -194,12 +194,8 @@ where
         self.surface.frame(&self.qh, self.surface.clone());
         self.surface.attach(Some(buffer.wl_buffer()), 0, 0);
         for tile in &tiles {
-            self.surface.damage_buffer(
-                tile.x as i32,
-                tile.y as i32,
-                tile.w as i32,
-                tile.h as i32,
-            );
+            self.surface
+                .damage_buffer(tile.x as i32, tile.y as i32, tile.w as i32, tile.h as i32);
         }
         self.surface.commit();
         self.needs_full = false;
@@ -242,7 +238,11 @@ mod tests {
     #[ntest::timeout(30_000)]
     fn tiles_drop_degenerate_and_offscreen_rects() {
         let tiles = damage_tiles(
-            &region(&[(0.0, 0.0, 0.0, 8.0), (900.0, 900.0, 8.0, 8.0), (4.0, 4.0, 8.0, 8.0)]),
+            &region(&[
+                (0.0, 0.0, 0.0, 8.0),
+                (900.0, 900.0, 8.0, 8.0),
+                (4.0, 4.0, 8.0, 8.0),
+            ]),
             &[],
             800,
             600,

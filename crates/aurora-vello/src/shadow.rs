@@ -4,16 +4,16 @@ use rustc_hash::FxHashMap;
 use std::sync::Arc;
 use vello::kurbo::{Affine, Rect as KurboRect};
 use vello::peniko::{
-    Blob, BlendMode, Brush, Compose, Fill as VelloFillRule, Format as PenikoFormat,
+    BlendMode, Blob, Brush, Compose, Fill as VelloFillRule, Format as PenikoFormat,
     Image as PenikoImage, Mix,
 };
 use vello::Scene as VelloScene;
 
+use crate::shader::to_vello_color;
 use aurora::foundation::{
     BlendMode as ShadowBlend, LightEnvironment, Radius, ResolvedRect, Shadow,
 };
 use aurora::render::blur::box_blur_alpha_with_falloff;
-use crate::shader::to_vello_color;
 
 const MAX_CACHED_SHADOWS: usize = 64;
 
@@ -65,10 +65,7 @@ impl VelloShadowCache {
             return;
         }
         // See tiny-skia: Alpha falls back to the box path until accelerated.
-        if matches!(
-            shadow.shape,
-            aurora::foundation::ShadowShape::Alpha
-        ) {
+        if matches!(shadow.shape, aurora::foundation::ShadowShape::Alpha) {
             static WARNED: std::sync::atomic::AtomicBool =
                 std::sync::atomic::AtomicBool::new(false);
             if !WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
@@ -150,9 +147,7 @@ impl VelloShadowCache {
                 ShadowBlend::Multiply => BlendMode::new(Mix::Multiply, Compose::SrcOver),
             };
             scene.push_layer(mode, layer_alpha, tx, &layer_rect);
-            self.draw_patch(
-                scene, p, ox, oy, total_w, total_h, cs, shadow, 1.0, tx,
-            );
+            self.draw_patch(scene, p, ox, oy, total_w, total_h, cs, shadow, 1.0, tx);
             scene.pop_layer();
         }
     }
@@ -251,7 +246,15 @@ impl VelloShadowCache {
                 }
             }
         }
-        box_blur_alpha_with_falloff(&a, &mut b, &mut temp, dim, dim, softness.round() as usize, falloff_lut);
+        box_blur_alpha_with_falloff(
+            &a,
+            &mut b,
+            &mut temp,
+            dim,
+            dim,
+            softness.round() as usize,
+            falloff_lut,
+        );
 
         // Textures bake the tint at full alpha; per-layer alpha rides on
         // the enclosing opacity layer so corners, edges, and center agree.

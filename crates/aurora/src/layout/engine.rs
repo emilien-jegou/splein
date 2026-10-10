@@ -13,8 +13,8 @@ use crate::layout::measure::{
 use crate::layout::min_size::compute_min_size;
 use crate::layout::report::LayoutResult;
 use crate::text::TextContext;
+use crate::tree::TreeArena;
 use crate::tree::{DirtyFlags, NodeId};
-use crate::tree::{TreeArena};
 
 pub fn layout_node(arena: &mut TreeArena, node_id: NodeId, constraints: Constraints) {
     let text_ctx = TextContext::new();
@@ -27,6 +27,20 @@ pub fn layout_node(arena: &mut TreeArena, node_id: NodeId, constraints: Constrai
         &mut result,
         Point::ZERO,
     );
+}
+
+/// Assigns a child's slot rect, marking it for layout when the slot changed.
+///
+/// A repositioned child must re-resolve: its own descendants derive positions from
+/// it, and the cached layout path returns without descending. Without the mark,
+/// grandchildren keep stale rects after ancestor reallocations (ghost text after
+/// sibling churn, surviving even resizes). Unchanged slots keep the cache fast
+/// path; the mark fires only on actual change, so layout still reaches fixpoint.
+fn place_child(arena: &mut TreeArena, child: NodeId, rect: ResolvedRect) {
+    if arena.get(child).resolved_rect != rect {
+        arena.mark_dirty(child, DirtyFlags::MEASURE | DirtyFlags::LAYOUT);
+    }
+    arena.get_mut(child).resolved_rect = rect;
 }
 
 #[inline(always)]
@@ -44,6 +58,12 @@ pub fn layout_node_with_text(
     let needs_full_pass = dirty.contains(DirtyFlags::LAYOUT)
         || dirty.contains(DirtyFlags::MEASURE)
         || dirty.contains(DirtyFlags::SUBTREE_DIRTY);
+    tracing::debug!(
+        "aurora: layout visit {:?} dirty={:?} full_pass={}",
+        node_id,
+        dirty,
+        needs_full_pass,
+    );
 
     if !needs_full_pass {
         if let Some(cached) = arena.get(node_id).state.core.cache.get_layout(&constraints) {
@@ -267,7 +287,7 @@ fn perform_node_layout(
         };
 
         cursor += main_alloc + plan.gap_px;
-        arena.get_mut(child).resolved_rect = rect;
+        place_child(arena, child, rect);
         layout_node_with_text(
             arena,
             child,
@@ -284,7 +304,7 @@ fn perform_node_layout(
             Direction::Vertical => ResolvedRect::new(0.0, cursor, 0.0, 0.0),
             Direction::Horizontal => ResolvedRect::new(cursor, 0.0, 0.0, 0.0),
         };
-        arena.get_mut(child).resolved_rect = rect;
+        place_child(arena, child, rect);
 
         // A collapsed node contributes no size. This used to measure the interior anyway while
         // an animated render box was still away from zero, so that content could be clipped away
@@ -311,7 +331,7 @@ fn perform_node_layout(
             text_ctx,
         );
         let rect = resolve_absolute_child(arena.get(child), w, h, d.width, d.height);
-        arena.get_mut(child).resolved_rect = rect;
+        place_child(arena, child, rect);
         layout_node_with_text(
             arena,
             child,
@@ -332,6 +352,11 @@ fn perform_node_layout(
     let root = arena.get_mut(node_id);
     root.resolved_rect = final_rect;
     root.absolute_rect = abs_rect;
+    tracing::debug!(
+        "aurora: layout computed {:?} rect={:?}",
+        node_id,
+        final_rect,
+    );
     root.state.core.cache.store_layout(constraints, final_rect);
     root.state.core.dirty.remove(DirtyFlags::LAYOUT);
     root.state.core.dirty.remove(DirtyFlags::MEASURE);

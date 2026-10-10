@@ -30,8 +30,14 @@ pub struct Aabb {
 
 impl Aabb {
     pub const EMPTY: Self = Self {
-        min: Vec2 { x: f32::INFINITY, y: f32::INFINITY },
-        max: Vec2 { x: f32::NEG_INFINITY, y: f32::NEG_INFINITY },
+        min: Vec2 {
+            x: f32::INFINITY,
+            y: f32::INFINITY,
+        },
+        max: Vec2 {
+            x: f32::NEG_INFINITY,
+            y: f32::NEG_INFINITY,
+        },
     };
 
     pub fn new(min: Vec2, max: Vec2) -> Self {
@@ -190,8 +196,14 @@ impl MidpointSpline {
 
             return Some(CubicBezierSegment {
                 start: prev,
-                ctrl1: Vec2::new(prev.x + (mid0.x - prev.x) / 3.0, prev.y + (mid0.y - prev.y) / 3.0),
-                ctrl2: Vec2::new(prev.x + 2.0 * (mid0.x - prev.x) / 3.0, prev.y + 2.0 * (mid0.y - prev.y) / 3.0),
+                ctrl1: Vec2::new(
+                    prev.x + (mid0.x - prev.x) / 3.0,
+                    prev.y + (mid0.y - prev.y) / 3.0,
+                ),
+                ctrl2: Vec2::new(
+                    prev.x + 2.0 * (mid0.x - prev.x) / 3.0,
+                    prev.y + 2.0 * (mid0.y - prev.y) / 3.0,
+                ),
                 end: mid0,
             });
         };

@@ -9,7 +9,7 @@ use rustc_hash::FxHashMap;
 
 use crate::text::glyph::GlyphKey;
 use crate::text::layout::TextLayout;
-use crate::text::overflow::{TextOverflow, truncate_to_lines};
+use crate::text::overflow::{truncate_to_lines, TextOverflow};
 use crate::text::shape::shape_text;
 use crate::text::shaper::{TextShapeParams, TextShaper};
 

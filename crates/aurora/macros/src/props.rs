@@ -121,7 +121,10 @@ pub fn expand_props(input: &ItemFn) -> syn::Result<Option<TokenStream2>> {
     let mut fields = Vec::new();
     for arg in &input.sig.inputs {
         let FnArg::Typed(pt) = arg else {
-            return Err(syn::Error::new_spanned(arg, "#[component] methods (self) are not supported"));
+            return Err(syn::Error::new_spanned(
+                arg,
+                "#[component] methods (self) are not supported",
+            ));
         };
         let Pat::Ident(pat) = &*pt.pat else {
             return Err(syn::Error::new_spanned(
@@ -137,7 +140,11 @@ pub fn expand_props(input: &ItemFn) -> syn::Result<Option<TokenStream2>> {
         let optional = strip_outer_option(&ty).is_some();
         let value_ty = strip_outer_option(&ty).unwrap_or_else(|| ty.clone());
         let reactive = reactive_inner(&value_ty);
-        if matches!(default, PropDefaultAttr::DefaultTrait | PropDefaultAttr::DefaultExpr(_)) && optional {
+        if matches!(
+            default,
+            PropDefaultAttr::DefaultTrait | PropDefaultAttr::DefaultExpr(_)
+        ) && optional
+        {
             return Err(syn::Error::new_spanned(
                 &pt.ty,
                 "#[component] `#[prop(default)]` contradicts `Option<...>`: omission cannot be both a default and `None`",
@@ -229,7 +236,9 @@ pub fn expand_props(input: &ItemFn) -> syn::Result<Option<TokenStream2>> {
                     #n: self.#n.unwrap_or_else(|| ::aurora::reactive::PropDefault::prop_default())
                 },
                 PropDefaultAttr::DefaultExpr(e) => quote! { #n: self.#n.unwrap_or_else(|| #e) },
-                PropDefaultAttr::None if f.optional => quote! { #n: self.#n.unwrap_or(::std::option::Option::None) },
+                PropDefaultAttr::None if f.optional => {
+                    quote! { #n: self.#n.unwrap_or(::std::option::Option::None) }
+                }
                 PropDefaultAttr::None => {
                     let msg = format!("{comp}: missing required prop `{}`", n);
                     quote! { #n: self.#n.expect(#msg) }

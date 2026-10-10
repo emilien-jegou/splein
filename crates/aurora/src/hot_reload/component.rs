@@ -17,12 +17,15 @@
 // Unlike the remote loop, clicks need no action queue: interpreted handlers are real
 // closures dispatching through the engine's own input path.
 
-use crate::app::extension::AppExtension;
+use crate::app::extension::{AppExtension, OverlayCaps};
+use crate::app::painter::OverlayPainter;
 use crate::dsl::element::Element;
 use crate::dsl::{group, text, IntoElement};
 use crate::hot_reload::dev_loop::{DevLoop, DevLoopConfig};
+use crate::hot_reload::progress_bar::ReloadProgressBar;
 use crate::hot_reload::SharedFactory;
 use crate::runtime::Engine;
+use crate::text::TextContext;
 use std::cell::Cell;
 use std::rc::Rc;
 
@@ -52,6 +55,43 @@ pub type ComponentRootFn = extern "Rust" fn() -> Element;
 /// Reports the UI crate's ABI fingerprint. See [`component_abi_fingerprint`].
 pub type ComponentVersionFn = extern "Rust" fn() -> u64;
 
+/// Emits the component-loop entry points a hot UI crate must export.
+///
+/// A hot-reloadable UI is just components plus this contract: the host resolves
+/// `aurora_hot_version` (fingerprint handshake) and `aurora_component_root`
+/// (rebuilt interface) by exact symbol and signature — a hand-written mismatch is
+/// undefined behavior across the boundary, so generate them instead:
+///
+/// ```ignore
+/// extern crate aurora_shared as aurora;
+///
+/// #[component(name = "shop::Page")]
+/// fn Page() -> impl IntoElement { /* ... */ }
+///
+/// aurora::define_hot_ui!(Page);
+/// ```
+///
+/// `::aurora` paths resolve both through the shared-instance alias (UI crates) and
+/// through a direct `aurora` dependency (ordinary crates), so one expansion serves
+/// both sides.
+#[macro_export]
+macro_rules! define_hot_ui {
+    ($root:path) => {
+        /// ABI fingerprint the host checks before installing entry points.
+        #[no_mangle]
+        pub extern "Rust" fn aurora_hot_version() -> u64 {
+            ::aurora::hot_reload::component_abi_fingerprint()
+        }
+
+        /// Rebuilds the interface. Re-run on every reload under the old hook scope.
+        #[no_mangle]
+        pub extern "Rust" fn aurora_component_root() -> ::aurora::dsl::Element {
+            use ::aurora::dsl::IntoElement;
+            $root().into_element()
+        }
+    };
+}
+
 /// Frame-driven real-component code-swap loop. See the module docs.
 pub struct ComponentReloadExtension {
     dev: DevLoop,
@@ -61,6 +101,8 @@ pub struct ComponentReloadExtension {
     /// A fresh library was observed where no engine was available (idle poll). Latched
     /// so the next frame swaps instead of the observation being lost.
     pending_activation: bool,
+    /// Top loading bar shown while the loop is rebuilding.
+    bar: ReloadProgressBar,
 }
 
 impl ComponentReloadExtension {
@@ -71,6 +113,7 @@ impl ComponentReloadExtension {
             shared_root: Rc::new(Cell::new(None)),
             factory_installed: false,
             pending_activation: false,
+            bar: ReloadProgressBar::new(),
         }
     }
 
@@ -142,7 +185,9 @@ impl ComponentReloadExtension {
         tracing::info!(
             "aurora: hot-ui entry installed at {:p} (was {:p})",
             root as *const (),
-            shared_root.get().map_or(std::ptr::null(), |f| f as *const ()),
+            shared_root
+                .get()
+                .map_or(std::ptr::null(), |f| f as *const ()),
         );
         shared_root.set(Some(root));
         if !*factory_installed {
@@ -177,7 +222,7 @@ impl AppExtension for ComponentReloadExtension {
     }
 
     fn on_update(&mut self, engine: &mut Engine) -> bool {
-        self.dev.poll_update(
+        let redraw = self.dev.poll_update(
             engine,
             &mut self.pending_activation,
             &mut |dev, engine| {
@@ -189,6 +234,30 @@ impl AppExtension for ComponentReloadExtension {
                 )
             },
             &mut || false,
-        )
+        );
+        // The loop state was just published to stats; advance the loading bar
+        // from it (simulated time, so freeze/slow-motion apply to the bar too).
+        // NOTE: update the bar unconditionally — `||` would short-circuit and
+        // never run it on exactly the frames that matter (`redraw` is true for
+        // the whole build), leaving the bar stuck Hidden forever.
+        let stats = engine.hot_reload_stats();
+        let sim = engine.diagnostics().simulated;
+        let w = engine.logical_size().0 as f32;
+        let bar_needs_frames = self.bar.update(stats.dev_state, sim, w);
+        redraw || bar_needs_frames
+    }
+
+    fn render_overlay(
+        &mut self,
+        paint: &mut OverlayPainter<'_>,
+        _text_ctx: &TextContext,
+        caps: &OverlayCaps,
+        _d: &crate::runtime::FrameDiagnostics,
+    ) {
+        self.bar.draw(paint, caps);
+    }
+
+    fn overlay_damage(&self) -> Option<crate::foundation::ResolvedRect> {
+        self.bar.damage()
     }
 }

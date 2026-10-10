@@ -34,6 +34,7 @@ pub fn present_one(
         backend: backend.tag(),
         scanline_overlays: backend.supports_scanline(),
         viewport: ResolvedRect::new(0.0, 0.0, lw as f32, lh as f32),
+        background: engine.background(),
     };
 
     for ext in extensions.iter_mut() {

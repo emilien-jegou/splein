@@ -1,7 +1,7 @@
 // Regression tests: demo1's selectable text through the real PointerBridge
 // path, at 1x and at the physical size HiDPI windows start with.
 
-#[path = "../examples/demo1.rs"]
+#[path = "../../../examples/demo1/main.rs"]
 mod demo1;
 
 use std::cell::RefCell;
@@ -127,10 +127,18 @@ fn demo1_drag_selects_range_through_bridge() {
     bridge.dispatch(&button(ElementState::Released), h.engine());
     h.step();
     let sel = hello_selection(&mut h);
-    assert!(sel.is_some_and(|s| !s.is_collapsed()), "drag must select, got {sel:?}");
+    assert!(
+        sel.is_some_and(|s| !s.is_collapsed()),
+        "drag must select, got {sel:?}"
+    );
     // The highlight must reach pixels, not just engine state: selection blue
     // rgba(0, 0.47, 0.84, 0.30) over the 0x4900FF box ≈ (22, 36, 242).
-    let highlight = Rgba { r: 22, g: 36, b: 242, a: 255 };
+    let highlight = Rgba {
+        r: 22,
+        g: 36,
+        b: 242,
+        a: 255,
+    };
     let is_highlight = |p: Rgba| p.near(highlight, 40);
     let before = {
         // Baseline from a fresh mount: stroke AA must not match, or the
@@ -168,5 +176,8 @@ fn hidpi_startup_size_keeps_physical_input_on_target() {
     bridge.dispatch(&button(ElementState::Pressed), h.engine());
     h.step();
     let sel = hello_selection(&mut h);
-    assert!(sel.is_some(), "physical press must set a caret, got {sel:?}");
+    assert!(
+        sel.is_some(),
+        "physical press must set a caret, got {sel:?}"
+    );
 }

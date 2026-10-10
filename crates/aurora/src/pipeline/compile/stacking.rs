@@ -2,8 +2,8 @@
 
 use crate::foundation::{Point, ResolvedRect, Transform};
 use crate::scene::chunk::InheritedClip;
-use crate::tree::{NodeId};
-use crate::tree::{TreeArena};
+use crate::tree::NodeId;
+use crate::tree::TreeArena;
 use smallvec::SmallVec;
 
 /// Hierarchical stacking context partitioning nodes by z-index and overlay status.
@@ -123,10 +123,6 @@ pub fn build_stacking_tree(
 
     // Stable: equal z-index resolves by tree order (later sibling paints above),
     // and only a stable sort preserves the insertion order the walk produced.
-    current_ctx
-        .negative_z
-        .sort_by_key(|ctx| ctx.z_index);
-    current_ctx
-        .positive_z
-        .sort_by_key(|ctx| ctx.z_index);
+    current_ctx.negative_z.sort_by_key(|ctx| ctx.z_index);
+    current_ctx.positive_z.sort_by_key(|ctx| ctx.z_index);
 }

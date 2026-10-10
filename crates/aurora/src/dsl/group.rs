@@ -6,7 +6,9 @@ use crate::dsl::component::IntoElement;
 use crate::dsl::element::{Element, IntoChildList};
 use crate::dsl::element_ref::ElementRef;
 use crate::foundation::*;
-use crate::input::{ClickInfo, DragInfo, HandlerSet, HitTest, HoverInfo, PointerEvent, Propagation};
+use crate::input::{
+    ClickInfo, DragInfo, HandlerSet, HitTest, HoverInfo, PointerEvent, Propagation,
+};
 use crate::reactive::prop::{DynamicProp, IntoProp};
 use crate::reactive::readable::Readable;
 
@@ -54,7 +56,10 @@ pub struct GroupDef {
     /// the pairs on the retained node (clearing them when emptied, so
     /// conditional providers vanish cleanly), and context reads walk
     /// ancestors for the nearest entry.
-    pub provided: Vec<(crate::reactive::context::CtxId, crate::reactive::context::ProviderValue)>,
+    pub provided: Vec<(
+        crate::reactive::context::CtxId,
+        crate::reactive::context::ProviderValue,
+    )>,
     /// Ordered child sources: static elements and reactive builders interleaved.
     ///
     /// Control-flow nodes (`<for>`, `<if>`, `<match>`) contribute `Dynamic`
@@ -277,10 +282,7 @@ impl GroupDef {
     /// Provides a context value to this node's subtree (see
     /// `reactive::context`). Returns the builder for chaining; repeat calls
     /// accumulate, nearest entry winning per context at lookup.
-    pub fn provided(
-        mut self,
-        grant: crate::reactive::context::Provided,
-    ) -> Self {
+    pub fn provided(mut self, grant: crate::reactive::context::Provided) -> Self {
         self.provided.push((grant.id(), grant.reader()));
         self
     }
@@ -333,9 +335,10 @@ impl GroupDef {
     /// Rows should be keyed by identity rather than by position, otherwise a reorder reads
     /// as "every row changed" instead of "these two rows swapped".
     pub fn children_of(mut self, build: impl Fn() -> Vec<Element> + 'static) -> Self {
-        self.child_segments.push(ChildSegment::Dynamic(Rc::new(move || {
-            vec![ChildSegment::Static(build())]
-        })));
+        self.child_segments
+            .push(ChildSegment::Dynamic(Rc::new(move || {
+                vec![ChildSegment::Static(build())]
+            })));
         self
     }
 
@@ -349,16 +352,17 @@ impl GroupDef {
         S: Clone + 'static,
         F: Fn(usize, S) -> Element + 'static,
     {
-        self.child_segments.push(ChildSegment::Dynamic(Rc::new(move || {
-            vec![ChildSegment::Static(
-                items
-                    .read()
-                    .into_iter()
-                    .enumerate()
-                    .map(|(i, s)| row(i, s))
-                    .collect(),
-            )]
-        })));
+        self.child_segments
+            .push(ChildSegment::Dynamic(Rc::new(move || {
+                vec![ChildSegment::Static(
+                    items
+                        .read()
+                        .into_iter()
+                        .enumerate()
+                        .map(|(i, s)| row(i, s))
+                        .collect(),
+                )]
+            })));
         self
     }
 
@@ -382,28 +386,29 @@ impl GroupDef {
         K: Fn(&S) -> String + 'static,
         F: Fn(usize, S) -> Element + 'static,
     {
-        self.child_segments.push(ChildSegment::Dynamic(Rc::new(move || {
-            vec![ChildSegment::Static(
-                items
-                    .read()
-                    .into_iter()
-                    .enumerate()
-                    .map(|(i, s)| {
-                        // The row runs in a hook scope named after its item, so `use_signal`
-                        // inside a row component finds the signal it allocated last time. The
-                        // scope is the one the list is already being built in, which is why this
-                        // needs no runtime of its own.
-                        let key = key_of(&s);
-                        match crate::reactive::Cx::current() {
-                            Some(cx) => cx.enter_keyed(key, || row(i, s)),
-                            // Built outside any scope, e.g. by a caller that only wants the shape.
-                            // The rows still work; they just cannot preserve hook state.
-                            None => row(i, s),
-                        }
-                    })
-                    .collect(),
-            )]
-        })));
+        self.child_segments
+            .push(ChildSegment::Dynamic(Rc::new(move || {
+                vec![ChildSegment::Static(
+                    items
+                        .read()
+                        .into_iter()
+                        .enumerate()
+                        .map(|(i, s)| {
+                            // The row runs in a hook scope named after its item, so `use_signal`
+                            // inside a row component finds the signal it allocated last time. The
+                            // scope is the one the list is already being built in, which is why this
+                            // needs no runtime of its own.
+                            let key = key_of(&s);
+                            match crate::reactive::Cx::current() {
+                                Some(cx) => cx.enter_keyed(key, || row(i, s)),
+                                // Built outside any scope, e.g. by a caller that only wants the shape.
+                                // The rows still work; they just cannot preserve hook state.
+                                None => row(i, s),
+                            }
+                        })
+                        .collect(),
+                )]
+            })));
         self
     }
 
@@ -420,10 +425,7 @@ impl GroupDef {
     }
 
     /// Handles a click, with control over whether ancestors still observe it.
-    pub fn on_click_handled(
-        mut self,
-        f: impl Fn(&ClickInfo) -> Propagation + 'static,
-    ) -> Self {
+    pub fn on_click_handled(mut self, f: impl Fn(&ClickInfo) -> Propagation + 'static) -> Self {
         self.handlers.click = Some(Rc::new(f));
         self
     }
@@ -531,10 +533,7 @@ impl GroupDef {
     }
 
     /// Handles a drag-start, with control over whether ancestors still observe it.
-    pub fn on_drag_start_handled(
-        mut self,
-        f: impl Fn(&DragInfo) -> Propagation + 'static,
-    ) -> Self {
+    pub fn on_drag_start_handled(mut self, f: impl Fn(&DragInfo) -> Propagation + 'static) -> Self {
         self.handlers.drag_start = Some(Rc::new(f));
         self
     }
@@ -549,10 +548,7 @@ impl GroupDef {
     }
 
     /// Handles a drag-step, with control over whether ancestors still observe it.
-    pub fn on_drag_step_handled(
-        mut self,
-        f: impl Fn(&DragInfo) -> Propagation + 'static,
-    ) -> Self {
+    pub fn on_drag_step_handled(mut self, f: impl Fn(&DragInfo) -> Propagation + 'static) -> Self {
         self.handlers.drag_step = Some(Rc::new(f));
         self
     }
@@ -571,10 +567,7 @@ impl GroupDef {
     }
 
     /// Handles a drag-end, with control over whether ancestors still observe it.
-    pub fn on_drag_end_handled(
-        mut self,
-        f: impl Fn(&DragInfo) -> Propagation + 'static,
-    ) -> Self {
+    pub fn on_drag_end_handled(mut self, f: impl Fn(&DragInfo) -> Propagation + 'static) -> Self {
         self.handlers.drag_end = Some(Rc::new(f));
         self
     }
@@ -603,15 +596,13 @@ impl GroupDef {
             } else {
                 LayoutPresence::Absent
             }),
-            DynamicProp::Dynamic(f) => {
-                DynamicProp::Dynamic(Rc::new(move || {
-                    if f() {
-                        LayoutPresence::Present
-                    } else {
-                        LayoutPresence::Absent
-                    }
-                }))
-            }
+            DynamicProp::Dynamic(f) => DynamicProp::Dynamic(Rc::new(move || {
+                if f() {
+                    LayoutPresence::Present
+                } else {
+                    LayoutPresence::Absent
+                }
+            })),
             DynamicProp::Context(m) => DynamicProp::Context(m.map(|on| {
                 if on {
                     LayoutPresence::Present

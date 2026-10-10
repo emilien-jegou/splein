@@ -141,14 +141,7 @@ impl LayoutNode {
     }
 
     /// Projected box with explicit extra padding (for callers that already pad).
-    fn project_aa(
-        tx: &Transform,
-        x: f32,
-        y: f32,
-        w: f32,
-        h: f32,
-        pad: f32,
-    ) -> ResolvedRect {
+    fn project_aa(tx: &Transform, x: f32, y: f32, w: f32, h: f32, pad: f32) -> ResolvedRect {
         let corners = [
             Point::new(x, y),
             Point::new(x + w, y),
@@ -286,13 +279,8 @@ impl LayoutNode {
             for layer in shadow.layers() {
                 let (ox, oy) = shadow.layer_offset(&self.state.core.resolved_light, layer);
                 let pad = shadow.layer_pad(layer);
-                let shadow_rect = Self::project(
-                    tx,
-                    ox - pad,
-                    oy - pad,
-                    w + 2.0 * pad,
-                    h + 2.0 * pad,
-                );
+                let shadow_rect =
+                    Self::project(tx, ox - pad, oy - pad, w + 2.0 * pad, h + 2.0 * pad);
                 bounds = bounds.union(&shadow_rect);
             }
         }

@@ -1,9 +1,9 @@
 // Single responsibility: Container group reconciliation and reactive binding attachment.
 
+use crate::dsl::element::Element;
 use crate::dsl::group::GroupDef;
 use crate::dsl::reconcile_children::reconcile_children;
 use crate::dsl::reconciler::{evaluate_prop, reconcile};
-use crate::dsl::element::Element;
 use crate::foundation::{Fill, LayoutPresence, Shadow, Size, Transform};
 use crate::input::handlers::NodeHandlers;
 use crate::reactive::id::SubscriberId;
@@ -327,10 +327,7 @@ impl ResolvedProps {
             fill: evaluate_prop(&def.fill, p_sub, runtime).flatten(),
             opacity: evaluate_prop(&def.opacity, p_sub, runtime),
             shadow,
-            z_index: resolve_z_index(
-                evaluate_prop(&def.z_index, p_sub, runtime),
-                def.is_absolute,
-            ),
+            z_index: resolve_z_index(evaluate_prop(&def.z_index, p_sub, runtime), def.is_absolute),
         }
     }
 }
@@ -355,6 +352,8 @@ impl ChangeSet {
             || prev.style.layout != def.layout
             || prev.style.margin != def.margin
             || prev.style.clip != def.clip
+            || prev.style.anchor != def.anchor
+            || prev.style.is_absolute != def.is_absolute
             || presence_changed;
         let app = &prev.style.appearance;
         let paint = app.fill != props.fill

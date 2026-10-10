@@ -11,8 +11,9 @@ name = "aurora"
 path = "src/main.rs"
 
 [dependencies]
-# Deliberately aurora-free (like hot-stub before it): linking any aurora crate here
-# would embed a second runtime beside the shared image the UI dylibs resolve to.
+# Deliberately aurora-free: linking any aurora crate into the launcher would embed
+# a second runtime beside the shared image the UI dylibs resolve to, and component
+# bodies would panic on the wrong scope stack.
 # clap/libloading/libc are plain rlibs with no aurora in their closure — safe.
 clap = { workspace = true }
 libloading = "0.8"

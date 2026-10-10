@@ -22,9 +22,9 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-use criterion::{black_box, criterion_group, criterion_main, BatchSize, Criterion, Throughput};
-#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 use aurora::reactive::{batch, Derived, ReactiveRuntime, Signal};
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+use criterion::{black_box, criterion_group, criterion_main, BatchSize, Criterion, Throughput};
 
 /// Strict-gate switch: `AURORA_STRICT_BENCH=1` enforces median exit gates.
 /// Off by default so local runs just report Criterion numbers.
@@ -173,9 +173,14 @@ fn bench_tree_arena_10k(c: &mut Criterion) {
             "arena 10k lifecycle median {:?} (>= 100ms CI threshold)",
             median
         );
-        eprintln!("arena 10k lifecycle: median {:?} (PASSED strict gate)", median);
+        eprintln!(
+            "arena 10k lifecycle: median {:?} (PASSED strict gate)",
+            median
+        );
     } else {
-        eprintln!("arena 10k lifecycle: strict gate disabled; set AURORA_STRICT_BENCH=1 to enforce");
+        eprintln!(
+            "arena 10k lifecycle: strict gate disabled; set AURORA_STRICT_BENCH=1 to enforce"
+        );
     }
 
     let mut group = c.benchmark_group("tree_arena_10k");
@@ -383,8 +388,8 @@ fn setup_layout_tree() -> (taffy::TaffyTree, taffy::NodeId) {
 
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 fn bench_layout_1k(c: &mut Criterion) {
-    use taffy::{AvailableSpace, Size as GeoSize};
     use taffy::prelude::*;
+    use taffy::{AvailableSpace, Size as GeoSize};
     let avail = GeoSize {
         width: AvailableSpace::Definite(1600.0),
         height: AvailableSpace::Definite(900.0),
@@ -474,8 +479,8 @@ fn bench_fan_out_200(c: &mut Criterion) {
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 fn shape_labels(ctx: &aurora::text::TextContext, labels: &[String]) {
     use aurora::foundation::Constraints;
-    use aurora::text::{FontStyle, TextAlign, TextOverflow};
     use aurora::text::shaper::TextShapeParams;
+    use aurora::text::{FontStyle, TextAlign, TextOverflow};
     for s in labels {
         black_box(ctx.shape(TextShapeParams {
             text: s,
@@ -502,7 +507,14 @@ fn bench_text_shaping(c: &mut Criterion) {
     ctx.load_font(include_bytes!("../../../assets/inter-var.ttf"));
 
     let labels: Vec<String> = (0..500)
-        .map(|i| format!("core {:02}  load {:.1}%  pid {}", i % 64, (i % 100) as f32, 1000 + i))
+        .map(|i| {
+            format!(
+                "core {:02}  load {:.1}%  pid {}",
+                i % 64,
+                (i % 100) as f32,
+                1000 + i
+            )
+        })
         .collect();
     // Warm the cache so `labels_500_cached` measures the hit path.
     shape_labels(&ctx, &labels);
@@ -534,14 +546,15 @@ fn bench_text_shaping(c: &mut Criterion) {
     // the whole batch shares one entry per string (cache-hit path).
     group.bench_function("labels_500_jittered_widths", |b| {
         use aurora::foundation::Constraints;
-        use aurora::text::{FontStyle, TextAlign, TextOverflow};
         use aurora::text::shaper::TextShapeParams;
+        use aurora::text::{FontStyle, TextAlign, TextOverflow};
         let mut iter = 0u32;
         b.iter(|| {
             iter = iter.wrapping_add(1);
             for (i, s) in labels.iter().enumerate() {
                 // Deterministic sub-quantum jitter: same string, width wobble.
-                let wobble = ((iter.wrapping_mul(2654435761).wrapping_add(i as u32 * 97)) % 5) as f32 * 0.01;
+                let wobble =
+                    ((iter.wrapping_mul(2654435761).wrapping_add(i as u32 * 97)) % 5) as f32 * 0.01;
                 black_box(ctx.shape(TextShapeParams {
                     text: s,
                     font: None,
@@ -688,7 +701,9 @@ fn bench_glyph_raster(c: &mut Criterion) {
         let ctx = TextContext::new();
         ctx.load_font(include_bytes!("../../../assets/inter-var.ttf"));
         // Pangram-ish content with digits/punctuation for distinct glyphs.
-        let content: String = ("The quick brown fox jumps over 0123456789! ".repeat(4)).chars().collect();
+        let content: String = ("The quick brown fox jumps over 0123456789! ".repeat(4))
+            .chars()
+            .collect();
         let cfg = TextConfig {
             content,
             size,

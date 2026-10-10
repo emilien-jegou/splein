@@ -8,7 +8,8 @@
 //   aurora statically would embed a second copy with disjoint hook scopes, and component
 //   code would panic. Same toolchain both sides (Rust has no stable ABI).
 // - Pin stable identities (`#[component(name = "...")]`) so state survives file moves.
-// - Keep the exported symbols and their signatures exactly as below.
+// - The component-loop entry points come from `define_hot_ui!` (hand-written
+//   signatures across this boundary are UB on mismatch — generate them).
 //
 // The remote data-description half (`aurora_remote_*`, below the components) serves the
 // data-only loop instead; both halves share this crate so each demo stays verifiable.
@@ -17,10 +18,9 @@ extern crate aurora_shared as aurora;
 
 use aurora::dsl::IntoElement;
 use aurora::hot_reload::remote::{
-    RemoteDirection, RemoteNode, RemoteSize, RemoteSnapshot, RemoteStateDecl, RemoteText,
-    StateWrite, remote_abi_fingerprint,
+    remote_abi_fingerprint, RemoteDirection, RemoteNode, RemoteSize, RemoteSnapshot,
+    RemoteStateDecl, RemoteText, StateWrite,
 };
-use aurora::hot_reload::component_abi_fingerprint;
 use aurora::prelude::*;
 
 /// Click counter: hook state proving in-place continuity across reloads.
@@ -37,11 +37,9 @@ fn Counter() -> impl IntoElement {
         .fill(Color::hex(0xCA6D60))
         .radius(12.0)
         .on_click(move |_| bump.set(bump.get() + 1))
-        .children([
-            text(label.map(|n| format!("taps={n}")))
-                .size(16.0)
-                .color(Color::WHITE),
-        ])
+        .children([text(label.map(|n| format!("taps={n}")))
+            .size(16.0)
+            .color(Color::WHITE)])
 }
 
 /// Hero panel: the box whose color to edit. Contains the counter.
@@ -70,17 +68,7 @@ fn Page() -> impl IntoElement {
         .children([Hero()])
 }
 
-/// ABI fingerprint the host checks before installing entry points.
-#[no_mangle]
-pub extern "Rust" fn aurora_hot_version() -> u64 {
-    component_abi_fingerprint()
-}
-
-/// Rebuilds the interface. Re-run on every reload under the old hook scope.
-#[no_mangle]
-pub extern "Rust" fn aurora_component_root() -> aurora::dsl::Element {
-    Page().into_element()
-}
+aurora::define_hot_ui!(Page);
 
 /// State keys and the values fresh keys start at. Live values always win over these.
 /// Remote ABI fingerprint the host checks before installing entry points.
@@ -90,7 +78,8 @@ pub extern "Rust" fn aurora_remote_version() -> u64 {
 }
 
 #[no_mangle]
-pub extern "Rust" fn aurora_remote_state() -> RemoteStateDecl {    RemoteStateDecl {
+pub extern "Rust" fn aurora_remote_state() -> RemoteStateDecl {
+    RemoteStateDecl {
         f32s: vec![("taps".to_string(), 0.0)],
         strings: vec![],
         bools: vec![("open".to_string(), false)],
@@ -153,7 +142,11 @@ pub extern "Rust" fn aurora_remote_build(snap: &RemoteSnapshot) -> RemoteNode {
     let mut toggle = RemoteNode::group("toggle");
     toggle.width = RemoteSize::Fixed(200.0);
     toggle.height = RemoteSize::Fixed(60.0);
-    toggle.fill = Some(if snap.get_bool("open") { 0x22C55E } else { 0x6B7280 });
+    toggle.fill = Some(if snap.get_bool("open") {
+        0x22C55E
+    } else {
+        0x6B7280
+    });
     toggle.radius = 8.0;
     toggle.on_click = Some("toggle".to_string());
     let mut state = RemoteNode::text("state", "");

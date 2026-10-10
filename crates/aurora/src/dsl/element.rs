@@ -122,7 +122,9 @@ impl Element {
 
 /// Renders one optional reactive prop for [`Element::summarize`]: statics by value,
 /// dynamics and context reads by kind, absence as `-`.
-fn prop_summary<T: std::fmt::Debug>(prop: &Option<crate::reactive::prop::DynamicProp<T>>) -> String {
+fn prop_summary<T: std::fmt::Debug>(
+    prop: &Option<crate::reactive::prop::DynamicProp<T>>,
+) -> String {
     match prop {
         None => "-".to_string(),
         Some(crate::reactive::prop::DynamicProp::Static(v)) => format!("{v:?}"),

@@ -18,13 +18,11 @@ fn engine() -> Engine {
             .width(400.0)
             .height(400.0)
             .fill(Color::WHITE)
-            .children([
-                text(CONTENT)
-                    .key("t")
-                    .selectable(true)
-                    .size(16.0)
-                    .into_element(),
-            ]),
+            .children([text(CONTENT)
+                .key("t")
+                .selectable(true)
+                .size(16.0)
+                .into_element()]),
     );
     engine.advance(1.0 / 60.0);
     engine.frame();
@@ -95,7 +93,8 @@ fn layout(engine: &Engine) -> Arc<TextLayout> {
         let id = arena.node_for_key(&Key::from("t")).expect("text node");
         arena
             .get(id)
-            .state.text
+            .state
+            .text
             .cached_text_layout
             .clone()
             .expect("shaped layout")
@@ -197,7 +196,10 @@ fn drag_backwards_inverts_anchor_and_focus() {
     send(&mut engine, o.x + 1.0, y, PointerPhase::Up);
 
     let sel = selection(&engine).expect("drag selects");
-    assert!(sel.anchor > sel.focus, "backwards drag inverts, got {sel:?}");
+    assert!(
+        sel.anchor > sel.focus,
+        "backwards drag inverts, got {sel:?}"
+    );
     assert_eq!(sel.normalized(), (0, CONTENT.len()));
 }
 
@@ -219,10 +221,7 @@ fn double_click_selects_word() {
     let sel = selection(&engine).expect("double press selects");
     assert_eq!(sel.normalized(), (6, 11), "double-click selects the word");
     send(&mut engine, x, y, PointerPhase::Up);
-    assert_eq!(
-        selection(&engine).expect("kept").normalized(),
-        (6, 11)
-    );
+    assert_eq!(selection(&engine).expect("kept").normalized(), (6, 11));
 }
 
 #[test]
@@ -322,7 +321,7 @@ fn non_selectable_text_ignores_selection() {
     assert!(highlight_rects(&engine).is_empty());
 }
 
-#[path = "../examples/motion_accordion/main.rs"]
+#[path = "../../../examples/motion_accordion/main.rs"]
 mod accordion;
 
 use aurora_tiny_skia::testing::Harness;
@@ -388,10 +387,7 @@ fn accordion_body_copy_drag_selects() {
     h.step();
     for i in 1..=6 {
         let t = i as f32 / 6.0;
-        h.pointer(
-            Point::new(x0 + (x1 - x0) * t, y),
-            PointerPhase::Drag,
-        );
+        h.pointer(Point::new(x0 + (x1 - x0) * t, y), PointerPhase::Drag);
         h.step();
     }
     h.pointer(Point::new(x1, y), PointerPhase::Up);
@@ -400,7 +396,10 @@ fn accordion_body_copy_drag_selects() {
     let content = accordion_copy_text(&mut h, "copy-0");
     let sel = accordion_selection(&mut h, "copy-0").expect("drag selects the copy");
     let (s, e) = sel.normalized();
-    assert!(e - s > content.len() / 2, "drag covers the copy, got {sel:?}");
+    assert!(
+        e - s > content.len() / 2,
+        "drag covers the copy, got {sel:?}"
+    );
     assert!(!highlight_rects(h.engine()).is_empty());
 }
 
@@ -450,7 +449,9 @@ fn accordion_header_title_stays_plain() {
 #[ntest::timeout(10_000)]
 fn content_edit_clears_stale_selection() {
     use aurora::reactive::Signal;
-    let runtime = std::rc::Rc::new(std::cell::RefCell::new(aurora::reactive::ReactiveRuntime::new()));
+    let runtime = std::rc::Rc::new(std::cell::RefCell::new(
+        aurora::reactive::ReactiveRuntime::new(),
+    ));
     let content = Signal::new(runtime.clone(), CONTENT.to_string());
     let body = content.clone();
     let mut engine = Engine::with_runtime(
@@ -459,7 +460,11 @@ fn content_edit_clears_stale_selection() {
             .width(400.0)
             .height(400.0)
             .fill(Color::WHITE)
-            .children([text(body).key("t").selectable(true).size(16.0).into_element()])
+            .children([text(body)
+                .key("t")
+                .selectable(true)
+                .size(16.0)
+                .into_element()])
             .into_element(),
         400,
         400,
@@ -485,9 +490,10 @@ fn caret_rects(engine: &Engine) -> Vec<(usize, usize)> {
         for (i, cmd) in chunk.commands.iter().enumerate() {
             if let SceneCommand::DrawRect { rect, appearance } = cmd {
                 let is_caret = (rect.width - aurora::text::CARET_WIDTH).abs() < 0.01
-                    && appearance.fill.as_ref().is_some_and(|f| {
-                        matches!(f, aurora::foundation::Fill::Solid(_))
-                    });
+                    && appearance
+                        .fill
+                        .as_ref()
+                        .is_some_and(|f| matches!(f, aurora::foundation::Fill::Solid(_)));
                 // Highlights are wider than the caret; the caret also paints
                 // after the text while highlights paint before it.
                 if is_caret {
@@ -593,7 +599,10 @@ fn arrows_walk_graphemes_and_shift_extends() {
     key(&mut engine, KeyCode::Left);
     assert_eq!(
         engine.text_selection("t"),
-        Some(TextSelection { anchor: 2, focus: 2 })
+        Some(TextSelection {
+            anchor: 2,
+            focus: 2
+        })
     );
 }
 
@@ -632,7 +641,10 @@ fn home_end_and_ctrl_home_end() {
     key(&mut engine, KeyCode::Home);
     assert_eq!(engine.text_selection("t").map(|s| s.focus), Some(0));
     key_mods(&mut engine, KeyCode::End, false, true);
-    assert_eq!(engine.text_selection("t").map(|s| s.focus), Some(CONTENT.len()));
+    assert_eq!(
+        engine.text_selection("t").map(|s| s.focus),
+        Some(CONTENT.len())
+    );
     key_mods(&mut engine, KeyCode::Home, false, true);
     assert_eq!(engine.text_selection("t").map(|s| s.focus), Some(0));
     // Shift+Home extends to the line start.
@@ -743,7 +755,9 @@ fn escape_collapses_and_typing_is_noop() {
     send(&mut engine, o.x + width - 1.0, y, PointerPhase::Down);
     send(&mut engine, o.x + 1.0, y, PointerPhase::Drag);
     send(&mut engine, o.x + 1.0, y, PointerPhase::Up);
-    assert!(engine.text_selection("t").is_some_and(|s| !s.is_collapsed()));
+    assert!(engine
+        .text_selection("t")
+        .is_some_and(|s| !s.is_collapsed()));
 
     key(&mut engine, KeyCode::Escape);
     let sel = engine.text_selection("t").expect("escape collapses");
@@ -764,7 +778,13 @@ fn programmatic_selection_paints_and_clears() {
     let h = layout(&engine).lines[0].height;
     click(&mut engine, o.x + 2.0, o.y + h * 0.5);
 
-    assert!(engine.set_text_selection("t", Some(TextSelection { anchor: 1, focus: 4 })));
+    assert!(engine.set_text_selection(
+        "t",
+        Some(TextSelection {
+            anchor: 1,
+            focus: 4
+        })
+    ));
     assert_eq!(engine.selected_text("t").as_deref(), Some("ell"));
     engine.advance(1.0 / 60.0);
     engine.frame();
@@ -810,9 +830,7 @@ fn slow_clicks_never_form_a_burst() {
     };
     for n in 1..=3 {
         live_click(&mut engine);
-        let sel = engine
-            .text_selection("t")
-            .expect("click sets a caret");
+        let sel = engine.text_selection("t").expect("click sets a caret");
         assert!(
             sel.is_collapsed(),
             "click {n} after a real idle gap must collapse, got {sel:?}"
@@ -897,8 +915,16 @@ fn burst_resets_when_the_press_changes_target() {
             .height(400.0)
             .fill(Color::WHITE)
             .children([
-                text("alpha beta").key("a").selectable(true).size(16.0).into_element(),
-                text("gamma delta").key("b").selectable(true).size(16.0).into_element(),
+                text("alpha beta")
+                    .key("a")
+                    .selectable(true)
+                    .size(16.0)
+                    .into_element(),
+                text("gamma delta")
+                    .key("b")
+                    .selectable(true)
+                    .size(16.0)
+                    .into_element(),
             ]),
     );
     engine.advance(1.0 / 60.0);
@@ -909,7 +935,8 @@ fn burst_resets_when_the_press_changes_target() {
             let p = arena.node_absolute_point(id);
             let h = arena
                 .get(id)
-                .state.text
+                .state
+                .text
                 .cached_text_layout
                 .clone()
                 .unwrap()
@@ -978,9 +1005,7 @@ fn header_click_does_not_feed_the_copy_burst() {
     let r = engine.absolute_rect("copy-0").expect("copy rect");
     let (px, py) = (r.x + r.width * 0.4, r.y + r.height * 0.5);
     send(&mut engine, px, py, PointerPhase::Down);
-    let sel = engine
-        .text_selection("copy-0")
-        .expect("copy press selects");
+    let sel = engine.text_selection("copy-0").expect("copy press selects");
     assert!(
         sel.is_collapsed(),
         "copy press on a new target collapses, got {sel:?}"
@@ -1084,7 +1109,8 @@ fn accordion_top_text_is_selectable() {
                 if t.content.contains("One panel open") {
                     let p = arena.node_absolute_point(id);
                     let h = node
-                        .state.text
+                        .state
+                        .text
                         .cached_text_layout
                         .clone()
                         .map(|l| l.lines[0].height)
@@ -1162,13 +1188,7 @@ fn empty_text_press_takes_no_selection_or_focus() {
             .width(400.0)
             .height(400.0)
             .fill(Color::WHITE)
-            .children([
-                text("")
-                    .key("t")
-                    .selectable(true)
-                    .size(16.0)
-                    .into_element(),
-            ]),
+            .children([text("").key("t").selectable(true).size(16.0).into_element()]),
     );
     engine.advance(1.0 / 60.0);
     engine.frame();
@@ -1238,13 +1258,11 @@ fn press_before_first_paint_leaves_no_stale_state() {
             .width(400.0)
             .height(400.0)
             .fill(Color::WHITE)
-            .children([
-                text(CONTENT)
-                    .key("t")
-                    .selectable(true)
-                    .size(16.0)
-                    .into_element(),
-            ]),
+            .children([text(CONTENT)
+                .key("t")
+                .selectable(true)
+                .size(16.0)
+                .into_element()]),
     );
     // No frame yet: input dispatches before the frame's layout passes, so
     // neither hit geometry nor a shaped layout exists at this point.
@@ -1297,9 +1315,21 @@ fn multi_engine() -> Engine {
             .height(400.0)
             .fill(Color::WHITE)
             .children([
-                text(RUN_A).key("a").selectable(true).size(16.0).into_element(),
-                text(RUN_B).key("b").selectable(true).size(16.0).into_element(),
-                text(RUN_C).key("c").selectable(true).size(16.0).into_element(),
+                text(RUN_A)
+                    .key("a")
+                    .selectable(true)
+                    .size(16.0)
+                    .into_element(),
+                text(RUN_B)
+                    .key("b")
+                    .selectable(true)
+                    .size(16.0)
+                    .into_element(),
+                text(RUN_C)
+                    .key("c")
+                    .selectable(true)
+                    .size(16.0)
+                    .into_element(),
             ]),
     );
     engine.advance(1.0 / 60.0);
@@ -1310,11 +1340,14 @@ fn multi_engine() -> Engine {
 /// Left edge midpoint of a run's first line (a press/drag point inside it).
 fn run_point(engine: &Engine, key: &str) -> Point {
     engine.with_arena(|arena, _| {
-        let id = arena.node_for_key(&Key::from(key.to_string())).expect("run");
+        let id = arena
+            .node_for_key(&Key::from(key.to_string()))
+            .expect("run");
         let p = arena.node_absolute_point(id);
         let layout = arena
             .get(id)
-            .state.text
+            .state
+            .text
             .cached_text_layout
             .clone()
             .expect("shaped");
@@ -1325,11 +1358,14 @@ fn run_point(engine: &Engine, key: &str) -> Point {
 /// Right edge midpoint of a run's first line.
 fn run_end(engine: &Engine, key: &str) -> Point {
     engine.with_arena(|arena, _| {
-        let id = arena.node_for_key(&Key::from(key.to_string())).expect("run");
+        let id = arena
+            .node_for_key(&Key::from(key.to_string()))
+            .expect("run");
         let p = arena.node_absolute_point(id);
         let layout = arena
             .get(id)
-            .state.text
+            .state
+            .text
             .cached_text_layout
             .clone()
             .expect("shaped");
@@ -1370,7 +1406,11 @@ fn drag_down_across_two_runs_paints_both_edges() {
     let sa = run_sel(&engine, "a").expect("anchor paints");
     let sb = run_sel(&engine, "b").expect("focus paints");
     assert!(!sa.is_collapsed() && !sb.is_collapsed());
-    assert_eq!(sa.normalized().1, RUN_A.len(), "anchor to run end, got {sa:?}");
+    assert_eq!(
+        sa.normalized().1,
+        RUN_A.len(),
+        "anchor to run end, got {sa:?}"
+    );
     assert_eq!(sb.normalized().0, 0, "focus from run start, got {sb:?}");
     assert_eq!(run_sel(&engine, "c"), None, "third run untouched");
 }
@@ -1386,7 +1426,11 @@ fn drag_up_across_two_runs_reverses_edges() {
     let sa = run_sel(&engine, "a").expect("focus paints");
     let sb = run_sel(&engine, "b").expect("anchor paints");
     assert!(!sa.is_collapsed() && !sb.is_collapsed());
-    assert_eq!(sa.normalized().1, RUN_A.len(), "focus to run end, got {sa:?}");
+    assert_eq!(
+        sa.normalized().1,
+        RUN_A.len(),
+        "focus to run end, got {sa:?}"
+    );
     assert_eq!(sb.normalized().0, 0, "anchor from run start, got {sb:?}");
 }
 

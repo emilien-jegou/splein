@@ -22,7 +22,9 @@ use aurora::foundation::{Color, DamageRegion, Point, ResolvedRect};
 use aurora::render::swizzle_rgba_to_bgra;
 use aurora::render::BackendError;
 use aurora::scene::Scene;
-use aurora::text::{FontStyle, LineHeight, TextAlign, TextConfig, TextContext, TextDecoration, TextOverflow};
+use aurora::text::{
+    FontStyle, LineHeight, TextAlign, TextConfig, TextContext, TextDecoration, TextOverflow,
+};
 use aurora_tiny_skia::{render_text, TextRenderParams, TinySkiaRenderer};
 use aurora_vello::VelloRenderer;
 use aurora_wgpu::context::WgpuContext;
@@ -33,7 +35,10 @@ pub const QUAD_STRIP: u32 = 120;
 
 /// Quadrant size for a quad window: two columns, strip + two rows.
 pub fn quad_layout(full_w: u32, full_h: u32) -> (u32, u32) {
-    ((full_w / 2).max(1), ((full_h.saturating_sub(QUAD_STRIP)) / 2).max(1))
+    (
+        (full_w / 2).max(1),
+        ((full_h.saturating_sub(QUAD_STRIP)) / 2).max(1),
+    )
 }
 
 /// Window size for a demo that wants `qw x qh` quadrants.
@@ -135,10 +140,7 @@ impl QuadBackend {
             .map_err(|e| BackendError::init(format!("softbuffer context: {e:?}")))?;
         let mut surface = Surface::new(&context, Arc::clone(&window))
             .map_err(|e| BackendError::init(format!("softbuffer surface: {e:?}")))?;
-        let _ = surface.resize(
-            NonZeroU32::new(fw).unwrap(),
-            NonZeroU32::new(fh).unwrap(),
-        );
+        let _ = surface.resize(NonZeroU32::new(fw).unwrap(), NonZeroU32::new(fh).unwrap());
 
         let mut skia = TinySkiaRenderer::new();
         skia.set_text_context(text_ctx.clone());
@@ -156,14 +158,13 @@ impl QuadBackend {
             .map_err(|e| BackendError::init(format!("quad vello-cpu: {e:?}")))?;
         vello_cpu.set_text_context(text_ctx.clone());
 
-        let gpu = pollster::block_on(WgpuContext::init_headless(qw, qh))
-            .map_err(BackendError::init)?;
+        let gpu =
+            pollster::block_on(WgpuContext::init_headless(qw, qh)).map_err(BackendError::init)?;
         let mut wgpu = WgpuRenderer::new(gpu, text_ctx.clone());
         wgpu.set_scale(window.scale_factor() as f32);
 
-        let mut composite = Pixmap::new(fw, fh).ok_or_else(|| {
-            BackendError::init(format!("quad composite {fw}x{fh} alloc failed"))
-        })?;
+        let mut composite = Pixmap::new(fw, fh)
+            .ok_or_else(|| BackendError::init(format!("quad composite {fw}x{fh} alloc failed")))?;
         composite.fill(tiny_skia::Color::TRANSPARENT);
 
         Ok(Self {
@@ -278,10 +279,9 @@ impl QuadBackend {
             color,
             ..TextConfig::default()
         };
-        let layout = self.text_ctx.shape_config(
-            &cfg,
-            aurora::foundation::Constraints::loose(1200.0, 20.0),
-        );
+        let layout = self
+            .text_ctx
+            .shape_config(&cfg, aurora::foundation::Constraints::loose(1200.0, 20.0));
         let mut pix = self.composite.as_mut();
         render_text(
             &mut pix,
@@ -321,9 +321,7 @@ impl QuadBackend {
             }
             match (n, oldest) {
                 (0 | 1, _) => 0.0,
-                (_, Some(o)) => {
-                    (n as f32 / (now - o).as_secs_f32().max(0.5)).min(9999.0)
-                }
+                (_, Some(o)) => (n as f32 / (now - o).as_secs_f32().max(0.5)).min(9999.0),
                 _ => 0.0,
             }
         };
@@ -383,14 +381,16 @@ impl QuadBackend {
             match &self.cached_gpu[2] {
                 Some(px) => px.clone(),
                 None => {
-                    self.wgpu.render_scene_offscreen(scene, background, damage)?;
+                    self.wgpu
+                        .render_scene_offscreen(scene, background, damage)?;
                     let px = self.wgpu.readback_rgba8()?;
                     self.cached_gpu[2] = Some(px.clone());
                     px
                 }
             }
         } else {
-            self.wgpu.render_scene_offscreen(scene, background, damage)?;
+            self.wgpu
+                .render_scene_offscreen(scene, background, damage)?;
             let px = self.wgpu.readback_rgba8()?;
             self.cached_gpu[2] = Some(px.clone());
             px
@@ -417,10 +417,9 @@ impl Backend for QuadBackend {
         let (qw, qh) = quad_layout(fw, fh);
         self.qw = qw;
         self.qh = qh;
-        let _ = self.surface.resize(
-            NonZeroU32::new(fw).unwrap(),
-            NonZeroU32::new(fh).unwrap(),
-        );
+        let _ = self
+            .surface
+            .resize(NonZeroU32::new(fw).unwrap(), NonZeroU32::new(fh).unwrap());
         self.skia.resize(qw, qh);
         self.vello_gpu.resize(qw, qh);
         self.vello_cpu.resize(qw, qh);
@@ -447,12 +446,7 @@ impl Backend for QuadBackend {
         if damage.is_empty() {
             // Fresh canvases still need one full paint (first frame / resize
             // races where the ring reports nothing yet).
-            damage.push(ResolvedRect::new(
-                0.0,
-                0.0,
-                self.qw as f32,
-                self.qh as f32,
-            ));
+            damage.push(ResolvedRect::new(0.0, 0.0, self.qw as f32, self.qh as f32));
         }
         self.wgpu.set_scale(self.window.scale_factor() as f32);
         self.render_quadrants(frame.scene, frame.surface.background, &damage)?;
@@ -474,7 +468,9 @@ impl Backend for QuadBackend {
             .map_err(|e| BackendError::surface(format!("quad buffer acquire: {e:?}")))?;
         let src: &[u32] = bytemuck::cast_slice(self.composite.data());
         let dst = buffer.as_mut();
-        let n = (self.full_w as usize * self.full_h as usize).min(dst.len()).min(src.len());
+        let n = (self.full_w as usize * self.full_h as usize)
+            .min(dst.len())
+            .min(src.len());
         swizzle_rgba_to_bgra(&mut dst[..n], &src[..n]);
         if let Some(pass) = frame.post_process {
             let empty = DamageRegion::new();

@@ -6,9 +6,9 @@
 // point. All configuration crosses as C strings the host reads on entry.
 //
 // Usage:
-//   aurora hot --package aurora-demo1-ui
+//   aurora hot --package motion_press-ui
 //   aurora hot --package aurora-hot-ui --title "Hot" --background 0xFFFFFF
-//   aurora selftest --ui target/debug/libaurora_hot_ui.so
+//   aurora selftest --ui target/release/libaurora_hot_ui.so
 
 use std::ffi::{c_char, CString};
 use std::path::PathBuf;
@@ -50,12 +50,15 @@ enum Command {
         /// Clear color as 0xRRGGBB.
         #[arg(long, default_value = "0xFFFFFF")]
         background: String,
-        /// Shared runtime image (default: `<root>/target/debug/libaurora_shared.so`).
+        /// Shared runtime image (default: next to this launcher binary).
         #[arg(long)]
         shared: Option<PathBuf>,
-        /// Host library (default: `<root>/target/debug/libhot_host.so`).
+        /// Host library (default: next to this launcher binary).
         #[arg(long)]
         host: Option<PathBuf>,
+        /// Raster engine: tiny-skia (default), vello, vello-cpu, wgpu.
+        #[arg(long)]
+        engine: Option<String>,
     },
     /// Headless check: mount, click, swap entry points, and rebuild a UI image inside
     /// the shared runtime — no window. Exits non-zero with diagnostics on failure.
@@ -63,10 +66,10 @@ enum Command {
         /// UI image to verify.
         #[arg(long)]
         ui: PathBuf,
-        /// Shared runtime image (default: `<root>/target/debug/libaurora_shared.so`).
+        /// Shared runtime image (default: next to this launcher binary).
         #[arg(long)]
         shared: Option<PathBuf>,
-        /// Host library (default: `<root>/target/debug/libhot_host.so`).
+        /// Host library (default: next to this launcher binary).
         #[arg(long)]
         host: Option<PathBuf>,
         /// Workspace root anchoring the default paths.
@@ -75,22 +78,37 @@ enum Command {
     },
 }
 
-type HostRunFn = unsafe extern "Rust" fn(
-    *const c_char,
-    u32,
-    u32,
-    *const c_char,
-    *const c_char,
-    u32,
-);
+type HostRunFn =
+    unsafe extern "Rust" fn(*const c_char, u32, u32, *const c_char, *const c_char, u32, *const c_char);
 
 /// Headless self-test driver: forwards resolved UI entry points as opaque pointers.
 /// The host owns execution (it alone may call into component code); this side only
 /// loads and resolves, keeping its dependency set aurora-free.
 type HostSelftestFn = unsafe extern "Rust" fn(usize, usize) -> i32;
 
-fn debug_dir(root: &std::path::Path) -> PathBuf {
-    root.join("target").join("debug")
+/// Directory holding the shared/host images: the directory containing this
+/// launcher binary. `example.sh` builds launcher and images with one profile
+/// into one directory, so the launcher always sits next to what it loads —
+/// no target/profile folder strings anywhere. Explicit `--shared`/`--host`
+/// flags still win.
+fn image_dir() -> Option<PathBuf> {
+    std::env::current_exe().ok()?.parent().map(PathBuf::from)
+}
+
+/// Resolves one image path: explicit flag first, then the launcher's sibling
+/// directory (which must exist — otherwise nothing was built). Fails loud
+/// instead of dlopening a stale image from elsewhere.
+fn resolve_image(explicit: Option<PathBuf>, file: &str) -> Result<PathBuf, ExitCode> {
+    if let Some(path) = explicit {
+        return Ok(path);
+    }
+    if let Some(path) = image_dir().map(|dir| dir.join(file)) {
+        if path.exists() {
+            return Ok(path);
+        }
+    }
+    eprintln!("aurora: {file} not found next to the launcher; build first (./example.sh <name>) or pass its path explicitly");
+    Err(ExitCode::FAILURE)
 }
 
 fn parse_hex(raw: &str) -> u32 {
@@ -113,10 +131,16 @@ fn main() -> ExitCode {
             background,
             shared,
             host,
+            engine,
         } => {
-            let debug = debug_dir(&root);
-            let shared = shared.unwrap_or_else(|| debug.join("libaurora_shared.so"));
-            let host = host.unwrap_or_else(|| debug.join("libhot_host.so"));
+            let shared = match resolve_image(shared, "libaurora_shared.so") {
+                Ok(path) => path,
+                Err(code) => return code,
+            };
+            let host = match resolve_image(host, "libaurora_devkit_bin.so") {
+                Ok(path) => path,
+                Err(code) => return code,
+            };
             run_host(
                 &shared,
                 &host,
@@ -126,17 +150,23 @@ fn main() -> ExitCode {
                 &package,
                 &root,
                 parse_hex(&background),
+                engine.as_deref(),
             )
         }
         Command::Selftest {
             ui,
             shared,
             host,
-            root,
+            root: _root,
         } => {
-            let debug = debug_dir(&root);
-            let shared = shared.unwrap_or_else(|| debug.join("libaurora_shared.so"));
-            let host = host.unwrap_or_else(|| debug.join("libhot_host.so"));
+            let shared = match resolve_image(shared, "libaurora_shared.so") {
+                Ok(path) => path,
+                Err(code) => return code,
+            };
+            let host = match resolve_image(host, "libaurora_devkit_bin.so") {
+                Ok(path) => path,
+                Err(code) => return code,
+            };
             run_selftest(&shared, &host, &ui)
         }
     }
@@ -188,6 +218,7 @@ fn run_host(
     package: &str,
     root: &std::path::Path,
     background: u32,
+    engine: Option<&str>,
 ) -> ExitCode {
     if preload_shared(shared).is_err() {
         return ExitCode::FAILURE;
@@ -197,10 +228,10 @@ fn run_host(
         Err(code) => return code,
     };
     let run: libloading::Symbol<HostRunFn> = unsafe {
-        match host_lib.get(b"hot_host_run") {
+        match host_lib.get(b"devkit_run") {
             Ok(run) => run,
             Err(e) => {
-                eprintln!("aurora: host {} exports no hot_host_run: {e}", host.display());
+                eprintln!("aurora: host {} exports no devkit_run: {e}", host.display());
                 return ExitCode::FAILURE;
             }
         }
@@ -208,6 +239,7 @@ fn run_host(
     let title = CString::new(title).unwrap_or_default();
     let package = CString::new(package).unwrap_or_default();
     let root = CString::new(root.to_string_lossy().as_ref()).unwrap_or_default();
+    let engine = CString::new(engine.unwrap_or("")).unwrap_or_default();
     unsafe {
         run(
             title.as_ptr(),
@@ -216,6 +248,7 @@ fn run_host(
             package.as_ptr(),
             root.as_ptr(),
             background,
+            engine.as_ptr(),
         )
     };
     // The event loop only returns on exit: leak the image (see above) so teardown
@@ -238,11 +271,11 @@ fn run_selftest(
         Err(code) => return code,
     };
     let selftest: libloading::Symbol<HostSelftestFn> = unsafe {
-        match host_lib.get(b"hot_host_selftest") {
+        match host_lib.get(b"devkit_selftest") {
             Ok(f) => f,
             Err(e) => {
                 eprintln!(
-                    "aurora: host {} exports no hot_host_selftest: {e}",
+                    "aurora: host {} exports no devkit_selftest: {e}",
                     host.display()
                 );
                 return ExitCode::FAILURE;
@@ -266,7 +299,10 @@ fn run_selftest(
             match ui_lib.get(b"aurora_hot_version") {
                 Ok(s) => s,
                 Err(e) => {
-                    eprintln!("aurora: ui {} exports no aurora_hot_version: {e}", ui.display());
+                    eprintln!(
+                        "aurora: ui {} exports no aurora_hot_version: {e}",
+                        ui.display()
+                    );
                     return ExitCode::FAILURE;
                 }
             };

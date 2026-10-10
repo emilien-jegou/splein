@@ -7,7 +7,7 @@
 // boundary with minimal frames between and assert live FLIP offsets.
 
 #[allow(dead_code)]
-#[path = "../examples/motion_reorder.rs"]
+#[path = "../../../examples/motion_reorder/main.rs"]
 mod reorder;
 
 use std::cell::RefCell;
@@ -113,7 +113,10 @@ fn single_frame_whip_and_release() {
         "released row must glide from its thrown offset, got ty={:.2}",
         b.ty
     );
-    let c = h.engine().transform("row-Strikethrough").unwrap_or_default();
+    let c = h
+        .engine()
+        .transform("row-Strikethrough")
+        .unwrap_or_default();
     assert!(
         c.ty.abs() > stride * 0.1,
         "displaced row must carry FLIP offset, got ty={:.2}",
@@ -156,7 +159,13 @@ fn storm_crossings_glide_and_settle() {
 
     bridge.dispatch(&release(), h.engine());
     assert!(h.settle(900), "storm must settle");
-    for label in ["Baseline", "Underline", "Strikethrough", "Highlight", "Squiggle"] {
+    for label in [
+        "Baseline",
+        "Underline",
+        "Strikethrough",
+        "Highlight",
+        "Squiggle",
+    ] {
         let ty = h
             .engine()
             .transform(&format!("row-{label}"))
@@ -192,14 +201,22 @@ fn grab_during_settle_does_not_teleport() {
     bridge.dispatch(&release(), h.engine());
     h.step();
     h.step();
-    let flying = h.engine().transform("row-Strikethrough").unwrap_or_default().ty;
+    let flying = h
+        .engine()
+        .transform("row-Strikethrough")
+        .unwrap_or_default()
+        .ty;
     assert!(
         flying.abs() > 10.0,
         "precondition: row 3 must still be gliding, got ty={flying:.2}"
     );
 
     let before_box = h.located("row-Strikethrough").absolute.y;
-    let before_ty = h.engine().transform("row-Strikethrough").unwrap_or_default().ty;
+    let before_ty = h
+        .engine()
+        .transform("row-Strikethrough")
+        .unwrap_or_default()
+        .ty;
     let before_visual = before_box + before_ty;
     let height = h.located("row-Strikethrough").absolute.height;
 
@@ -208,7 +225,11 @@ fn grab_during_settle_does_not_teleport() {
     h.step();
 
     let after_box = h.located("row-Strikethrough").absolute.y;
-    let after_ty = h.engine().transform("row-Strikethrough").unwrap_or_default().ty;
+    let after_ty = h
+        .engine()
+        .transform("row-Strikethrough")
+        .unwrap_or_default()
+        .ty;
     let after_visual = after_box + after_ty;
     assert!(
         (after_visual - before_visual).abs() < 5.0,

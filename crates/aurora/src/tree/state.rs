@@ -5,6 +5,7 @@
 // lines the crate split follows: each group moves to its domain crate with the code that
 // reads and writes it, while the tree keeps the arena and the hierarchy.
 
+use crate::foundation::{Key, LayoutPresence, LightEnvironment, ResolvedRect, Transform};
 use crate::input::handlers::NodeHandlers;
 use crate::scene::SceneChunk;
 use crate::text::selection::{SelectionGranularity, TextSelection};
@@ -12,7 +13,6 @@ use crate::text::TextLayout;
 use crate::tree::binding::NodeBindings;
 use crate::tree::cache::LayoutCache;
 use crate::tree::flags::DirtyFlags;
-use crate::foundation::{Key, LayoutPresence, LightEnvironment, ResolvedRect, Transform};
 use std::sync::Arc;
 
 /// Invalidation flags, layout caches, bindings, and identity: owned by the tree itself.
@@ -52,7 +52,12 @@ pub struct CoreState {
     /// providers appear and vanish with their nodes — no leaks, no stale
     /// entries), read by context resolution walks. `None` (the common case)
     /// costs one tag and is skipped outright.
-    pub provided: Option<Vec<(crate::reactive::context::CtxId, crate::reactive::context::ProviderValue)>>,
+    pub provided: Option<
+        Vec<(
+            crate::reactive::context::CtxId,
+            crate::reactive::context::ProviderValue,
+        )>,
+    >,
 }
 
 /// Pointer interaction state: owned by the input domain.

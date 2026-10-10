@@ -74,8 +74,8 @@
 //! - Deep chains can't overflow the stack: writes refresh transitive derivations in
 //!   dependency-first order without re-entering user handles.
 
-pub mod batch;
 pub mod ambient;
+pub mod batch;
 pub mod context;
 pub mod derived;
 pub mod effect;
@@ -94,8 +94,8 @@ pub use context::{Context, Ctx, Provided};
 pub use derived::Derived;
 pub use effect::Effect;
 pub use hooks::{
-    use_frame_clock, use_interval, use_interval_toggle, use_playback, use_signal,
-    use_signal_keyed, use_timeout, use_transition, Cx,
+    use_frame_clock, use_interval, use_interval_toggle, use_playback, use_signal, use_signal_keyed,
+    use_timeout, use_transition, Cx,
 };
 pub use id::{SignalId, SubscriberId};
 pub use observer::Observer;

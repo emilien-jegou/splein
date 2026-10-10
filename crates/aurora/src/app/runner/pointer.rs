@@ -2,8 +2,8 @@
 
 use winit::event::Modifiers;
 use winit::event::{ElementState, MouseButton, WindowEvent};
-use winit::keyboard::{Key, NamedKey};
 use winit::keyboard::ModifiersKeyState;
+use winit::keyboard::{Key, NamedKey};
 
 use crate::foundation::Point;
 use crate::input::{KeyCode, KeyEvent, PointerButton, PointerEvent, PointerPhase};
@@ -202,4 +202,3 @@ pub fn map_logical_key(key: &Key) -> Option<KeyCode> {
 fn to_logical(position: winit::dpi::PhysicalPosition<f64>) -> Point {
     Point::new(position.x as f32, position.y as f32)
 }
-

@@ -11,11 +11,10 @@
 //
 // One build command does everything: `cargo build -p <package>` rebuilds the shared image
 // first when stale (same unit graph, so fingerprints agree by construction). The loop
-// appends exactly one build flag of its own — `--sysroot` pinned to the toolchain's
-// reported sysroot — because split toolchain installations expose every sysroot crate
-// twice and dylib-consuming links fail with "only shows up once" otherwise. Keep hand
-// builds vanilla otherwise: exotic per-build flags multiply unit hashes and produce the
-// mixed-invocation skew this loop is designed never to see.
+// appends its own `RUSTFLAGS` of `-C prefer-dynamic` (always, to match the hand builds)
+// plus `--sysroot` pinned to the toolchain's reported sysroot (skipped on split
+// toolchain installations, which expose every sysroot crate twice when pinned —
+// either mismatch fails dylib-consuming links with "only shows up once").
 
 use crate::hot_reload::dylib::DylibReloader;
 use crate::hot_reload::watcher::FileWatcher;
@@ -31,40 +30,88 @@ pub struct DevLoopConfig {
     pub workspace_root: PathBuf,
     /// Sources watched for changes. Defaults to `crates/<package>/src`.
     pub watch_dir: Option<PathBuf>,
-    /// Library image loaded. Defaults to `target/debug/lib<package>.so` (Linux-first).
+    /// Library image loaded. Defaults to `target/release/lib<package>.so` (Linux-first).
     pub lib_path: Option<PathBuf>,
     /// Rebuild automatically on change (off = react to manual `cargo build` only).
     pub auto_build: bool,
+    /// Companion packages co-built with the UI in the SAME `cargo build`
+    /// invocation. `spawn_build` sorts and deduplicates companions plus the UI
+    /// package into one canonical root set, so every loop — whichever example
+    /// it serves — resolves the same unit family. In practice this is just the
+    /// shared image alongside the UI (`[shared, package]`); keep it minimal —
+    /// every extra package is another closure that can diverge the graph.
+    ///
+    /// Load-bearing, not decorative: different `-p` root sets resolve
+    /// different unit-variant families for the same crates, and linking a
+    /// consumer against one variant's shared image while loading another fails
+    /// the build ("only shows up once") or the load (undefined symbols).
+    /// `example.sh` builds the same set by hand (plus the static launcher,
+    /// separately).
+    pub companion_packages: Vec<String>,
 }
 
 impl DevLoopConfig {
     /// Library image path: explicit override or the default under the workspace root.
+    /// The profile segment comes from [`HOT_PROFILE`](crate::hot_reload::HOT_PROFILE),
+    /// never a literal: script builds, loop rebuilds, and this default must agree.
     pub fn lib_path(&self) -> PathBuf {
         self.lib_path.clone().unwrap_or_else(|| {
             self.workspace_root.join(format!(
-                "target/debug/lib{}.so",
+                "target/{}/lib{}.so",
+                super::HOT_PROFILE,
                 self.package.replace('-', "_")
             ))
         })
     }
 
     /// Sources watched: explicit override or the package's `src` dir.
+    /// Probes `crates/<package>/src` first, then `examples/<package>/src`
+    /// (all hot-reloadable demos live under `examples/`; the old
+    /// crates-only default watched a nonexistent dir and silently
+    /// never fired).
     pub fn watch_dir(&self) -> PathBuf {
         self.watch_dir.clone().unwrap_or_else(|| {
-            self.workspace_root
+            let crates = self
+                .workspace_root
                 .join("crates")
                 .join(&self.package)
-                .join("src")
+                .join("src");
+            if crates.exists() {
+                return crates;
+            }
+            let examples = self
+                .workspace_root
+                .join("examples")
+                .join(&self.package)
+                .join("src");
+            if examples.exists() {
+                return examples;
+            }
+            crates
         })
     }
 
     /// Package manifest watched alongside sources: dependency and feature edits rebuild
     /// through the same cycle as source edits. Missing manifests are simply unwatched.
+    /// Probes `crates/<package>/Cargo.toml` first, then `examples/<package>/Cargo.toml`.
     pub fn manifest_path(&self) -> PathBuf {
-        self.workspace_root
+        let crates = self
+            .workspace_root
             .join("crates")
             .join(&self.package)
-            .join("Cargo.toml")
+            .join("Cargo.toml");
+        if crates.exists() {
+            return crates;
+        }
+        let examples = self
+            .workspace_root
+            .join("examples")
+            .join(&self.package)
+            .join("Cargo.toml");
+        if examples.exists() {
+            return examples;
+        }
+        crates
     }
 }
 
@@ -161,8 +208,8 @@ impl DevLoop {
             watch_dir.display(),
             config.package
         );
-        let build_log = std::env::temp_dir()
-            .join(format!("aurora-hot-build-{}.log", std::process::id()));
+        let build_log =
+            std::env::temp_dir().join(format!("aurora-hot-build-{}.log", std::process::id()));
         Self {
             loader: DylibReloader::new(lib_path),
             watcher,
@@ -356,8 +403,7 @@ impl DevLoop {
         } else {
             let mut max: Option<SystemTime> = None;
             for file in &self.source_files {
-                let Ok(mtime) = std::fs::metadata(file).and_then(|m| m.modified())
-                else {
+                let Ok(mtime) = std::fs::metadata(file).and_then(|m| m.modified()) else {
                     continue;
                 };
                 max = Some(max.map_or(mtime, |t: SystemTime| t.max(mtime)));
@@ -367,9 +413,7 @@ impl DevLoop {
         // The manifest is watched but rarely inside depinfo: always include it.
         let manifest = self.config.manifest_path();
         if !self.source_files.iter().any(|f| f == &manifest) {
-            if let Ok(mtime) =
-                std::fs::metadata(&manifest).and_then(|m| m.modified())
-            {
+            if let Ok(mtime) = std::fs::metadata(&manifest).and_then(|m| m.modified()) {
                 max = Some(max.map_or(mtime, |t: SystemTime| t.max(mtime)));
             }
         }
@@ -378,6 +422,13 @@ impl DevLoop {
     }
 
     /// What the loop is doing right now, without walking anything. See [`DevLoopState`].
+    ///
+    /// `Stale` means sources are newer than the loaded image *and* newer than
+    /// anything already built for: a successful build that produced no new
+    /// image (no-op save — cargo found nothing to do) converges back to
+    /// `Watching`, since the image already reflects those sources. Without the
+    /// trigger baseline, every no-diff save would read `Stale` forever and pin
+    /// the progress bar on screen.
     pub fn loop_state(&self) -> DevLoopState {
         if self.build_error.is_some() {
             DevLoopState::Failed
@@ -385,7 +436,13 @@ impl DevLoop {
             DevLoopState::Building
         } else {
             match (self.last_max_sources, self.loader.loaded_mtime()) {
-                (Some(s), Some(l)) if s > l => DevLoopState::Stale,
+                (Some(s), Some(l)) if s > l => {
+                    if self.last_trigger_sources.is_some_and(|t| s <= t) {
+                        DevLoopState::Watching
+                    } else {
+                        DevLoopState::Stale
+                    }
+                }
                 (Some(_), None) => DevLoopState::Stale,
                 _ => DevLoopState::Watching,
             }
@@ -414,13 +471,22 @@ impl DevLoop {
         self.source_files = files;
     }
 
-    /// Starts a background `cargo build -p <package>` unless one is already running.
+    /// Starts a background build of the canonical hot-loop set unless one is
+    /// already running.
     ///
-    /// One command builds the whole closure (shared image first when stale): a single
-    /// unit graph means fingerprints agree by construction, which is what keeps
-    /// disambiguator skew out. The build pins `--sysroot` to the toolchain's own
-    /// reported sysroot (see `rustc_sysroot`): split toolchain installations expose the
-    /// same sysroot crates twice, and dylib-consuming links fail with "only shows up
+    /// One command builds the whole set (companions plus the UI package, sorted
+    /// and deduplicated): a single unit graph means fingerprints agree by
+    /// construction. This is load-bearing, not style: different `-p` root sets
+    /// resolve different unit-variant families for the same crates (multiple
+    /// coexisting `aurora`/`bon` unit hashes with identical features/flags
+    /// observed in `target/debug/build/*`), and a consumer linked against one
+    /// variant's shared image while the launcher loads another fails with
+    /// "only shows up once" or undefined symbols at load. EVERY cargo
+    /// invocation that touches these packages — script, loop spawn, tests —
+    /// must use this exact set; any deviation spawns a rival family. The build
+    /// pins `--sysroot` to the toolchain's own reported sysroot (see
+    /// `rustc_sysroot`): split toolchain installations expose the same sysroot
+    /// crates twice, and dylib-consuming links fail with "only shows up
     /// once" unless exactly one is visible. The user's own `RUSTFLAGS` are preserved
     /// (appended to, never replaced). No other per-build flags, ever.
     fn spawn_build(&mut self, reason: &str) {
@@ -434,35 +500,64 @@ impl DevLoop {
                 return;
             }
         };
+        // Canonical set, normalized: companions plus the UI package, sorted
+        // and deduplicated, so every spawn — whichever loop runs it — resolves
+        // the same unit family. Never narrow this per loop.
+        let mut roots: Vec<&str> = self
+            .config
+            .companion_packages
+            .iter()
+            .map(String::as_str)
+            .chain(std::iter::once(self.config.package.as_str()))
+            .collect();
+        roots.sort();
+        roots.dedup();
         let mut command = std::process::Command::new("cargo");
+        // Single profile everywhere (see `HOT_PROFILE`): runtime speed matters
+        // for interactive demos, and one profile keeps one unit family.
         command
             .arg("build")
-            .arg("-p")
-            .arg(&self.config.package)
+            .arg("--profile")
+            .arg(super::HOT_PROFILE);
+        for root in &roots {
+            command.arg("-p").arg(root);
+        }
+        command
             .current_dir(&self.config.workspace_root)
             .stdout(std::process::Stdio::null())
             .stderr(log_file);
         // NOTE: do not set CARGO_INCREMENTAL (or any other flag) here. Toggling
         // incremental state across builds of the same tree poisons dylib relinks
         // ("only shows up once"): the flag does not version the unit graph, so
-        // mixed-state artifacts cross-contaminate. Loop builds must be vanilla,
-        // exactly like hand builds.
-        if let Some(sysroot) = rustc_sysroot() {
-            let mut rustflags = std::env::var("RUSTFLAGS").unwrap_or_default();
-            if !rustflags.is_empty() {
-                rustflags.push(' ');
-            }
-            rustflags.push_str("--sysroot ");
-            rustflags.push_str(&sysroot.to_string_lossy());
-            command.env("RUSTFLAGS", rustflags);
-        } else {
-            tracing::info!(
-                "aurora: hot-reload building without a --sysroot pin ({})",
-                sysroot_skip_reason()
-            );
+        // mixed-state artifacts cross-contaminate. Loop builds inherit the
+        // environment, exactly like hand builds — keep them consistent.
+        //
+        // `-C prefer-dynamic` is unconditional: it must match the hand builds
+        // (`example.sh` builds every hot-loop crate with it). Only the
+        // `--sysroot` pin is conditional — split toolchains (Nix) expose the
+        // same sysroot crates twice when pinned, so it is skipped there.
+        // Bundling both behind one `if let` dropped `prefer-dynamic` on exactly
+        // those machines, rebuilding the UI statically against a dynamic
+        // shared image ("only shows up once" for gimli/object/memchr/...).
+        let mut rustflags = std::env::var("RUSTFLAGS").unwrap_or_default();
+        if !rustflags.is_empty() {
+            rustflags.push(' ');
         }
-        match command.spawn()
-        {
+        rustflags.push_str("-C prefer-dynamic");
+        match rustc_sysroot() {
+            Some(sysroot) => {
+                rustflags.push_str(" --sysroot ");
+                rustflags.push_str(&sysroot.to_string_lossy());
+            }
+            None => {
+                tracing::info!(
+                    "aurora: hot-reload building without a --sysroot pin ({})",
+                    sysroot_skip_reason()
+                );
+            }
+        }
+        command.env("RUSTFLAGS", rustflags);
+        match command.spawn() {
             Ok(child) => {
                 tracing::info!(
                     "aurora: hot-reload rebuilding `{}` ({reason}); log: {}",
@@ -611,9 +706,7 @@ fn max_mtime_under(dir: &std::path::Path) -> Option<SystemTime> {
             let path = entry.path();
             if path.is_dir() {
                 walk(&path, max);
-            } else if let Ok(mtime) =
-                std::fs::metadata(&path).and_then(|m| m.modified())
-            {
+            } else if let Ok(mtime) = std::fs::metadata(&path).and_then(|m| m.modified()) {
                 *max = Some(max.map_or(mtime, |t: SystemTime| t.max(mtime)));
             }
         }
@@ -728,6 +821,7 @@ mod tests {
             watch_dir: None,
             lib_path: None,
             auto_build: false,
+            companion_packages: vec![],
         });
         assert_eq!(dev.loop_state(), DevLoopState::Watching);
         // One poll walks freshness (throttle pre-expired) and records the sources.
@@ -801,6 +895,7 @@ mod tests {
             watch_dir: None,
             lib_path: None,
             auto_build: true,
+            companion_packages: vec![],
         });
         // The initial spawn targets nothing buildable; drive to completion.
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
@@ -850,6 +945,7 @@ mod tests {
             watch_dir: None,
             lib_path: None,
             auto_build: false,
+            companion_packages: vec![],
         });
         // Arm the watcher backend before touching anything.
         std::thread::sleep(std::time::Duration::from_millis(300));
@@ -975,7 +1071,12 @@ mod sysroot_tests {
             "escaping libstd must read as split"
         );
         // A self-contained sysroot (real file inside) is not split.
-        let plain = root.join("plain").join("lib").join("rustlib").join("t").join("lib");
+        let plain = root
+            .join("plain")
+            .join("lib")
+            .join("rustlib")
+            .join("t")
+            .join("lib");
         std::fs::create_dir_all(&plain).expect("temp dirs");
         std::fs::write(plain.join("libstd-hash.rlib"), "fake").expect("seed std");
         assert!(

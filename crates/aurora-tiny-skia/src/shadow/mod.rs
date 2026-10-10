@@ -54,10 +54,7 @@ impl ShadowRasterizer {
         }
         // Alpha-silhouette shadows are not accelerated yet; the 9-patch box
         // path below is the graceful fallback. Warn once, not per frame.
-        if matches!(
-            shadow.shape,
-            aurora::foundation::ShadowShape::Alpha
-        ) {
+        if matches!(shadow.shape, aurora::foundation::ShadowShape::Alpha) {
             static WARNED: std::sync::atomic::AtomicBool =
                 std::sync::atomic::AtomicBool::new(false);
             if !WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
@@ -125,13 +122,13 @@ impl ShadowRasterizer {
                 continue;
             }
 
-        let key = ShadowPatchKey {
-            radius_bits: r_scalar.to_bits(),
-            blur_bits: blur_r.to_bits(),
-            extent_bits: pad.to_bits(),
-            spread_bits: shadow.spread.to_bits(),
-            falloff_tag: layer.falloff.tag(),
-        };
+            let key = ShadowPatchKey {
+                radius_bits: r_scalar.to_bits(),
+                blur_bits: blur_r.to_bits(),
+                extent_bits: pad.to_bits(),
+                spread_bits: shadow.spread.to_bits(),
+                falloff_tag: layer.falloff.tag(),
+            };
 
             if !self.patch_cache.contains_key(&key) {
                 if self.patch_cache.len() >= MAX_SHADOW_PATCHES {

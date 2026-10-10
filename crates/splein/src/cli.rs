@@ -4,7 +4,12 @@ use clap::{Args as ClapArgs, Parser, Subcommand};
 use std::path::PathBuf;
 
 #[derive(Parser, Debug, Clone)]
-#[command(name = "splein", author, version, about = "Vector Screen Annotation Overlay for Wayland")]
+#[command(
+    name = "splein",
+    author,
+    version,
+    about = "Vector Screen Annotation Overlay for Wayland"
+)]
 pub struct Args {
     #[command(flatten)]
     pub common: CommonArgs,

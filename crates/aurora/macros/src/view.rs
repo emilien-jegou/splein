@@ -9,8 +9,8 @@
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
 use rstml::node::{
-    Infallible, KVAttributeValue, KeyedAttribute, KeyedAttributeValue, Node,
-    NodeAttribute, NodeElement, NodeName,
+    Infallible, KVAttributeValue, KeyedAttribute, KeyedAttributeValue, Node, NodeAttribute,
+    NodeElement, NodeName,
 };
 
 /// Concrete RSTML node types (no custom nodes).
@@ -199,10 +199,7 @@ pub(crate) fn is_control_child(node: &ViewNode) -> bool {
 /// Emits one child as a segment expression: control placeholders resolve to
 /// their `Dynamic` segment, anything else wraps in `Static`. Callers collect
 /// these into the `vec![…]` that `.child_segments()` takes.
-pub(crate) fn child_segment(
-    node: &ViewNode,
-    flow: &FlowTables,
-) -> syn::Result<TokenStream2> {
+pub(crate) fn child_segment(node: &ViewNode, flow: &FlowTables) -> syn::Result<TokenStream2> {
     if is_control_child(node) {
         // Resolve through the shared tables: the placeholder ident expands to
         // a `ChildSegment::Dynamic` expression in place.
@@ -539,21 +536,24 @@ impl FlowTables {
     fn resolve(&self, kind: &str, n: usize, span: proc_macro2::Span) -> syn::Result<TokenStream2> {
         match kind {
             "for" => {
-                let node = self.for_nodes.get(n).ok_or_else(|| {
-                    syn::Error::new(span, "view!: stale `<for>` placeholder")
-                })?;
+                let node = self
+                    .for_nodes
+                    .get(n)
+                    .ok_or_else(|| syn::Error::new(span, "view!: stale `<for>` placeholder"))?;
                 Ok(crate::for_node::expand(node))
             }
             "if" => {
-                let node = self.if_nodes.get(n).ok_or_else(|| {
-                    syn::Error::new(span, "view!: stale `<if>` placeholder")
-                })?;
+                let node = self
+                    .if_nodes
+                    .get(n)
+                    .ok_or_else(|| syn::Error::new(span, "view!: stale `<if>` placeholder"))?;
                 crate::if_node::expand(node)
             }
             "match" => {
-                let node = self.match_nodes.get(n).ok_or_else(|| {
-                    syn::Error::new(span, "view!: stale `<match>` placeholder")
-                })?;
+                let node = self
+                    .match_nodes
+                    .get(n)
+                    .ok_or_else(|| syn::Error::new(span, "view!: stale `<match>` placeholder"))?;
                 crate::match_node::expand(node)
             }
             "attr" => self
@@ -561,7 +561,10 @@ impl FlowTables {
                 .get(n)
                 .ok_or_else(|| syn::Error::new(span, "view!: stale `<attr>` placeholder"))
                 .and_then(|raw| crate::attr_node::expand_attr(raw, self)),
-            _ => Err(syn::Error::new(span, "view!: stale control-flow placeholder")),
+            _ => Err(syn::Error::new(
+                span,
+                "view!: stale control-flow placeholder",
+            )),
         }
     }
 

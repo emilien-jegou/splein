@@ -112,9 +112,7 @@ pub fn Provider(
     grant: crate::reactive::context::Provided,
     children: Vec<Element>,
 ) -> impl IntoElement {
-    crate::dsl::group()
-        .provided(grant)
-        .children(children)
+    crate::dsl::group().provided(grant).children(children)
 }
 
 /// Runs a component body inside the ambient hook scope, converting the result to an element.
@@ -177,7 +175,9 @@ pub fn component_scope_named<T: IntoElement>(
         }
         body()
     };
-    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| cx.enter_named(path, scoped))) {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        cx.enter_named(path, scoped)
+    })) {
         Ok(built) => built.into_element(),
         Err(payload) => {
             tracing::error!(

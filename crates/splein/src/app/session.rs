@@ -93,7 +93,8 @@ impl<R: RenderEngine> OverlaySession<R> {
         if self.selected.is_empty() {
             return self.clear();
         }
-        self.canvas.remove_indices(&std::mem::take(&mut self.selected));
+        self.canvas
+            .remove_indices(&std::mem::take(&mut self.selected));
         SessionAction::Redraw
     }
 
@@ -168,7 +169,8 @@ impl<R: RenderEngine> OverlaySession<R> {
         }
         let tool = self.current_tool();
         if tool == ActiveTool::Eraser && (is_down || self.erase_drag) {
-            self.gestures.on_move(pos, pressure, tool, self.color, &mut self.canvas);
+            self.gestures
+                .on_move(pos, pressure, tool, self.color, &mut self.canvas);
             self.hovered_elem = self.canvas.hit_test(pos, 14.0);
             return SessionAction::Redraw;
         }

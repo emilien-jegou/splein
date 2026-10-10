@@ -15,8 +15,8 @@ pub mod shader;
 pub mod shadow;
 pub mod stroke;
 pub mod svg;
-pub mod text;
 pub mod testing;
+pub mod text;
 
 pub use cpu_backend::CpuBackend;
 pub use raster::{HeadlessFrame, HeadlessRaster};
@@ -36,7 +36,5 @@ pub fn create_backend(
     height: u32,
     text_ctx: aurora::text::TextContext,
 ) -> Result<Box<dyn aurora::app::runner::Backend>, aurora::render::BackendError> {
-    Ok(Box::new(CpuBackend::new(
-        window, width, height, text_ctx,
-    )?))
+    Ok(Box::new(CpuBackend::new(window, width, height, text_ctx)?))
 }

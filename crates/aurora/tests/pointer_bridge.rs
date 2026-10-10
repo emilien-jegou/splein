@@ -292,13 +292,34 @@ fn platform_keys_map_to_selection_keys() {
     use aurora::input::KeyCode;
     use winit::keyboard::{Key, NamedKey};
 
-    assert_eq!(map_logical_key(&Key::Named(NamedKey::ArrowLeft)), Some(KeyCode::Left));
-    assert_eq!(map_logical_key(&Key::Named(NamedKey::ArrowRight)), Some(KeyCode::Right));
-    assert_eq!(map_logical_key(&Key::Named(NamedKey::ArrowUp)), Some(KeyCode::Up));
-    assert_eq!(map_logical_key(&Key::Named(NamedKey::ArrowDown)), Some(KeyCode::Down));
-    assert_eq!(map_logical_key(&Key::Named(NamedKey::Home)), Some(KeyCode::Home));
-    assert_eq!(map_logical_key(&Key::Named(NamedKey::End)), Some(KeyCode::End));
-    assert_eq!(map_logical_key(&Key::Named(NamedKey::Escape)), Some(KeyCode::Escape));
+    assert_eq!(
+        map_logical_key(&Key::Named(NamedKey::ArrowLeft)),
+        Some(KeyCode::Left)
+    );
+    assert_eq!(
+        map_logical_key(&Key::Named(NamedKey::ArrowRight)),
+        Some(KeyCode::Right)
+    );
+    assert_eq!(
+        map_logical_key(&Key::Named(NamedKey::ArrowUp)),
+        Some(KeyCode::Up)
+    );
+    assert_eq!(
+        map_logical_key(&Key::Named(NamedKey::ArrowDown)),
+        Some(KeyCode::Down)
+    );
+    assert_eq!(
+        map_logical_key(&Key::Named(NamedKey::Home)),
+        Some(KeyCode::Home)
+    );
+    assert_eq!(
+        map_logical_key(&Key::Named(NamedKey::End)),
+        Some(KeyCode::End)
+    );
+    assert_eq!(
+        map_logical_key(&Key::Named(NamedKey::Escape)),
+        Some(KeyCode::Escape)
+    );
     assert_eq!(
         map_logical_key(&Key::Character("c".into())),
         Some(KeyCode::Char('c'))

@@ -5,8 +5,7 @@ use aurora::text::{TextContext, TextLayout};
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
 use tiny_skia::{
-    FilterQuality, Mask, Pixmap, PixmapMut, PixmapPaint, PremultipliedColorU8,
-    Transform,
+    FilterQuality, Mask, Pixmap, PixmapMut, PixmapPaint, PremultipliedColorU8, Transform,
 };
 
 /// Parameters for typography run rasterization.
@@ -275,7 +274,6 @@ fn blend_phase_coverages(
     (x0, y0, w as u32, h as u32)
 }
 
-
 /// Renders glyph runs for translation-only transforms.
 ///
 /// Axis-split phase + owned subpixel blend: X rasterizes at its nearest
@@ -307,8 +305,7 @@ fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: T
     // (`SMALL_TEXT_HINT_CUTOFF_PX`): hinted bitmaps want linear density,
     // linear outlines want corrected fringes.
     let opacity_q = (total_opacity.clamp(0.0, 1.0) * 255.0).round() as u32;
-    let linear_lut: [u8; 256] =
-        std::array::from_fn(|i| ((i as u32 * opacity_q + 127) / 255) as u8);
+    let linear_lut: [u8; 256] = std::array::from_fn(|i| ((i as u32 * opacity_q + 127) / 255) as u8);
     let gamma_lut: [u8; 256] =
         std::array::from_fn(|i| ((GAMMA_LUT[i] as u32 * opacity_q + 127) / 255) as u8);
     let paint = PixmapPaint {
@@ -324,7 +321,6 @@ fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: T
         None => (0, 0),
     };
 
-    let mut scratch: Option<Pixmap> = None;
     let origin = params.origin;
     let transform = params.transform;
     let (ttx, tty) = (transform.tx, transform.ty);
@@ -332,7 +328,6 @@ fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: T
     let layout: &TextLayout = params.layout;
     let layout_arc = params.layout_arc;
     let mut line_cache = params.line_cache;
-
     // Paints one line's glyphs into `target`. Glyph device positions are
     // rebased onto integral `space` for the blit fast path and onto `draw`
     // for the draw call under `tx` with clip `clip_now`: canvas passes
@@ -341,6 +336,7 @@ fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: T
     // clip (the clip applies once, when the composited line is drawn).
     // Captures only the shaper handle, the shared scratch, and scalars —
     // never the canvas or the line cache.
+    let mut scratch: Option<Pixmap> = None;
     let mut paint_line = |target: &mut PixmapMut,
                           line: &aurora::text::ShapedLine,
                           alpha_lut: &[u8; 256],
@@ -507,8 +503,7 @@ fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: T
         };
         let dev_lx = origin.x + line.align_offset + ttx;
         let dev_top = origin.y + tty + idx as f32 * line.height;
-        let integral =
-            dev_lx.fract() == 0.0 && dev_top.fract() == 0.0 && line_cache.is_some();
+        let integral = dev_lx.fract() == 0.0 && dev_top.fract() == 0.0 && line_cache.is_some();
         if integral {
             // Static run at an integer origin: replay or populate the
             // composited line. Any motion bypasses below without disturbing
@@ -523,8 +518,12 @@ fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: T
                 size.ceil() as i32 + 2,
                 (size * 0.5).ceil() as i32 + 2,
             );
-            let (mut minx, mut maxx, mut miny, mut maxy) =
-                (f32::INFINITY, f32::NEG_INFINITY, f32::INFINITY, f32::NEG_INFINITY);
+            let (mut minx, mut maxx, mut miny, mut maxy) = (
+                f32::INFINITY,
+                f32::NEG_INFINITY,
+                f32::INFINITY,
+                f32::NEG_INFINITY,
+            );
             for g in &line.glyphs {
                 minx = minx.min(g.point.x);
                 maxx = maxx.max(g.point.x + g.advance);
@@ -537,9 +536,7 @@ fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: T
             let oy = (dev_top + (miny - top_local)).floor() as i32 - pad_t;
             let lsw = ((maxx - minx).ceil() as i32 + 2 * pad_x).max(1) as u32;
             let lsh = ((maxy - miny).ceil() as i32 + pad_t + pad_b).max(1) as u32;
-            if let (Some(cache), Some(owner)) =
-                (line_cache.as_mut(), layout_arc.as_ref())
-            {
+            if let (Some(cache), Some(owner)) = (line_cache.as_mut(), layout_arc.as_ref()) {
                 let key = LineKey {
                     ptr: Arc::as_ptr(owner) as usize,
                     line: idx as u32,
@@ -558,10 +555,7 @@ fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: T
                             0,
                             entry.as_ref(),
                             &paint,
-                            transform.pre_translate(
-                                ox as f32 - ttx,
-                                oy as f32 - tty,
-                            ),
+                            transform.pre_translate(ox as f32 - ttx, oy as f32 - tty),
                             clip,
                         );
                         continue;
@@ -573,16 +567,7 @@ fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: T
                     Some(p) => p,
                     None => {
                         paint_line(
-                            pixmap,
-                            line,
-                            alpha_lut,
-                            0.0,
-                            0.0,
-                            ttx,
-                            tty,
-                            transform,
-                            clip,
-                            clip_w,
+                            pixmap, line, alpha_lut, 0.0, 0.0, ttx, tty, transform, clip, clip_w,
                             clip_h,
                         );
                         continue;
@@ -617,17 +602,7 @@ fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: T
             }
         }
         paint_line(
-            pixmap,
-            line,
-            alpha_lut,
-            0.0,
-            0.0,
-            ttx,
-            tty,
-            transform,
-            clip,
-            clip_w,
-            clip_h,
+            pixmap, line, alpha_lut, 0.0, 0.0, ttx, tty, transform, clip, clip_w, clip_h,
         );
     }
 }
@@ -822,19 +797,13 @@ mod tests {
     fn blend_endpoints_reproduce_inputs() {
         let mut out = Vec::new();
         // t = 0 → a verbatim (b placed one right, must not leak in).
-        let (x, y, w, h) = blend_phase_coverages(
-            &[200], 1, 1, 5, 5, 1.0,
-            &[100], 1, 1, 6, 5, 0.0,
-            &mut out,
-        );
+        let (x, y, w, h) =
+            blend_phase_coverages(&[200], 1, 1, 5, 5, 1.0, &[100], 1, 1, 6, 5, 0.0, &mut out);
         assert_eq!((x, y, w, h), (5, 5, 2, 1));
         assert_eq!(out, vec![200, 0]);
         // t = 1 → b verbatim.
-        let (x, y, w, h) = blend_phase_coverages(
-            &[200], 1, 1, 5, 5, 0.0,
-            &[100], 1, 1, 6, 5, 1.0,
-            &mut out,
-        );
+        let (x, y, w, h) =
+            blend_phase_coverages(&[200], 1, 1, 5, 5, 0.0, &[100], 1, 1, 6, 5, 1.0, &mut out);
         assert_eq!((x, y, w, h), (5, 5, 2, 1));
         assert_eq!(out, vec![0, 100]);
     }
@@ -846,14 +815,23 @@ mod tests {
     fn blend_midpoint_averages_overlap() {
         let mut out = Vec::new();
         let (x, y, w, h) = blend_phase_coverages(
-            &[200, 200], 2, 1, 5, 5, 0.5,
-            &[100, 100], 2, 1, 6, 5, 0.5,
+            &[200, 200],
+            2,
+            1,
+            5,
+            5,
+            0.5,
+            &[100, 100],
+            2,
+            1,
+            6,
+            5,
+            0.5,
             &mut out,
         );
         assert_eq!((x, y, w, h), (5, 5, 3, 1));
         assert_eq!(out, vec![100, 150, 50]);
     }
-
 
     /// Integer blit sanity: full-coverage texel lands opaque ink, zero stays.
     #[test]

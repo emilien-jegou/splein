@@ -267,9 +267,7 @@ impl GlyphBitmapCache {
             return;
         }
         inner.quiet_windows = 0;
-        inner.cap = (inner.bytes * 2)
-            .max(budget.min_bytes)
-            .min(inner.cap);
+        inner.cap = (inner.bytes * 2).max(budget.min_bytes).min(inner.cap);
         while inner.bytes > inner.cap {
             if !inner.evict_lru() {
                 break;

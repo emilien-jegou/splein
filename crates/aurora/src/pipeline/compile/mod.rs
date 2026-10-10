@@ -9,8 +9,8 @@ use crate::foundation::{DamageRegion, Point, ResolvedRect};
 use crate::scene::chunk::InheritedClips;
 use crate::scene::Scene;
 use crate::text::TextContext;
-use crate::tree::{NodeId};
-use crate::tree::{TreeArena};
+use crate::tree::NodeId;
+use crate::tree::TreeArena;
 use context::compile_stacking_context;
 use stacking::{build_stacking_tree, StackingContext};
 

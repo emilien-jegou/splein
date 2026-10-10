@@ -106,10 +106,7 @@ impl DylibReloader {
             },
             Err(_) => return false,
         };
-        if self.lib.is_some()
-            && self.loaded_mtime == Some(mtime)
-            && self.loaded_len == Some(len)
-        {
+        if self.lib.is_some() && self.loaded_mtime == Some(mtime) && self.loaded_len == Some(len) {
             return false;
         }
         let gen = self.generation;
@@ -147,9 +144,7 @@ impl DylibReloader {
                         self.consecutive_failures
                     );
                 } else {
-                    tracing::info!(
-                        "aurora: hot-reload library loaded (generation {gen})"
-                    );
+                    tracing::info!("aurora: hot-reload library loaded (generation {gen})");
                 }
                 self.consecutive_failures = 0;
                 true
@@ -208,10 +203,7 @@ fn generation_path(watched: &Path, generation: u64) -> PathBuf {
         .file_stem()
         .map(|s| s.to_string_lossy())
         .unwrap_or_default();
-    watched.with_file_name(format!(
-        "{stem}.hot.{}.{generation}.so",
-        std::process::id()
-    ))
+    watched.with_file_name(format!("{stem}.hot.{}.{generation}.so", std::process::id()))
 }
 
 /// Why a hot-reload symbol lookup failed.

@@ -1,6 +1,6 @@
 // Single responsibility: Drag arithmetic that survives the window changing shape mid-gesture.
 
-#[path = "../examples/motion_reorder.rs"]
+#[path = "../../../examples/motion_reorder/main.rs"]
 mod reorder;
 
 use std::cell::RefCell;

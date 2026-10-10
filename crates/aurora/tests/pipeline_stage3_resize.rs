@@ -47,9 +47,10 @@ fn test_3_10_window_resize_damages_full_viewport() {
 
     let full = ResolvedRect::new(0.0, 0.0, 300.0, 250.0);
     assert!(
-        diag.spatial.damaged_rects.iter().any(|r| {
-            r.x <= 0.0 && r.y <= 0.0 && r.right() >= 300.0 && r.bottom() >= 250.0
-        }),
+        diag.spatial
+            .damaged_rects
+            .iter()
+            .any(|r| { r.x <= 0.0 && r.y <= 0.0 && r.right() >= 300.0 && r.bottom() >= 250.0 }),
         "resize must damage the full new viewport {full:?}, got {:?}",
         diag.spatial.damaged_rects
     );

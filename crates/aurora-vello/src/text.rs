@@ -7,8 +7,8 @@ use vello::kurbo::Affine;
 use vello::peniko::{Blob, Brush, Fill as VelloFillRule, Font as PenikoFont};
 use vello::Scene as VelloScene;
 
-use aurora::foundation::{Color, Point};
 use crate::shader::to_vello_color;
+use aurora::foundation::{Color, Point};
 use aurora::text::{TextContext, TextLayout};
 
 /// GPU typography engine rendering shaped runs natively as vector glyph outlines.

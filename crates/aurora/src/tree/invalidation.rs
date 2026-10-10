@@ -11,7 +11,8 @@ pub fn mark_node_dirty(arena: &mut TreeArena, node_id: NodeId, flags: DirtyFlags
     }
     arena
         .get_mut(node_id)
-        .state.core
+        .state
+        .core
         .dirty
         .insert(flags | DirtyFlags::SUBTREE_DIRTY);
     // Every mark feeds the frame commit, not just subscriber-driven ones:
@@ -49,7 +50,8 @@ fn propagate_upward(arena: &mut TreeArena, node_id: NodeId) {
 
         let p_mut = arena.get_mut(parent);
         p_mut
-            .state.core
+            .state
+            .core
             .dirty
             .insert(DirtyFlags::LAYOUT | DirtyFlags::SUBTREE_DIRTY);
         p_mut.state.core.cache.clear_layout();

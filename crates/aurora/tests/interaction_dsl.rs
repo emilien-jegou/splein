@@ -302,11 +302,7 @@ fn a_press_that_wiggles_within_the_threshold_stays_a_click() {
         0,
         "a 1px wiggle must not start a drag (threshold is {DRAG_THRESHOLD}px)"
     );
-    assert_eq!(
-        steps.get(),
-        0,
-        "a 1px wiggle must not deliver drag steps"
-    );
+    assert_eq!(steps.get(), 0, "a 1px wiggle must not deliver drag steps");
     assert_eq!(clicks.get(), 1, "the wiggled press must still click");
 }
 

@@ -41,16 +41,19 @@ impl WaylandAppState {
             SessionAction::Redraw => self.request_redraw(),
             SessionAction::ChangeInputPassthrough(passthrough) => {
                 self.surface.waiting_for_frame = false;
-                self.surface.set_passthrough(passthrough, &self.compositor_state, &self.qh);
+                self.surface
+                    .set_passthrough(passthrough, &self.compositor_state, &self.qh);
                 if passthrough {
                     self.cursor.reset_to_default();
                 } else {
                     let over_dock = self.session.is_point_over_dock(self.cursor_pos);
-                    self.cursor.update_cursor(self.session.current_tool(), over_dock);
+                    self.cursor
+                        .update_cursor(self.session.current_tool(), over_dock);
                 }
                 let session = &mut self.session;
                 let qh = self.qh.clone();
-                self.surface.draw_frame(&qh, |b| session.render_to_buffer(b));
+                self.surface
+                    .draw_frame(&qh, |b| session.render_to_buffer(b));
             }
             SessionAction::ToolChanged(tool) => {
                 let over_dock = self.session.is_point_over_dock(self.cursor_pos);
@@ -63,7 +66,8 @@ impl WaylandAppState {
     pub fn request_redraw(&mut self) {
         let session = &mut self.session;
         let qh = self.qh.clone();
-        self.surface.request_redraw(&qh, |b| session.render_to_buffer(b));
+        self.surface
+            .request_redraw(&qh, |b| session.render_to_buffer(b));
     }
 
     pub fn find_output(&self, name: Option<&str>) -> Option<wl_output::WlOutput> {
@@ -71,16 +75,26 @@ impl WaylandAppState {
         for out in self.output_state.outputs() {
             if let Some(info) = self.output_state.info(&out) {
                 if let Some(target) = name {
-                    if info.name.as_deref() == Some(target) { return Some(out); }
+                    if info.name.as_deref() == Some(target) {
+                        return Some(out);
+                    }
                 }
-                if first.is_none() { first = Some(out); }
+                if first.is_none() {
+                    first = Some(out);
+                }
             }
         }
         first
     }
 
     pub fn recreate_surface(&mut self, output: Option<&wl_output::WlOutput>) {
-        if let Ok(new_surf) = OverlaySurface::new(&self.compositor_state, &self.layer_shell, &self.shm_state, &self.qh, output) {
+        if let Ok(new_surf) = OverlaySurface::new(
+            &self.compositor_state,
+            &self.layer_shell,
+            &self.shm_state,
+            &self.qh,
+            output,
+        ) {
             self.surface = new_surf;
         }
     }

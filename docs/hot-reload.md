@@ -13,7 +13,11 @@ Five stages, same for both flavors below:
    A throttled freshness walk over the depinfo source closure backs it up, so saves the
    watcher missed (before startup, during restarts) still converge instead of serving
    stale pixels.
-2. **Rebuild** — `DevLoop` runs `cargo build -p <ui>` in the background (one vanilla
+2. **Rebuild** — `DevLoop` runs one vanilla `cargo build` over the shared image
+  plus the UI crate (`-p aurora-shared -p <name>-ui`) in the background; the
+  static launcher binary (`aurora-cli`) builds separately in the main target.
+  The only flag the loop
+  ever adds is a
    command per cycle so fingerprints agree; the only flag it ever adds is a
    `--sysroot` pin, skipped on split-toolchain installations where the pin itself
    duplicates sysroot crates — see `rustc_sysroot`). Saves landing mid-build re-queue
@@ -40,7 +44,7 @@ bus commands, or the `queue_*` API.
   *single shared runtime image* (`aurora-shared`) dynamically and nothing else, so
    hooks resolve against the host's live graph. Entry points: `aurora_hot_version`,
    `aurora_component_root`. Driven by `ComponentReloadExtension`; hosted by `aurora`
-   (`hot` command) + `hot-host`.
+   (`hot` command) + `aurora-devkit-bin`.
 - **Remote loop** (data descriptions interpreted host-side): UI returns plain data,
   host owns every signal. No shared instance needed. Driven by
   `RemoteReloadExtension`; entry points: `aurora_remote_version`, `aurora_remote_state`,
@@ -48,19 +52,15 @@ bus commands, or the `queue_*` API.
 
 ## Running it
 
-The component loop is hosted by the `aurora` launcher + `hot-host` (shared-instance
-land — see Constraints). `--package` selects the UI crate, so the demo1 loop is the
-same flow against `aurora-demo1-ui`:
+The component loop is hosted by the `aurora` launcher + `aurora-devkit-bin` (shared-instance
+land — see Constraints). `--package` selects the UI crate; `./example.sh` wraps
+the whole flow per example:
 
 ```bash
-# Terminal 1: build the launcher pieces once
-cargo build -p aurora-cli -p hot-host -p aurora-shared -p aurora-hot-ui -p aurora-demo1-ui
+# Terminal 1: run the component host against the demo1 UI
+./example.sh demo1
 
-# Terminal 1 (cont.): run the component host against the demo1 UI
-./target/debug/aurora hot --package aurora-demo1-ui
-
-# Terminal 2: edit crates/aurora-demo1-ui/src/demo1_view.rs (try the outer fill),
-# save.
+# Terminal 2: edit examples/demo1/view.rs (try the outer fill), save.
 # Watch the log: `rebuilding …` → `components reloaded` → `rebuilt`. A failing build
 # logs its stderr tail and the log path; the previous UI stays mounted.
 
@@ -68,10 +68,40 @@ cargo build -p aurora-cli -p hot-host -p aurora-shared -p aurora-hot-ui -p auror
 # crates/aurora-hot-ui/src/lib.rs (try the hero fill).
 ```
 
+### Every example, both modes
+
+All demos live in top-level `examples/` as static release binaries:
+
+```bash
+cargo run -p aurora-examples --example motion_press --release
+```
+
+Every tree-only view is additionally hot-reloadable through its own boxed UI
+crate (`examples/<name>-ui`, single dynamic edge against `aurora-shared`):
+each `examples/<name>/main.rs` keeps only its App chrome, the tree lives in
+`examples/<name>/view.rs`, and the tiny `examples/<name>-ui/src/lib.rs` shim
+re-exports it with the two entry points the host resolves
+(`aurora_hot_version`, `aurora_component_root`). Same loop, any example:
+
+```bash
+./example.sh motion_press
+# Terminal 2: edit examples/motion_press/view.rs, save → rebuilding → reloaded.
+```
+
+Hot-reloadable: demo1, demo2, demo3, motion_accordion, motion_playback,
+motion_imperative, motion_interruption, motion_layout_split, motion_press,
+motion_reorder, motion_signals, motion_transitions, motion_validate,
+selectable_text, shadow_lab, text_demo, text_smooth, view_demo.
+
+Release-only (App-extension drivers the tree loop cannot host — extensions,
+switcher menus, winit plumbing, headless engines): gallery, moving, showcase,
+shadow_studio, selection_showcase, studio, render_bench, hot_demo.
+`./example.sh <that-name>` refuses with the release command; it never half-boots.
+
 Headless verification without a window:
 
 ```bash
-./target/debug/aurora selftest --ui target/debug/libaurora_hot_ui.so; echo $?
+./target/release/aurora selftest --ui target/release/libaurora_hot_ui.so; echo $?
 ```
 
 ## State model (the contract)
@@ -98,6 +128,19 @@ Headless verification without a window:
   exactly one flag of its own — a `--sysroot` pin, skipped on split-toolchain
   installations where the pin itself duplicates sysroot crates; keep hand builds
   vanilla otherwise or fingerprints skew across invocations.
+- **One cargo process, one canonical root set.** `example.sh` and every
+  loop-spawned rebuild run `cargo build` over the shared image plus the
+  example's own UI crate (`-p aurora-shared -p <name>-ui`) — the UI package
+  varies per example, shared is the constant companion — so the shared image
+  and its consumer resolve within a single unit graph. (The static
+  `aurora-cli` launcher builds separately in the main target; it links
+  nothing aurora-flavored so it can't disturb the dylib graph.) DevLoop
+  appends exactly one flag of its own — a `--sysroot` pin, skipped on
+  split-toolchain installations where the pin itself duplicates sysroot
+  crates; keep hand builds vanilla otherwise or fingerprints skew across
+  invocations. Never run two builders concurrently on one `target/` dir, and
+  don't save sources mid-build: overlapping builds interleave fingerprints
+  and outputs behind cargo's back.
 - **State converges; events accelerate.** The watcher is the fast path, but the loop
   also compares source freshness (cargo depinfo closure) against the loaded image —
   saves from before startup or during restarts still rebuild. Edits can no longer be
@@ -117,7 +160,7 @@ Headless verification without a window:
 | Dev cycle (watch→build→swap) + handshake | `hot_component_e2e.rs` (component), `hot_remote_e2e.rs` (remote) | headless, real cargo builds |
 | Freshness convergence, depinfo parse, loop-state display | `hot_reload::dev_loop` unit tests | `cargo test -p aurora --lib hot_reload::` |
 | Two-runtime refusal (sentinel mismatch from a static-linked test binary) | `hot_component_e2e.rs::foreign_image_binds_sentinel_elsewhere` | headless, real image |
-| Full component execution incl. clicks | `hot_host_selftest` via `aurora selftest` | headless, in shared-instance land (a cargo test binary *cannot* do this — it links its own static aurora and panics `hook called outside a component body`, then SIGABRT on unwind) |
+| Full component execution incl. clicks | `devkit_selftest` via `aurora selftest` | headless, in shared-instance land (a cargo test binary *cannot* do this — it links its own static aurora and panics `hook called outside a component body`, then SIGABRT on unwind) |
 | Reactive-rebuild non-accumulation, abort hygiene, `name=` | `hot_reload.rs` (ticker/abort/named tests) | headless |
 | Pixels on screen | Xvfb run of the stub + save + observe logs (screenshots don't capture uncomposited X11 reliably; scene contents are asserted headlessly instead) | manual |
 

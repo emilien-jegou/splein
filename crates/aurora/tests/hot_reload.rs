@@ -205,10 +205,12 @@ fn reload_patches_text_color_and_requests_repaint() {
 
     let inked = engine.with_arena(|arena, _| {
         let key: aurora::foundation::Key = "caption".into();
-        arena.node_for_key(&key).map(|id| match &arena.get(id).kind {
-            aurora::tree::NodeKind::Text(t) => t.color,
-            _ => panic!("caption must stay a text node"),
-        })
+        arena
+            .node_for_key(&key)
+            .map(|id| match &arena.get(id).kind {
+                aurora::tree::NodeKind::Text(t) => t.color,
+                _ => panic!("caption must stay a text node"),
+            })
     });
     assert_eq!(
         inked,
@@ -298,8 +300,16 @@ fn set_root_at_patches_one_slot_and_keeps_siblings() {
     let mut engine = Engine::headless(400, 400);
     engine.mount(
         group().width(400.0).height(400.0).children([
-            group().key("a").width(100.0).height(100.0).fill(Color::hex(0x111111)),
-            group().key("b").width(100.0).height(100.0).fill(Color::hex(0x222222)),
+            group()
+                .key("a")
+                .width(100.0)
+                .height(100.0)
+                .fill(Color::hex(0x111111)),
+            group()
+                .key("b")
+                .width(100.0)
+                .height(100.0)
+                .fill(Color::hex(0x222222)),
         ]),
     );
     engine.advance(1.0 / 60.0);
@@ -314,7 +324,12 @@ fn set_root_at_patches_one_slot_and_keeps_siblings() {
     engine.set_root_at(
         parent,
         1,
-        group().key("b").width(100.0).height(100.0).fill(Color::hex(0xDC2626)).into_element(),
+        group()
+            .key("b")
+            .width(100.0)
+            .height(100.0)
+            .fill(Color::hex(0xDC2626))
+            .into_element(),
     );
     engine.advance(1.0 / 60.0);
     engine.frame();
@@ -330,7 +345,11 @@ fn set_root_at_patches_one_slot_and_keeps_siblings() {
         )
     });
     assert_eq!(node_a_before, node_a_after, "the sibling node is reused");
-    assert_eq!(fill_b, Some(Fill::from(Color::hex(0xDC2626))), "the slot is patched");
+    assert_eq!(
+        fill_b,
+        Some(Fill::from(Color::hex(0xDC2626))),
+        "the slot is patched"
+    );
 }
 
 #[test]
@@ -370,7 +389,10 @@ fn reloads_do_not_accumulate_frame_registrations() {
     );
     let stats = engine.hot_reload_stats();
     assert_eq!(stats.reloads_total, 3);
-    assert!(engine.has_active_motion(), "the live registrations still drive frames");
+    assert!(
+        engine.has_active_motion(),
+        "the live registrations still drive frames"
+    );
 }
 
 #[test]

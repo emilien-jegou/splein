@@ -12,7 +12,15 @@ pub struct SlideMotion {
 
 impl Default for SlideMotion {
     fn default() -> Self {
-        Self { current_rel_x: 56.0, current_w: 42.0, start_x: 56.0, start_w: 42.0, target_x: 56.0, target_w: 42.0, progress: 1.0 }
+        Self {
+            current_rel_x: 56.0,
+            current_w: 42.0,
+            start_x: 56.0,
+            start_w: 42.0,
+            target_x: 56.0,
+            target_w: 42.0,
+            progress: 1.0,
+        }
     }
 }
 
@@ -27,10 +35,14 @@ impl SlideMotion {
         }
     }
 
-    pub fn is_animating(&self) -> bool { self.progress < 1.0 }
+    pub fn is_animating(&self) -> bool {
+        self.progress < 1.0
+    }
 
     pub fn tick(&mut self, dt_secs: f32) -> bool {
-        if self.progress >= 1.0 { return false; }
+        if self.progress >= 1.0 {
+            return false;
+        }
         self.progress = (self.progress + dt_secs / 0.18).min(1.0);
         let ease = 1.0 - (1.0 - self.progress).powi(3);
         self.current_rel_x = self.start_x + (self.target_x - self.start_x) * ease;

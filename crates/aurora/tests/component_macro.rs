@@ -328,8 +328,10 @@ fn Headed(head: Element) -> impl IntoElement {
 fn an_attribute_holds_a_nested_element() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let cx = Cx::new(Rc::clone(&runtime));
-    let view: aurora::dsl::Element = cx.enter(|| view! {
-        <Headed head={<Row label="nested-attr" width={50.0} />} />
+    let view: aurora::dsl::Element = cx.enter(|| {
+        view! {
+            <Headed head={<Row label="nested-attr" width={50.0} />} />
+        }
     });
 
     let mut engine = Engine::with_runtime(Rc::clone(&runtime), view, 400, 400);
@@ -374,8 +376,8 @@ fn ForList(items: Signal<Vec<String>>) -> impl IntoElement {
 #[ntest::timeout(5_000)]
 fn for_node_builds_a_keyed_row_per_item() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
-    let items: Signal<Vec<String>> =
-        Cx::new(Rc::clone(&runtime)).enter(|| use_signal(vec!["one".to_string(), "two".to_string()]));
+    let items: Signal<Vec<String>> = Cx::new(Rc::clone(&runtime))
+        .enter(|| use_signal(vec!["one".to_string(), "two".to_string()]));
     let cx = Cx::new(Rc::clone(&runtime));
     let view: aurora::dsl::Element = cx.enter(|| ForList(items.clone()));
 
@@ -384,7 +386,10 @@ fn for_node_builds_a_keyed_row_per_item() {
     engine.frame();
 
     for key in ["one", "two"] {
-        assert!(engine.rect(key).is_some(), "<for> must build a keyed row for {key}");
+        assert!(
+            engine.rect(key).is_some(),
+            "<for> must build a keyed row for {key}"
+        );
     }
 
     // Reorder: rows follow identity, not position.
@@ -392,7 +397,10 @@ fn for_node_builds_a_keyed_row_per_item() {
     engine.advance(1.0 / 60.0);
     engine.frame();
     for key in ["one", "two"] {
-        assert!(engine.rect(key).is_some(), "<for> must keep row {key} across reorder");
+        assert!(
+            engine.rect(key).is_some(),
+            "<for> must keep row {key} across reorder"
+        );
     }
 }
 
@@ -414,8 +422,8 @@ fn MixedList(items: Signal<Vec<String>>) -> impl IntoElement {
 #[ntest::timeout(5_000)]
 fn static_and_dynamic_siblings_interleave_in_order() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
-    let items: Signal<Vec<String>> =
-        Cx::new(Rc::clone(&runtime)).enter(|| use_signal(vec!["one".to_string(), "two".to_string()]));
+    let items: Signal<Vec<String>> = Cx::new(Rc::clone(&runtime))
+        .enter(|| use_signal(vec!["one".to_string(), "two".to_string()]));
     let cx = Cx::new(Rc::clone(&runtime));
     let view: aurora::dsl::Element = cx.enter(|| MixedList(items.clone()));
 
@@ -424,7 +432,11 @@ fn static_and_dynamic_siblings_interleave_in_order() {
     engine.frame();
 
     let y_of = |engine: &Engine, key: &str| engine.rect(key).map(|r| r.y);
-    let (head, one, foot) = (y_of(&engine, "head"), y_of(&engine, "one"), y_of(&engine, "foot"));
+    let (head, one, foot) = (
+        y_of(&engine, "head"),
+        y_of(&engine, "one"),
+        y_of(&engine, "foot"),
+    );
     assert!(
         matches!((head, one, foot), (Some(h), Some(o), Some(f)) if h < o && o < f),
         "static head, dynamic row, static foot must stack in order, got {head:?} {one:?} {foot:?}"
@@ -434,8 +446,16 @@ fn static_and_dynamic_siblings_interleave_in_order() {
     items.set(vec!["two".to_string(), "one".to_string()]);
     engine.advance(1.0 / 60.0);
     engine.frame();
-    assert_eq!(y_of(&engine, "head"), head, "static head must not move on reorder");
-    assert_eq!(y_of(&engine, "foot"), foot, "static foot must not move on reorder");
+    assert_eq!(
+        y_of(&engine, "head"),
+        head,
+        "static head must not move on reorder"
+    );
+    assert_eq!(
+        y_of(&engine, "foot"),
+        foot,
+        "static foot must not move on reorder"
+    );
     let (two, one) = (y_of(&engine, "two"), y_of(&engine, "one"));
     assert!(
         matches!((two, one), (Some(t), Some(o)) if t < o),
@@ -467,19 +487,24 @@ fn control_nodes_nest_without_carriers() {
         Cx::new(Rc::clone(&runtime)).enter(|| use_signal(vec!["one".to_string()]));
     let show: Signal<bool> = Cx::new(Rc::clone(&runtime)).enter(|| use_signal(false));
     let cx = Cx::new(Rc::clone(&runtime));
-    let view: aurora::dsl::Element =
-        cx.enter(|| NestedBranch(items.clone(), show.clone()));
+    let view: aurora::dsl::Element = cx.enter(|| NestedBranch(items.clone(), show.clone()));
 
     let mut engine = Engine::with_runtime(Rc::clone(&runtime), view, 400, 400);
     engine.advance(1.0 / 60.0);
     engine.frame();
     assert!(engine.rect("one").is_some(), "row must mount");
-    assert!(engine.rect("tag-one").is_none(), "nested branch starts hidden");
+    assert!(
+        engine.rect("tag-one").is_none(),
+        "nested branch starts hidden"
+    );
 
     show.set(true);
     engine.advance(1.0 / 60.0);
     engine.frame();
-    assert!(engine.rect("tag-one").is_some(), "nested branch must appear per row");
+    assert!(
+        engine.rect("tag-one").is_some(),
+        "nested branch must appear per row"
+    );
 }
 
 /// An `<if>` branch: swaps children when the signal flips, remounting.
@@ -501,22 +526,33 @@ fn IfBranch(open: Signal<bool>) -> impl IntoElement {
 #[ntest::timeout(5_000)]
 fn if_node_swaps_branches_on_signal_change() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
-    let open: Signal<bool> =
-        Cx::new(Rc::clone(&runtime)).enter(|| use_signal(false));
+    let open: Signal<bool> = Cx::new(Rc::clone(&runtime)).enter(|| use_signal(false));
     let cx = Cx::new(Rc::clone(&runtime));
     let view: aurora::dsl::Element = cx.enter(|| IfBranch(open.clone()));
 
     let mut engine = Engine::with_runtime(Rc::clone(&runtime), view, 400, 400);
     engine.advance(1.0 / 60.0);
     engine.frame();
-    assert!(engine.rect("closed-branch").is_some(), "<if> must render the else arm");
-    assert!(engine.rect("open-branch").is_none(), "<if> must not render the then arm");
+    assert!(
+        engine.rect("closed-branch").is_some(),
+        "<if> must render the else arm"
+    );
+    assert!(
+        engine.rect("open-branch").is_none(),
+        "<if> must not render the then arm"
+    );
 
     open.set(true);
     engine.advance(1.0 / 60.0);
     engine.frame();
-    assert!(engine.rect("open-branch").is_some(), "<if> must swap to the then arm");
-    assert!(engine.rect("closed-branch").is_none(), "<if> must unmount the else arm");
+    assert!(
+        engine.rect("open-branch").is_some(),
+        "<if> must swap to the then arm"
+    );
+    assert!(
+        engine.rect("closed-branch").is_none(),
+        "<if> must unmount the else arm"
+    );
 }
 
 #[derive(Clone, PartialEq)]
@@ -574,7 +610,11 @@ fn match_node_dispatches_arms_guards_and_wildcard() {
     state.set(LoadState::Ready("hi".to_string()));
     engine.advance(1.0 / 60.0);
     engine.frame();
-    assert_eq!(shown(&engine), "ready-short", "guard must reject short titles");
+    assert_eq!(
+        shown(&engine),
+        "ready-short",
+        "guard must reject short titles"
+    );
 
     state.set(LoadState::Ready("hello".to_string()));
     engine.advance(1.0 / 60.0);

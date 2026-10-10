@@ -7,8 +7,8 @@ use vello::kurbo::{Affine, BezPath, PathEl, Point as KurboPoint, Stroke as Kurbo
 use vello::peniko::Fill as VelloFillRule;
 use vello::Scene as VelloScene;
 
-use aurora::foundation::ResolvedRect;
 use crate::svg_paint::convert_usvg_paint;
+use aurora::foundation::ResolvedRect;
 use aurora::scene::vector::VectorGraphic;
 
 const MAX_CACHED_SVGS: usize = 128;

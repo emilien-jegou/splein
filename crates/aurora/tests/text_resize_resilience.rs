@@ -2,10 +2,10 @@
 
 use aurora::dsl::*;
 use aurora::foundation::*;
-use aurora_tiny_skia::TinySkiaRenderer;
 use aurora::runtime::Engine;
 use aurora::scene::{Scene, SceneChunk, SceneCommand};
 use aurora::text::{TextConfig, TextContext};
+use aurora_tiny_skia::TinySkiaRenderer;
 
 /// Counts the shaped text runs present in the compiled display list.
 fn text_runs(engine: &Engine) -> usize {

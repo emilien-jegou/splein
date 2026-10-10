@@ -535,7 +535,8 @@ impl ReactiveRuntime {
     /// Always on, not `debug_assert`: this check *is* the safety case for handles
     /// that outlive their runtime or their slot era. One predictable branch on a
     /// path already dominated by hashing (`track_read`) and downcasting.
-    pub(crate) fn slot(&self, id: SignalId) -> &Box<dyn Any> {        match self.values.get(id.index) {
+    pub(crate) fn slot(&self, id: SignalId) -> &Box<dyn Any> {
+        match self.values.get(id.index) {
             Some(slot) if slot.generation == id.generation => slot
                 .value
                 .as_ref()
@@ -543,7 +544,10 @@ impl ReactiveRuntime {
             _ => panic!(
                 "stale SignalId: slot {} is at generation {}, handle names {}",
                 id.index,
-                self.values.get(id.index).map(|s| s.generation).unwrap_or(u32::MAX),
+                self.values
+                    .get(id.index)
+                    .map(|s| s.generation)
+                    .unwrap_or(u32::MAX),
                 id.generation,
             ),
         }
@@ -559,7 +563,10 @@ impl ReactiveRuntime {
             _ => panic!(
                 "stale SignalId: slot {} is at generation {}, handle names {}",
                 id.index,
-                self.values.get(id.index).map(|s| s.generation).unwrap_or(u32::MAX),
+                self.values
+                    .get(id.index)
+                    .map(|s| s.generation)
+                    .unwrap_or(u32::MAX),
                 id.generation,
             ),
         }

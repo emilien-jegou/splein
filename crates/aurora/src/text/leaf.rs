@@ -140,8 +140,7 @@ impl TextConfig {
                 for rect in rects {
                     chunk.push(SceneCommand::DrawRect {
                         rect,
-                        appearance: Appearance::EMPTY
-                            .with_fill(Fill::Solid(self.selection_color)),
+                        appearance: Appearance::EMPTY.with_fill(Fill::Solid(self.selection_color)),
                     });
                 }
             }
@@ -176,8 +175,7 @@ impl TextConfig {
                             tracing::debug!(offset = sel.focus, "painting caret");
                             chunk.push(SceneCommand::DrawRect {
                                 rect,
-                                appearance: Appearance::EMPTY
-                                    .with_fill(Fill::Solid(self.color)),
+                                appearance: Appearance::EMPTY.with_fill(Fill::Solid(self.color)),
                             });
                         }
                         None => {

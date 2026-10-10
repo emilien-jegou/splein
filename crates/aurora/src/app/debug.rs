@@ -141,7 +141,12 @@ impl VisualDebugger {
         if n < 2 {
             return self.smoothed_fps;
         }
-        let oldest = self.fps_window.iter().find(|t| **t >= cutoff).copied().unwrap_or(now);
+        let oldest = self
+            .fps_window
+            .iter()
+            .find(|t| **t >= cutoff)
+            .copied()
+            .unwrap_or(now);
         let dt = (now - oldest).as_secs_f32().max(0.5);
         (n as f32 / dt).min(9999.0)
     }
@@ -229,7 +234,8 @@ impl VisualDebugger {
             }
         }
         self.captures += 1;
-        let path = capture_path(self.captures, "png");        match pm.save_png(&path) {
+        let path = capture_path(self.captures, "png");
+        match pm.save_png(&path) {
             Ok(()) => tracing::info!(%path, "wrote frame capture"),
             Err(e) => tracing::error!(%path, error = %e, "could not write frame capture"),
         }
@@ -301,8 +307,7 @@ impl AppExtension for VisualDebugger {
                 // F6 queues a state-preserving hot-reload rebuild (consumed in `on_update`,
                 // which is where engine access lives). Same path as the panel's reload button.
                 if key.state == winit::event::ElementState::Pressed
-                    && key.logical_key
-                        == winit::keyboard::Key::Named(winit::keyboard::NamedKey::F6)
+                    && key.logical_key == winit::keyboard::Key::Named(winit::keyboard::NamedKey::F6)
                 {
                     self.reload_requested = true;
                     return true;
@@ -586,7 +591,9 @@ mod tests {
     fn diag_with(rects: &[(f32, f32, f32, f32)]) -> FrameDiagnostics {
         let mut diag = FrameDiagnostics::default();
         for &(x, y, w, h) in rects {
-            diag.spatial.damaged_rects.push(ResolvedRect::new(x, y, w, h));
+            diag.spatial
+                .damaged_rects
+                .push(ResolvedRect::new(x, y, w, h));
         }
         diag
     }

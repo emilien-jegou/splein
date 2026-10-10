@@ -3,8 +3,8 @@
 use crate::foundation::{Point, Radius, ResolvedRect, Transform};
 use crate::scene::{LayerId, PaintContext, SceneChunk, SceneCommand};
 use crate::text::TextContext;
-use crate::tree::{NodeKind};
-use crate::tree::{LayoutNode};
+use crate::tree::LayoutNode;
+use crate::tree::NodeKind;
 
 /// The corner radius of the single clip a node imposes on its content, or `None` when it clips
 /// nothing at all.

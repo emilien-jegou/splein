@@ -62,8 +62,14 @@ pub fn extract(tokens: TokenStream2, out_nodes: &mut Vec<IfNode>) -> TokenStream
 }
 
 fn parse(header: &[proc_macro2::TokenTree], body: TokenStream2) -> syn::Result<IfNode> {
-    let (cond, (then_body, elifs, else_body)) = (parse_header_shape(header)?, split_branches(body)?);
-    Ok(IfNode { cond, then_body, elifs, else_body })
+    let (cond, (then_body, elifs, else_body)) =
+        (parse_header_shape(header)?, split_branches(body)?);
+    Ok(IfNode {
+        cond,
+        then_body,
+        elifs,
+        else_body,
+    })
 }
 
 /// Validates/shapes an `<if COND>` header: everything between `if` and `>` is
@@ -89,7 +95,11 @@ fn parse_header_shape(header: &[proc_macro2::TokenTree]) -> syn::Result<syn::Exp
 /// `</if>`) is an error, as are `<else if>` after `<else>` and double `<else>`.
 fn split_branches(
     body: TokenStream2,
-) -> syn::Result<(TokenStream2, Vec<(syn::Expr, TokenStream2)>, Option<TokenStream2>)> {
+) -> syn::Result<(
+    TokenStream2,
+    Vec<(syn::Expr, TokenStream2)>,
+    Option<TokenStream2>,
+)> {
     let toks: Vec<proc_macro2::TokenTree> = body.into_iter().collect();
     // Phase 1: depth-0 `<else…>` *open* positions (closes excluded by the
     // `!/'` guard; nested `<if>` ranges skipped by tally).
@@ -129,7 +139,8 @@ fn split_branches(
         let kind = if matches!(toks.get(open + 2), Some(proc_macro2::TokenTree::Punct(p)) if p.as_char() == '>')
         {
             1u8
-        } else if matches!(toks.get(open + 2), Some(proc_macro2::TokenTree::Ident(id)) if id == "if") {
+        } else if matches!(toks.get(open + 2), Some(proc_macro2::TokenTree::Ident(id)) if id == "if")
+        {
             0u8
         } else {
             return Err(syn::Error::new(

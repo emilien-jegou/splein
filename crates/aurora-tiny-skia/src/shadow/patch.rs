@@ -73,9 +73,7 @@ pub fn generate_patch(
             let (fx, fy) = (x as f32, y as f32);
             let inside = fx >= p
                 && fy >= p
-                && (fx >= c
-                    || fy >= c
-                    || (fx - c) * (fx - c) + (fy - c) * (fy - c) <= reff * reff);
+                && (fx >= c || fy >= c || (fx - c) * (fx - c) + (fy - c) * (fy - c) <= reff * reff);
             if inside {
                 scratch_a[y * patch_dim + x] = 255;
             }

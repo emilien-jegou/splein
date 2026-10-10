@@ -35,11 +35,11 @@ use crate::foundation::alignment::{Alignment, Direction, Distribution};
 use crate::foundation::color::Color;
 use crate::foundation::fill::Fill;
 use crate::foundation::positioning::Anchor;
+use crate::foundation::radius::Radius;
 use crate::foundation::shadow::Shadow;
 use crate::foundation::sizing::Size;
 use crate::foundation::spacing::{Gap, Margin};
 use crate::foundation::stroke::{Stroke, StrokeAlign};
-use crate::foundation::radius::Radius;
 
 /// Accepted color grammar, for panic messages.
 pub const COLOR_GRAMMAR: &str =
@@ -60,12 +60,9 @@ fn parse_hex_digits(s: &str) -> Option<Color> {
     match d.as_slice() {
         [r, g, b] => Some(Color::rgba8(dup(*r), dup(*g), dup(*b), 255)),
         [r, g, b, a] => Some(Color::rgba8(dup(*r), dup(*g), dup(*b), dup(*a))),
-        [r1, r2, g1, g2, b1, b2] => Some(Color::rgba8(
-            r1 * 16 + r2,
-            g1 * 16 + g2,
-            b1 * 16 + b2,
-            255,
-        )),
+        [r1, r2, g1, g2, b1, b2] => {
+            Some(Color::rgba8(r1 * 16 + r2, g1 * 16 + g2, b1 * 16 + b2, 255))
+        }
         [r1, r2, g1, g2, b1, b2, a1, a2] => Some(Color::rgba8(
             r1 * 16 + r2,
             g1 * 16 + g2,
@@ -106,7 +103,10 @@ fn parse_rgb_fn(s: &str) -> Option<Color> {
             parse_channel(r)?,
             parse_channel(g)?,
             parse_channel(b)?,
-            a.trim().parse::<f32>().ok().filter(|v| (0.0..=1.0).contains(v))?,
+            a.trim()
+                .parse::<f32>()
+                .ok()
+                .filter(|v| (0.0..=1.0).contains(v))?,
         )),
         _ => None,
     }
@@ -162,7 +162,11 @@ pub fn parse_size(s: &str) -> Option<Size> {
         "fit" | "auto" => Some(Size::Fit),
         _ => {
             if let Some(pct) = s.strip_suffix('%') {
-                return pct.trim().parse::<f32>().ok().map(|v| Size::Percent(v / 100.0));
+                return pct
+                    .trim()
+                    .parse::<f32>()
+                    .ok()
+                    .map(|v| Size::Percent(v / 100.0));
             }
             if let Some(px) = s.strip_suffix("px") {
                 return px.trim().parse::<f32>().ok().map(Size::Fixed);
@@ -358,7 +362,9 @@ macro_rules! impl_str_from {
         impl FromStr for $ty {
             type Err = String;
             fn from_str(s: &str) -> Result<Self, String> {
-                $parse(s).ok_or_else(|| format!("invalid {} literal `{s}`; expected {}", $what, $grammar))
+                $parse(s).ok_or_else(|| {
+                    format!("invalid {} literal `{s}`; expected {}", $what, $grammar)
+                })
             }
         }
         impl From<&str> for $ty {
@@ -546,18 +552,48 @@ mod tests {
 
     #[test]
     fn color_hex_forms() {
-        approx(parse_color("#121212").unwrap(), 0x12 as f32 / 255.0, 0x12 as f32 / 255.0, 0x12 as f32 / 255.0, 1.0);
+        approx(
+            parse_color("#121212").unwrap(),
+            0x12 as f32 / 255.0,
+            0x12 as f32 / 255.0,
+            0x12 as f32 / 255.0,
+            1.0,
+        );
         approx(parse_color("#fff").unwrap(), 1.0, 1.0, 1.0, 1.0);
-        approx(parse_color("#0008").unwrap(), 0.0, 0.0, 0.0, 0x88 as f32 / 255.0);
-        approx(parse_color("121212").unwrap(), 0x12 as f32 / 255.0, 0x12 as f32 / 255.0, 0x12 as f32 / 255.0, 1.0);
+        approx(
+            parse_color("#0008").unwrap(),
+            0.0,
+            0.0,
+            0.0,
+            0x88 as f32 / 255.0,
+        );
+        approx(
+            parse_color("121212").unwrap(),
+            0x12 as f32 / 255.0,
+            0x12 as f32 / 255.0,
+            0x12 as f32 / 255.0,
+            1.0,
+        );
         assert!(parse_color("#xyz").is_none());
         assert!(parse_color("").is_none());
     }
 
     #[test]
     fn color_rgb_fn_and_names() {
-        approx(parse_color("rgb(18, 18, 18)").unwrap(), 18.0 / 255.0, 18.0 / 255.0, 18.0 / 255.0, 1.0);
-        approx(parse_color("rgba(255, 0, 0, 0.5)").unwrap(), 1.0, 0.0, 0.0, 0.5);
+        approx(
+            parse_color("rgb(18, 18, 18)").unwrap(),
+            18.0 / 255.0,
+            18.0 / 255.0,
+            18.0 / 255.0,
+            1.0,
+        );
+        approx(
+            parse_color("rgba(255, 0, 0, 0.5)").unwrap(),
+            1.0,
+            0.0,
+            0.0,
+            0.5,
+        );
         assert_eq!(parse_color("red").unwrap(), Color::RED);
         assert_eq!(parse_color("transparent").unwrap(), Color::TRANSPARENT);
         assert!(parse_color("chartreuse-ish").is_none());
@@ -587,7 +623,10 @@ mod tests {
         assert_eq!(parse_direction("vertical").unwrap(), Direction::Vertical);
         assert_eq!(parse_direction("row").unwrap(), Direction::Horizontal);
         assert_eq!(parse_alignment("center").unwrap(), Alignment::Center);
-        assert_eq!(parse_distribution("space-between").unwrap(), Distribution::SpaceBetween);
+        assert_eq!(
+            parse_distribution("space-between").unwrap(),
+            Distribution::SpaceBetween
+        );
         assert_eq!(parse_anchor("bottom-right").unwrap(), Anchor::BottomRight);
         let st = parse_stroke("2 #fff center").unwrap();
         assert_eq!(st.width, 2.0);

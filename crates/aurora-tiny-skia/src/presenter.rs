@@ -176,7 +176,10 @@ fn swizzle_rect(
     let x0 = (r.x.floor() as i32).max(0) as usize;
     let y0 = (r.y.floor() as i32).max(0) as usize;
     let x1 = (r.right().ceil() as usize).min(safe_w);
-    let y1 = (r.bottom().ceil() as usize).min(safe_h).min(dst_h).min(src_h);
+    let y1 = (r.bottom().ceil() as usize)
+        .min(safe_h)
+        .min(dst_h)
+        .min(src_h);
 
     if x1 <= x0 || y1 <= y0 {
         static CLAMPED: std::sync::OnceLock<()> = std::sync::OnceLock::new();

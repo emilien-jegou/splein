@@ -97,13 +97,10 @@ fn root_offset_is_rebased_to_local_zero() {
 
     // Every chunk stream opens at its own origin: the first offset is local.
     for chunk in engine.scene().chunks.iter() {
-        let first_offset = chunk
-            .commands
-            .iter()
-            .find_map(|cmd| match cmd {
-                aurora::scene::SceneCommand::PushOffset(p) => Some(Point::new(p.x, p.y)),
-                _ => None,
-            });
+        let first_offset = chunk.commands.iter().find_map(|cmd| match cmd {
+            aurora::scene::SceneCommand::PushOffset(p) => Some(Point::new(p.x, p.y)),
+            _ => None,
+        });
         if let Some(p) = first_offset {
             assert!(
                 p.x.abs() < 0.01 && p.y.abs() < 0.01,

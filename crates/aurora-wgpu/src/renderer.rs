@@ -8,7 +8,7 @@ use aurora::text::TextContext;
 use crate::cache::{chunk_base, chunk_key, ChunkCache};
 use crate::command::{Batch, Op};
 use crate::context::WgpuContext;
-use crate::pipeline::{create_pipelines, GlyphVertex, Pipelines, RectVertex, RRectVertex};
+use crate::pipeline::{create_pipelines, GlyphVertex, Pipelines, RRectVertex, RectVertex};
 use crate::text::GlyphAtlas;
 
 fn to_wgpu(c: Color) -> wgpu::Color {
@@ -46,7 +46,12 @@ pub struct WgpuRenderer {
     readback: Option<(u32, u32, wgpu::Buffer)>,
 }
 
-fn make_ortho(device: &wgpu::Device, layout: &wgpu::BindGroupLayout, w: u32, h: u32) -> (wgpu::Buffer, wgpu::BindGroup) {
+fn make_ortho(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    w: u32,
+    h: u32,
+) -> (wgpu::Buffer, wgpu::BindGroup) {
     use wgpu::util::DeviceExt;
     let data = [w.max(1) as f32, h.max(1) as f32, 0.0, 0.0];
     let buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -76,9 +81,17 @@ fn make_vert_buf(device: &wgpu::Device, label: &str, bytes: u64) -> wgpu::Buffer
 
 impl WgpuRenderer {
     pub fn new(gpu: WgpuContext, text_ctx: TextContext) -> Self {
-        let pipes = create_pipelines(&gpu.device, wgpu::TextureFormat::Rgba8Unorm, gpu.config.format);
-        let (ortho_buf, ortho_bg) =
-            make_ortho(&gpu.device, &pipes.ortho_layout, gpu.config.width, gpu.config.height);
+        let pipes = create_pipelines(
+            &gpu.device,
+            wgpu::TextureFormat::Rgba8Unorm,
+            gpu.config.format,
+        );
+        let (ortho_buf, ortho_bg) = make_ortho(
+            &gpu.device,
+            &pipes.ortho_layout,
+            gpu.config.width,
+            gpu.config.height,
+        );
         let atlas = GlyphAtlas::new(&gpu.device);
         let glyph_bg_linear = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("aurora-wgpu-glyph-bg-linear"),
@@ -152,7 +165,11 @@ impl WgpuRenderer {
     /// Sets the layout→device scale (window scale factor). Takes effect
     /// next frame via the batch root transform.
     pub fn set_scale(&mut self, dsf: f32) {
-        let dsf = if dsf.is_finite() { dsf.clamp(0.5, 4.0) } else { 1.0 };
+        let dsf = if dsf.is_finite() {
+            dsf.clamp(0.5, 4.0)
+        } else {
+            1.0
+        };
         if (dsf - self.scale).abs() > 1e-4 {
             tracing::info!(scale = dsf, "aurora-wgpu device scale changed");
         }
@@ -339,8 +356,7 @@ impl WgpuRenderer {
             if !clear {
                 batch.emit_damage_base(damage, self.scale, base_color);
             }
-            let sq16 =
-                (aurora::text::quantize_raster_scale(self.scale) * 16.0).round() as u16;
+            let sq16 = (aurora::text::quantize_raster_scale(self.scale) * 16.0).round() as u16;
             let agen = atlas.generation();
             for chunk in scene.chunks.iter() {
                 // Viewport cull only. There is deliberately NO damage
@@ -439,13 +455,7 @@ impl WgpuRenderer {
                     .collect();
                 chunks.insert(
                     key,
-                    crate::cache::CachedChunk::new(
-                        rects,
-                        glyphs,
-                        rrects,
-                        ops,
-                        atlas.generation(),
-                    ),
+                    crate::cache::CachedChunk::new(rects, glyphs, rrects, ops, atlas.generation()),
                 );
             }
         }
@@ -476,7 +486,12 @@ impl WgpuRenderer {
             );
         }
         {
-            let wh = [self.gpu.config.width as f32, self.gpu.config.height as f32, 0.0, 0.0];
+            let wh = [
+                self.gpu.config.width as f32,
+                self.gpu.config.height as f32,
+                0.0,
+                0.0,
+            ];
             self.gpu
                 .queue
                 .write_buffer(&self.ortho_buf, 0, bytemuck::cast_slice(&wh));
@@ -610,12 +625,12 @@ impl WgpuRenderer {
                 &self.readback.as_ref().unwrap().2
             }
         };
-        let mut encoder =
-            self.gpu
-                .device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("aurora-wgpu-readback"),
-                });
+        let mut encoder = self
+            .gpu
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("aurora-wgpu-readback"),
+            });
         encoder.copy_texture_to_buffer(
             wgpu::ImageCopyTexture {
                 texture: &self.gpu.persistent,
@@ -667,11 +682,9 @@ impl WgpuRenderer {
         base_color: Color,
         damage: &DamageRegion,
     ) -> Result<(), BackendError> {
-        let surface = self
-            .gpu
-            .surface
-            .as_ref()
-            .expect("render_frame needs a window surface; headless contexts use render_scene_offscreen");
+        let surface = self.gpu.surface.as_ref().expect(
+            "render_frame needs a window surface; headless contexts use render_scene_offscreen",
+        );
         let frame = match surface.get_current_texture() {
             Ok(t) => t,
             Err(wgpu::SurfaceError::Outdated | wgpu::SurfaceError::Lost) => {
@@ -689,9 +702,12 @@ impl WgpuRenderer {
         self.render_scene_offscreen(scene, base_color, damage)?;
 
         // Blit persistent target -> swapchain.
-        let mut enc = self.gpu.device.create_command_encoder(
-            &wgpu::CommandEncoderDescriptor { label: Some("aurora-wgpu-blit") },
-        );
+        let mut enc = self
+            .gpu
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("aurora-wgpu-blit"),
+            });
         {
             let view = frame
                 .texture
@@ -730,4 +746,3 @@ impl WgpuRenderer {
         Ok(())
     }
 }
-

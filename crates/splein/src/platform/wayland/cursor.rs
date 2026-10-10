@@ -5,7 +5,9 @@ use crate::domain::dock::ActiveTool;
 use smithay_client_toolkit::compositor::CompositorState;
 use smithay_client_toolkit::shm::slot::SlotPool;
 use smithay_client_toolkit::shm::Shm;
-use tiny_skia::{Color, FillRule, LineCap, LineJoin, Paint, PathBuilder, PixmapMut, Stroke, Transform};
+use tiny_skia::{
+    Color, FillRule, LineCap, LineJoin, Paint, PathBuilder, PixmapMut, Stroke, Transform,
+};
 use wayland_client::protocol::{wl_pointer, wl_shm, wl_surface};
 use wayland_client::QueueHandle;
 
@@ -44,7 +46,13 @@ impl CursorManager {
         })
     }
 
-    pub fn on_pointer_enter(&mut self, pointer: wl_pointer::WlPointer, serial: u32, tool: ActiveTool, is_over_dock: bool) {
+    pub fn on_pointer_enter(
+        &mut self,
+        pointer: wl_pointer::WlPointer,
+        serial: u32,
+        tool: ActiveTool,
+        is_over_dock: bool,
+    ) {
         self.last_pointer = Some(pointer);
         self.last_serial = Some(serial);
         self.current_style = None;
@@ -97,7 +105,8 @@ impl CursorManager {
         }
 
         self.surface.attach(Some(buffer.wl_buffer()), 0, 0);
-        self.surface.damage_buffer(0, 0, CURSOR_DIM as i32, CURSOR_DIM as i32);
+        self.surface
+            .damage_buffer(0, 0, CURSOR_DIM as i32, CURSOR_DIM as i32);
         self.surface.commit();
 
         pointer.set_cursor(serial, Some(&self.surface), hotspot_x, hotspot_y);
@@ -122,12 +131,22 @@ impl CursorManager {
             let mut fill_paint = Paint::default();
             fill_paint.set_color_rgba8(255, 255, 255, 255);
             fill_paint.anti_alias = true;
-            pixmap.fill_path(&path, &fill_paint, FillRule::Winding, Transform::identity(), None);
+            pixmap.fill_path(
+                &path,
+                &fill_paint,
+                FillRule::Winding,
+                Transform::identity(),
+                None,
+            );
 
             let mut stroke_paint = Paint::default();
             stroke_paint.set_color_rgba8(0, 0, 0, 255);
             stroke_paint.anti_alias = true;
-            let stroke = Stroke { width: 1.5, line_join: LineJoin::Round, ..Default::default() };
+            let stroke = Stroke {
+                width: 1.5,
+                line_join: LineJoin::Round,
+                ..Default::default()
+            };
             pixmap.stroke_path(&path, &stroke_paint, &stroke, Transform::identity(), None);
         }
     }
@@ -152,8 +171,26 @@ impl CursorManager {
 
         // 1. Tool radius indicator ring
         if let Some(circle) = PathBuilder::from_circle(cx, cy, radius) {
-            pixmap.stroke_path(&circle, &white_p, &Stroke { width: 2.2, ..Default::default() }, Transform::identity(), None);
-            pixmap.stroke_path(&circle, &black_p, &Stroke { width: 1.0, ..Default::default() }, Transform::identity(), None);
+            pixmap.stroke_path(
+                &circle,
+                &white_p,
+                &Stroke {
+                    width: 2.2,
+                    ..Default::default()
+                },
+                Transform::identity(),
+                None,
+            );
+            pixmap.stroke_path(
+                &circle,
+                &black_p,
+                &Stroke {
+                    width: 1.0,
+                    ..Default::default()
+                },
+                Transform::identity(),
+                None,
+            );
         }
 
         // 2. Small center crosshair (+)
@@ -166,8 +203,28 @@ impl CursorManager {
             pb.line_to(cx, cy + arm);
 
             if let Some(cross) = pb.finish() {
-                pixmap.stroke_path(&cross, &white_p, &Stroke { width: 2.5, line_cap: LineCap::Round, ..Default::default() }, Transform::identity(), None);
-                pixmap.stroke_path(&cross, &black_p, &Stroke { width: 1.0, line_cap: LineCap::Round, ..Default::default() }, Transform::identity(), None);
+                pixmap.stroke_path(
+                    &cross,
+                    &white_p,
+                    &Stroke {
+                        width: 2.5,
+                        line_cap: LineCap::Round,
+                        ..Default::default()
+                    },
+                    Transform::identity(),
+                    None,
+                );
+                pixmap.stroke_path(
+                    &cross,
+                    &black_p,
+                    &Stroke {
+                        width: 1.0,
+                        line_cap: LineCap::Round,
+                        ..Default::default()
+                    },
+                    Transform::identity(),
+                    None,
+                );
             }
         }
     }

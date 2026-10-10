@@ -73,7 +73,11 @@ impl GlyphAtlas {
             view: texture.create_view(&wgpu::TextureViewDescriptor::default()),
             texture,
             map: FxHashMap::default(),
-            cursor: Cursor { x: 0, y: 0, row_h: 0 },
+            cursor: Cursor {
+                x: 0,
+                y: 0,
+                row_h: 0,
+            },
             frame: 0,
             gen: 0,
         }
@@ -189,7 +193,11 @@ impl GlyphAtlas {
             .collect();
         let dropped = self.map.len().saturating_sub(live.len());
         self.map.clear();
-        self.cursor = Cursor { x: 0, y: 0, row_h: 0 };
+        self.cursor = Cursor {
+            x: 0,
+            y: 0,
+            row_h: 0,
+        };
         for (k, data, w, h) in live {
             if let Some((x, y, cur)) = self.probe(w, h) {
                 Self::upload_cell(queue, &self.texture, x, y, w, h, &data);

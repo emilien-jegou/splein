@@ -168,10 +168,7 @@ impl Cx {
                 Some(parent) if parent.stable => {
                     let n = parent.children.get();
                     parent.children.set(n + 1);
-                    (
-                        Rc::from(format!("{}#{n}={path}", parent.instance)),
-                        true,
-                    )
+                    (Rc::from(format!("{}#{n}={path}", parent.instance)), true)
                 }
                 Some(parent) => {
                     let n = parent.children.get();

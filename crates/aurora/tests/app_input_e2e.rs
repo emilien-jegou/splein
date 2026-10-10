@@ -6,15 +6,15 @@
 // against the actual demo pages, so the wiring itself is covered.
 
 #[allow(dead_code)]
-#[path = "../examples/motion_accordion/main.rs"]
+#[path = "../../../examples/motion_accordion/main.rs"]
 mod accordion;
 
 #[allow(dead_code)]
-#[path = "../examples/motion_press.rs"]
+#[path = "../../../examples/motion_press/main.rs"]
 mod press;
 
 #[allow(dead_code)]
-#[path = "../examples/motion_reorder.rs"]
+#[path = "../../../examples/motion_reorder/main.rs"]
 mod reorder;
 
 use std::cell::RefCell;

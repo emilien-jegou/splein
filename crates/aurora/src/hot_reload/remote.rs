@@ -306,10 +306,9 @@ impl RemoteHost {
         }
         for (path, init) in &decl.strings {
             if !self.strings.borrow().contains_key(path) {
-                self.strings.borrow_mut().insert(
-                    path.clone(),
-                    Signal::new(Rc::clone(&runtime), init.clone()),
-                );
+                self.strings
+                    .borrow_mut()
+                    .insert(path.clone(), Signal::new(Rc::clone(&runtime), init.clone()));
             }
         }
         for (path, init) in &decl.bools {
@@ -346,7 +345,11 @@ impl RemoteHost {
             out.sort_by(|a, b| a.0.cmp(&b.0));
             out
         };
-        RemoteSnapshot { f32s, strings, bools }
+        RemoteSnapshot {
+            f32s,
+            strings,
+            bools,
+        }
     }
 
     /// Applies event writes to host signals (creating unknown paths from the write).
@@ -426,9 +429,17 @@ impl RemoteHost {
     }
 
     fn interpret_text(&self, node: &RemoteNode) -> Element {
-        let content = match node.text.clone().unwrap_or(RemoteText::Literal(String::new())) {
+        let content = match node
+            .text
+            .clone()
+            .unwrap_or(RemoteText::Literal(String::new()))
+        {
             RemoteText::Literal(s) => text(s),
-            RemoteText::BoundString { path, prefix, suffix } => {
+            RemoteText::BoundString {
+                path,
+                prefix,
+                suffix,
+            } => {
                 let sig = self.string_or_default(&path);
                 if prefix.is_empty() && suffix.is_empty() {
                     text(sig)
@@ -436,11 +447,19 @@ impl RemoteHost {
                     text(sig.map(move |s| format!("{prefix}{s}{suffix}")))
                 }
             }
-            RemoteText::BoundF32 { path, prefix, suffix } => {
+            RemoteText::BoundF32 {
+                path,
+                prefix,
+                suffix,
+            } => {
                 let sig = self.f32_or_default(&path);
                 text(sig.map(move |v| format!("{prefix}{v}{suffix}")))
             }
-            RemoteText::BoundBool { path, when_true, when_false } => {
+            RemoteText::BoundBool {
+                path,
+                when_true,
+                when_false,
+            } => {
                 let sig = self.bool_or_default(&path);
                 text(sig.map(move |b| {
                     if b {
@@ -467,11 +486,7 @@ impl RemoteHost {
         sig
     }
 
-    fn signal_string(
-        &self,
-        runtime: &Rc<RefCell<ReactiveRuntime>>,
-        path: &str,
-    ) -> Signal<String> {
+    fn signal_string(&self, runtime: &Rc<RefCell<ReactiveRuntime>>, path: &str) -> Signal<String> {
         if let Some(sig) = self.strings.borrow().get(path) {
             return *sig;
         }

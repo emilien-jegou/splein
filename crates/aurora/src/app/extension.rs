@@ -1,7 +1,7 @@
 // Single responsibility: Pluggable application extension trait contracts.
 
 use crate::app::painter::OverlayPainter;
-use crate::foundation::{DamageRegion, ResolvedRect};
+use crate::foundation::{Color, DamageRegion, ResolvedRect};
 use crate::runtime::{Engine, FrameDiagnostics};
 use crate::text::TextContext;
 use winit::event::WindowEvent;
@@ -15,6 +15,9 @@ pub struct OverlayCaps {
     pub scanline_overlays: bool,
     /// Full window bounds in scene coordinates, for overlay framing and damage.
     pub viewport: ResolvedRect,
+    /// Window clear color, so overlays can pick contrasting colors (e.g. light
+    /// vs dark progress bars) without engine access in `render_overlay`.
+    pub background: Color,
 }
 
 /// Extension hooks for events, telemetry, scene overlays, and presentation.

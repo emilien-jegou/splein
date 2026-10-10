@@ -10,8 +10,8 @@ use crate::layout::{layout_node_with_text, LayoutResult};
 use crate::reactive::{Observer, ReactiveRuntime, SubscriberId};
 use crate::runtime::boundary::{collect_layout_boundaries, prune_nested_boundaries};
 use crate::text::TextContext;
+use crate::tree::TreeArena;
 use crate::tree::{DirtyFlags, NodeId, NodeKind, SubscriberRouter};
-use crate::tree::{TreeArena};
 
 /// Execution summary of reactive updates and layout recalculations.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
@@ -230,21 +230,17 @@ impl FrameScheduler {
                         // Entering it is what lets a reactive list contain components at all.
                         let runtime = Rc::clone(&self.runtime);
                         runtime.borrow_mut().begin_build_window();
-                        note_mark =
-                            crate::hot_reload::registry::pending_note_len();
+                        note_mark = crate::hot_reload::registry::pending_note_len();
                         // Reads track against the outer subscriber guard (unchanged):
                         // the window only tags registrations, never observations.
-                        let outcome = std::panic::catch_unwind(
-                            std::panic::AssertUnwindSafe(|| {
-                                crate::reactive::Cx::new(Rc::clone(&runtime)).enter(|| {
-                                    crate::dsl::group::flatten_segments(&segments)
-                                })
-                            }),
-                        );
+                        let outcome =
+                            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                crate::reactive::Cx::new(Rc::clone(&runtime))
+                                    .enter(|| crate::dsl::group::flatten_segments(&segments))
+                            }));
                         match outcome {
                             Ok(spec) => {
-                                let keys: Vec<Option<Key>> =
-                                    spec.iter().map(|e| e.key()).collect();
+                                let keys: Vec<Option<Key>> = spec.iter().map(|e| e.key()).collect();
                                 pending_children = Some((spec, keys));
                                 rebuild_open = true;
                             }
@@ -274,8 +270,7 @@ impl FrameScheduler {
                     &mut n.style.appearance.shadow,
                 );
                 // Stacking rides the paint path: it reorders paint without touching layout.
-                let z_changed =
-                    bindings.update_z(&mut n.style.z_index, n.style.is_absolute);
+                let z_changed = bindings.update_z(&mut n.style.z_index, n.style.is_absolute);
                 if tx_changed || paint_changed || z_changed {
                     effective.insert(DirtyFlags::PAINT);
                 }
@@ -307,9 +302,7 @@ impl FrameScheduler {
                 crate::hot_reload::registry::peek_note_instances_since(note_mark)
                     .into_iter()
                     .collect();
-            self.runtime
-                .borrow_mut()
-                .close_rebuilt_window(&rebuilt);
+            self.runtime.borrow_mut().close_rebuilt_window(&rebuilt);
         }
 
         if effective.is_empty() {

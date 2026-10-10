@@ -20,7 +20,9 @@ use winit::window::{Window, WindowBuilder};
 
 use crate::app::extension::{AppExtension, OverlayCaps};
 use crate::app::painter::OverlayPainter;
-use crate::app::runner::backend::{Backend, BackendFactory, DamageResolver, FramePostProcess, Present, SurfaceRequest};
+use crate::app::runner::backend::{
+    Backend, BackendFactory, DamageResolver, FramePostProcess, Present, SurfaceRequest,
+};
 use crate::app::runner::pointer::PointerBridge;
 use crate::app::runner::{clipboard::OsClipboardSync, FpsLimit};
 use crate::app::VisualDebugger;
@@ -310,9 +312,7 @@ fn ensure_surface(
         WindowBuilder::new()
             .with_title(format!("{title} — {name}"))
             .with_inner_size(winit::dpi::LogicalSize::new(win_w, win_h))
-            .with_fullscreen(
-                fullscreen.then(|| winit::window::Fullscreen::Borderless(None)),
-            )
+            .with_fullscreen(fullscreen.then(|| winit::window::Fullscreen::Borderless(None)))
             .with_resizable(true)
             .with_position(winit::dpi::LogicalPosition::new(
                 80.0 + slot as f64 * 60.0,
@@ -346,12 +346,7 @@ fn ensure_surface(
 fn sizes_for(mode: DisplayMode, demo_w: u32, demo_h: u32) -> (u32, u32, u32, u32) {
     match mode {
         DisplayMode::Single(_) => (demo_w, demo_h, demo_w, demo_h),
-        DisplayMode::Combine => (
-            demo_w * 2,
-            demo_h * 2 + QUAD_STRIP,
-            demo_w,
-            demo_h,
-        ),
+        DisplayMode::Combine => (demo_w * 2, demo_h * 2 + QUAD_STRIP, demo_w, demo_h),
     }
 }
 
@@ -388,8 +383,7 @@ fn run_multi<E: IntoElement, F: Fn() -> E + 'static>(config: MultiBackendConfig,
     // Combine boots the engine at quadrant size; single at demo size.
     let (boot_win_w, boot_win_h, boot_eng_w, boot_eng_h) =
         sizes_for(mode, config.width, config.height);
-    let mut engine =
-        Engine::with_runtime(Rc::clone(&runtime), root, boot_eng_w, boot_eng_h);
+    let mut engine = Engine::with_runtime(Rc::clone(&runtime), root, boot_eng_w, boot_eng_h);
     engine.set_background(config.background);
     engine.set_root_factory(Rc::clone(&root_factory));
     runtime.borrow_mut().end_build_window(true);
@@ -403,10 +397,34 @@ fn run_multi<E: IntoElement, F: Fn() -> E + 'static>(config: MultiBackendConfig,
 
     match mode {
         DisplayMode::Single(i) => {
-            ensure_surface(i, backend_display_name(BACKEND_ORDER[i]), &config.title, boot_win_w, boot_win_h, config.fullscreen, &event_loop, config.factories[i], &text_ctx, &mut surfaces, &mut failed);
+            ensure_surface(
+                i,
+                backend_display_name(BACKEND_ORDER[i]),
+                &config.title,
+                boot_win_w,
+                boot_win_h,
+                config.fullscreen,
+                &event_loop,
+                config.factories[i],
+                &text_ctx,
+                &mut surfaces,
+                &mut failed,
+            );
         }
         DisplayMode::Combine => {
-            ensure_surface(QUAD_SLOT, "quad", &config.title, boot_win_w, boot_win_h, config.fullscreen, &event_loop, config.quad_factory, &text_ctx, &mut surfaces, &mut failed);
+            ensure_surface(
+                QUAD_SLOT,
+                "quad",
+                &config.title,
+                boot_win_w,
+                boot_win_h,
+                config.fullscreen,
+                &event_loop,
+                config.quad_factory,
+                &text_ctx,
+                &mut surfaces,
+                &mut failed,
+            );
         }
     }
     if surfaces.is_empty() {
@@ -457,16 +475,43 @@ fn run_multi<E: IntoElement, F: Fn() -> E + 'static>(config: MultiBackendConfig,
                         match mode {
                             DisplayMode::Single(i) => {
                                 let tc = engine.text_context();
-                                ensure_surface(i, backend_display_name(BACKEND_ORDER[i]), &title, cfg_w, cfg_h, fullscreen, elwt, factories[i], &tc, &mut surfaces, &mut failed);
+                                ensure_surface(
+                                    i,
+                                    backend_display_name(BACKEND_ORDER[i]),
+                                    &title,
+                                    cfg_w,
+                                    cfg_h,
+                                    fullscreen,
+                                    elwt,
+                                    factories[i],
+                                    &tc,
+                                    &mut surfaces,
+                                    &mut failed,
+                                );
                                 if let Some(s) = surfaces.get(&i) {
                                     s.window.request_redraw();
                                     s.window.focus_window();
                                 }
-                                tracing::info!(engine = backend_display_name(BACKEND_ORDER[i]), "switch: single");
+                                tracing::info!(
+                                    engine = backend_display_name(BACKEND_ORDER[i]),
+                                    "switch: single"
+                                );
                             }
                             DisplayMode::Combine => {
                                 let tc = engine.text_context();
-                                ensure_surface(QUAD_SLOT, "quad", &title, cfg_w * 2, cfg_h * 2 + QUAD_STRIP, fullscreen, elwt, quad_factory, &tc, &mut surfaces, &mut failed);
+                                ensure_surface(
+                                    QUAD_SLOT,
+                                    "quad",
+                                    &title,
+                                    cfg_w * 2,
+                                    cfg_h * 2 + QUAD_STRIP,
+                                    fullscreen,
+                                    elwt,
+                                    quad_factory,
+                                    &tc,
+                                    &mut surfaces,
+                                    &mut failed,
+                                );
                                 if let Some(s) = surfaces.get(&QUAD_SLOT) {
                                     s.window.request_redraw();
                                 }
@@ -498,8 +543,7 @@ fn run_multi<E: IntoElement, F: Fn() -> E + 'static>(config: MultiBackendConfig,
                         }
                     }
                     WindowEvent::Resized(size) => {
-                        pending_resize
-                            .insert(slot, (size.width.max(1), size.height.max(1)));
+                        pending_resize.insert(slot, (size.width.max(1), size.height.max(1)));
                         if let Some(s) = surfaces.get(&slot) {
                             s.window.request_redraw();
                         }
@@ -527,7 +571,9 @@ fn run_multi<E: IntoElement, F: Fn() -> E + 'static>(config: MultiBackendConfig,
                         let mut quad = None;
                         {
                             let resize = pending_resize.remove(&slot);
-                            let Some(surf) = surfaces.get_mut(&slot) else { return };
+                            let Some(surf) = surfaces.get_mut(&slot) else {
+                                return;
+                            };
                             // Quad windows carry the engine at quadrant size;
                             // single windows track the engine 1:1.
                             let (w, h) = if slot == QUAD_SLOT {
@@ -542,8 +588,7 @@ fn run_multi<E: IntoElement, F: Fn() -> E + 'static>(config: MultiBackendConfig,
                                 }
                                 (ww, wh)
                             } else {
-                                let (w, h) =
-                                    resize.unwrap_or_else(|| engine.logical_size());
+                                let (w, h) = resize.unwrap_or_else(|| engine.logical_size());
                                 if (w, h) != engine.logical_size() {
                                     surf.backend.resize(w, h);
                                     engine.resize(w, h);
@@ -555,6 +600,7 @@ fn run_multi<E: IntoElement, F: Fn() -> E + 'static>(config: MultiBackendConfig,
                                 backend: surf.backend.tag(),
                                 scanline_overlays: surf.backend.supports_scanline(),
                                 viewport: ResolvedRect::new(0.0, 0.0, lw as f32, lh as f32),
+                                background: engine.background(),
                             };
                             for ext in extensions.iter_mut() {
                                 ext.render_overlay(
@@ -578,12 +624,11 @@ fn run_multi<E: IntoElement, F: Fn() -> E + 'static>(config: MultiBackendConfig,
                             let damage = engine.current_damage().clone();
                             let report = {
                                 let mut resolver = EngineDamage::new(&engine);
-                                let mut scanline = caps.scanline_overlays.then(|| {
-                                    CombinedScanline {
+                                let mut scanline =
+                                    caps.scanline_overlays.then(|| CombinedScanline {
                                         extensions: &mut extensions,
                                         debugger: &mut debugger,
-                                    }
-                                });
+                                    });
                                 // Reborrow disjoint fields through raw pointers:
                                 // `extensions`/`debugger` are not part of `surfaces`.
                                 let frame = Present {
@@ -662,20 +707,18 @@ fn run_multi<E: IntoElement, F: Fn() -> E + 'static>(config: MultiBackendConfig,
                     }
                 }
             }
-            Event::UserEvent(()) => {
-                match mode {
-                    DisplayMode::Single(i) => {
-                        if let Some(s) = surfaces.get(&i) {
-                            s.window.request_redraw();
-                        }
-                    }
-                    DisplayMode::Combine => {
-                        for s in surfaces.values() {
-                            s.window.request_redraw();
-                        }
+            Event::UserEvent(()) => match mode {
+                DisplayMode::Single(i) => {
+                    if let Some(s) = surfaces.get(&i) {
+                        s.window.request_redraw();
                     }
                 }
-            }
+                DisplayMode::Combine => {
+                    for s in surfaces.values() {
+                        s.window.request_redraw();
+                    }
+                }
+            },
             Event::AboutToWait => {
                 let _ = last_present;
             }

@@ -76,10 +76,7 @@ impl Backend for GpuBackend {
     }
 
     fn present(&mut self, frame: Present<'_>) -> Result<PresentReport, BackendError> {
-        if frame.damage.is_empty()
-            && frame.extra_damage.is_empty()
-            && !self.needs_present
-        {
+        if frame.damage.is_empty() && frame.extra_damage.is_empty() && !self.needs_present {
             // Nothing changed and the swapchain still shows the last frame: skip
             // the full scene rebuild and GPU submission entirely. Unlike SHM,
             // there is no buffer-age damage to replay here.

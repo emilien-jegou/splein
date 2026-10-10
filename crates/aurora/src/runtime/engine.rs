@@ -20,8 +20,8 @@ use crate::runtime::scheduler::FrameScheduler;
 use crate::runtime::FrameReport;
 use crate::scene::{LayerId, Scene};
 use crate::text::{TextContext, TextSelection};
+use crate::tree::TreeArena;
 use crate::tree::{DirtyFlags, NodeId, SubscriberRouter};
-use crate::tree::{TreeArena};
 
 /// Single-point facade managing the UI tree, reactive runtime, and scene compilation.
 pub struct Engine {
@@ -263,7 +263,8 @@ impl Engine {
                 tracing::error!("aurora: set_root panicked ({msg}); keeping previous root");
                 self.last_frame_error = Some(msg);
                 let (w, h) = self.logical_size;
-                self.pending_damage.push(ResolvedRect::new(0.0, 0.0, w as f32, h as f32));
+                self.pending_damage
+                    .push(ResolvedRect::new(0.0, 0.0, w as f32, h as f32));
             }
         }
     }
@@ -388,7 +389,8 @@ impl Engine {
                 tracing::error!("aurora: set_root_at panicked ({msg}); keeping previous subtree");
                 self.last_frame_error = Some(msg);
                 let (w, h) = self.logical_size;
-                self.pending_damage.push(ResolvedRect::new(0.0, 0.0, w as f32, h as f32));
+                self.pending_damage
+                    .push(ResolvedRect::new(0.0, 0.0, w as f32, h as f32));
             }
         }
     }
@@ -415,9 +417,13 @@ impl Engine {
             damage_rects: 0,
         };
         let Some(factory) = self.hot_reload.root_factory() else {
-            report.error = Some("no root factory installed; call Engine::set_root_factory".to_string());
+            report.error =
+                Some("no root factory installed; call Engine::set_root_factory".to_string());
             report.duration = t0.elapsed();
-            tracing::warn!("aurora: hot-reload requested ({})", report.error.as_deref().unwrap_or(""));
+            tracing::warn!(
+                "aurora: hot-reload requested ({})",
+                report.error.as_deref().unwrap_or("")
+            );
             self.hot_reload.record_report(&report);
             return None;
         };
@@ -460,13 +466,16 @@ impl Engine {
             Err(payload) => {
                 self.scheduler.runtime.borrow_mut().end_build_window(false);
                 let msg = crate::dsl::panic_message(&payload);
-                tracing::error!("aurora: hot-reload rebuild panicked ({msg}); keeping previous tree");
+                tracing::error!(
+                    "aurora: hot-reload rebuild panicked ({msg}); keeping previous tree"
+                );
                 self.staged_reload_error = Some(msg.clone());
                 report.error = Some(msg);
                 report.duration = t0.elapsed();
                 self.hot_reload.record_report(&report);
                 let (w, h) = self.logical_size;
-                self.pending_damage.push(ResolvedRect::new(0.0, 0.0, w as f32, h as f32));
+                self.pending_damage
+                    .push(ResolvedRect::new(0.0, 0.0, w as f32, h as f32));
                 None
             }
         }
@@ -543,11 +552,15 @@ impl Engine {
             }
             Err(payload) => {
                 let msg = crate::dsl::panic_message(&payload);
-                tracing::error!("aurora: frame {} panicked ({msg}); keeping last good scene", self.frame_counter);
+                tracing::error!(
+                    "aurora: frame {} panicked ({msg}); keeping last good scene",
+                    self.frame_counter
+                );
                 self.last_frame_error = Some(msg);
                 // The tree may hold partial pass state; repaint everything
                 // next frame so recovery starts from a consistent tree.
-                self.pending_damage.push(ResolvedRect::new(0.0, 0.0, w as f32, h as f32));
+                self.pending_damage
+                    .push(ResolvedRect::new(0.0, 0.0, w as f32, h as f32));
                 Default::default()
             }
         };
@@ -617,9 +630,7 @@ impl Engine {
 
     /// Cursor shape for the platform: I-beam while hovering selectable text.
     pub fn cursor_icon(&self) -> CursorIcon {
-        self.pointer
-            .router()
-            .cursor_icon(&self.scheduler.arena)
+        self.pointer.router().cursor_icon(&self.scheduler.arena)
     }
 
     /// Current selection on a keyed text node, if it holds one.
@@ -767,7 +778,9 @@ impl Engine {
     fn dispatch_queued_events(&mut self) -> Option<PointerOutcome> {
         let last_delta = self.scheduler.clock.last_delta();
         let wall_delta = self.scheduler.clock.wall_delta();
-        let outcome = self.pointer.dispatch(&mut self.scheduler, last_delta, wall_delta);
+        let outcome = self
+            .pointer
+            .dispatch(&mut self.scheduler, last_delta, wall_delta);
         // Keys run after the pointer queue so a press that moves focus lands
         // before the key that uses it.
         for key in std::mem::take(&mut self.queued_keys) {
@@ -919,9 +932,7 @@ impl Engine {
                 self.caret_epoch = self.scheduler.clock.simulated();
                 self.caret_blink_on = true;
                 if let Some((focused, _)) = caret {
-                    self.scheduler
-                        .arena
-                        .mark_dirty(focused, DirtyFlags::PAINT);
+                    self.scheduler.arena.mark_dirty(focused, DirtyFlags::PAINT);
                 }
             }
             return;
@@ -931,9 +942,7 @@ impl Engine {
             if phase != self.caret_blink_on {
                 self.caret_blink_on = phase;
                 if let Some((focused, _)) = caret {
-                    self.scheduler
-                        .arena
-                        .mark_dirty(focused, DirtyFlags::PAINT);
+                    self.scheduler.arena.mark_dirty(focused, DirtyFlags::PAINT);
                 }
             }
         } else {

@@ -68,29 +68,43 @@ fn count_near(h: &mut Harness, color: Rgba) -> usize {
 }
 
 fn dark_rgba() -> Rgba {
-    Rgba { r: 0x11, g: 0x11, b: 0x11, a: 255 }
+    Rgba {
+        r: 0x11,
+        g: 0x11,
+        b: 0x11,
+        a: 255,
+    }
 }
 
 fn light_rgba() -> Rgba {
-    Rgba { r: 0xEE, g: 0xEE, b: 0xEE, a: 255 }
+    Rgba {
+        r: 0xEE,
+        g: 0xEE,
+        b: 0xEE,
+        a: 255,
+    }
 }
 
 #[test]
 #[ntest::timeout(5_000)]
 fn provided_value_reaches_consumer() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
-    let theme: Signal<Theme> =
-        Cx::new(Rc::clone(&runtime)).enter(|| use_signal(dark()));
+    let theme: Signal<Theme> = Cx::new(Rc::clone(&runtime)).enter(|| use_signal(dark()));
     let cx = Cx::new(Rc::clone(&runtime));
-    let view: Element = cx.enter(|| view! {
-        <Provider grant={THEME.provide(theme)} >
-            <ThemedCard hk="card" />
-        </Provider>
+    let view: Element = cx.enter(|| {
+        view! {
+            <Provider grant={THEME.provide(theme)} >
+                <ThemedCard hk="card" />
+            </Provider>
+        }
     });
 
     let mut h = harness(view, &runtime);
     h.step();
-    assert!(h.at("card").is_some(), "consumer must mount under a provider");
+    assert!(
+        h.at("card").is_some(),
+        "consumer must mount under a provider"
+    );
     assert!(
         count_near(&mut h, dark_rgba()) > 1000,
         "consumer must paint the provided value"
@@ -105,13 +119,15 @@ fn nearest_enclosing_provider_wins() {
     let (outer, inner): (Signal<Theme>, Signal<Theme>) =
         cx.enter(|| (use_signal(dark()), use_signal(light())));
     let cx = Cx::new(Rc::clone(&runtime));
-    let view: Element = cx.enter(|| view! {
-        <Provider grant={THEME.provide(outer)} >
-            <ThemedCard hk="outer-card" />
-            <Provider grant={THEME.provide(inner)} >
-                <ThemedCard hk="inner-card" />
+    let view: Element = cx.enter(|| {
+        view! {
+            <Provider grant={THEME.provide(outer)} >
+                <ThemedCard hk="outer-card" />
+                <Provider grant={THEME.provide(inner)} >
+                    <ThemedCard hk="inner-card" />
+                </Provider>
             </Provider>
-        </Provider>
+        }
     });
 
     let mut h = harness(view, &runtime);
@@ -131,13 +147,14 @@ fn nearest_enclosing_provider_wins() {
 #[ntest::timeout(5_000)]
 fn provider_signal_updates_propagate() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
-    let theme: Signal<Theme> =
-        Cx::new(Rc::clone(&runtime)).enter(|| use_signal(dark()));
+    let theme: Signal<Theme> = Cx::new(Rc::clone(&runtime)).enter(|| use_signal(dark()));
     let cx = Cx::new(Rc::clone(&runtime));
-    let view: Element = cx.enter(|| view! {
-        <Provider grant={THEME.provide(theme.clone())} >
-            <ThemedCard hk="card" />
-        </Provider>
+    let view: Element = cx.enter(|| {
+        view! {
+            <Provider grant={THEME.provide(theme.clone())} >
+                <ThemedCard hk="card" />
+            </Provider>
+        }
     });
 
     let mut h = harness(view, &runtime);
@@ -150,11 +167,7 @@ fn provider_signal_updates_propagate() {
         count_near(&mut h, light_rgba()) > 1000,
         "provider writes must repaint consumers"
     );
-    assert_eq!(
-        count_near(&mut h, dark_rgba()),
-        0,
-        "old value must be gone"
-    );
+    assert_eq!(count_near(&mut h, dark_rgba()), 0, "old value must be gone");
 }
 
 #[test]
@@ -162,11 +175,13 @@ fn provider_signal_updates_propagate() {
 fn missing_provider_mounts_placeholder_and_survives() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let cx = Cx::new(Rc::clone(&runtime));
-    let view: Element = cx.enter(|| view! {
-        <Group direction="vertical" width={400.0} height={400.0}>
-            <ThemedCard hk="orphan" />
-            <Group key="sibling" width={100.0} height={100.0} fill={Color::WHITE} />
-        </Group>
+    let view: Element = cx.enter(|| {
+        view! {
+            <Group direction="vertical" width={400.0} height={400.0}>
+                <ThemedCard hk="orphan" />
+                <Group key="sibling" width={100.0} height={100.0} fill={Color::WHITE} />
+            </Group>
+        }
     });
 
     let mut h = harness(view, &runtime);
@@ -210,13 +225,14 @@ fn fallback_renders_without_provider() {
 #[ntest::timeout(5_000)]
 fn text_content_reads_context() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
-    let theme: Signal<Theme> =
-        Cx::new(Rc::clone(&runtime)).enter(|| use_signal(dark()));
+    let theme: Signal<Theme> = Cx::new(Rc::clone(&runtime)).enter(|| use_signal(dark()));
     let cx = Cx::new(Rc::clone(&runtime));
-    let view: Element = cx.enter(|| view! {
-        <Provider grant={THEME.provide(theme)} >
-            <ThemedLabel />
-        </Provider>
+    let view: Element = cx.enter(|| {
+        view! {
+            <Provider grant={THEME.provide(theme)} >
+                <ThemedLabel />
+            </Provider>
+        }
     });
 
     let mut h = harness(view, &runtime);
@@ -224,7 +240,15 @@ fn text_content_reads_context() {
     // White 14px "dark" copy paints non-background pixels; absence would mean
     // the text path never resolved the marker.
     assert!(
-        count_near(&mut h, Rgba { r: 255, g: 255, b: 255, a: 255 }) > 20,
+        count_near(
+            &mut h,
+            Rgba {
+                r: 255,
+                g: 255,
+                b: 255,
+                a: 255
+            }
+        ) > 20,
         "themed label must render its text"
     );
 }
@@ -259,15 +283,16 @@ fn ThemedList(items: Signal<Vec<String>>) -> impl IntoElement {
 #[ntest::timeout(5_000)]
 fn context_survives_list_rebuilds() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
-    let theme: Signal<Theme> =
-        Cx::new(Rc::clone(&runtime)).enter(|| use_signal(dark()));
-    let items: Signal<Vec<String>> =
-        Cx::new(Rc::clone(&runtime)).enter(|| use_signal(vec!["one".to_string(), "two".to_string()]));
+    let theme: Signal<Theme> = Cx::new(Rc::clone(&runtime)).enter(|| use_signal(dark()));
+    let items: Signal<Vec<String>> = Cx::new(Rc::clone(&runtime))
+        .enter(|| use_signal(vec!["one".to_string(), "two".to_string()]));
     let cx = Cx::new(Rc::clone(&runtime));
-    let view: Element = cx.enter(|| view! {
-        <Provider grant={THEME.provide(theme)} >
-            <ThemedList items={items.clone()} />
-        </Provider>
+    let view: Element = cx.enter(|| {
+        view! {
+            <Provider grant={THEME.provide(theme)} >
+                <ThemedList items={items.clone()} />
+            </Provider>
+        }
     });
 
     let mut h = harness(view, &runtime);

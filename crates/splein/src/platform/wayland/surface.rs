@@ -51,10 +51,7 @@ impl OverlaySurface {
 
         let initial_width = 1920;
         let initial_height = 1080;
-        let pool = SlotPool::new(
-            (initial_width * initial_height * 4 * 3) as usize,
-            shm,
-        )?;
+        let pool = SlotPool::new((initial_width * initial_height * 4 * 3) as usize, shm)?;
 
         Ok(Self {
             layer,
@@ -91,10 +88,12 @@ impl OverlaySurface {
             let empty_region = compositor.wl_compositor().create_region(qh, ());
             wl_surf.set_input_region(Some(&empty_region));
             empty_region.destroy();
-            self.layer.set_keyboard_interactivity(KeyboardInteractivity::None);
+            self.layer
+                .set_keyboard_interactivity(KeyboardInteractivity::None);
         } else {
             wl_surf.set_input_region(None);
-            self.layer.set_keyboard_interactivity(KeyboardInteractivity::OnDemand);
+            self.layer
+                .set_keyboard_interactivity(KeyboardInteractivity::OnDemand);
         }
         wl_surf.commit();
     }

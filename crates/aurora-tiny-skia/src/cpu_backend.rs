@@ -64,7 +64,16 @@ impl Backend for CpuBackend {
 
     fn present(&mut self, frame: Present<'_>) -> Result<PresentReport, BackendError> {
         let t_raster = Instant::now();
-        self.renderer.render_damage(frame.scene, frame.damage)?;
+        // Extension overlays (e.g. the hot-reload progress bar) are recorded
+        // into the scene but their damage arrives via `extra_damage`, outside
+        // the engine's own region. Rasterize the union: every other backend
+        // (vello, wgpu, quad) already does, and without it the presenter below
+        // copies stale pixmap bytes for the strip so overlays never appear.
+        let mut raster_damage = frame.damage.clone();
+        for rect in frame.extra_damage {
+            raster_damage.push(*rect);
+        }
+        self.renderer.render_damage(frame.scene, &raster_damage)?;
         let raster = t_raster.elapsed();
 
         let t_present = Instant::now();

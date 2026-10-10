@@ -5,22 +5,22 @@
 // that pass on nothing. See the note on `accent_area` for the bug that motivated that.
 
 #[allow(dead_code)]
-#[path = "../examples/motion_imperative.rs"]
+#[path = "../../../examples/motion_imperative/main.rs"]
 mod imperative;
 #[allow(dead_code)]
-#[path = "../examples/motion_interruption.rs"]
+#[path = "../../../examples/motion_interruption/main.rs"]
 mod interruption;
 #[allow(dead_code)]
-#[path = "../examples/motion_layout_split.rs"]
+#[path = "../../../examples/motion_layout_split/main.rs"]
 mod layout_split;
 #[allow(dead_code)]
-#[path = "../examples/motion_press.rs"]
+#[path = "../../../examples/motion_press/main.rs"]
 mod press;
 #[allow(dead_code)]
-#[path = "../examples/motion_reorder.rs"]
+#[path = "../../../examples/motion_reorder/main.rs"]
 mod reorder;
 #[allow(dead_code)]
-#[path = "../examples/motion_signals.rs"]
+#[path = "../../../examples/motion_signals/main.rs"]
 mod signals;
 
 use aurora::foundation::Color;

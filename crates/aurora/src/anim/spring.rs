@@ -151,7 +151,11 @@ impl Spring {
             "bouncy" => Some(Self::bouncy()),
             "smooth" => Some(Self::smooth()),
             nums => {
-                let v: Vec<f32> = nums.split_whitespace().map(str::parse).collect::<Result<_, _>>().ok()?;
+                let v: Vec<f32> = nums
+                    .split_whitespace()
+                    .map(str::parse)
+                    .collect::<Result<_, _>>()
+                    .ok()?;
                 match v.as_slice() {
                     [k, d] => Some(Self::new(*k, *d, 1.0)),
                     [k, d, m] => Some(Self::new(*k, *d, *m)),

@@ -334,11 +334,17 @@ pub fn expand_selection(
             if focus >= anchor {
                 let (s, _) = word_bounds(content, anchor);
                 let (_, e) = word_bounds(content, focus);
-                TextSelection { anchor: s, focus: e }
+                TextSelection {
+                    anchor: s,
+                    focus: e,
+                }
             } else {
                 let (_, e) = word_bounds(content, anchor);
                 let (s, _) = word_bounds(content, focus);
-                TextSelection { anchor: e, focus: s }
+                TextSelection {
+                    anchor: e,
+                    focus: s,
+                }
             }
         }
         SelectionGranularity::Paragraph => {
@@ -363,11 +369,7 @@ pub fn expand_selection(
 /// Boundary offsets resolve downstream: the end of one wrapped line is the
 /// start of the next, so the caret prefers the line it visually continues on.
 /// An explicit newline byte belongs to the line it terminates.
-pub fn caret_line_col(
-    layout: &TextLayout,
-    content: &str,
-    offset: usize,
-) -> Option<(usize, f32)> {
+pub fn caret_line_col(layout: &TextLayout, content: &str, offset: usize) -> Option<(usize, f32)> {
     if layout.lines.is_empty() {
         return None;
     }
@@ -386,14 +388,15 @@ pub fn caret_line_col(
 }
 
 /// Caret rectangle for an offset: full line-box height, `CARET_WIDTH` wide.
-pub fn caret_rect(
-    layout: &TextLayout,
-    content: &str,
-    offset: usize,
-) -> Option<ResolvedRect> {
+pub fn caret_rect(layout: &TextLayout, content: &str, offset: usize) -> Option<ResolvedRect> {
     let (idx, x) = caret_line_col(layout, content, offset)?;
     let height = layout.lines[idx].height;
-    Some(ResolvedRect::new(x, idx as f32 * height, CARET_WIDTH, height))
+    Some(ResolvedRect::new(
+        x,
+        idx as f32 * height,
+        CARET_WIDTH,
+        height,
+    ))
 }
 
 /// Byte offset on a visual line at a goal x (for Up/Down movement).

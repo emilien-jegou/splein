@@ -4,8 +4,8 @@ use aurora::dsl::*;
 use aurora::foundation::*;
 use aurora::reactive::*;
 use aurora::runtime::{Engine, FrameReport};
-use aurora_tiny_skia::HeadlessRaster;
 use aurora::tree::DirtyFlags;
+use aurora_tiny_skia::HeadlessRaster;
 
 #[test]
 #[ntest::timeout(5_000)]
@@ -16,10 +16,10 @@ fn test_6_2_shadow_color_mutation_reuses_cached_blur_mask() {
     let dyn_shadow = computed(move || Shadow::web_like(0.0, 4.0, 8.0, 0.0, sc.get()));
 
     engine.mount(
-        group().width(400.0).height(400.0).children([group()
-            .width(100.0)
-            .height(100.0)
-            .shadow(dyn_shadow)]),
+        group()
+            .width(400.0)
+            .height(400.0)
+            .children([group().width(100.0).height(100.0).shadow(dyn_shadow)]),
     );
     engine.frame();
 
@@ -33,8 +33,8 @@ fn test_6_2_shadow_color_mutation_reuses_cached_blur_mask() {
 #[test]
 #[ntest::timeout(5_000)]
 fn test_6_4_layer_wraps_subtree_in_clip_isolation() {
-    use aurora_tiny_skia::TinySkiaRenderer;
     use aurora::scene::{LayerId, Scene, SceneChunk, SceneCommand};
+    use aurora_tiny_skia::TinySkiaRenderer;
 
     let mut renderer = TinySkiaRenderer::new();
     renderer.resize(100, 100);
@@ -74,8 +74,8 @@ fn test_6_4_layer_wraps_subtree_in_clip_isolation() {
 #[test]
 #[ntest::timeout(5_000)]
 fn test_6_5_rotated_rect_outside_translation_box_still_rasterizes() {
-    use aurora_tiny_skia::TinySkiaRenderer;
     use aurora::scene::{Scene, SceneChunk, SceneCommand};
+    use aurora_tiny_skia::TinySkiaRenderer;
 
     let mut renderer = TinySkiaRenderer::new();
     renderer.resize(100, 100);
@@ -111,12 +111,15 @@ fn test_6_5_rotated_rect_outside_translation_box_still_rasterizes() {
 fn test_6_3_box_smaller_than_corner_patch_falls_back_to_direct_blur_without_crash() {
     let mut engine = Engine::headless(200, 200);
 
-    engine.mount(
-        group().width(200.0).height(200.0).children([group()
-            .width(10.0)
-            .height(10.0)
-            .shadow(Shadow::web_like(0.0, 0.0, 20.0, 0.0, Color::BLACK))]),
-    );
+    engine.mount(group().width(200.0).height(200.0).children([
+        group().width(10.0).height(10.0).shadow(Shadow::web_like(
+            0.0,
+            0.0,
+            20.0,
+            0.0,
+            Color::BLACK,
+        )),
+    ]));
 
     let FrameReport { stats, .. } = engine.frame();
     assert!(stats.laid_out);

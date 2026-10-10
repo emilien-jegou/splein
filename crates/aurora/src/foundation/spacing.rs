@@ -118,7 +118,11 @@ impl Margin {
             } else {
                 self.bottom
             },
-            left: if over.left != 0.0 { over.left } else { self.left },
+            left: if over.left != 0.0 {
+                over.left
+            } else {
+                self.left
+            },
         }
     }
 

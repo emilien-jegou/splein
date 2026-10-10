@@ -20,4 +20,6 @@ tracing = "0.1"
 [dev-dependencies]
 ntest = "0.9"
 aurora-tiny-skia = { path = "../aurora-tiny-skia", version = "0.0.1-rc.1" }
+aurora-wgpu = { path = "../aurora-wgpu", version = "0.0.1-rc.1" }
+aurora-quad = { path = "../aurora-quad", version = "0.0.1-rc.1" }
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }

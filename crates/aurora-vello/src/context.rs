@@ -100,20 +100,17 @@ impl GpuContext {
         // raw-copy blit. Only if no Unorm format exists, take sRGB and let
         // the blit decode first so the hardware re-encode nets identity
         // (same ordering as egui_wgpu and vello's own util).
-        let format = [
-            TextureFormat::Bgra8Unorm,
-            TextureFormat::Rgba8Unorm,
-        ]
-        .into_iter()
-        .find(|f| caps.formats.contains(f))
-        .or_else(|| caps.formats.iter().copied().find(|f| !f.is_srgb()))
-        .or_else(|| caps.formats.iter().copied().find(|f| f.is_srgb()))
-        .unwrap_or(
-            caps.formats
-                .first()
-                .copied()
-                .unwrap_or(TextureFormat::Bgra8Unorm),
-        );
+        let format = [TextureFormat::Bgra8Unorm, TextureFormat::Rgba8Unorm]
+            .into_iter()
+            .find(|f| caps.formats.contains(f))
+            .or_else(|| caps.formats.iter().copied().find(|f| !f.is_srgb()))
+            .or_else(|| caps.formats.iter().copied().find(|f| f.is_srgb()))
+            .unwrap_or(
+                caps.formats
+                    .first()
+                    .copied()
+                    .unwrap_or(TextureFormat::Bgra8Unorm),
+            );
         if format.is_srgb() {
             tracing::warn!(
                 ?format,

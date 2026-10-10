@@ -202,7 +202,11 @@ pub struct PanelSync {
 impl PanelSync {
     /// Watches the bus, driving the given version signal.
     pub fn new(bus: DebugBus, version: Signal<u64>) -> Self {
-        Self { bus, version, last: 0 }
+        Self {
+            bus,
+            version,
+            last: 0,
+        }
     }
 }
 
@@ -280,7 +284,10 @@ pub fn prompt_markdown(snap: &Snapshot) -> String {
             n.h,
             n.x,
             n.y,
-            n.fill.as_deref().map(|f| format!(" fill {f}")).unwrap_or_default()
+            n.fill
+                .as_deref()
+                .map(|f| format!(" fill {f}"))
+                .unwrap_or_default()
         )),
         None => out.push_str("- selected: none\n"),
     }
@@ -471,12 +478,7 @@ fn copy_prompt(bus: &DebugBus, notice: &Signal<String>) {
 }
 
 /// Toolbar icon button: blue-tinted when active, dim chrome otherwise.
-fn icon_btn(
-    ui: &PanelUi,
-    icon: usize,
-    active: bool,
-    on_press: impl Fn() + 'static,
-) -> Element {
+fn icon_btn(ui: &PanelUi, icon: usize, active: bool, on_press: impl Fn() + 'static) -> Element {
     let (fill, stroke) = if active {
         (
             Color::hex_alpha(0x0D99FF, 0.14),
@@ -641,10 +643,7 @@ fn pills(snap: &Snapshot) -> Element {
 
 fn pill(label: &'static str, lit: bool) -> Element {
     let (fill, ink) = if lit {
-        (
-            Color::hex_alpha(0xFFFFFF, 0.08),
-            Color::WHITE,
-        )
+        (Color::hex_alpha(0xFFFFFF, 0.08), Color::WHITE)
     } else {
         (Color::TRANSPARENT, Color::hex(0x747474))
     };
@@ -885,7 +884,11 @@ fn fill_body(snap: &Snapshot) -> Element {
 fn parse_hex(hex: &str) -> (u8, u8, u8) {
     let h = hex.trim_start_matches('#');
     let v = u32::from_str_radix(h.get(0..6).unwrap_or("000000"), 16).unwrap_or(0);
-    (((v >> 16) & 0xFF) as u8, ((v >> 8) & 0xFF) as u8, (v & 0xFF) as u8)
+    (
+        ((v >> 16) & 0xFF) as u8,
+        ((v >> 8) & 0xFF) as u8,
+        (v & 0xFF) as u8,
+    )
 }
 
 /// Changes tab: debugger event log, newest last.

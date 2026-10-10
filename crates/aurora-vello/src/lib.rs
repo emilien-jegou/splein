@@ -30,9 +30,7 @@ pub fn create_backend(
     height: u32,
     text_ctx: aurora::text::TextContext,
 ) -> Result<Box<dyn aurora::app::runner::Backend>, aurora::render::BackendError> {
-    Ok(Box::new(GpuBackend::new(
-        window, width, height, text_ctx,
-    )?))
+    Ok(Box::new(GpuBackend::new(window, width, height, text_ctx)?))
 }
 
 /// Builds a boxed CPU-staged Vello presentation backend for [`aurora::app::AppConfig`].

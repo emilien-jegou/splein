@@ -13,7 +13,7 @@ use rustc_hash::FxHashMap;
 use std::hash::{Hash, Hasher};
 
 use crate::command::Op;
-use crate::pipeline::{GlyphVertex, RectVertex, RRectVertex};
+use crate::pipeline::{GlyphVertex, RRectVertex, RectVertex};
 
 /// Cap on retained chunks; eviction drops the least-recently-used frame.
 const MAX_CHUNKS: usize = 512;
@@ -202,6 +202,5 @@ impl ChunkCache {
 /// Placement + origin as a single transform, matching the renderer's
 /// `translate(abs_origin) * placement` composition.
 pub fn chunk_base(chunk: &SceneChunk) -> Transform {
-    Transform::from_translation(chunk.abs_origin.x, chunk.abs_origin.y)
-        .multiply(&chunk.placement)
+    Transform::from_translation(chunk.abs_origin.x, chunk.abs_origin.y).multiply(&chunk.placement)
 }

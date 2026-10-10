@@ -149,7 +149,10 @@ impl Transition {
         if lower == "spring" {
             return Some(Self::spring(Spring::snappy()));
         }
-        if let Some(rest) = lower.strip_prefix("spring:").or_else(|| lower.strip_prefix("spring ")) {
+        if let Some(rest) = lower
+            .strip_prefix("spring:")
+            .or_else(|| lower.strip_prefix("spring "))
+        {
             return Spring::parse(rest.trim()).map(Self::spring);
         }
         // Timed: split ease and duration in either order.

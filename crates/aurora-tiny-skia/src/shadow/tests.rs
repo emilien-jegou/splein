@@ -44,8 +44,13 @@ fn pix_alpha(pix: &Pixmap, x: i32, y: i32) -> u8 {
 /// Single big layer: umbra core carries the layer opacity, rim is empty.
 #[test]
 fn render_single_big_sane() {
-    let shadow = Shadow::layered(Color::rgba(122.0 / 255.0, 61.0 / 255.0, 143.0 / 255.0, 0.15))
-        .drop(8.0, 16.0, 16.0);
+    let shadow = Shadow::layered(Color::rgba(
+        122.0 / 255.0,
+        61.0 / 255.0,
+        143.0 / 255.0,
+        0.15,
+    ))
+    .drop(8.0, 16.0, 16.0);
     let rect = ResolvedRect::new(100.0, 100.0, 150.0, 150.0);
     let pix = render_shadow(&shadow, &rect);
     // Shadow bbox: origin (100+8-48, 100+16-48) = (60,68), footprint 246.
@@ -142,7 +147,9 @@ fn make_patch(radius: f32, softness: f32, extent: f32) -> (ShadowPatch, usize, u
         vec![0u8; dim * dim],
         vec![0u8; dim * dim],
     );
-    let patch = generate_patch(&mut a, &mut b, &mut t, radius, softness, &lut, pad, cs, dim, 0.0);
+    let patch = generate_patch(
+        &mut a, &mut b, &mut t, radius, softness, &lut, pad, cs, dim, 0.0,
+    );
     (patch, cs, dim)
 }
 
@@ -202,7 +209,10 @@ fn rim_decays_to_zero() {
             worst = worst.max(at(&patch, dim, i, 0));
             worst = worst.max(at(&patch, dim, 0, i));
         }
-        assert!(worst <= 12, "outside border must be empty (soft={softness}, worst={worst})");
+        assert!(
+            worst <= 12,
+            "outside border must be empty (soft={softness}, worst={worst})"
+        );
     }
 }
 
@@ -399,7 +409,10 @@ fn middle_row_decays_monotonically() {
         worst_rise = worst_rise.max(v as i16 - prev as i16);
         prev = prev.min(v);
     }
-    assert!(worst_rise <= 4, "falloff must not rise outward (rise {worst_rise})");
+    assert!(
+        worst_rise <= 4,
+        "falloff must not rise outward (rise {worst_rise})"
+    );
     // Rim pixel is empty: no slab past the falloff.
     let rim = alpha_of(&blit.pix, blit.ox + blit.total_w - 1, mid_y);
     assert!(rim <= 12, "rim must be empty, got {rim}");

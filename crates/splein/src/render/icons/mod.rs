@@ -21,15 +21,29 @@ pub const SVG_TRASH: &str = "M15.492 6.173l-0.413 6.673c-0.105 1.705-0.158 2.557
 pub const SVG_MORE: &str = "M10.498 10.938V10.5m0-4.812V5.25m0 10.938V15.75m0.875-4.812a0.875 0.875 0 1 0-1.75 0 0.875 0.875 0 0 0 1.75 0m0-5.25a0.875 0.875 0 1 0-1.75 0 0.875 0.875 0 0 0 1.75 0m0 10.5a0.875 0.875 0 1 0-1.75 0 0.875 0.875 0 0 0 1.75 0";
 
 pub struct IconCache {
-    pub grip: Path, pub tool_q: Path, pub tool_w: Path, pub tool_e: Path,
-    pub tool_t: Path, pub tool_y: Path, pub shape_rect: Path, pub shape_ray: Path,
-    pub shape_line: Path, pub shape_circle: Path, pub chevron: Path,
-    pub trash: Path, pub more: Path,
+    pub grip: Path,
+    pub tool_q: Path,
+    pub tool_w: Path,
+    pub tool_e: Path,
+    pub tool_t: Path,
+    pub tool_y: Path,
+    pub shape_rect: Path,
+    pub shape_ray: Path,
+    pub shape_line: Path,
+    pub shape_circle: Path,
+    pub chevron: Path,
+    pub trash: Path,
+    pub more: Path,
 }
 
 static ICONS: OnceLock<IconCache> = OnceLock::new();
 
-fn fb() -> Path { let mut pb = PathBuilder::new(); pb.move_to(0.0, 0.0); pb.line_to(1.0, 1.0); pb.finish().unwrap() }
+fn fb() -> Path {
+    let mut pb = PathBuilder::new();
+    pb.move_to(0.0, 0.0);
+    pb.line_to(1.0, 1.0);
+    pb.finish().unwrap()
+}
 
 pub fn get_icons() -> &'static IconCache {
     ICONS.get_or_init(|| IconCache {

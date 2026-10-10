@@ -6,8 +6,8 @@ use crate::dsl::element::Element;
 use crate::dsl::reconciler::reconcile;
 use crate::reactive::ReactiveRuntime;
 use crate::tree::SubscriberRouter;
-use crate::tree::{NodeId};
-use crate::tree::{TreeArena};
+use crate::tree::TreeArena;
+use crate::tree::{DirtyFlags, NodeId};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -58,11 +58,25 @@ pub fn reconcile_children(
         }
     }
 
-    let resolved = resolved
+    let resolved: Vec<NodeId> = resolved
         .into_iter()
         .map(|slot| slot.expect("diff must cover every new child index"))
         .collect();
+    // Structural change dirties the parent: added/removed/reordered children shift
+    // sibling allocation, so the parent must re-lay-out even when its own props are
+    // unchanged. Without this the parent takes the layout cache path, which returns
+    // without descending — fresh children are parentless until `set_children` below,
+    // so their own upward invalidation never reaches it, and they keep zero rects
+    // forever (invisible re-added subtrees). `replace_child` already marks likewise.
+    let order_changed = old_specs.len() != resolved.len()
+        || old_specs
+            .iter()
+            .zip(resolved.iter())
+            .any(|((old, _), new)| old != new);
     arena.set_children(parent, resolved);
+    if order_changed {
+        arena.mark_dirty(parent, DirtyFlags::MEASURE | DirtyFlags::LAYOUT);
+    }
 }
 
 /// Reconciles one child, guarding context reads: a missing provider panics

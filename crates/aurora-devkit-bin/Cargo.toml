@@ -1,0 +1,17 @@
+[package]
+name = "aurora-devkit-bin"
+version = "0.0.1-rc.1"
+edition = "2021"
+publish = false
+description = "Aurora devkit host loop (dylib, dev only): window, engine, component code-swap driver"
+license = "GPL-3.0"
+
+[lib]
+# Dynamic: shares the aurora instance with every UI cdylib through aurora-shared.
+crate-type = ["dylib"]
+
+[dependencies]
+# Single dynamic edge (verified linkable): everything else the host needs comes through
+# this image. Do NOT add rlib dependencies here — an extra rlib beside the shared image
+# trips rustc's one-format rule for the sysroot closure (observed, not theorized).
+aurora-shared = { path = "../aurora-shared", version = "0.0.1-rc.1" }

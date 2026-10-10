@@ -4,8 +4,8 @@ use crate::reactive::id::SignalId;
 use crate::reactive::observer::Observer;
 use crate::reactive::readable::Readable;
 use crate::reactive::runtime::ReactiveRuntime;
-use std::cell::RefCell;
 use rustc_hash::FxHashSet;
+use std::cell::RefCell;
 use std::rc::Rc;
 
 thread_local! {
@@ -58,8 +58,8 @@ fn ensure_fresh(runtime: &Rc<RefCell<ReactiveRuntime>>, id: SignalId) {
                     }
                     // Only live, dirty derivations need evaluation; plain
                     // signals and fresh derivations are read as-is.
-                    let needs_eval = rt.derived_recompute.contains_key(src)
-                        && rt.derived_dirty.contains(src);
+                    let needs_eval =
+                        rt.derived_recompute.contains_key(src) && rt.derived_dirty.contains(src);
                     if needs_eval {
                         stack.push((*src, false));
                     }

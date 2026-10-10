@@ -205,9 +205,9 @@ impl<T: 'static> Ctx<T> {
     pub fn map<U: 'static>(self, f: impl Fn(T) -> U + 'static) -> Ctx<U> {
         let mut ops = self.ops;
         ops.push(Rc::new(move |boxed: Box<dyn Any>| {
-            let input: T = *boxed.downcast::<T>().expect(
-                "aurora: context op-chain type mismatch (unreachable by construction)",
-            );
+            let input: T = *boxed
+                .downcast::<T>()
+                .expect("aurora: context op-chain type mismatch (unreachable by construction)");
             let out: U = f(input);
             let b: Box<dyn Any> = Box::new(out);
             b
@@ -282,9 +282,9 @@ fn apply_ops<T: 'static>(mut boxed: Box<dyn Any>, ops: &[CtxOp]) -> T {
     for op in ops {
         boxed = op(boxed);
     }
-    *boxed.downcast::<T>().expect(
-        "aurora: context op-chain output mismatch (unreachable by construction)",
-    )
+    *boxed
+        .downcast::<T>()
+        .expect("aurora: context op-chain output mismatch (unreachable by construction)")
 }
 
 // Lexical provider chain for the reconcile descent in progress: entries

@@ -8,8 +8,8 @@
 // panel (non-blocking lock + bounded lossy semantics).
 
 use std::collections::VecDeque;
-use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::{Arc, Mutex};
 
 use crate::app::debug::InspectorMode;
 
@@ -218,10 +218,7 @@ mod tests {
         bus.send(DebugCommand::ReloadAll);
         bus.send(DebugCommand::ReloadComponent("app::Card".to_string()));
         assert!(matches!(rx.recv().unwrap(), DebugCommand::StepOnce));
-        assert!(matches!(
-            rx.recv().unwrap(),
-            DebugCommand::SetTimeScale(_)
-        ));
+        assert!(matches!(rx.recv().unwrap(), DebugCommand::SetTimeScale(_)));
         assert!(matches!(rx.recv().unwrap(), DebugCommand::ReloadAll));
         assert!(matches!(
             rx.recv().unwrap(),

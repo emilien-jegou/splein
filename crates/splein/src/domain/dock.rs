@@ -27,7 +27,9 @@ pub struct DockModel {
 
 impl Default for DockModel {
     fn default() -> Self {
-        Self { tool: ActiveTool::Pen }
+        Self {
+            tool: ActiveTool::Pen,
+        }
     }
 }
 

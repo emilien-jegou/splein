@@ -101,7 +101,12 @@ impl TreeArena {
             on_remove(cur);
             self.keys.unbind(cur);
 
-            if let Some(bounds) = self.slots[cur.index as usize].node.state.paint.last_painted_bounds {
+            if let Some(bounds) = self.slots[cur.index as usize]
+                .node
+                .state
+                .paint
+                .last_painted_bounds
+            {
                 self.removed_damage.push(bounds);
             }
             let slot = &mut self.slots[cur.index as usize];

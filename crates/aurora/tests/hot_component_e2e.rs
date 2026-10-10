@@ -5,7 +5,7 @@
 // aurora statically, so it holds a different runtime instance than any dlopened image.
 // Calling a component entry point here would resolve hooks against the wrong instance
 // (`hook called outside a component body`, then SIGABRT on unwind). Component execution
-// is therefore verified inside shared-instance land only — see `hot_host_selftest`,
+// is therefore verified inside shared-instance land only — see `devkit_selftest`,
 // driven headlessly by `aurora selftest`. What this test pins instead:
 // - the DevLoop reaches `LibraryReady` (watch → build → refresh, real cargo processes),
 // - both images load in dependency order with symbols resolving,
@@ -18,7 +18,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use aurora::hot_reload::{
-    ComponentVersionFn, DevLoop, DevLoopConfig, PollOutcome, component_abi_fingerprint,
+    component_abi_fingerprint, ComponentVersionFn, DevLoop, DevLoopConfig, PollOutcome,
 };
 
 fn workspace_root() -> PathBuf {
@@ -28,7 +28,9 @@ fn workspace_root() -> PathBuf {
 }
 
 fn debug_dir() -> PathBuf {
-    workspace_root().join("target").join("debug")
+    workspace_root()
+        .join("target")
+        .join(aurora::hot_reload::HOT_PROFILE)
 }
 
 /// Polls until `LibraryReady`. Panics past `deadline`.
@@ -62,17 +64,25 @@ fn version_of(ui_path: &std::path::Path) -> u64 {
 #[test]
 #[ntest::timeout(300_000)]
 fn foreign_image_binds_sentinel_elsewhere() {
-    use aurora::hot_reload::{DylibReloader, host_sentinel_address};
+    use aurora::hot_reload::{host_sentinel_address, DylibReloader};
 
     let ui_path = debug_dir().join("libaurora_hot_ui.so");
     if !ui_path.exists() {
         let status = std::process::Command::new("cargo")
             .arg("build")
+            .arg("--release")
+            .arg("-p")
+            .arg("aurora-shared")
             .arg("-p")
             .arg("aurora-hot-ui")
+            .arg("-p")
+            .arg("aurora-devkit-bin")
             .status()
             .expect("cargo must run to build the hot-ui cdylib");
-        assert!(status.success(), "cargo build -p aurora-hot-ui must succeed");
+        assert!(
+            status.success(),
+            "cargo build -p aurora-hot-ui must succeed"
+        );
     }
     let mut loader = DylibReloader::new(&ui_path);
     assert!(loader.refresh(), "the ui library must load");
@@ -96,8 +106,17 @@ fn dev_loop_cycles_and_handshake_agrees() {
         watch_dir: None,
         lib_path: None,
         auto_build: true,
+        companion_packages: vec![
+            "aurora-shared".to_string(),
+            "aurora-hot-ui".to_string(),
+            "aurora-devkit-bin".to_string(),
+        ],
     });
-    await_library(&mut dev, Instant::now() + Duration::from_secs(420), "initial library");
+    await_library(
+        &mut dev,
+        Instant::now() + Duration::from_secs(420),
+        "initial library",
+    );
 
     // The shared image must exist (the loop built or found it); the UI image too.
     let shared_path = debug_dir().join("libaurora_shared.so");
@@ -120,7 +139,11 @@ fn dev_loop_cycles_and_handshake_agrees() {
     let bytes = std::fs::read(&ui_src).expect("ui sources readable");
     std::fs::write(&ui_src, &bytes).expect("touch ui sources");
     let retired_before = dev.loader().retired_count();
-    await_library(&mut dev, Instant::now() + Duration::from_secs(420), "rebuilt library");
+    await_library(
+        &mut dev,
+        Instant::now() + Duration::from_secs(420),
+        "rebuilt library",
+    );
     assert!(
         dev.loader().retired_count() > retired_before,
         "the rebuilt image superseded the live one"

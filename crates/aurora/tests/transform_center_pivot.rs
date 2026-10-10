@@ -82,7 +82,12 @@ fn a_declarative_rotation_keeps_the_node_in_place() {
         "a half turn about the centre must leave the box where it was"
     );
     assert!(
-        is_white(rgb(&mut engine, &mut raster, r.x + r.width + 20.0, center.1)),
+        is_white(rgb(
+            &mut engine,
+            &mut raster,
+            r.x + r.width + 20.0,
+            center.1
+        )),
         "and must not swing into its neighbour's slot"
     );
 }
@@ -101,7 +106,12 @@ fn a_pure_translation_is_left_untouched() {
         "the box must vacate its origin slot"
     );
     assert!(
-        is_red(rgb(&mut engine, &mut raster, r.x + r.width + 20.0, r.y + r.height * 0.5)),
+        is_red(rgb(
+            &mut engine,
+            &mut raster,
+            r.x + r.width + 20.0,
+            r.y + r.height * 0.5
+        )),
         "translation must move the box without any centre compensation"
     );
 }

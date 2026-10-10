@@ -67,11 +67,12 @@ impl RenderEngine for TinySkiaRenderer {
                             mapped
                         })
                         .or_else(|| {
-                            drag.filter(|(idxs, _)| idxs.contains(&i)).map(|(_, delta)| {
-                                let mut moved = elem.clone();
-                                moved.translate(delta);
-                                moved
-                            })
+                            drag.filter(|(idxs, _)| idxs.contains(&i))
+                                .map(|(_, delta)| {
+                                    let mut moved = elem.clone();
+                                    moved.translate(delta);
+                                    moved
+                                })
                         });
                     self.element_renderer
                         .render_element(ghost.as_ref().unwrap_or(elem), &mut c.as_mut());

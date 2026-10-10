@@ -1,8 +1,8 @@
 // Single responsibility: Finding painted content that escapes where it should not stay.
 
+use crate::testing::snapshot::{Rgba, Snapshot};
 use aurora::foundation::{Point, ResolvedRect};
 use aurora::runtime::Engine;
-use crate::testing::snapshot::{Rgba, Snapshot};
 use aurora::tree::{NodeId, TreeArena};
 
 /// A geometric observation worth reading. None of these are automatically a bug: a clipping

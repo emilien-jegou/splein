@@ -103,22 +103,13 @@ impl Shadow {
     /// The kernel radius is half the CSS blur radius: the rasterizer runs
     /// two box iterations (sigma ≈ 1.15r, support ±2r), so r = blur/2 lands
     /// sigma ≈ 0.58R with support ±R, close to the browser's Gaussian.
-    pub fn web_like(
-        offset_x: f32,
-        offset_y: f32,
-        blur: f32,
-        spread: f32,
-        color: Color,
-    ) -> Self {
+    pub fn web_like(offset_x: f32, offset_y: f32, blur: f32, spread: f32, color: Color) -> Self {
         Self {
             elevation: 0.0,
             color,
             blend: BlendMode::Normal,
             shape: ShadowShape::Box,
-            offset: ShadowOffset::Explicit {
-                offset_x,
-                offset_y,
-            },
+            offset: ShadowOffset::Explicit { offset_x, offset_y },
             spread,
             layers: vec![ShadowLayer {
                 falloff: FalloffCurve::Linear,
@@ -257,20 +248,13 @@ impl Shadow {
     pub fn resolve_offset(&self, light: &LightEnvironment) -> (f32, f32) {
         match self.offset {
             ShadowOffset::Elevation => light.offset_for(self.elevation),
-            ShadowOffset::Explicit {
-                offset_x,
-                offset_y,
-            } => (offset_x, offset_y),
+            ShadowOffset::Explicit { offset_x, offset_y } => (offset_x, offset_y),
         }
     }
 
     /// Resolves one layer's pixel offset: its explicit offset wins,
     /// otherwise the shadow-level offset.
-    pub fn layer_offset(
-        &self,
-        light: &LightEnvironment,
-        layer: &ShadowLayer,
-    ) -> (f32, f32) {
+    pub fn layer_offset(&self, light: &LightEnvironment, layer: &ShadowLayer) -> (f32, f32) {
         layer.offset.unwrap_or_else(|| self.resolve_offset(light))
     }
 
@@ -291,11 +275,6 @@ impl Shadow {
 
     /// Largest layer softness, for blur kernel sizing.
     pub fn max_softness(&self) -> f32 {
-        self.layers
-            .iter()
-            .map(|l| l.softness)
-            .fold(0.0, f32::max)
+        self.layers.iter().map(|l| l.softness).fold(0.0, f32::max)
     }
 }
-
-

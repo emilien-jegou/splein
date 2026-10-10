@@ -44,4 +44,3 @@ pub fn time_scale_color(scale: f32) -> u32 {
 pub fn keybind_hint() -> &'static str {
     "F5 DEMOS  F7 ENGINE  F8 FREEZE  . STEP  [ ] SPEED  F9/F11/F12 VIEW  S CAP  ESC EXIT"
 }
-

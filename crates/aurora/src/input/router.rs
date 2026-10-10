@@ -1,19 +1,21 @@
 // Single responsibility: Routing pointer events through the hit chain to per-node handlers.
 
-use crate::foundation::Point;
+use super::selection::{
+    current_selection, key_name, selectable_text, ActiveSelection, PendingPress,
+};
 use crate::foundation::Key;
+use crate::foundation::Point;
 use crate::input::event::{ClickInfo, CursorIcon, HoverInfo, PointerEvent, PointerPhase};
 use crate::input::handlers::Propagation;
 use crate::input::hit::{hit_chain, HitNode, HitTest};
 use crate::input::keyboard::{KeyCode, KeyEvent};
 use crate::input::tracker::{PointerTracker, TrackerChange};
-use super::selection::{ActiveSelection, PendingPress, current_selection, key_name, selectable_text};
 use crate::text::selection::{
     caret_line_col, line_byte_ranges, move_grapheme, offset_at_visual_line, snap_to_boundary,
     word_edge, TextSelection,
 };
+use crate::tree::TreeArena;
 use crate::tree::{NodeId, NodeKind};
-use crate::tree::{TreeArena};
 
 /// Resolved pointer state for a frame, after dispatch.
 #[derive(Default, Debug)]
@@ -83,7 +85,6 @@ pub struct PointerRouter {
     /// Mount root for document-order enumeration (cross-node ranges).
     pub(crate) root: Option<NodeId>,
 }
-
 
 impl PointerRouter {
     /// Creates a router with no pointer contact.
@@ -161,9 +162,12 @@ impl PointerRouter {
     /// blink; a static highlight needs no such keep-alive.
     pub fn has_visible_caret(&self, arena: &TreeArena) -> bool {
         match self.focused {
-            Some(id) if arena.is_valid(id) => {
-                arena.get(id).state.text.text_selection.is_some_and(|s| s.is_collapsed())
-            }
+            Some(id) if arena.is_valid(id) => arena
+                .get(id)
+                .state
+                .text
+                .text_selection
+                .is_some_and(|s| s.is_collapsed()),
             _ => false,
         }
     }
@@ -228,11 +232,7 @@ impl PointerRouter {
                 // or an Opaque node whose dead space must not ghost through.
                 // A decorative (Auto, handler-less) or Passthrough wrapper can never
                 // swallow a click meant for the control inside it.
-                if let Some(index) = self
-                    .chain
-                    .iter()
-                    .position(|hit| absorbs(&*arena, hit.id))
-                {
+                if let Some(index) = self.chain.iter().position(|hit| absorbs(&*arena, hit.id)) {
                     let target = self.chain[index].id;
                     self.tracker.set_capture(Some(target));
                     // Multi-click counts are per target: a press on a different
@@ -363,8 +363,7 @@ impl PointerRouter {
                 // released elsewhere must not toggle what it started on.
                 // `self.chain` was just re-resolved at the release position above.
                 for &id in self.press_chain.iter() {
-                    let (fired_up, stopped_up) =
-                        fire(&*arena, id, |h| h.fire_pointer_up(event));
+                    let (fired_up, stopped_up) = fire(&*arena, id, |h| h.fire_pointer_up(event));
                     handled |= fired_up;
                     if stopped_up {
                         break;
@@ -428,7 +427,10 @@ impl PointerRouter {
         &mut self,
         arena: &TreeArena,
         target: Option<NodeId>,
-        invoke: fn(&crate::input::handlers::HandlerSet, &crate::input::event::DragInfo) -> Propagation,
+        invoke: fn(
+            &crate::input::handlers::HandlerSet,
+            &crate::input::event::DragInfo,
+        ) -> Propagation,
         position: Point,
     ) -> bool {
         let Some(target) = target else {
@@ -469,11 +471,6 @@ impl PointerRouter {
         handled
     }
 
-
-
-
-
-
     /// Applies one key press to the focused selectable text.
     ///
     /// Returns whether anything changed (and so whether the caller owes a
@@ -512,7 +509,10 @@ impl PointerRouter {
                         return self.apply_key_selection(
                             arena,
                             node,
-                            TextSelection { anchor: 0, focus: len },
+                            TextSelection {
+                                anchor: 0,
+                                focus: len,
+                            },
                         );
                     }
                     'c' => {
@@ -574,11 +574,8 @@ impl PointerRouter {
                     None => return false,
                 };
                 let gx = self.key_goal_x.unwrap_or(x);
-                let target = (line as i32 + dir)
-                    .clamp(0, layout.lines.len() as i32 - 1)
-                    as usize;
-                let Some(f) = offset_at_visual_line(&layout, &content, target, gx)
-                else {
+                let target = (line as i32 + dir).clamp(0, layout.lines.len() as i32 - 1) as usize;
+                let Some(f) = offset_at_visual_line(&layout, &content, target, gx) else {
                     return false;
                 };
                 self.key_goal_x = Some(gx);
@@ -593,8 +590,7 @@ impl PointerRouter {
                         len
                     }
                 } else {
-                    let Some((line, _)) = caret_line_col(&layout, &content, caret)
-                    else {
+                    let Some((line, _)) = caret_line_col(&layout, &content, caret) else {
                         return false;
                     };
                     let ranges = line_byte_ranges(&layout, &content);
@@ -622,10 +618,7 @@ impl PointerRouter {
         }
         self.apply_key_selection(arena, node, sel)
     }
-
-
 }
-
 
 /// Whether a node absorbs a press/hover: it has handlers, selectable text, or
 /// it is Opaque dead space that must not ghost through to nodes beneath.
