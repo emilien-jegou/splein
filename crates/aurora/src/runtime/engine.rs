@@ -76,6 +76,9 @@ impl Engine {
         let _ambient = crate::reactive::ambient_guard(&runtime);
         let (mut arena, mut router) = (TreeArena::new(), SubscriberRouter::new());
         let root_key = root.key();
+        // Join-only: when the caller opened a build window (AppConfig::run does, spanning
+        // the factory and this reconcile), registrations tag with its generation. Standalone
+        // use opens no window and behaves exactly as before.
         let root_id = reconcile(&runtime, &mut arena, &mut router, None, root);
         // The root's key has to be registered here as well as on re-mount, or a keyed root
         // would be unreachable from every key-based lookup while its own subtree worked.
@@ -256,6 +259,11 @@ impl Engine {
     /// the new tree's own just-registered tickers (frozen animation).
     /// Demo-owned `AppExtension`s still need explicit swapping by the caller.
     pub fn switch_root(&mut self, element: Element) {
+        // Closes the window `prepare_switch` opened: the incoming tree's registrations tag
+        // with its generation, so this commit drops the dead tree's tagged registrations
+        // alongside the epoch retire. Called without `prepare_switch`, this is a harmless
+        // no-op close and the reconcile stays untracked, as before.
+        self.scheduler.runtime.borrow_mut().end_build_window(true);
         self.set_root(element);
         self.request_full_repaint();
     }
@@ -269,6 +277,15 @@ impl Engine {
     pub fn prepare_switch(&mut self) {
         self.scheduler.runtime.borrow_mut().advance_ticker_epoch();
         self.scheduler.runtime.borrow_mut().clear_hook_state();
+        // Opens the build window the boot builds under; `switch_root` closes it. The boot
+        // runs component bodies (registering tickers) between the two calls, so the window
+        // must span all three — opening here and closing there is the pairing. A stray open
+        // window (a previous boot that never committed) is committed first so depth cannot
+        // wedge: commit keeps its generation, never drops live registrations.
+        if self.scheduler.runtime.borrow().build_window_open() {
+            self.scheduler.runtime.borrow_mut().end_build_window(true);
+        }
+        self.scheduler.runtime.borrow_mut().begin_build_window();
     }
 
     /// Installs (or swaps) the root factory re-run on every hot-reload.
@@ -364,6 +381,10 @@ impl Engine {
             return;
         };
         let _ambient = crate::reactive::ambient_guard(&self.runtime());
+        // Generation-scoped build window: everything the factory registers tags with this
+        // generation. Commit keeps it and drops superseded twins; abort drops exactly the
+        // failed build's registrations and keeps the live tree's.
+        self.scheduler.runtime.borrow_mut().begin_build_window();
         let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let cx = Cx::new(self.scheduler.runtime.clone());
             cx.enter_keyed("root", || factory())
@@ -371,6 +392,7 @@ impl Engine {
         match outcome {
             Ok(element) => {
                 self.set_root(element);
+                self.scheduler.runtime.borrow_mut().end_build_window(true);
                 let report = ReloadReport {
                     reloaded: targets,
                     files: Vec::new(),
@@ -385,6 +407,7 @@ impl Engine {
                 self.hot_reload.record_report(&report);
             }
             Err(payload) => {
+                self.scheduler.runtime.borrow_mut().end_build_window(false);
                 let msg = crate::dsl::panic_message(&payload);
                 tracing::error!("aurora: hot-reload rebuild panicked ({msg}); keeping previous tree");
                 self.staged_reload_error = Some(msg.clone());

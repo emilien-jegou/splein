@@ -228,6 +228,13 @@ impl AppConfig {
         // intact (see `crate::hot_reload`).
         let root_factory: SharedFactory = Rc::new(move || root_fn().into_element());
         let cx = Cx::new(Rc::clone(&runtime));
+        // Generation-scoped like every full-tree build: the initial tree's registrations
+        // tag with this generation, so the first reload's commit can sweep them instead of
+        // running beside their twins. The window stays open across the engine creation
+        // below so the initial reconcile (which re-runs builders for dynamic segments)
+        // tags with the same generation — closing it first would orphan the two halves
+        // under different generations and the commit would drop the live one.
+        runtime.borrow_mut().begin_build_window();
         let root = cx.enter_keyed("root", || root_factory()).into_element();
 
         // The engine, the backend surface, and pointer input all run in
@@ -242,6 +249,10 @@ impl AppConfig {
         let mut engine = Engine::with_runtime(Rc::clone(&runtime), root, pw, ph);
         engine.set_background(self.background);
         engine.set_root_factory(Rc::clone(&root_factory));
+        // Closes the window opened around the factory above, committing the initial
+        // generation. Older tagged registrations cannot exist on a fresh runtime, so this
+        // commit keeps everything and only arms future reload sweeps.
+        runtime.borrow_mut().end_build_window(true);
         for f in &self.fonts {
             engine.load_font(f);
         }

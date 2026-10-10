@@ -27,6 +27,9 @@ impl Effect {
         };
 
         runtime.borrow_mut().effects.insert(id, action_for_sub);
+        // Owned by the reload build running now, if any, so a rebuild that re-runs the
+        // creating body sweeps the twin instead of running beside it.
+        runtime.borrow_mut().tag_effect(id);
         runtime.borrow_mut().push_observer(Observer::Effect(id));
         action_rc();
         runtime.borrow_mut().pop_observer();

@@ -1,18 +1,24 @@
 // Single responsibility: Frame-driven remote-UI dev loop as an `AppExtension`.
 //
-// Watches the UI crate's sources, rebuilds it in the background on change, loads the fresh
-// `cdylib` through [`DylibReloader`], swaps the [`RemoteHost`] entry points, and queues a
-// state-preserving rebuild through the normal [`HotReload`](crate::hot_reload::HotReload)
-// queue. Click actions from the previous frame drain first, so interaction never waits for
-// a build.
+// Runs the shared [`DevLoop`](crate::hot_reload::dev_loop::DevLoop) (watch → background
+// build → refresh) and, on every fresh library, swaps the [`RemoteHost`] entry points and
+// queues a state-preserving rebuild through the normal
+// [`HotReload`](crate::hot_reload::HotReload) queue. Click actions from the previous frame
+// drain first, so interaction never waits for a build.
 //
 // Typical wiring (see `examples/hot_demo.rs`):
 //
 // ```ignore
-// let ext = RemoteReloadExtension::new(RemoteReloadConfig {
+// use aurora::hot_reload::{DevLoopConfig, RemoteReloadExtension};
+// use std::path::PathBuf;
+//
+// let ext = RemoteReloadExtension::new(DevLoopConfig {
 //     package: "aurora-hot-ui".to_string(),
-//     workspace_root: workspace_root(),
-//     ..RemoteReloadConfig::default()
+//     workspace_root: PathBuf::from("/path/to/splein"),
+//     watch_dir: None,
+//     lib_path: None,
+//     ui_source: None,
+//     auto_build: true,
 // });
 // App::config().extension(ext).run(placeholder);
 // ```
@@ -23,87 +29,31 @@
 
 use crate::app::extension::AppExtension;
 use crate::dsl::{group, text, IntoElement};
-use crate::hot_reload::dylib::DylibReloader;
+use crate::hot_reload::dev_loop::{DevLoop, DevLoopConfig, PollOutcome};
 use crate::hot_reload::remote::{RemoteBuildFn, RemoteEventFn, RemoteHost, RemoteStateFn};
-use crate::hot_reload::watcher::FileWatcher;
 use crate::hot_reload::SharedFactory;
 use crate::runtime::Engine;
 use std::cell::Cell;
-use std::path::PathBuf;
-use std::process::Child;
 use std::rc::Rc;
-
-/// What to build, watch, and load for remote UI hot-reload.
-pub struct RemoteReloadConfig {
-    /// Cargo package whose `cdylib` holds the UI (`cargo build -p …` rebuilds it).
-    pub package: String,
-    /// Workspace root: build working directory and anchor for default paths.
-    pub workspace_root: PathBuf,
-    /// Sources watched for changes. Defaults to `crates/<package>/src`.
-    pub watch_dir: Option<PathBuf>,
-    /// Library image loaded. Defaults to `target/debug/lib<package>.so`.
-    pub lib_path: Option<PathBuf>,
-    /// Rebuild automatically on change (off = react to manual `cargo build` only).
-    pub auto_build: bool,
-}
-
-impl RemoteReloadConfig {
-    /// Library image path: explicit override or the default under the workspace root.
-    pub fn lib_path(&self) -> PathBuf {
-        self.lib_path.clone().unwrap_or_else(|| {
-            self.workspace_root.join(format!(
-                "target/debug/lib{}.so",
-                self.package.replace('-', "_")
-            ))
-        })
-    }
-
-    /// Sources watched: explicit override or the package's `src` dir.
-    pub fn watch_dir(&self) -> PathBuf {
-        self.watch_dir.clone().unwrap_or_else(|| {
-            self.workspace_root
-                .join("crates")
-                .join(&self.package)
-                .join("src")
-        })
-    }
-}
 
 /// Frame-driven remote-UI dev loop. See the module docs.
 pub struct RemoteReloadExtension {
-    config: RemoteReloadConfig,
-    loader: DylibReloader,
-    watcher: FileWatcher,
+    dev: DevLoop,
     host: Rc<RemoteHost>,
     /// Current entry points, read by the installed root factory on every rebuild.
     shared_fns: Rc<Cell<Option<(RemoteStateFn, RemoteBuildFn, RemoteEventFn)>>>,
-    build_child: Option<Child>,
     factory_installed: bool,
 }
 
 impl RemoteReloadExtension {
-    /// Creates the loop: watches sources and kicks off the initial build immediately.
-    pub fn new(config: RemoteReloadConfig) -> Self {
-        let lib_path = config.lib_path();
-        let watch_dir = config.watch_dir();
-        let mut watcher = FileWatcher::new();
-        watcher.watch(watch_dir.clone());
-        tracing::info!(
-            "aurora: hot-reload watching {} (package `{}`)",
-            watch_dir.display(),
-            config.package
-        );
-        let mut ext = Self {
-            loader: DylibReloader::new(lib_path),
-            watcher,
+    /// Creates the loop over `config` (watch + refresh-first initial load).
+    pub fn new(config: DevLoopConfig) -> Self {
+        Self {
+            dev: DevLoop::new(config),
             host: Rc::new(RemoteHost::new()),
             shared_fns: Rc::new(Cell::new(None)),
-            build_child: None,
             factory_installed: false,
-            config,
-        };
-        ext.spawn_build("initial");
-        ext
+        }
     }
 
     /// The host owning remote state (tests and manual drivers).
@@ -116,67 +66,14 @@ impl RemoteReloadExtension {
         self.shared_fns.get().is_some()
     }
 
-    /// Starts a background `cargo build -p <package>` unless one is already running.
-    fn spawn_build(&mut self, reason: &str) {
-        if !self.config.auto_build || self.build_child.is_some() {
-            return;
-        }
-        match std::process::Command::new("cargo")
-            .arg("build")
-            .arg("-p")
-            .arg(&self.config.package)
-            .current_dir(&self.config.workspace_root)
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn()
-        {
-            Ok(child) => {
-                tracing::info!("aurora: hot-reload rebuilding `{}` ({reason})", self.config.package);
-                self.build_child = Some(child);
-            }
-            Err(e) => {
-                tracing::warn!("aurora: hot-reload could not spawn cargo ({e})");
-            }
-        }
-    }
-
-    /// Polls the background build; on success loads the fresh library and swaps entry points.
-    fn poll_build(&mut self, engine: &mut Engine) -> bool {
-        let done = match self.build_child.as_mut() {
-            Some(child) => match child.try_wait() {
-                Ok(Some(status)) => Some(status.success()),
-                Ok(None) => None,
-                Err(e) => {
-                    tracing::warn!("aurora: hot-reload build poll failed ({e})");
-                    Some(false)
-                }
-            },
-            None => None,
-        };
-        let Some(success) = done else {
-            return false;
-        };
-        self.build_child = None;
-        if !success {
-            tracing::warn!(
-                "aurora: hot-reload build of `{}` failed; keeping previous UI",
-                self.config.package
-            );
-            return true;
-        }
-        self.activate_fresh_library(engine)
-    }
-
-    /// Loads the library at its path (if changed) and swaps entry points + factory.
+    /// Resolves entry points from the fresh library and swaps the factory. Returns true
+    /// when the engine should present another frame.
     fn activate_fresh_library(&mut self, engine: &mut Engine) -> bool {
-        if !self.loader.refresh() {
-            return false;
-        }
         // Copy the entry points out of the symbols: raw fn pointers carry no lifetime,
         // and the loader (plus its retired images) keeps the code mapped for the session.
         let fns = unsafe {
             let state: libloading::Symbol<RemoteStateFn> =
-                match self.loader.get(b"aurora_remote_state") {
+                match self.dev.loader().get(b"aurora_remote_state") {
                     Ok(s) => s,
                     Err(e) => {
                         tracing::warn!("aurora: hot-ui missing `aurora_remote_state` ({e})");
@@ -184,7 +81,7 @@ impl RemoteReloadExtension {
                     }
                 };
             let build: libloading::Symbol<RemoteBuildFn> =
-                match self.loader.get(b"aurora_remote_build") {
+                match self.dev.loader().get(b"aurora_remote_build") {
                     Ok(s) => s,
                     Err(e) => {
                         tracing::warn!("aurora: hot-ui missing `aurora_remote_build` ({e})");
@@ -192,7 +89,7 @@ impl RemoteReloadExtension {
                     }
                 };
             let event: libloading::Symbol<RemoteEventFn> =
-                match self.loader.get(b"aurora_remote_event") {
+                match self.dev.loader().get(b"aurora_remote_event") {
                     Ok(s) => s,
                     Err(e) => {
                         tracing::warn!("aurora: hot-ui missing `aurora_remote_event` ({e})");
@@ -228,25 +125,21 @@ impl RemoteReloadExtension {
             engine.set_root_factory(factory);
         }
         engine.queue_full_reload();
-        tracing::info!("aurora: hot-ui reloaded ({} retired images)", self.loader.retired_count());
+        tracing::info!(
+            "aurora: hot-ui reloaded ({} retired images)",
+            self.dev.loader().retired_count()
+        );
         true
     }
 }
 
 impl AppExtension for RemoteReloadExtension {
-    /// Wakes the loop while a build runs or sources changed.
+    /// Wakes the loop while the dev cycle needs frames (build running or sources changed).
     ///
     /// An idle app presents no frames, so `on_update` alone would never poll the watcher:
     /// this requests redraws until the fresh library is live, then goes quiet again.
     fn on_idle(&mut self) -> bool {
-        if self.build_child.is_some() {
-            return true;
-        }
-        if !self.watcher.poll_changed().is_empty() {
-            self.spawn_build("sources changed");
-            return true;
-        }
-        false
+        !matches!(self.dev.poll(), PollOutcome::Idle)
     }
 
     fn on_update(&mut self, engine: &mut Engine) -> bool {
@@ -263,16 +156,12 @@ impl AppExtension for RemoteReloadExtension {
                 self.host.apply_writes(&writes);
             }
         }
-        // New sources → rebuild in the background.
-        if !self.watcher.poll_changed().is_empty() {
-            self.spawn_build("sources changed");
-            redraw = true;
-        }
-        // Build finished → swap. Library changed by hand → pick it up too.
-        if self.poll_build(engine) {
-            redraw = true;
-        } else if self.build_child.is_none() {
-            redraw |= self.activate_fresh_library(engine);
+        // Dev cycle: watching, building, and hand-built libraries all surface here.
+        // `LibraryReady` is the only outcome that swaps entry points.
+        match self.dev.poll() {
+            PollOutcome::LibraryReady => redraw |= self.activate_fresh_library(engine),
+            PollOutcome::Building | PollOutcome::Settled => redraw = true,
+            PollOutcome::Idle => {}
         }
         redraw
     }

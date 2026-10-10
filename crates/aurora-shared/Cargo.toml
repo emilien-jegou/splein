@@ -1,0 +1,18 @@
+[package]
+name = "aurora-shared"
+version = "0.0.1-rc.1"
+edition = "2021"
+publish = false
+description = "Single shared aurora runtime image for hot-reload hosts and UI libraries (dylib, dev only)"
+license = "GPL-3.0"
+
+[lib]
+# Dynamic only: this image is the *only* aurora code in hot-loop processes. The host
+# dylib and every UI cdylib link it instead of embedding their own copies, so hooks,
+# ambient stacks, epochs — and the backend rasterizers below — exist exactly once.
+# Hot-loop crates depend on nothing else aurora-flavored; see the module docs.
+crate-type = ["dylib"]
+
+[dependencies]
+aurora = { path = "../aurora", version = "0.0.1-rc.1" }
+aurora-tiny-skia = { path = "../aurora-tiny-skia", version = "0.0.1-rc.1" }

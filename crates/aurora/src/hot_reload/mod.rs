@@ -44,6 +44,8 @@
 //! |--------|-------|
 //! | [`registry`] | [`registry::ComponentRegistry`]: mounted identities + source-file index |
 //! | [`watcher`] | [`watcher::FileWatcher`]: `notify`-backed change polling |
+//! | [`component`] | [`component::ComponentReloadExtension`]: real-component code swap |
+//! | [`dev_loop`] | [`dev_loop::DevLoop`]: shared watch → build → refresh cycle |
 //! | [`dylib`] | [`dylib::DylibReloader`]: code-swap library loading |
 //! | [`remote`] | [`remote::RemoteHost`]: data-only remote UI schema + interpreter |
 //! | [`extension`] | [`extension::RemoteReloadExtension`]: frame-driven remote dev loop |
@@ -57,14 +59,34 @@
 //! - A reload that panics keeps the previous tree and records the error in stats and in
 //!   `Engine::last_frame_error` — the app never dies for a bad edit.
 
+pub mod component;
+pub mod dev_loop;
 pub mod dylib;
 pub mod extension;
 pub mod registry;
 pub mod remote;
 pub mod watcher;
 
+pub use component::{ComponentReloadExtension, ComponentRootFn, ComponentVersionFn, COMPONENT_ABI_VERSION};
+pub use dev_loop::{DevLoop, DevLoopConfig, PollOutcome};
 pub use dylib::DylibReloader;
-pub use extension::{RemoteReloadConfig, RemoteReloadExtension};
+pub use extension::RemoteReloadExtension;
+
+/// Installs a `tracing_subscriber` fmt logger honoring `RUST_LOG` (default `info`).
+///
+/// Hot-loop crates (host dylibs) must not depend on `tracing-subscriber` directly: as an
+/// extra rlib beside the shared dynamic image it trips rustc's one-format rule for the
+/// sysroot closure. Routing init through here keeps their dependency set to exactly one
+/// crate. Safe to call twice (only the first call wins).
+pub fn init_dev_logging() {
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "info".parse().expect("info parses")),
+        )
+        .with_target(false)
+        .try_init();
+}
 pub use registry::ComponentRegistry;
 pub use remote::{
     RemoteBuildFn, RemoteDirection, RemoteEventFn, RemoteHost, RemoteKind, RemoteNode,

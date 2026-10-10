@@ -1,18 +1,86 @@
-// Hot-reloadable demo UI: plain data description, no hooks, no ambient state.
+// Hot-reloadable demo UI: real components, re-executed in place.
 //
-// This crate builds as a `cdylib` that the `hot_demo` host loads. Edit anything here —
-// colors, structure, branches, events — save, and the running window updates with all
-// state intact. Rules for this file:
+// This crate builds as a `cdylib` that the component host loads. Edit anything here —
+// colors, structure, hooks, branches — save, and the running window rebuilds from the
+// fresh library with every signal, spring, and ticker intact. Rules for this file:
 //
-// - Only `aurora::hot_reload::remote` schema types cross the boundary (plain data).
-// - No `#[component]`, no `use_*` hooks, no signals: state lives host-side under the
-//   paths declared in `aurora_remote_state`, and `build` receives them as a snapshot.
-// - Keep the three exported symbols and their signatures exactly as below.
+// - Resolve `aurora` to the shared instance (the `extern crate` alias below): linking
+//   aurora statically would embed a second copy with disjoint hook scopes, and component
+//   code would panic. Same toolchain both sides (Rust has no stable ABI).
+// - Pin stable identities (`#[component(name = "...")]`) so state survives file moves.
+// - Keep the exported symbols and their signatures exactly as below.
+//
+// The remote data-description half (`aurora_remote_*`, below the components) serves the
+// data-only loop instead; both halves share this crate so each demo stays verifiable.
 
+extern crate aurora_shared as aurora;
+
+use aurora::dsl::IntoElement;
 use aurora::hot_reload::remote::{
     RemoteDirection, RemoteNode, RemoteSize, RemoteSnapshot, RemoteStateDecl, RemoteText,
     StateWrite,
 };
+use aurora::hot_reload::COMPONENT_ABI_VERSION;
+use aurora::prelude::*;
+
+/// Click counter: hook state proving in-place continuity across reloads.
+#[component(name = "hot_ui::Counter")]
+fn Counter() -> impl IntoElement {
+    let taps = use_signal(0u32);
+    let bump = taps.clone();
+    let height = taps.clone();
+    let label = taps.clone();
+    group()
+        .key("counter")
+        .width(200.0)
+        .height(height.map(|n| 100.0 + n as f32 * 20.0))
+        .fill(Color::hex(0xCA6D60))
+        .radius(12.0)
+        .on_click(move |_| bump.set(bump.get() + 1))
+        .children([
+            text(label.map(|n| format!("taps={n}")))
+                .size(16.0)
+                .color(Color::WHITE),
+        ])
+}
+
+/// Hero panel: the box whose color to edit. Contains the counter.
+#[component(name = "hot_ui::Hero")]
+fn Hero() -> impl IntoElement {
+    group()
+        .key("hero")
+        .direction(Direction::Horizontal)
+        .width(460.0)
+        .height(204.0)
+        // EDIT ME: change this fill, save, and watch the running window.
+        .fill(Color::hex(0xDC2626))
+        .gap(16.0)
+        .children([Counter()])
+}
+
+/// Page root: a white canvas holding the hero.
+#[component(name = "hot_ui::Page")]
+fn Page() -> impl IntoElement {
+    group()
+        .key("page")
+        .direction(Direction::Vertical)
+        .width(500.0)
+        .height(560.0)
+        .fill(Color::WHITE)
+        .children([Hero()])
+}
+
+/// Protocol version the host checks before installing entry points.
+#[no_mangle]
+pub extern "Rust" fn aurora_hot_version() -> u32 {
+    COMPONENT_ABI_VERSION
+}
+
+/// Rebuilds the interface. Re-run on every reload under the old hook scope.
+#[no_mangle]
+pub extern "Rust" fn aurora_component_root() -> aurora::dsl::Element {
+    Page().into_element()
+}
 
 /// State keys and the values fresh keys start at. Live values always win over these.
 #[no_mangle]

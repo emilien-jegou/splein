@@ -8,7 +8,7 @@
 // Usage: `cargo run -p aurora --example hot_demo`
 // Then edit `crates/aurora-hot-ui/src/lib.rs` (try the `hero` fill) and save.
 
-use aurora::hot_reload::{RemoteReloadConfig, RemoteReloadExtension};
+use aurora::hot_reload::{DevLoopConfig, RemoteReloadExtension};
 use aurora::prelude::*;
 use common::ExampleCli;
 use std::path::PathBuf;
@@ -31,7 +31,7 @@ fn workspace_root() -> PathBuf {
 fn main() {
     let cli = ExampleCli::parse(WIDTH, HEIGHT);
     cli.init_telemetry();
-    let ext = RemoteReloadExtension::new(RemoteReloadConfig {
+    let ext = RemoteReloadExtension::new(DevLoopConfig {
         package: "aurora-hot-ui".to_string(),
         workspace_root: workspace_root(),
         watch_dir: None,

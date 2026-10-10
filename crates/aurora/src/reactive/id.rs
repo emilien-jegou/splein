@@ -25,3 +25,17 @@ impl SignalId {
 /// Unique handle identifier for an active reactive dependency subscriber.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct SubscriberId(pub usize);
+
+/// Ownership tag for a registration made while a reload build ran.
+///
+/// `instance` is the innermost component scope that was ambient at registration time
+/// (forensics and future per-component teardown); `gen` is the reload build that produced
+/// it, and is what commit/abort sweeps match on. Registrations made outside any reload
+/// build carry no tag and are never swept.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BuildTag {
+    /// Component scope ambient at registration (`module_path!()::Name`, possibly anonymous).
+    pub instance: std::rc::Rc<str>,
+    /// Reload build generation that produced this registration.
+    pub gen: u64,
+}

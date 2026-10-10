@@ -56,6 +56,15 @@
 !crates/aurora-hot-ui/
 !crates/aurora-hot-ui/**/*
 
+!crates/aurora-shared/
+!crates/aurora-shared/**/*
+
+!crates/hot-host/
+!crates/hot-host/**/*
+
+!crates/hot-stub/
+!crates/hot-stub/**/*
+
 !docs/
 !docs/**/*
 

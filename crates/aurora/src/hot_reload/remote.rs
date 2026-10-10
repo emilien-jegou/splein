@@ -523,7 +523,7 @@ mod tests {
         let mut root = RemoteNode::group("root");
         root.width = RemoteSize::Fixed(400.0);
         root.height = RemoteSize::Fixed(300.0);
-        root.fill = Some(0x2563EB);
+        root.fill = Some(0x4563EB);
         let mut label = RemoteNode::text("label", "");
         label.text = Some(RemoteText::BoundF32 {
             path: "taps".to_string(),

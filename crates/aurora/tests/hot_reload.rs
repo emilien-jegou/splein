@@ -60,8 +60,12 @@ fn swatch_fill(engine: &Engine) -> Option<aurora::foundation::Fill> {
 ///
 /// The swatch sits inside a full-viewport parent: the root node always fills the window
 /// (tight constraints), so size assertions need a real parent.
+///
+/// Mirrors `AppConfig::run` exactly: one build window spans the factory and the engine
+/// creation, so the initial tree's registrations tag with a single generation.
 fn mount(tone: Rc<RefCell<u32>>, extra: Rc<RefCell<bool>>) -> (Engine, SharedFactory) {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
+    runtime.borrow_mut().begin_build_window();
     let cx = Cx::new(Rc::clone(&runtime));
     let factory: SharedFactory = Rc::new(move || {
         group()
@@ -72,10 +76,51 @@ fn mount(tone: Rc<RefCell<u32>>, extra: Rc<RefCell<bool>>) -> (Engine, SharedFac
     });
     let root: Element = cx.enter_keyed("root", || factory());
     let mut engine = Engine::with_runtime(Rc::clone(&runtime), root, 400, 400);
+    runtime.borrow_mut().end_build_window(true);
     engine.set_root_factory(Rc::clone(&factory));
     engine.advance(1.0 / 60.0);
     engine.frame();
     (engine, factory)
+}
+
+fn ticker_count(engine: &Engine) -> usize {
+    engine.runtime().borrow().ticker_count()
+}
+
+/// A component holding frame-driven registrations: re-running its body must not
+/// accumulate tickers across reloads.
+#[component]
+fn Ticking() -> impl IntoElement {
+    use_interval(3600.0, || {});
+    let _clock = use_frame_clock();
+    group().key("ticking").width(10.0).height(10.0)
+}
+
+fn mount_ticking() -> Engine {
+    let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
+    runtime.borrow_mut().begin_build_window();
+    let cx = Cx::new(Rc::clone(&runtime));
+    let factory: SharedFactory = Rc::new(|| Ticking().into_element());
+    let root: Element = cx.enter_keyed("root", || factory());
+    let mut engine = Engine::with_runtime(Rc::clone(&runtime), root, 400, 400);
+    runtime.borrow_mut().end_build_window(true);
+    engine.set_root_factory(Rc::clone(&factory));
+    engine.advance(1.0 / 60.0);
+    engine.frame();
+    engine
+}
+
+/// A component with an explicitly pinned identity, surviving file moves and renames.
+#[component(name = "pinned::Card")]
+fn NamedCard() -> impl IntoElement {
+    let taps = use_signal(0u32);
+    let bump = taps.clone();
+    let height = taps.clone();
+    group()
+        .key("named")
+        .width(50.0)
+        .height(height.map(|n| 50.0 + n as f32))
+        .on_click(move |_| bump.set(bump.get() + 1))
 }
 
 #[test]
@@ -199,7 +244,7 @@ fn set_root_at_patches_one_slot_and_keeps_siblings() {
         arena.node_for_key(&key)
     });
 
-    let parent = engine.with_arena(|arena, root| root);
+    let parent = engine.with_arena(|_, root| root);
     engine.set_root_at(
         parent,
         1,
@@ -239,4 +284,87 @@ fn component_builds_are_tracked_for_file_scoped_reload() {
         .queue_reload_for_file(std::path::Path::new("src/does_not_exist.rs"));
     assert!(hits.is_empty());
     assert!(!engine.hot_reload().has_pending());
+}
+
+#[test]
+#[ntest::timeout(30_000)]
+fn reloads_do_not_accumulate_frame_registrations() {
+    let mut engine = mount_ticking();
+    // One interval timer plus one frame clock from the initial build.
+    assert_eq!(ticker_count(&engine), 2, "initial registrations");
+    for _ in 0..3 {
+        engine.queue_full_reload();
+        engine.advance(1.0 / 60.0);
+        engine.frame();
+    }
+    assert_eq!(
+        ticker_count(&engine),
+        2,
+        "re-running bodies must sweep superseded twins, not stack them"
+    );
+    let stats = engine.hot_reload_stats();
+    assert_eq!(stats.reloads_total, 3);
+    assert!(engine.has_active_motion(), "the live registrations still drive frames");
+}
+
+#[test]
+#[ntest::timeout(30_000)]
+fn aborted_reload_drops_only_its_own_registrations() {
+    let mut engine = mount_ticking();
+    assert_eq!(ticker_count(&engine), 2);
+    // A factory that registers and then panics: the partial twin must not survive.
+    let bad: SharedFactory = Rc::new(|| -> Element {
+        use_interval(3600.0, || {});
+        panic!("edited source does not compile")
+    });
+    engine.set_root_factory(bad);
+    engine.queue_full_reload();
+    engine.advance(1.0 / 60.0);
+    engine.frame();
+    assert_eq!(
+        ticker_count(&engine),
+        2,
+        "the failed build's registrations die with it; the live tree's survive"
+    );
+    let stats = engine.hot_reload_stats();
+    assert_eq!(stats.reloads_failed, 1);
+}
+
+#[test]
+#[ntest::timeout(30_000)]
+fn explicitly_named_component_keeps_state_across_reloads() {
+    let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
+    runtime.borrow_mut().begin_build_window();
+    let cx = Cx::new(Rc::clone(&runtime));
+    let factory: SharedFactory = Rc::new(|| {
+        group()
+            .width(400.0)
+            .height(400.0)
+            .children([NamedCard()])
+            .into_element()
+    });
+    let root: Element = cx.enter_keyed("root", || factory());
+    let mut engine = Engine::with_runtime(Rc::clone(&runtime), root, 400, 400);
+    runtime.borrow_mut().end_build_window(true);
+    engine.set_root_factory(Rc::clone(&factory));
+    engine.advance(1.0 / 60.0);
+    engine.frame();
+
+    // The pinned identity (not the module path) is what the registry records.
+    assert!(
+        engine.hot_reload().registry().contains("pinned::Card"),
+        "explicit name is the tracked identity"
+    );
+    press(&mut engine, 25.0, 25.0);
+    let grown = engine.rect("named").map(|r| r.height).unwrap_or(-1.0);
+    assert!((grown - 51.0).abs() < 0.5, "tap lands in hook state");
+
+    engine.queue_full_reload();
+    engine.advance(1.0 / 60.0);
+    engine.frame();
+    let kept = engine.rect("named").map(|r| r.height).unwrap_or(-1.0);
+    assert!(
+        (kept - 51.0).abs() < 0.5,
+        "pinned identity recalls across the reload"
+    );
 }

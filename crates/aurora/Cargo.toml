@@ -43,6 +43,7 @@ libloading = "0.8"
 
 [dev-dependencies]
 ntest = "0.9"
+libc = "0.2"
 aurora-tiny-skia = { path = "../aurora-tiny-skia", version = "0.0.1-rc.1" }
 aurora-vello = { path = "../aurora-vello", version = "0.0.1-rc.1" }
 aurora-wgpu = { path = "../aurora-wgpu", version = "0.0.1-rc.1" }

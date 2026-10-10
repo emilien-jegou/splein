@@ -1,7 +1,7 @@
 // Single responsibility: Reactive signal dependency graph, batches, and notification dispatch.
 
 use crate::foundation::snapshot::GeometrySnapshot;
-use crate::reactive::id::{SignalId, SubscriberId};
+use crate::reactive::id::{BuildTag, SignalId, SubscriberId};
 use crate::reactive::observer::Observer;
 use crate::reactive::ticker::{Ticker, TickerRegistry};
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -82,6 +82,25 @@ pub struct ReactiveRuntime {
     /// (`Engine::switch_root`) bumps it and retires older tickers, so the
     /// previous demo's clocks and drivers stop with its tree.
     ticker_epoch: u64,
+    /// Owner tags for effect registrations made during reload builds.
+    ///
+    /// Effects self-dispose on drop, but a reload re-runs bodies whose handles were
+    /// recalled (not dropped) — without ownership the re-registered twin would run
+    /// beside the original forever. Swept by generation on commit/abort.
+    effect_owners: FxHashMap<SubscriberId, BuildTag>,
+    /// Owner tags for listener registrations made during reload builds. Same sweep.
+    listener_owners: FxHashMap<SubscriberId, BuildTag>,
+    /// Monotonic generation stamping full-tree builds. Bumped when a window opens.
+    build_gen: u64,
+    /// Nesting depth of open build windows. Full-tree construction spans calls
+    /// (the app builds the element tree, then the engine reconciles it), so windows
+    /// nest: only the outermost close sweeps, and every nested part shares one generation.
+    build_depth: usize,
+    /// The generation tagging registrations while `build_depth > 0`.
+    ///
+    /// `None` outside a window — which is where normal reactive rebuilds live, so their
+    /// registrations stay untracked and the non-reload paths behave exactly as before.
+    build_tag: Option<u64>,
     frame_seconds: f32,
     /// Motion hand-off attached to the next write of each signal, consumed once.
     ///
@@ -158,6 +177,11 @@ impl ReactiveRuntime {
             on_dirty: None,
             tickers: TickerRegistry::default(),
             ticker_epoch: 0,
+            effect_owners: FxHashMap::default(),
+            listener_owners: FxHashMap::default(),
+            build_gen: 0,
+            build_depth: 0,
+            build_tag: None,
             frame_seconds: 0.0,
             motion_handoff: FxHashMap::default(),
             hook_states: FxHashMap::default(),
@@ -256,7 +280,95 @@ impl ReactiveRuntime {
     /// Registers a frame-driven ticker under the current mount epoch.
     pub fn register_ticker(&mut self, ticker: Box<dyn Ticker>) {
         let epoch = self.ticker_epoch;
-        self.tickers.push(epoch, ticker);
+        let owner = self.current_build_tag();
+        self.tickers.push(epoch, owner, ticker);
+    }
+
+    /// Whether a build window is currently open.
+    ///
+    /// Engine pairing logic only; embedders use [`Self::begin_build_window`] instead.
+    pub(crate) fn build_window_open(&self) -> bool {
+        self.build_depth > 0
+    }
+
+    /// Opens a full-tree build window: registrations made inside it are generation-tagged.
+    ///
+    /// Embedder recipe for sweepable initial trees (mirroring `AppConfig::run`): open
+    /// around the root factory, keep it open across the engine creation that reconciles
+    /// the tree, then close with commit. The first reload's commit then sweeps the initial
+    /// registrations instead of running beside their twins. Without this, initial
+    /// registrations stay untracked (yesterday's behavior, unchanged) and only reload-time
+    /// duplicates are swept.
+    ///
+    /// Windows nest — every nested part shares the outermost generation; only the
+    /// outermost close sweeps.
+    pub fn begin_build_window(&mut self) -> u64 {
+        if self.build_depth == 0 {
+            self.build_gen = self.build_gen.wrapping_add(1);
+            self.build_tag = Some(self.build_gen);
+        }
+        self.build_depth += 1;
+        self.build_gen
+    }
+
+    /// Closes the build window opened by [`Self::begin_build_window`].
+    ///
+    /// Inner closes only decrement the depth; `commit` is honored by the outermost close.
+    /// An unmatched close (no open window) is ignored. See [`Self::begin_build_window`]
+    /// for the embedder recipe.
+    pub fn end_build_window(&mut self, commit: bool) {
+        if self.build_depth == 0 {
+            return;
+        }
+        self.build_depth -= 1;
+        if self.build_depth > 0 {
+            return;
+        }
+        let Some(gen) = self.build_tag.take() else {
+            return;
+        };
+        self.tickers.sweep_build(gen, commit);
+        // Collect first: disposal mutates the maps being matched on. Commit drops older
+        // tagged registrations (superseded twins); abort drops exactly this build's.
+        let drop_tagged = |tag: &BuildTag| commit != (tag.gen == gen);
+        let stale_effects: Vec<SubscriberId> = self
+            .effect_owners
+            .iter()
+            .filter(|(_, tag)| drop_tagged(tag))
+            .map(|(id, _)| *id)
+            .collect();
+        for id in stale_effects {
+            self.dispose_effect(id);
+        }
+        let stale_listeners: Vec<SubscriberId> = self
+            .listener_owners
+            .iter()
+            .filter(|(_, tag)| drop_tagged(tag))
+            .map(|(id, _)| *id)
+            .collect();
+        for id in stale_listeners {
+            self.dispose_subscriber(id);
+        }
+    }
+
+    /// The ownership tag for a registration made right now, if a reload build is running.
+    ///
+    /// Needs the ambient component scope: engine-level registrations (no scope) stay
+    /// untracked even inside a build window, so the engine can never sweep its own.
+    fn current_build_tag(&self) -> Option<BuildTag> {
+        let gen = self.build_tag?;
+        let scope = crate::reactive::hooks::current_scope()?;
+        Some(BuildTag {
+            instance: scope.instance,
+            gen,
+        })
+    }
+
+    /// Tags an effect registration with the current reload build, if any.
+    pub(crate) fn tag_effect(&mut self, id: SubscriberId) {
+        if let Some(tag) = self.current_build_tag() {
+            self.effect_owners.insert(id, tag);
+        }
     }
 
     /// Retires every ticker from older mount epochs, then starts a new one.
@@ -284,6 +396,11 @@ impl ReactiveRuntime {
     /// Whether any registered ticker still wants frames.
     pub fn has_active_tickers(&self) -> bool {
         self.tickers.has_active()
+    }
+
+    /// Number of registered tickers. Tests and diagnostics only.
+    pub fn ticker_count(&self) -> usize {
+        self.tickers.len()
     }
 
     /// Monotonic seconds advanced by the last `tick`, for components that need wall time.
@@ -398,6 +515,9 @@ impl ReactiveRuntime {
     }
 
     pub fn register_listener<F: Fn() + 'static>(&mut self, id: SubscriberId, action: F) {
+        if let Some(tag) = self.current_build_tag() {
+            self.listener_owners.insert(id, tag);
+        }
         self.listeners.insert(id, Rc::new(action));
     }
 
@@ -435,6 +555,7 @@ impl ReactiveRuntime {
 
     pub fn dispose_effect(&mut self, id: SubscriberId) {
         self.effects.remove(&id);
+        self.effect_owners.remove(&id);
         for subs in self.subscribers.values_mut() {
             subs.remove(&Observer::Effect(id));
         }
@@ -442,6 +563,7 @@ impl ReactiveRuntime {
 
     pub fn dispose_subscriber(&mut self, id: SubscriberId) {
         self.listeners.remove(&id);
+        self.listener_owners.remove(&id);
         self.dirty_subscribers.remove(&id);
         self.pending_subscribers.remove(&id);
         for subs in self.subscribers.values_mut() {

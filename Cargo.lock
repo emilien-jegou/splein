@@ -184,6 +184,7 @@ dependencies = [
  "aurora-vello",
  "aurora-wgpu",
  "bon",
+ "libc",
  "libloading 0.8.9",
  "notify",
  "ntest",
@@ -205,7 +206,7 @@ dependencies = [
 name = "aurora-hot-ui"
 version = "0.0.1-rc.1"
 dependencies = [
- "aurora",
+ "aurora-shared",
 ]
 
 [[package]]
@@ -232,6 +233,14 @@ dependencies = [
  "tiny-skia",
  "tracing",
  "winit",
+]
+
+[[package]]
+name = "aurora-shared"
+version = "0.0.1-rc.1"
+dependencies = [
+ "aurora",
+ "aurora-tiny-skia",
 ]
 
 [[package]]
@@ -1461,6 +1470,21 @@ name = "hexf-parse"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dfa686283ad6dd069f105e5ab091b04c62850d3e4cf5d67debad1933f55023df"
+
+[[package]]
+name = "hot-host"
+version = "0.0.1-rc.1"
+dependencies = [
+ "aurora-shared",
+]
+
+[[package]]
+name = "hot-stub"
+version = "0.0.1-rc.1"
+dependencies = [
+ "libc",
+ "libloading 0.8.9",
+]
 
 [[package]]
 name = "icrate"
