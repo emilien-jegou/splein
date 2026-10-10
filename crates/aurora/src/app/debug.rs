@@ -34,7 +34,14 @@ pub struct VisualDebugger {
     /// Active visual overlay inspection mode.
     pub mode: InspectorMode,
     /// Whether the on-screen diagnostics HUD is rendered.
+    ///
+    /// Legacy in-window path (gallery). The studio switcher sets
+    /// `external_panel` and renders the panel in a separate window instead.
     pub show_hud: bool,
+    /// When true, the HUD panel is NOT composited into the app scene: it
+    /// lives in the external debug window. Inspector overlays, time control
+    /// and capture keep working in-app.
+    pub external_panel: bool,
     /// Human-readable backend name displayed in telemetry badge.
     pub backend_name: String,
     /// Rate the engine's animation clock runs at, driven from the keyboard.
@@ -46,6 +53,8 @@ pub struct VisualDebugger {
     step_requested: bool,
     /// Whether the next presented frame should be written out as a PNG.
     capture_pending: bool,
+    /// Path of the most recently written capture (PNG or scene dump).
+    last_capture: Option<String>,
     /// How many captures have been taken, used to number the files.
     captures: u32,
     /// Display list recorded at capture time, written out beside the frame.
@@ -76,10 +85,12 @@ impl Default for VisualDebugger {
         Self {
             mode: InspectorMode::Off,
             show_hud: true,
+            external_panel: false,
             backend_name: "CPU".into(),
             time_scale: 1.0,
             step_requested: false,
             capture_pending: false,
+            last_capture: None,
             captures: 0,
             scene_dump: None,
             last_diag: FrameDiagnostics::default(),
@@ -129,6 +140,53 @@ impl VisualDebugger {
         (n as f32 / dt).min(9999.0)
     }
 
+    /// Display fps for telemetry snapshots.
+    pub fn display_fps(&self) -> u32 {
+        self.smoothed_fps.round() as u32
+    }
+
+    /// Whether the frame loop is currently idle.
+    pub fn is_idle(&self) -> bool {
+        self.is_idle
+    }
+
+    /// Diagnostics from the most recently completed frame.
+    pub fn last_diagnostics(&self) -> &FrameDiagnostics {
+        &self.last_diag
+    }
+
+    /// Applies a command from the external debug panel. Returns true when a
+    /// redraw is wanted. Loop-owned concerns (pick arming, selection) stay
+    /// with the caller: only debugger-owned state is handled here.
+    pub fn apply_panel_command(
+        &mut self,
+        cmd: &crate::app::debug_bus::DebugCommand,
+        engine: &mut Engine,
+    ) -> bool {
+        use crate::app::debug_bus::DebugCommand as C;
+        match cmd {
+            C::SetInspector(mode) => {
+                self.mode = *mode;
+                true
+            }
+            C::SetTimeScale(scale) => {
+                self.set_time_scale(*scale);
+                engine.set_time_scale(self.time_scale);
+                true
+            }
+            C::StepOnce => {
+                engine.step_animation();
+                true
+            }
+            C::Capture => {
+                self.capture_pending = true;
+                true
+            }
+            // Pick arming and selection live in the event loop.
+            C::ArmPick | C::ClearSelection => false,
+        }
+    }
+
     /// Writes the presented pixels to `/tmp/aurora-frame-N.png`.
     ///
     /// The engine's headless raster and the window backend are separate retained canvases fed
@@ -161,7 +219,18 @@ impl VisualDebugger {
             Ok(()) => tracing::info!(%path, "wrote frame capture"),
             Err(e) => tracing::error!(%path, error = %e, "could not write frame capture"),
         }
+        self.last_capture = Some(path.clone());
         self.write_scene_dump(&path);
+    }
+
+    /// Path of the most recently completed capture, if any.
+    pub fn last_capture_path(&self) -> Option<String> {
+        self.last_capture.clone()
+    }
+
+    /// Whether a capture is currently armed.
+    pub fn capture_armed(&self) -> bool {
+        self.capture_pending
     }
 
     /// Writes a pending scene dump next to a capture path, if one was taken.
@@ -192,6 +261,10 @@ fn capture_path(captures: u32, ext: &str) -> String {
 }
 
 impl AppExtension for VisualDebugger {
+    fn as_debugger(&mut self) -> Option<&mut VisualDebugger> {
+        Some(self)
+    }
+
     fn on_event(&mut self, event: &WindowEvent) -> bool {
         let handled = handle_debug_key(
             event,
@@ -301,7 +374,8 @@ impl AppExtension for VisualDebugger {
                 grow(rect);
             }
         }
-        if self.show_hud || self.show_hud != self.prev_show_hud {
+        // With an external panel there is no in-scene HUD to repaint.
+        if !self.external_panel && (self.show_hud || self.show_hud != self.prev_show_hud) {
             grow(&hud_panel());
         }
         let out = match (self.prev_overlay.get(), fresh) {
@@ -333,15 +407,14 @@ impl AppExtension for VisualDebugger {
                 self.capture_pending = false;
                 self.captures += 1;
                 let path = capture_path(self.captures, "png");
+                self.last_capture = Some(path.clone());
                 self.write_scene_dump(&path);
             }
         }
         if caps.scanline_overlays {
             // CPU path: inspector + capture go through the scanline pass
-            // below. The HUD panel still rides the scene (next block) so
-            // every backend renders byte-identical Inter text instead of
-            // one pixel-font and one vector HUD.
-            if self.show_hud {
+            // below. With an external panel, no HUD chunk rides the scene.
+            if self.show_hud && !self.external_panel {
                 paint.record(hud_panel(), |chunk| {
                     emit_hud_overlay(
                         chunk,
@@ -364,8 +437,9 @@ impl AppExtension for VisualDebugger {
             });
         }
         // One common HUD for every engine and backend: the shared scene
-        // stamps the same panel everywhere it presents.
-        if self.show_hud {
+        // stamps the same panel everywhere it presents. Suppressed when the
+        // external debug window owns the panel.
+        if self.show_hud && !self.external_panel {
             paint.record(hud_panel(), |chunk| {
                 emit_hud_overlay(
                     chunk,

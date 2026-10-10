@@ -23,7 +23,6 @@ pub trait AppExtension {
     fn on_event(&mut self, _event: &WindowEvent) -> bool {
         false
     }
-
     /// Runs before each frame with engine access; returns true if redraw requested.
     fn on_update(&mut self, _engine: &mut Engine) -> bool {
         false
@@ -60,5 +59,12 @@ pub trait AppExtension {
         _stride: usize,
         _height: usize,
     ) {
+    }
+
+    /// Downcast hook for the visual debugger, so event loops holding boxed
+    /// extensions can reach its concrete telemetry and command API without a
+    /// second registry. `None` for every other extension.
+    fn as_debugger(&mut self) -> Option<&mut crate::app::debug::VisualDebugger> {
+        None
     }
 }

@@ -1,5 +1,6 @@
-// Single responsibility: In-window demo switcher — F5 grub-style menu, F6
-// quad combine, F7 engine cycle, all live in the current window.
+// Single responsibility: In-window demo switcher — F5 grub-style menu and
+// F7 engine cycling, all live in the current window, plus the external
+// debug window.
 //
 // One engine, one runtime, one font database for the whole session (the
 // same context the HUD draws in): F5 is a route change via
@@ -17,6 +18,8 @@ use winit::event_loop::{ControlFlow, EventLoopBuilder};
 use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowBuilder};
 
+use crate::app::debug_bus::{DebugBus, DebugCommand, NodeBrief, Snapshot};
+use crate::app::debug_panel::{panel_icons, DebugPanel, PanelSync, PanelUi};
 use crate::app::extension::AppExtension;
 use crate::app::multibackend::{
     backend_display_name, MultiBackendConfig, BACKEND_ORDER,
@@ -27,10 +30,11 @@ use crate::app::runner::frame_flow::present_one;
 use crate::app::runner::pacing::{compute_jit_wake, compute_target_interval};
 use crate::app::runner::pointer::PointerBridge;
 use crate::app::VisualDebugger;
+use crate::dsl::component::IntoElement;
 use crate::dsl::element::Element;
-use crate::foundation::Color;
+use crate::foundation::{Color, Key as NodeKey};
 use crate::input::CursorIcon;
-use crate::reactive::{ReactiveRuntime, Signal};
+use crate::reactive::{Cx, ReactiveRuntime, Signal};
 use crate::runtime::Engine;
 
 /// Id of the grub-style menu demo (never listed in the menu itself).
@@ -110,7 +114,7 @@ pub struct BootedDemo {
 }
 
 impl MultiBackendConfig {
-    /// Runs the in-window switcher: F5 menu, F6 quad, F7 engine cycle.
+    /// Runs the in-window switcher: F5 menu, F7 engine cycle, external panel.
     ///
     /// `demos` is the full registry (menu excluded), `menu` the menu page
     /// boot, `initial_id` the demo this binary starts at.
@@ -157,6 +161,86 @@ fn find_demo<'d>(demos: &'d [DemoDef], id: &str) -> &'d DemoDef {
     }
 }
 
+/// Debug window and its isolated engine. Everything panel-side lives here;
+/// the only link to the app loop is the [`DebugBus`].
+struct DebugWindows {
+    window: Arc<Window>,
+    engine: Engine,
+    backend: Box<dyn Backend>,
+    extensions: Vec<Box<dyn AppExtension>>,
+    #[allow(dead_code)]
+    runtime: Rc<RefCell<ReactiveRuntime>>,
+    pending_resize: Option<(u32, u32)>,
+    pointer: PointerBridge,
+    cursor: CursorIcon,
+}
+
+/// Fixed debug panel size (matches the Paper design: 400pt rail).
+const DEBUG_W: u32 = 400;
+const DEBUG_H: u32 = 900;
+
+/// Builds a [`NodeBrief`] for a keyed node, or `None` when it died.
+fn brief_for(engine: &Engine, key: &NodeKey) -> Option<NodeBrief> {
+    let id = engine.nodes().id(key.clone())?;
+    engine.with_arena(|arena, _| {
+        if !arena.is_valid(id) {
+            return None;
+        }
+        let node = arena.get(id);
+        let kind = match &node.kind {
+            crate::tree::NodeKind::Group => "Group",
+            crate::tree::NodeKind::Text(_) => "Text",
+            crate::tree::NodeKind::Custom(_) => "Custom",
+        }
+        .to_string();
+        let key_path = node
+            .key
+            .clone()
+            .map(|k| k.0)
+            .unwrap_or_default();
+        let mut ancestors = Vec::new();
+        let mut curr = arena.parent(id);
+        while let Some(pid) = curr {
+            if !arena.is_valid(pid) {
+                break;
+            }
+            let p = arena.get(pid);
+            ancestors.push(
+                p.key
+                    .clone()
+                    .map(|k| k.0)
+                    .unwrap_or_else(|| "<anon>".to_string()),
+            );
+            if ancestors.len() >= 8 {
+                break;
+            }
+            curr = arena.parent(pid);
+        }
+        let r = engine.absolute_rect(key.clone()).unwrap_or_default();
+        let fill = match &node.style.appearance.fill {
+            Some(crate::foundation::Fill::Solid(c)) => Some(format!(
+                "#{:02X}{:02X}{:02X}",
+                (c.r.clamp(0.0, 1.0) * 255.0) as u8,
+                (c.g.clamp(0.0, 1.0) * 255.0) as u8,
+                (c.b.clamp(0.0, 1.0) * 255.0) as u8
+            )),
+            _ => None,
+        };
+        Some(NodeBrief {
+            key_path,
+            kind,
+            x: r.x,
+            y: r.y,
+            w: r.width,
+            h: r.height,
+            computed_w: format!("{:.0}px", r.width),
+            computed_h: format!("{:.0}px", r.height),
+            fill,
+            ancestors,
+        })
+    })
+}
+
 fn demo_title_attr(title: &str) -> String {
     format!("{title}  [F5 demos | F7 engine | Esc exit]")
 }
@@ -177,6 +261,7 @@ fn mount_demo(
     pointer: &mut PointerBridge,
     window: &Arc<Window>,
     runtime: &Rc<RefCell<ReactiveRuntime>>,
+    selected_key: &mut Option<NodeKey>,
 ) {
     // Prepare BEFORE building: bodies register tickers as they run, so the
     // epoch bump must precede the boot or it retires the new tree's own
@@ -195,6 +280,8 @@ fn mount_demo(
     extensions.truncate(1);
     extensions.extend(booted.extensions);
     *pointer = PointerBridge::new();
+    // The old tree is gone: any picked/hovered node died with it.
+    *selected_key = None;
     window.set_title(&demo_title_attr(demo.title));
     window.request_redraw();
 }
@@ -274,6 +361,9 @@ fn run_switchable_loop(
         });
         let mut debugger = VisualDebugger::new();
         debugger.show_hud = config.show_hud;
+        // The panel lives in the external debug window: nothing HUD-shaped
+        // is ever composited into the app scene.
+        debugger.external_panel = true;
         extensions = vec![Box::new(debugger)];
         extensions.extend(booted.extensions);
         window.set_title(&demo_title_attr(demo.title));
@@ -305,6 +395,101 @@ fn run_switchable_loop(
     });
     window.request_redraw();
 
+    // Debug bus + external panel. The actuator keeps inspector overlays,
+    // time control and capture in-app, but the HUD panel lives in the
+    // separate debug window (external_panel), sharing nothing reactive.
+    let (bus, cmd_rx) = DebugBus::new();
+    if let Some(dbg) = extensions.iter_mut().find_map(|e| e.as_debugger()) {
+        dbg.external_panel = true;
+    }
+
+    // Builds the debug window, engine and panel on demand (initially when
+    // the panel starts open, later on F10 reopen). The debug engine is
+    // fully isolated: own runtime, own fonts, own backend. Only snapshots
+    // (plain data) cross over the bus.
+    // Slot 0 is the CPU backend by runner convention (see run_demo):
+    // the panel is simple UI and stays off the GPU.
+    let cpu_factory = config.factories[0].expect("tiny-skia factory missing for panel");
+    let open_debug_window = move |event_loop: &winit::event_loop::EventLoopWindowTarget<()>,
+                                      app_window: &Arc<Window>,
+                                      bus: &DebugBus|
+          -> Option<DebugWindows> {
+        let icons = panel_icons();
+        let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
+        let ui = PanelUi::new(Rc::clone(&runtime), bus.clone(), icons);
+        let cx = Cx::new(Rc::clone(&runtime));
+        let root = cx
+            .enter_keyed("panel", || DebugPanel(ui.clone()))
+            .into_element();
+        let mut engine = Engine::with_runtime(Rc::clone(&runtime), root, DEBUG_W, DEBUG_H);
+        engine.set_background(Color::hex(0x2C2C2C));
+        engine.load_font(include_bytes!("../../assets/inter-var.ttf"));
+        let extensions: Vec<Box<dyn AppExtension>> =
+            vec![Box::new(PanelSync::new(bus.clone(), ui.version.clone()))];
+        // Place right of the app window when its position is known.
+        let pos = app_window
+            .outer_position()
+            .ok()
+            .map(|p| {
+                winit::dpi::LogicalPosition::new(
+                    p.x as f64 + app_window.inner_size().width as f64 + 8.0,
+                    p.y as f64,
+                )
+            });
+        let mut builder = WindowBuilder::new()
+            .with_title("Aurora — Debug")
+            .with_inner_size(winit::dpi::LogicalSize::new(DEBUG_W, DEBUG_H))
+            .with_resizable(true);
+        if let Some(pos) = pos {
+            builder = builder.with_position(pos);
+        }
+        let window = Arc::new(match builder.build(event_loop) {
+            Ok(w) => w,
+            Err(e) => {
+                tracing::error!(error = %e, "debug window init failed");
+                return None;
+            }
+        });
+        let physical = window.inner_size();
+        let backend = match cpu_factory(
+            Arc::clone(&window),
+            physical.width.max(1),
+            physical.height.max(1),
+            engine.text_context(),
+        ) {
+            Ok(b) => b,
+            Err(e) => {
+                tracing::error!(error = ?e, "debug backend init failed");
+                return None;
+            }
+        };
+        window.request_redraw();
+        Some(DebugWindows {
+            window,
+            engine,
+            backend,
+            extensions,
+            runtime,
+            pending_resize: None,
+            pointer: PointerBridge::new(),
+            cursor: CursorIcon::Default,
+        })
+    };
+
+    let mut debug: Option<DebugWindows> =
+        if config.show_hud { open_debug_window(&event_loop, &window, &bus) } else { None };
+    // Mirrors the panel window visibility (F10 / X / Esc in panel toggle it).
+    let mut panel_visible = config.show_hud;
+    // Set when the debug window wants another frame (interactions, snapshots).
+    let mut dbg_redraw_pending = false;
+    // Selection keys into the app tree (re-resolved per publish, so
+    // purged nodes clear automatically). Hover resolves live per publish.
+    // Pick arming comes from the panel.
+    let mut selected_key: Option<NodeKey> = None;
+    let mut pick_armed = false;
+    // Last completed capture path, surfaced in the panel Changes tab.
+    let mut capture_last: Option<String> = None;
+
     let mut menu: Option<OpenMenu> = None;
     let mut pending_resize: Option<(u32, u32)> = None;
     let mut pointer = PointerBridge::new();
@@ -321,7 +506,73 @@ fn run_switchable_loop(
 
     event_loop
         .run(move |event, elwt| match event {
-            Event::WindowEvent { event, .. } => {
+            Event::WindowEvent { window_id, event } => {
+                // Route to the debug window when it owns this event.
+                let to_debug = debug
+                    .as_ref()
+                    .is_some_and(|d| d.window.id() == window_id);
+                if to_debug {
+                    match event {
+                        WindowEvent::KeyboardInput { event: key, .. }
+                            if key.state == ElementState::Pressed
+                                && key.logical_key == Key::Named(NamedKey::Escape) =>
+                        {
+                            // Esc in the panel closes it; the app keeps running.
+                            if let Some(dbg) = debug.as_ref() {
+                                dbg.window.set_visible(false);
+                            }
+                            panel_visible = false;
+                        }
+                        WindowEvent::CloseRequested => {
+                            // X hides the panel (F10 reopens); the app keeps running.
+                            if let Some(dbg) = debug.as_ref() {
+                                dbg.window.set_visible(false);
+                            }
+                            panel_visible = false;
+                        }
+                        WindowEvent::Resized(size) => {
+                            if let Some(dbg) = debug.as_mut() {
+                                dbg.pending_resize =
+                                    Some((size.width.max(1), size.height.max(1)));
+                                dbg.window.request_redraw();
+                            }
+                        }
+                        WindowEvent::RedrawRequested => {
+                            if let Some(dbg) = debug.as_mut() {
+                                let mut wants = false;
+                                for ext in dbg.extensions.iter_mut() {
+                                    wants |= ext.on_update(&mut dbg.engine);
+                                }
+                                present_one(
+                                    &mut dbg.engine,
+                                    &mut *dbg.backend,
+                                    &mut dbg.extensions,
+                                    dbg.pending_resize.take(),
+                                );
+                                dbg_redraw_pending = wants || dbg.engine.has_active_motion();
+                            }
+                        }
+                        _ => {
+                            if let Some(dbg) = debug.as_mut() {
+                                if dbg.pointer.dispatch(&event, &mut dbg.engine) {
+                                    dbg_redraw_pending = true;
+                                    dbg.window.request_redraw();
+                                }
+                                let icon = dbg.engine.cursor_icon();
+                                if icon != dbg.cursor {
+                                    dbg.cursor = icon;
+                                    dbg.window.set_cursor_icon(match icon {
+                                        CursorIcon::Default => {
+                                            winit::window::CursorIcon::Default
+                                        }
+                                        CursorIcon::Text => winit::window::CursorIcon::Text,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    return;
+                }
                 // Window-level keys first: menu, combine, cycle, exit.
                 if let WindowEvent::KeyboardInput { event: key, .. } = &event {
                     let switch = key.state == ElementState::Pressed
@@ -366,11 +617,13 @@ fn run_switchable_loop(
                                     &mut pointer,
                                     &window,
                                     &runtime,
+                                    &mut selected_key,
                                 );
                                 menu = Some(OpenMenu {
                                     return_id: current_id.clone(),
                                     prev_size: prev,
                                 });
+                                bus.push_event("menu opened".to_string());
                                 window.set_title(
                                     "Aurora — demos  [↑↓ move | Enter open | Esc back]",
                                 );
@@ -391,7 +644,9 @@ fn run_switchable_loop(
                                         &mut pointer,
                                         &window,
                                         &runtime,
+                                        &mut selected_key,
                                     );
+                                    bus.push_event(format!("back to {current_id}"));
                                 }
                             }
                             SwitchAction::Launch(index) => {
@@ -410,8 +665,10 @@ fn run_switchable_loop(
                                         &mut pointer,
                                         &window,
                                         &runtime,
+                                        &mut selected_key,
                                     );
                                     current_id = demo.id.to_string();
+                                    bus.push_event(format!("opened {}", current_id));
                                 }
                             }
                             SwitchAction::MoveSelection(delta) => {
@@ -446,6 +703,10 @@ fn run_switchable_loop(
                                     ),
                                     "engine cycled"
                                 );
+                                bus.push_event(format!(
+                                    "engine {}",
+                                    backend_display_name(BACKEND_ORDER[slot])
+                                ));
                                 window.request_redraw();
                             }
                             SwitchAction::Exit => elwt.exit(),
@@ -456,6 +717,28 @@ fn run_switchable_loop(
                 if pointer.dispatch(&event, &mut engine) {
                     redraw_pending = true;
                     window.request_redraw();
+                }
+                // Node picking: armed by the panel crosshair, the next app
+                // click selects the hit node (or clears on empty space).
+                if pick_armed {
+                    if let WindowEvent::MouseInput {
+                        state: ElementState::Pressed,
+                        ..
+                    } = &event
+                    {
+                        if let Some(pos) = engine.pointer_position() {
+                            selected_key = engine.hit_test(pos.x, pos.y);
+                            bus.push_event(
+                                selected_key
+                                    .as_ref()
+                                    .map(|k| format!("selected {}", k.0))
+                                    .unwrap_or_else(|| "selection cleared".to_string()),
+                            );
+                        } else {
+                            selected_key = None;
+                        }
+                        pick_armed = false;
+                    }
                 }
                 let icon = engine.cursor_icon();
                 if icon != cursor {
@@ -469,6 +752,26 @@ fn run_switchable_loop(
                     redraw_pending = true;
                     window.request_redraw();
                 }
+                // F10 toggles the external panel (visibility only; the
+                // actuator keeps inspector/time/capture state regardless).
+                if let Some(show) = extensions
+                    .iter_mut()
+                    .find_map(|ext| ext.as_debugger())
+                    .map(|dbg| dbg.show_hud)
+                {
+                    if show != panel_visible {
+                        panel_visible = show;
+                        if show && debug.is_none() {
+                            debug = open_debug_window(elwt, &window, &bus);
+                        }
+                        if let Some(dbg) = debug.as_ref() {
+                            dbg.window.set_visible(show);
+                            if show {
+                                dbg.window.request_redraw();
+                            }
+                        }
+                    }
+                }
                 match event {
                     WindowEvent::CloseRequested => elwt.exit(),
                     WindowEvent::Resized(size) => {
@@ -478,6 +781,32 @@ fn run_switchable_loop(
                         window.request_redraw();
                     }
                     WindowEvent::RedrawRequested => {
+                        // Panel commands drain before framing so time/scale
+                        // changes apply to this frame, not the next.
+                        for cmd in cmd_rx.try_iter() {
+                            match &cmd {
+                                DebugCommand::ArmPick => {
+                                    pick_armed = true;
+                                    bus.push_event("pick armed".to_string());
+                                }
+                                DebugCommand::ClearSelection => {
+                                    selected_key = None;
+                                }
+                                _ => {
+                                    if let Some(dbg) = extensions
+                                        .iter_mut()
+                                        .find_map(|ext| ext.as_debugger())
+                                    {
+                                        if dbg.apply_panel_command(&cmd, &mut engine) {
+                                            redraw_pending = true;
+                                        }
+                                    }
+                                }
+                            }
+                            if matches!(cmd, DebugCommand::Capture) {
+                                bus.push_event("capture requested".to_string());
+                            }
+                        }
                         // Mouse-driven menu requests drain before framing.
                         if menu.is_some() {
                             let action = menu_state.pending.get();
@@ -490,17 +819,18 @@ fn run_switchable_loop(
                                             meta_index_id(&meta, &demos, index, initial_id),
                                         );
                                         menu = None;
-                                        mount_demo(
-                                            demo,
-                                            &meta,
-                                            None,
-                                            &mut engine,
-                                            &mut extensions,
-                                            &mut pointer,
-                                            &window,
-                                            &runtime,
-                                        );
-                                        current_id = demo.id.to_string();
+                                            mount_demo(
+                                                demo,
+                                                &meta,
+                                                None,
+                                                &mut engine,
+                                                &mut extensions,
+                                                &mut pointer,
+                                                &window,
+                                                &runtime,
+                                                &mut selected_key,
+                                            );
+                                            current_id = demo.id.to_string();
                                     }
                                     Some(MenuAction::Back) => {
                                         if let Some(open) = menu.take() {
@@ -514,6 +844,7 @@ fn run_switchable_loop(
                                                 &mut pointer,
                                                 &window,
                                                 &runtime,
+                                                &mut selected_key,
                                             );
                                         }
                                     }
@@ -525,17 +856,53 @@ fn run_switchable_loop(
                         for ext in extensions.iter_mut() {
                             wants_redraw |= ext.on_update(&mut engine);
                         }
+                        let was_capturing = extensions
+                            .iter_mut()
+                            .find_map(|ext| ext.as_debugger())
+                            .is_some_and(|dbg| dbg.capture_armed());
                         let compute_dur = present_one(
                             &mut engine,
                             &mut **backend.as_mut().expect("backend present"),
                             &mut extensions,
                             pending_resize.take(),
                         );
+                        if was_capturing {
+                            if let Some(path) = extensions
+                                .iter_mut()
+                                .find_map(|ext| ext.as_debugger())
+                                .and_then(|dbg| dbg.last_capture_path())
+                            {
+                                capture_last = Some(path.clone());
+                                bus.push_event(format!("capture {path}"));
+                            }
+                        }
                         avg_compute =
                             avg_compute.mul_f32(0.8) + compute_dur.mul_f32(0.2);
                         last_present = Instant::now();
                         os_clipboard.sync(&engine);
                         redraw_pending = wants_redraw || engine.has_active_motion();
+                        // Publish telemetry for the external panel, then wake
+                        // it when visible. Plain data only — never layouts.
+                        if panel_visible {
+                            publish_snapshot(
+                                &bus,
+                                &mut extensions,
+                                &engine,
+                                backend.as_ref().map(|b| b.tag()),
+                                &demos,
+                                &current_id,
+                                engine.pointer_position().and_then(|pos| {
+                                    engine.hit_test(pos.x, pos.y)
+                                }),
+                                selected_key.clone(),
+                                pick_armed,
+                                capture_last.clone(),
+                            );
+                            if let Some(dbg) = debug.as_ref() {
+                                dbg.window.request_redraw();
+                                dbg_redraw_pending = true;
+                            }
+                        }
                     }
                     _ => {}
                 }
@@ -543,6 +910,12 @@ fn run_switchable_loop(
             Event::UserEvent(()) => {
                 redraw_pending = true;
                 window.request_redraw();
+                if panel_visible {
+                    if let Some(dbg) = debug.as_ref() {
+                        dbg.window.request_redraw();
+                        dbg_redraw_pending = true;
+                    }
+                }
             }
             Event::AboutToWait => {
                 if redraw_pending {
@@ -556,6 +929,10 @@ fn run_switchable_loop(
                     } else {
                         window.request_redraw();
                     }
+                } else if dbg_redraw_pending {
+                    if let Some(dbg) = debug.as_ref() {
+                        dbg.window.request_redraw();
+                    }
                 } else {
                     elwt.set_control_flow(ControlFlow::WaitUntil(
                         Instant::now() + Duration::from_millis(500),
@@ -565,6 +942,54 @@ fn run_switchable_loop(
             _ => {}
         })
         .expect("Event loop execution failed");
+}
+
+/// Fills and publishes one telemetry snapshot for the external panel.
+/// Hover/selection keys re-resolve every publish, so purged nodes clear
+/// automatically instead of dangling.
+#[allow(clippy::too_many_arguments)]
+fn publish_snapshot(
+    bus: &DebugBus,
+    extensions: &mut [Box<dyn AppExtension>],
+    engine: &Engine,
+    backend_tag: Option<&str>,
+    demos: &[DemoDef],
+    current_id: &str,
+    hover_key: Option<NodeKey>,
+    selected_key: Option<NodeKey>,
+    pick_armed: bool,
+    capture_last: Option<String>,
+) {
+    let Some(dbg) = extensions.iter_mut().find_map(|e| e.as_debugger()) else {
+        return;
+    };
+    let diag = dbg.last_diagnostics();
+    let title = demos
+        .iter()
+        .find(|d| d.id == current_id)
+        .map(|d| d.title)
+        .unwrap_or(current_id);
+    bus.publish(Snapshot {
+        version: 0,
+        fps: dbg.display_fps(),
+        fps_avg5: dbg.avg_fps_5s(),
+        total_ms: diag.timings.total.as_secs_f32() * 1000.0,
+        raster_ms: diag.timings.raster.as_secs_f32() * 1000.0,
+        present_ms: diag.timings.present.as_secs_f32() * 1000.0,
+        backend: backend_tag.unwrap_or("?").to_string(),
+        inspector: dbg.mode,
+        time_scale: dbg.time_scale(),
+        frame_index: diag.frame_index,
+        demo_id: current_id.to_string(),
+        demo_title: title.to_string(),
+        hovered: hover_key.as_ref().and_then(|k| brief_for(engine, k)),
+        selected: selected_key.as_ref().and_then(|k| brief_for(engine, k)),
+        focus_present: engine.focused_text().is_some(),
+        motion_active: engine.has_active_motion(),
+        pick_armed,
+        events: bus.latest().map(|s| s.events).unwrap_or_default(),
+        capture_last,
+    });
 }
 
 /// Resolves a menu action index to a demo id (falls back to `initial_id`).
@@ -592,12 +1017,15 @@ fn close_menu_to(
     pointer: &mut PointerBridge,
     window: &Arc<Window>,
     runtime: &Rc<RefCell<ReactiveRuntime>>,
+    selected_key: &mut Option<NodeKey>,
 ) {
     let (pw, ph) = open.prev_size;
     let _ = window.request_inner_size(winit::dpi::LogicalSize::new(pw, ph));
     // No synchronous engine resize: see the pairing rule in OpenMenu.
     let demo = find_demo(demos, &open.return_id);
-    mount_demo(demo, meta, None, engine, extensions, pointer, window, runtime);
+    mount_demo(
+        demo, meta, None, engine, extensions, pointer, window, runtime, selected_key,
+    );
     *current_id = demo.id.to_string();
 }
 

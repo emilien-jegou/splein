@@ -73,7 +73,6 @@ use aurora::app::multibackend::MultiBackend;
 use aurora::app::switcher::{
     BootCtx, BootedDemo, DemoDef, DemoMeta, MenuAction, MenuState,
 };
-use aurora::app::VisualDebugger;
 use aurora::prelude::*;
 use motion_ui::*;
 
@@ -250,9 +249,11 @@ fn boot_menu(ctx: &BootCtx) -> BootedDemo {
 }
 
 /// Entry point shared by every example main: `registry::run_demo(cli, "motion-press")`.
+///
+/// The switcher loop owns the debugger actuator, the bus and the external
+/// panel; per-demo extras come from each boot. `show_hud` decides whether
+/// the debug window opens (F10 toggles it later).
 pub fn run_demo(cli: ExampleCli, id: &'static str) {
-    let mut debugger = VisualDebugger::new();
-    debugger.show_hud = cli.show_hud;
     MultiBackend::config([
         Some(aurora_tiny_skia::create_backend),
         Some(aurora_vello::create_backend),
@@ -265,7 +266,6 @@ pub fn run_demo(cli: ExampleCli, id: &'static str) {
     .initial(cli.backend)
     .show_hud(cli.show_hud)
     .fps_limit(cli.fps_limit)
-    .extension(debugger)
     .run_switchable(all(), menu_def(), id);
 }
 

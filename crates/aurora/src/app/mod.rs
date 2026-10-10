@@ -70,11 +70,13 @@
 //! reaching for `App` in a test, reach for `Harness` instead.
 
 pub mod debug;
+pub mod debug_bus;
 pub mod debug_draw;
 pub mod debug_font;
 pub mod debug_hud;
 pub mod debug_layout;
 pub mod debug_overlay;
+pub mod debug_panel;
 pub mod debug_scene;
 pub mod debug_toggle;
 pub mod extension;
@@ -85,6 +87,7 @@ pub mod switcher;
 pub mod telemetry;
 
 pub use debug::{InspectorMode, VisualDebugger};
+pub use debug_bus::{DebugBus, DebugCommand, NodeBrief, Snapshot};
 pub use extension::{AppExtension, OverlayCaps};
 pub use multibackend::{backend_display_name, BackendStats, DisplayMode, MultiBackend, BACKEND_ORDER};
 pub use painter::OverlayPainter;
