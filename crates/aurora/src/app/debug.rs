@@ -5,7 +5,6 @@ use std::collections::VecDeque;
 use std::time::Instant;
 use winit::event::WindowEvent;
 
-use crate::app::debug_hud::draw_hud_panel;
 use crate::app::debug_layout::hud_panel;
 use crate::app::debug_overlay::draw_inspector_overlay;
 use crate::app::debug_scene::{emit_hud_overlay, emit_inspector_overlay};
@@ -338,6 +337,25 @@ impl AppExtension for VisualDebugger {
             }
         }
         if caps.scanline_overlays {
+            // CPU path: inspector + capture go through the scanline pass
+            // below. The HUD panel still rides the scene (next block) so
+            // every backend renders byte-identical Inter text instead of
+            // one pixel-font and one vector HUD.
+            if self.show_hud {
+                paint.record(hud_panel(), |chunk| {
+                    emit_hud_overlay(
+                        chunk,
+                        self.is_idle,
+                        self.smoothed_fps.round() as u32,
+                        self.avg_fps_5s(),
+                        caps.backend,
+                        &self.last_diag,
+                        self.mode,
+                        self.time_scale,
+                        text_ctx,
+                    );
+                });
+            }
             return;
         }
         if self.mode != InspectorMode::Off {
@@ -345,8 +363,8 @@ impl AppExtension for VisualDebugger {
                 emit_inspector_overlay(chunk, self.mode, &self.last_diag);
             });
         }
-        // One common HUD for every engine and backend, quad included: the
-        // shared scene stamps the same panel into each quadrant.
+        // One common HUD for every engine and backend: the shared scene
+        // stamps the same panel everywhere it presents.
         if self.show_hud {
             paint.record(hud_panel(), |chunk| {
                 emit_hud_overlay(
@@ -372,20 +390,6 @@ impl AppExtension for VisualDebugger {
             self.write_capture(buf, stride, h);
         }
         draw_inspector_overlay(buf, self.mode, &self.last_diag, stride, h);
-        if self.show_hud {
-            draw_hud_panel(
-                buf,
-                self.is_idle,
-                self.smoothed_fps.round() as u32,
-                self.avg_fps_5s(),
-                &self.backend_name,
-                &self.last_diag,
-                self.mode,
-                self.time_scale,
-                stride,
-                h,
-            );
-        }
     }
 }
 

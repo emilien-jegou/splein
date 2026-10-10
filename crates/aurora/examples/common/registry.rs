@@ -263,7 +263,6 @@ pub fn run_demo(cli: ExampleCli, id: &'static str) {
     .title("Aurora")
     .size(cli.width, cli.height)
     .initial(cli.backend)
-    .combine(cli.combine)
     .show_hud(cli.show_hud)
     .fps_limit(cli.fps_limit)
     .extension(debugger)
@@ -271,12 +270,15 @@ pub fn run_demo(cli: ExampleCli, id: &'static str) {
 }
 
 /// Grub-style menu: black screen, centered white text, keyboard navigable.
-/// The highlighted row inverts (white block, black text). Mouse works too.
+/// Single vertical list; the highlighted row inverts (white block, black
+/// text). Mouse works too.
 #[component]
 pub fn MenuPage(demos: Vec<DemoMeta>, state: MenuState) -> impl IntoElement {
-    let half = demos.len().div_ceil(2);
-    let left = menu_column(&demos, &state, 0, half);
-    let right = menu_column(&demos, &state, half, demos.len());
+    let rows: Vec<Element> = demos
+        .iter()
+        .enumerate()
+        .map(|(idx, demo)| menu_row(demo.title, idx, &state))
+        .collect();
     let pend = state.pending.clone();
     view! {
         <Group
@@ -294,13 +296,8 @@ pub fn MenuPage(demos: Vec<DemoMeta>, state: MenuState) -> impl IntoElement {
             <Text size={12.0} color={0x888888}>
                 "up/down navigate · enter select · esc back"
             </Text>
-            <Group direction="horizontal" gap={32.0} alignment="center">
-                <Group direction="vertical" gap={4.0}>
-                    {left}
-                </Group>
-                <Group direction="vertical" gap={4.0}>
-                    {right}
-                </Group>
+            <Group direction="vertical" gap={4.0} alignment="center">
+                {rows}
             </Group>
             <Group
                 width={200.0}
@@ -316,19 +313,6 @@ pub fn MenuPage(demos: Vec<DemoMeta>, state: MenuState) -> impl IntoElement {
             </Group>
         </Group>
     }
-}
-
-fn menu_column(
-    demos: &[DemoMeta],
-    state: &MenuState,
-    from: usize,
-    to: usize,
-) -> Vec<Element> {
-    demos[from..to]
-        .iter()
-        .enumerate()
-        .map(|(k, demo)| menu_row(demo.title, from + k, state))
-        .collect()
 }
 
 /// One grub row: white text, inverted block when highlighted.

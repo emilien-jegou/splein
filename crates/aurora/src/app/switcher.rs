@@ -19,7 +19,7 @@ use winit::window::{Window, WindowBuilder};
 
 use crate::app::extension::AppExtension;
 use crate::app::multibackend::{
-    backend_display_name, quad_layout, MultiBackendConfig, BACKEND_ORDER, QUAD_STRIP,
+    backend_display_name, MultiBackendConfig, BACKEND_ORDER,
 };
 use crate::app::runner::backend::{Backend, BackendFactory};
 use crate::app::runner::clipboard::OsClipboardSync;
@@ -36,9 +36,9 @@ use crate::runtime::Engine;
 /// Id of the grub-style menu demo (never listed in the menu itself).
 pub const MENU_ID: &str = "__menu";
 
-/// Smallest menu window that fits the demo list without scrolling.
-const MENU_MIN_W: u32 = 1000;
-const MENU_MIN_H: u32 = 760;
+/// Smallest menu window that fits the vertical demo list without scrolling.
+const MENU_MIN_W: u32 = 640;
+const MENU_MIN_H: u32 = 880;
 
 /// One switchable demo: title plus a boot function building its world.
 ///
@@ -122,7 +122,6 @@ impl MultiBackendConfig {
 struct OpenMenu {
     return_id: String,
     prev_size: (u32, u32),
-    was_quad: bool,
 }
 
 /// Drops the live backend BEFORE creating its replacement.///
@@ -159,7 +158,7 @@ fn find_demo<'d>(demos: &'d [DemoDef], id: &str) -> &'d DemoDef {
 }
 
 fn demo_title_attr(title: &str) -> String {
-    format!("{title}  [F5 demos | F6 quad | F7 engine | Esc exit]")
+    format!("{title}  [F5 demos | F7 engine | Esc exit]")
 }
 
 /// Mounts one demo on the session engine: a route change, not a reboot.
@@ -235,7 +234,6 @@ fn run_switchable_loop(
         .position(|b| *b == config.initial)
         .unwrap_or(0);
     let mut single_slot = initial_slot;
-    let mut is_quad = config.combine_on_boot;
 
     let meta: Vec<DemoMeta> = demos
         .iter()
@@ -291,49 +289,18 @@ fn run_switchable_loop(
     let mut backend: Option<Box<dyn Backend>> = Some({
         let physical = window.inner_size();
         let text_ctx = engine.text_context();
-        if is_quad {
-            let (qw, qh) = (config.width, config.height);
-            let _ = window.request_inner_size(winit::dpi::LogicalSize::new(
-                qw * 2,
-                qh * 2 + QUAD_STRIP,
-            ));
-            match config.quad_factory {
-                Some(qf) => {
-                    match qf(Arc::clone(&window), qw * 2, qh * 2 + QUAD_STRIP, text_ctx) {
-                        Ok(b) => b,
-                        Err(e) => {
-                            tracing::error!(error = ?e, "quad boot failed, single tiny-skia instead");
-                            is_quad = false;
-                            single_slot = 0;
-                            let text_ctx = engine.text_context();
-                            let physical = window.inner_size();
-                            config.factories[0]
-                                .expect("tiny-skia factory missing")(
-                                Arc::clone(&window),
-                                physical.width.max(1),
-                                physical.height.max(1),
-                                text_ctx,
-                            )
-                            .expect("tiny-skia backend init failed")
-                        }
-                    }
-                }
-                None => panic!("--combine without quad factory"),
-            }
-        } else {
-            let (bw, bh) = (physical.width.max(1), physical.height.max(1));
-            match config.factories[single_slot] {
-                Some(f) => f(Arc::clone(&window), bw, bh, text_ctx).unwrap_or_else(|e| {
-                    tracing::error!(error = ?e, "initial backend failed, falling back to tiny-skia");
-                    single_slot = 0;
-                    config.factories[0]
-                        .expect("tiny-skia factory missing")(
-                        Arc::clone(&window), bw, bh, engine.text_context(),
-                    )
-                    .expect("tiny-skia backend init failed")
-                }),
-                None => panic!("no factory for initial backend"),
-            }
+        let (bw, bh) = (physical.width.max(1), physical.height.max(1));
+        match config.factories[single_slot] {
+            Some(f) => f(Arc::clone(&window), bw, bh, text_ctx).unwrap_or_else(|e| {
+                tracing::error!(error = ?e, "initial backend failed, falling back to tiny-skia");
+                single_slot = 0;
+                config.factories[0]
+                    .expect("tiny-skia factory missing")(
+                    Arc::clone(&window), bw, bh, engine.text_context(),
+                )
+                .expect("tiny-skia backend init failed")
+            }),
+            None => panic!("no factory for initial backend"),
         }
     });
     window.request_redraw();
@@ -344,7 +311,6 @@ fn run_switchable_loop(
     let mut cursor = CursorIcon::Default;
     let mut os_clipboard = OsClipboardSync::new();
     let factories: [Option<BackendFactory>; 4] = config.factories;
-    let quad_factory: Option<BackendFactory> = config.quad_factory;
     // Frame pacing (mirrors the single-window runner): without it the loop
     // spins unthrottled whenever motion is active and the FPS readout
     // counts empty frames.
@@ -376,31 +342,18 @@ fn run_switchable_loop(
                         .unwrap();
                         match next {
                             SwitchAction::OpenMenu => {
-                                let was_quad = is_quad;
-                                if was_quad {
-                                    // The menu lays out 1:1: drop quad first.
-                                    is_quad = false;
-                                    let tc = engine.text_context();
-                                    let (ew, eh) = engine.logical_size();
-                                    replace_backend(
-                                        &mut backend,
-                                        &window,
-                                        factories[single_slot % BACKEND_ORDER.len()],
-                                        ew,
-                                        eh,
-                                        tc,
-                                        "unquad for menu",
-                                    );
-                                    engine.request_full_repaint();
-                                }
                                 let physical = window.inner_size();
                                 let prev = (physical.width.max(1), physical.height.max(1));
                                 let target_w = prev.0.max(MENU_MIN_W);
                                 let target_h = prev.1.max(MENU_MIN_H);
-                                // Grow the engine synchronously so the menu
-                                // lays out at target size on its first frame;
-                                // the backend follows via pending resize.
-                                engine.resize(target_w, target_h);
+                                // Never resize the engine here: backend and
+                                // engine must resize together inside
+                                // present_one, or the backend surface goes
+                                // stale (pre-sized engine makes present_one
+                                // skip the backend resize → trimmed uploads →
+                                // remnants). The pending resize pairs them on
+                                // the next frame; the async Resized converges
+                                // the window right after.
                                 pending_resize = Some((target_w, target_h));
                                 menu_state.selected.set(0);
                                 menu_state.pending.set(None);
@@ -417,7 +370,6 @@ fn run_switchable_loop(
                                 menu = Some(OpenMenu {
                                     return_id: current_id.clone(),
                                     prev_size: prev,
-                                    was_quad,
                                 });
                                 window.set_title(
                                     "Aurora — demos  [↑↓ move | Enter open | Esc back]",
@@ -439,11 +391,6 @@ fn run_switchable_loop(
                                         &mut pointer,
                                         &window,
                                         &runtime,
-                                        &factories,
-                                        single_slot,
-                                        quad_factory,
-                                        &mut backend,
-                                        &mut is_quad,
                                     );
                                 }
                             }
@@ -475,86 +422,8 @@ fn run_switchable_loop(
                                 });
                                 window.request_redraw();
                             }
-                            SwitchAction::ToggleQuad => {
-                                let (ew, eh) = engine.logical_size();
-                                is_quad = !is_quad;
-                                if is_quad {
-                                    // Quad is headless-GPU + softbuffer: no
-                                    // extra swapchain surface, but still drop
-                                    // the single backend's surface first.
-                                    drop(backend.take());
-                                    let tc = engine.text_context();
-                                    match quad_factory {
-                                        Some(qf) => match qf(
-                                            Arc::clone(&window),
-                                            ew * 2,
-                                            eh * 2 + QUAD_STRIP,
-                                            tc,
-                                        ) {
-                                            Ok(b) => {
-                                                backend = Some(b);
-                                                engine.request_full_repaint();
-                                                let _ = window.request_inner_size(
-                                                    winit::dpi::LogicalSize::new(
-                                                        ew * 2,
-                                                        eh * 2 + QUAD_STRIP,
-                                                    ),
-                                                );
-                                                tracing::info!("quad combine on");
-                                            }
-                                            Err(e) => {
-                                                tracing::error!(%e, "quad backend failed");
-                                                is_quad = false;
-                                            }
-                                        },
-                                        None => {
-                                            tracing::warn!("no quad factory supplied");
-                                            is_quad = false;
-                                        }
-                                    }
-                                    if !is_quad {
-                                        // Quad failed: restore the single backend.
-                                        let tc = engine.text_context();
-                                        replace_backend(
-                                            &mut backend,
-                                            &window,
-                                            factories[single_slot % BACKEND_ORDER.len()],
-                                            ew,
-                                            eh,
-                                            tc,
-                                            "quad fallback",
-                                        );
-                                        engine.request_full_repaint();
-                                    }
-                                } else {
-                                    let tc = engine.text_context();
-                                    let slot = single_slot % BACKEND_ORDER.len();
-                                    replace_backend(
-                                        &mut backend,
-                                        &window,
-                                        factories[slot],
-                                        ew,
-                                        eh,
-                                        tc,
-                                        "unquad",
-                                    );
-                                    engine.request_full_repaint();
-                                    let _ = window.request_inner_size(
-                                        winit::dpi::LogicalSize::new(ew, eh),
-                                    );
-                                    tracing::info!("quad combine off");
-                                }
-                                window.request_redraw();
-                            }
                             SwitchAction::CycleEngine => {
                                 single_slot = (single_slot + 1) % BACKEND_ORDER.len();
-                                if is_quad {
-                                    is_quad = false;
-                                    let (ew, eh) = engine.logical_size();
-                                    let _ = window.request_inner_size(
-                                        winit::dpi::LogicalSize::new(ew, eh),
-                                    );
-                                }
                                 let tc = engine.text_context();
                                 let (ew, eh) = engine.logical_size();
                                 let slot = single_slot;
@@ -603,21 +472,8 @@ fn run_switchable_loop(
                 match event {
                     WindowEvent::CloseRequested => elwt.exit(),
                     WindowEvent::Resized(size) => {
-                        let (w, h) = (size.width.max(1), size.height.max(1));
-                        if is_quad {
-                            // Quad carries the engine at quadrant size;
-                            // present_one must not see the full size.
-                            backend
-                                .as_mut()
-                                .expect("quad backend present")
-                                .resize(w, h);
-                            let (qw, qh) = quad_layout(w, h);
-                            if (qw, qh) != engine.logical_size() {
-                                engine.resize(qw, qh);
-                            }
-                        } else {
-                            pending_resize = Some((w, h));
-                        }
+                        pending_resize =
+                            Some((size.width.max(1), size.height.max(1)));
                         redraw_pending = true;
                         window.request_redraw();
                     }
@@ -658,11 +514,6 @@ fn run_switchable_loop(
                                                 &mut pointer,
                                                 &window,
                                                 &runtime,
-                                                &factories,
-                                                single_slot,
-                                                quad_factory,
-                                                &mut backend,
-                                                &mut is_quad,
                                             );
                                         }
                                     }
@@ -728,9 +579,9 @@ fn meta_index_id<'a>(
         .unwrap_or(initial_id)
 }
 
-/// Closes the menu back to the demo it interrupted, restoring size and (if
-/// it was open) the quad backend. The engine persists; only the tree swaps.
-#[allow(clippy::too_many_arguments)]
+/// Closes the menu back to the demo it interrupted, restoring the window
+/// size. The engine persists; only the tree swaps (backend + engine resize
+/// pair up through the async Resized flow).
 fn close_menu_to(
     open: &OpenMenu,
     demos: &[DemoDef],
@@ -741,64 +592,13 @@ fn close_menu_to(
     pointer: &mut PointerBridge,
     window: &Arc<Window>,
     runtime: &Rc<RefCell<ReactiveRuntime>>,
-    factories: &[Option<BackendFactory>; 4],
-    single_slot: usize,
-    quad_factory: Option<BackendFactory>,
-    backend: &mut Option<Box<dyn Backend>>,
-    is_quad: &mut bool,
 ) {
     let (pw, ph) = open.prev_size;
-    if open.was_quad {
-        *is_quad = true;
-        let (qw, qh) = quad_layout(pw, ph);
-        // Drop the menu's single surface before the quad backend is built.
-        drop(backend.take());
-        let mut quad_ok = false;
-        if let Some(qf) = quad_factory {
-            let tc = engine.text_context();
-            match qf(Arc::clone(window), pw, ph, tc) {
-                Ok(b) => {
-                    *backend = Some(b);
-                    quad_ok = true;
-                }
-                Err(e) => tracing::error!(%e, "quad rebuild failed"),
-            }
-        }
-        if !quad_ok {
-            // Fall back to single: engine goes full-size, backend rebuilt.
-            *is_quad = false;
-            let tc = engine.text_context();
-            replace_backend(
-                backend,
-                window,
-                factories[single_slot % BACKEND_ORDER.len()],
-                pw,
-                ph,
-                tc,
-                "menu-close quad fallback",
-            );
-            let _ = window.request_inner_size(winit::dpi::LogicalSize::new(pw, ph));
-            engine.resize(pw, ph);
-            let demo = find_demo(demos, &open.return_id);
-            mount_demo(
-                demo, meta, None, engine, extensions, pointer, window, runtime,
-            );
-            *current_id = demo.id.to_string();
-            return;
-        }
-        let _ = window.request_inner_size(winit::dpi::LogicalSize::new(pw, ph));
-        engine.resize(qw, qh);
-        let demo = find_demo(demos, &open.return_id);
-        mount_demo(demo, meta, None, engine, extensions, pointer, window, runtime);
-        *current_id = demo.id.to_string();
-    } else {
-        *is_quad = false;
-        let _ = window.request_inner_size(winit::dpi::LogicalSize::new(pw, ph));
-        engine.resize(pw, ph);
-        let demo = find_demo(demos, &open.return_id);
-        mount_demo(demo, meta, None, engine, extensions, pointer, window, runtime);
-        *current_id = demo.id.to_string();
-    }
+    let _ = window.request_inner_size(winit::dpi::LogicalSize::new(pw, ph));
+    // No synchronous engine resize: see the pairing rule in OpenMenu.
+    let demo = find_demo(demos, &open.return_id);
+    mount_demo(demo, meta, None, engine, extensions, pointer, window, runtime);
+    *current_id = demo.id.to_string();
 }
 
 enum SwitchAction {
@@ -806,12 +606,11 @@ enum SwitchAction {
     CloseMenu,
     Launch(usize),
     MoveSelection(isize),
-    ToggleQuad,
     CycleEngine,
     Exit,
 }
 
-/// Switcher keys: F5 menu, F6 quad combine, F7 engine cycle, Esc exit/back.
+/// Switcher keys: F5 menu, F7 engine cycle, Esc exit/back.
 /// Menu navigation (Up/Down/Home/End/Enter/Space) only while the menu is open.
 fn handle_switcher_key(
     key: &Key,
@@ -830,7 +629,6 @@ fn handle_switcher_key(
         } else {
             SwitchAction::Exit
         }),
-        Key::Named(NamedKey::F6) if !menu_open => Some(SwitchAction::ToggleQuad),
         Key::Named(NamedKey::F7) if !menu_open => Some(SwitchAction::CycleEngine),
         Key::Named(NamedKey::ArrowDown) if menu_open => {
             Some(SwitchAction::MoveSelection(1))

@@ -141,6 +141,46 @@ mod switch_tests {
             self.engine.frame();
             self.engine.frame();
         }
+
+        /// Switches without framing (the caller frames + paints per frame).
+        fn switch_now(&mut self, id: &str) {
+            self.engine.prepare_switch();
+            let (demo, menu) = if id == aurora::app::switcher::MENU_ID {
+                (registry::menu_def(), Some(self.menu_state.clone()))
+            } else {
+                (*self.demos.iter().find(|d| d.id == id).unwrap(), None)
+            };
+            let ctx = self.ctx(menu);
+            let booted = (demo.boot)(&ctx);
+            self.engine.switch_root(booted.root);
+            self.engine.set_background(booted.background);
+        }
+
+        /// Switches and frames exactly once, returning that frame's damage.
+        /// Damage is per-frame (the ring advances), so full-viewport
+        /// invalidation can only be observed on frame one.
+        fn switch_once_damage(&mut self, id: &str) -> aurora::foundation::ResolvedRect {
+            self.engine.prepare_switch();
+            let menu = if id == aurora::app::switcher::MENU_ID {
+                Some(self.menu_state.clone())
+            } else {
+                None
+            };
+            let demo;
+            let menu_def;
+            if menu.is_some() {
+                menu_def = registry::menu_def();
+                demo = &menu_def;
+            } else {
+                demo = self.demos.iter().find(|d| d.id == id).unwrap();
+            }
+            let ctx = self.ctx(menu);
+            let booted = (demo.boot)(&ctx);
+            self.engine.switch_root(booted.root);
+            self.engine.set_background(booted.background);
+            self.engine.frame();
+            self.engine.current_damage().bounding_box()
+        }
     }
 
     /// F5 round trip on ONE engine (the live switcher path): demo -> menu ->
@@ -178,5 +218,79 @@ mod switch_tests {
         s.switch("text-smooth");
         assert!(glyph_count(&s.engine) > 0, "second revisit shaped no glyphs");
         assert!(s.engine.has_active_motion(), "second revisit clock dead");
+    }
+
+    /// Switching demos must invalidate the full viewport: retained backend
+    /// canvases hold the previous demo's pixels, so anything less leaves
+    /// remnants (black menu box ghosting over the returned demo).
+    #[test]
+    fn switch_invalidates_full_viewport() {
+        let mut s = Session::new("text-smooth");
+        // Settle: several ordinary frames must shrink damage below full.
+        for _ in 0..4 {
+            s.engine.frame();
+        }
+        let bb = s.switch_once_damage(aurora::app::switcher::MENU_ID);
+        assert!(
+            bb.x <= 0.0 && bb.y <= 0.0 && bb.right() >= 1280.0 && bb.bottom() >= 800.0,
+            "menu switch damage {bb:?} does not cover the viewport"
+        );
+
+        for _ in 0..4 {
+            s.engine.frame();
+        }
+        // Back to a demo: same requirement in the other direction.
+        let bb = s.switch_once_damage("text-smooth");
+        assert!(
+            bb.x <= 0.0 && bb.y <= 0.0 && bb.right() >= 1280.0 && bb.bottom() >= 800.0,
+            "demo switch damage {bb:?} does not cover the viewport"
+        );
+    }
+
+    /// End-to-end retained-canvas check: paint every frame with that
+    /// frame's own damage through ONE retained canvas (exactly what the CPU
+    /// backend owns) across demo -> menu -> demo, then compare against a
+    /// fresh full render. Any mismatch is a remnant the user would see.
+    /// Uses a static demo so animation deltas can't legitimately differ.
+    #[test]
+    fn retained_canvas_has_no_remnants() {
+        use aurora_tiny_skia::TinySkiaRenderer;
+
+        let mut s = Session::new("text-demo");
+        let mut retained = TinySkiaRenderer::new();
+        retained.set_text_context(s.engine.text_context());
+        retained.resize(1280, 800);
+        let mut fp = |s: &mut Session, retained: &mut TinySkiaRenderer| {
+            s.engine.frame();
+            let damage = s.engine.current_damage().clone();
+            retained
+                .render_damage(s.engine.scene(), &damage)
+                .expect("rasterize");
+        };
+        for _ in 0..3 {
+            fp(&mut s, &mut retained);
+        }
+        s.switch_now(aurora::app::switcher::MENU_ID);
+        fp(&mut s, &mut retained);
+        s.switch_now("text-demo");
+        fp(&mut s, &mut retained);
+
+        // Fresh reference: same scene, full damage, clean canvas.
+        let mut fresh = TinySkiaRenderer::new();
+        fresh.set_text_context(s.engine.text_context());
+        fresh.resize(1280, 800);
+        let mut full = aurora::foundation::DamageRegion::new();
+        full.push(aurora::foundation::ResolvedRect::new(0.0, 0.0, 1280.0, 800.0));
+        fresh
+            .render_damage(s.engine.scene(), &full)
+            .expect("reference rasterize");
+
+        let (a, b) = (retained.canvas().data(), fresh.canvas().data());
+        assert_eq!(a.len(), b.len(), "canvas size mismatch");
+        let mismatched = a.iter().zip(b.iter()).filter(|(x, y)| x != y).count();
+        assert_eq!(
+            mismatched, 0,
+            "{mismatched} stale pixels survive the round trip"
+        );
     }
 }
