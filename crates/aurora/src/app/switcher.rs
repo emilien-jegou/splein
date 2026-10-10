@@ -1,11 +1,11 @@
 // Single responsibility: In-window demo switcher — F5 grub-style menu, F6
 // quad combine, F7 engine cycle, all live in the current window.
 //
-// Every example binary hosts every demo: each switch rebuilds a fresh Engine
-// (fresh reactive runtime, so no hook/ticker state leaks across demos) while
-// the window, backend slot selection and debugger survive. F6 swaps the
-// single backend for the quad-combine backend in the same window (resizing
-// it to fit quadrants); F7 cycles single raster engines.
+// One engine, one runtime, one font database for the whole session (the
+// same context the HUD draws in): F5 is a route change via
+// `Engine::switch_root`, never an application-level reboot. The old tree's
+// tickers retire and its hook state clears, so every visit mounts fresh
+// while window, backend slot and debugger survive.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -40,11 +40,11 @@ pub const MENU_ID: &str = "__menu";
 const MENU_MIN_W: u32 = 1000;
 const MENU_MIN_H: u32 = 760;
 
-/// One switchable demo: title plus a boot function rebuilding its world.
+/// One switchable demo: title plus a boot function building its world.
 ///
-/// `boot` receives a fresh runtime per switch and returns the root element
-/// (built under its own `"root"` hook scope), the background clear color,
-/// and the demo's own extensions (physics drivers, tickers, monitors).
+/// `boot` receives the session runtime and returns the root element (built
+/// under its own `"root"` hook scope), the background clear color, and the
+/// demo's own extensions (physics drivers, tickers, monitors).
 /// Per-demo extensions are installed on switch and dropped on leave, so a
 /// ticker that writes every frame can never pin the loop while its demo is
 /// gone.
@@ -67,7 +67,7 @@ pub struct DemoMeta {
     pub title: &'static str,
 }
 
-/// Menu interaction state, recreated on a fresh runtime every time the menu opens.
+/// Menu interaction state, created once on the session runtime.
 #[derive(Clone)]
 pub struct MenuState {
     /// Highlighted row.
@@ -87,7 +87,7 @@ pub enum MenuAction {
 
 /// What a demo boot receives.
 pub struct BootCtx {
-    /// Fresh reactive runtime for this mount.
+    /// Session reactive runtime shared by demos, menu and HUD.
     pub runtime: Rc<RefCell<ReactiveRuntime>>,
     /// Engine size the root will lay out at.
     pub engine_w: u32,
@@ -123,11 +123,9 @@ struct OpenMenu {
     return_id: String,
     prev_size: (u32, u32),
     was_quad: bool,
-    state: MenuState,
 }
 
-/// Drops the live backend BEFORE creating its replacement.
-///
+/// Drops the live backend BEFORE creating its replacement.///
 /// wgpu/vello open one swapchain surface per window, and the platform
 /// rejects a second surface on the same window while the first is alive
 /// ("Surface already has a fifo" / Invalid surface on configure).
@@ -160,34 +158,46 @@ fn find_demo<'d>(demos: &'d [DemoDef], id: &str) -> &'d DemoDef {
     }
 }
 
-fn build_engine(
-    demo: &DemoDef,
-    ctx: &BootCtx,
-    proxy: &winit::event_loop::EventLoopProxy<()>,
-) -> (Engine, Vec<Box<dyn AppExtension>>) {
-    let booted = (demo.boot)(ctx);
-    let mut engine =
-        Engine::with_runtime(Rc::clone(&ctx.runtime), booted.root, ctx.engine_w, ctx.engine_h);
-    engine.set_background(booted.background);
-    engine.load_font(include_bytes!("../../assets/inter-var.ttf"));
-    // Fresh engines always repaint fully on frame one: retained backend
-    // canvases (same backend, new scene) must not show the old demo, and
-    // fresh backend canvases are undefined memory.
-    engine.request_full_repaint();
-    tracing::debug!(
-        demo = demo.id,
-        has_font = engine.text_context().font_data(0).is_some(),
-        "engine booted"
-    );
-    let proxy = proxy.clone();
-    engine.runtime().borrow_mut().set_on_dirty(move || {
-        let _ = proxy.send_event(());
-    });
-    (engine, booted.extensions)
-}
-
 fn demo_title_attr(title: &str) -> String {
     format!("{title}  [F5 demos | F6 quad | F7 engine | Esc exit]")
+}
+
+/// Mounts one demo on the session engine: a route change, not a reboot.
+///
+/// Engine, runtime, fonts and backend contexts all survive; only the tree,
+/// background and demo-owned extensions swap. `switch_root` retires the old
+/// tree's tickers, clears its hook state (fresh mount per visit) and
+/// schedules a full repaint.
+#[allow(clippy::too_many_arguments)]
+fn mount_demo(
+    demo: &DemoDef,
+    meta: &[DemoMeta],
+    menu: Option<MenuState>,
+    engine: &mut Engine,
+    extensions: &mut Vec<Box<dyn AppExtension>>,
+    pointer: &mut PointerBridge,
+    window: &Arc<Window>,
+    runtime: &Rc<RefCell<ReactiveRuntime>>,
+) {
+    // Prepare BEFORE building: bodies register tickers as they run, so the
+    // epoch bump must precede the boot or it retires the new tree's own
+    // clocks (frozen animation on every switch).
+    engine.prepare_switch();
+    let ctx = BootCtx {
+        runtime: Rc::clone(runtime),
+        engine_w: engine.logical_size().0,
+        engine_h: engine.logical_size().1,
+        demos: meta.to_vec(),
+        menu,
+    };
+    let booted = (demo.boot)(&ctx);
+    engine.switch_root(booted.root);
+    engine.set_background(booted.background);
+    extensions.truncate(1);
+    extensions.extend(booted.extensions);
+    *pointer = PointerBridge::new();
+    window.set_title(&demo_title_attr(demo.title));
+    window.request_redraw();
 }
 
 #[allow(clippy::too_many_lines)]
@@ -233,30 +243,49 @@ fn run_switchable_loop(
         .map(|(index, d)| DemoMeta { index, title: d.title })
         .collect();
 
-    // First engine at demo size, fonts loaded before any backend exists so
-    // every backend's text context shares the loaded fonts.
+    // Session runtime + engine: demos, menu and HUD share one font database
+    // and one reactive graph for the whole session. Fonts load once; backend
+    // text contexts cloned from here never go stale, so cross-engine glyph
+    // misses are impossible by construction.
+    let runtime: Rc<RefCell<ReactiveRuntime>> =
+        config.runtime.unwrap_or_else(|| Rc::new(RefCell::new(ReactiveRuntime::new())));
     let mut current_id = initial_id.to_string();
     let mut extensions: Vec<Box<dyn AppExtension>>;
     let mut engine = {
-        let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
         let demo = find_demo(&demos, &current_id);
         current_id = demo.id.to_string();
         let ctx = BootCtx {
-            runtime,
+            runtime: Rc::clone(&runtime),
             engine_w: config.width,
             engine_h: config.height,
             demos: meta.clone(),
             menu: None,
         };
-        let (e, exts) = build_engine(demo, &ctx, &proxy);
-        let mut all: Vec<Box<dyn AppExtension>> = Vec::with_capacity(1 + exts.len());
+        let booted = (demo.boot)(&ctx);
+        let mut e = Engine::with_runtime(
+            Rc::clone(&runtime),
+            booted.root,
+            config.width,
+            config.height,
+        );
+        e.set_background(booted.background);
+        e.load_font(include_bytes!("../../assets/inter-var.ttf"));
+        let proxy = proxy.clone();
+        e.runtime().borrow_mut().set_on_dirty(move || {
+            let _ = proxy.send_event(());
+        });
         let mut debugger = VisualDebugger::new();
         debugger.show_hud = config.show_hud;
-        all.push(Box::new(debugger));
-        all.extend(exts);
-        extensions = all;
+        extensions = vec![Box::new(debugger)];
+        extensions.extend(booted.extensions);
         window.set_title(&demo_title_attr(demo.title));
         e
+    };
+
+    // Menu state lives on the session runtime once; reselected per open.
+    let menu_state = MenuState {
+        selected: Signal::new(Rc::clone(&runtime), 0usize),
+        pending: Signal::new(Rc::clone(&runtime), None),
     };
 
     let mut backend: Option<Box<dyn Backend>> = Some({
@@ -270,7 +299,6 @@ fn run_switchable_loop(
             ));
             match config.quad_factory {
                 Some(qf) => {
-                    let text_ctx = engine.text_context();
                     match qf(Arc::clone(&window), qw * 2, qh * 2 + QUAD_STRIP, text_ctx) {
                         Ok(b) => b,
                         Err(e) => {
@@ -319,7 +347,7 @@ fn run_switchable_loop(
     let quad_factory: Option<BackendFactory> = config.quad_factory;
     // Frame pacing (mirrors the single-window runner): without it the loop
     // spins unthrottled whenever motion is active and the FPS readout
-    // counts empty frames (the "9000fps" bug).
+    // counts empty frames.
     let target_interval = compute_target_interval(config.fps_limit, &window);
     let mut redraw_pending = true;
     let mut last_present = Instant::now();
@@ -335,7 +363,7 @@ fn run_switchable_loop(
                             &key.logical_key,
                             menu.is_some(),
                             meta.len(),
-                            menu.as_ref().map(|m| m.state.clone()),
+                            Some(menu_state.clone()),
                         )
                         .is_some();
                     if switch {
@@ -343,7 +371,7 @@ fn run_switchable_loop(
                             &key.logical_key,
                             menu.is_some(),
                             meta.len(),
-                            menu.as_ref().map(|m| m.state.clone()),
+                            Some(menu_state.clone()),
                         )
                         .unwrap();
                         match next {
@@ -363,42 +391,33 @@ fn run_switchable_loop(
                                         tc,
                                         "unquad for menu",
                                     );
-                                    // Fresh canvas, live scene: repaint all.
                                     engine.request_full_repaint();
                                 }
                                 let physical = window.inner_size();
                                 let prev = (physical.width.max(1), physical.height.max(1));
                                 let target_w = prev.0.max(MENU_MIN_W);
                                 let target_h = prev.1.max(MENU_MIN_H);
-                                // Build the menu at the CURRENT engine size;
-                                // the async Resized below grows backend and
-                                // engine together through the standard flow.
-                                // Pre-sizing the engine here is what raced
-                                // the backend surface and panicked the
-                                // presenter on mismatched buffers.
-                                let (ew, eh) = engine.logical_size();
-                                let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
-                                let state = MenuState {
-                                    selected: Signal::new(Rc::clone(&runtime), 0usize),
-                                    pending: Signal::new(Rc::clone(&runtime), None),
-                                };
-                                let ctx = BootCtx {
-                                    runtime,
-                                    engine_w: ew,
-                                    engine_h: eh,
-                                    demos: meta.clone(),
-                                    menu: Some(state.clone()),
-                                };
-                                let (fresh, exts) = build_engine(&menu_def, &ctx, &proxy);
-                                engine = fresh;
-                                extensions.truncate(1);
-                                extensions.extend(exts);
-                                pointer = PointerBridge::new();
+                                // Grow the engine synchronously so the menu
+                                // lays out at target size on its first frame;
+                                // the backend follows via pending resize.
+                                engine.resize(target_w, target_h);
+                                pending_resize = Some((target_w, target_h));
+                                menu_state.selected.set(0);
+                                menu_state.pending.set(None);
+                                mount_demo(
+                                    &menu_def,
+                                    &meta,
+                                    Some(menu_state.clone()),
+                                    &mut engine,
+                                    &mut extensions,
+                                    &mut pointer,
+                                    &window,
+                                    &runtime,
+                                );
                                 menu = Some(OpenMenu {
                                     return_id: current_id.clone(),
                                     prev_size: prev,
                                     was_quad,
-                                    state,
                                 });
                                 window.set_title(
                                     "Aurora — demos  [↑↓ move | Enter open | Esc back]",
@@ -419,7 +438,7 @@ fn run_switchable_loop(
                                         &mut extensions,
                                         &mut pointer,
                                         &window,
-                                        &proxy,
+                                        &runtime,
                                         &factories,
                                         single_slot,
                                         quad_factory,
@@ -431,39 +450,30 @@ fn run_switchable_loop(
                             SwitchAction::Launch(index) => {
                                 menu.take();
                                 {
-                                    let id = meta
-                                        .get(index)
-                                        .map(|m| demos[m.index].id)
-                                        .unwrap_or(initial_id);
+                                    let demo =
+                                        find_demo(&demos, meta_index_id(&meta, &demos, index, initial_id));
                                     // Launched demos inherit the roomy menu
                                     // window; they lay out fill-based.
-                                    let physical = window.inner_size();
-                                    let (ew, eh) =
-                                        (physical.width.max(1), physical.height.max(1));
-                                    current_id = swap_demo(
-                                        &demos,
+                                    mount_demo(
+                                        demo,
                                         &meta,
                                         None,
-                                        id,
-                                        ew,
-                                        eh,
                                         &mut engine,
                                         &mut extensions,
                                         &mut pointer,
                                         &window,
-                                        &proxy,
+                                        &runtime,
                                     );
+                                    current_id = demo.id.to_string();
                                 }
                             }
                             SwitchAction::MoveSelection(delta) => {
-                                if let Some(open) = menu.as_ref() {
+                                menu_state.selected.update(|s| {
                                     let n = meta.len();
-                                    open.state.selected.update(|s| {
-                                        *s = (*s as isize + delta).rem_euclid(n as isize)
-                                            as usize
-                                    });
-                                    window.request_redraw();
-                                }
+                                    *s = (*s as isize + delta).rem_euclid(n as isize)
+                                        as usize
+                                });
+                                window.request_redraw();
                             }
                             SwitchAction::ToggleQuad => {
                                 let (ew, eh) = engine.logical_size();
@@ -614,36 +624,27 @@ fn run_switchable_loop(
                     WindowEvent::RedrawRequested => {
                         // Mouse-driven menu requests drain before framing.
                         if menu.is_some() {
-                            let action = menu
-                                .as_ref()
-                                .and_then(|m| m.state.pending.get());
+                            let action = menu_state.pending.get();
                             if action.is_some() {
-                                if let Some(open) = menu.as_ref() {
-                                    open.state.pending.set(None);
-                                }
+                                menu_state.pending.set(None);
                                 match action {
                                     Some(MenuAction::Launch(index)) => {
-                                        let id = meta
-                                            .get(index)
-                                            .map(|m| demos[m.index].id)
-                                            .unwrap_or(initial_id);
-                                        menu = None;
-                                        let physical = window.inner_size();
-                                        let (ew, eh) =
-                                            (physical.width.max(1), physical.height.max(1));
-                                        current_id = swap_demo(
+                                        let demo = find_demo(
                                             &demos,
+                                            meta_index_id(&meta, &demos, index, initial_id),
+                                        );
+                                        menu = None;
+                                        mount_demo(
+                                            demo,
                                             &meta,
                                             None,
-                                            id,
-                                            ew,
-                                            eh,
                                             &mut engine,
                                             &mut extensions,
                                             &mut pointer,
                                             &window,
-                                            &proxy,
+                                            &runtime,
                                         );
+                                        current_id = demo.id.to_string();
                                     }
                                     Some(MenuAction::Back) => {
                                         if let Some(open) = menu.take() {
@@ -656,7 +657,7 @@ fn run_switchable_loop(
                                                 &mut extensions,
                                                 &mut pointer,
                                                 &window,
-                                                &proxy,
+                                                &runtime,
                                                 &factories,
                                                 single_slot,
                                                 quad_factory,
@@ -715,43 +716,20 @@ fn run_switchable_loop(
         .expect("Event loop execution failed");
 }
 
-/// Rebuilds the engine for demo `id` at `(ew, eh)`, swapping per-demo
-/// extensions. Window, backend and debugger survive; pointer state resets.
-#[allow(clippy::too_many_arguments)]
-fn swap_demo(
-    demos: &[DemoDef],
+/// Resolves a menu action index to a demo id (falls back to `initial_id`).
+fn meta_index_id<'a>(
     meta: &[DemoMeta],
-    menu: Option<MenuState>,
-    id: &str,
-    ew: u32,
-    eh: u32,
-    engine: &mut Engine,
-    extensions: &mut Vec<Box<dyn AppExtension>>,
-    pointer: &mut PointerBridge,
-    window: &Arc<Window>,
-    proxy: &winit::event_loop::EventLoopProxy<()>,
-) -> String {
-    let demo = find_demo(demos, id);
-    let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
-    let ctx = BootCtx {
-        runtime,
-        engine_w: ew,
-        engine_h: eh,
-        demos: meta.to_vec(),
-        menu,
-    };
-    let (fresh, exts) = build_engine(demo, &ctx, proxy);
-    *engine = fresh;
-    extensions.truncate(1);
-    extensions.extend(exts);
-    *pointer = PointerBridge::new();
-    window.set_title(&demo_title_attr(demo.title));
-    window.request_redraw();
-    demo.id.to_string()
+    demos: &[DemoDef],
+    index: usize,
+    initial_id: &'a str,
+) -> &'a str {
+    meta.get(index)
+        .map(|m| demos[m.index].id)
+        .unwrap_or(initial_id)
 }
 
 /// Closes the menu back to the demo it interrupted, restoring size and (if
-/// it was open) the quad backend.
+/// it was open) the quad backend. The engine persists; only the tree swaps.
 #[allow(clippy::too_many_arguments)]
 fn close_menu_to(
     open: &OpenMenu,
@@ -762,7 +740,7 @@ fn close_menu_to(
     extensions: &mut Vec<Box<dyn AppExtension>>,
     pointer: &mut PointerBridge,
     window: &Arc<Window>,
-    proxy: &winit::event_loop::EventLoopProxy<()>,
+    runtime: &Rc<RefCell<ReactiveRuntime>>,
     factories: &[Option<BackendFactory>; 4],
     single_slot: usize,
     quad_factory: Option<BackendFactory>,
@@ -800,28 +778,29 @@ fn close_menu_to(
                 "menu-close quad fallback",
             );
             let _ = window.request_inner_size(winit::dpi::LogicalSize::new(pw, ph));
-            *current_id = swap_demo(
-                demos, meta, None, &open.return_id, pw, ph, engine, extensions, pointer,
-                window, proxy,
+            engine.resize(pw, ph);
+            let demo = find_demo(demos, &open.return_id);
+            mount_demo(
+                demo, meta, None, engine, extensions, pointer, window, runtime,
             );
+            *current_id = demo.id.to_string();
             return;
         }
         let _ = window.request_inner_size(winit::dpi::LogicalSize::new(pw, ph));
-        *current_id = swap_demo(
-            demos, meta, None, &open.return_id, qw, qh, engine, extensions, pointer,
-            window, proxy,
-        );
+        engine.resize(qw, qh);
+        let demo = find_demo(demos, &open.return_id);
+        mount_demo(demo, meta, None, engine, extensions, pointer, window, runtime);
+        *current_id = demo.id.to_string();
     } else {
         *is_quad = false;
         let _ = window.request_inner_size(winit::dpi::LogicalSize::new(pw, ph));
-        *current_id = swap_demo(
-            demos, meta, None, &open.return_id, pw, ph, engine, extensions, pointer,
-            window, proxy,
-        );
+        engine.resize(pw, ph);
+        let demo = find_demo(demos, &open.return_id);
+        mount_demo(demo, meta, None, engine, extensions, pointer, window, runtime);
+        *current_id = demo.id.to_string();
     }
 }
 
-/// What a handled switcher key asks the loop to do.
 enum SwitchAction {
     OpenMenu,
     CloseMenu,

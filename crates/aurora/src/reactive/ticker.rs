@@ -20,7 +20,7 @@ pub trait Ticker: 'static {
 /// Ordered collection of tickers advanced together each frame.
 #[derive(Default)]
 pub(crate) struct TickerRegistry {
-    entries: Vec<Box<dyn Ticker>>,
+    entries: Vec<(u64, Box<dyn Ticker>)>,
 }
 
 impl TickerRegistry {
@@ -31,7 +31,7 @@ impl TickerRegistry {
         }
         let mut index = 0;
         while index < self.entries.len() {
-            let keep = self.entries[index].advance(dt);
+            let keep = self.entries[index].1.advance(dt);
             if keep {
                 index += 1;
             } else {
@@ -40,9 +40,20 @@ impl TickerRegistry {
         }
     }
 
-    /// Registers a ticker.
-    pub(crate) fn push(&mut self, ticker: Box<dyn Ticker>) {
-        self.entries.push(ticker);
+    /// Registers a ticker under the given mount epoch.
+    pub(crate) fn push(&mut self, epoch: u64, ticker: Box<dyn Ticker>) {
+        self.entries.push((epoch, ticker));
+    }
+
+    /// Drops every ticker from an older mount epoch.
+    ///
+    /// Full-tree replacement (`Engine::switch_root`) retires the previous
+    /// demo's clocks, timers and playback drivers: they belong to an
+    /// unmounted tree and would otherwise tick (and request frames) forever.
+    /// Tickers of the current epoch — including ones registered during the
+    /// new tree's first frame — survive.
+    pub(crate) fn retire_old(&mut self, epoch: u64) {
+        self.entries.retain(|(e, _)| *e == epoch);
     }
 
     /// Moves `other`'s tickers to the front of this registry, preserving their order.
@@ -62,6 +73,6 @@ impl TickerRegistry {
 
     /// Whether any registered ticker still wants frames.
     pub(crate) fn has_active(&self) -> bool {
-        self.entries.iter().any(|t| t.is_active())
+        self.entries.iter().any(|(_, t)| t.is_active())
     }
 }

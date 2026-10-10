@@ -227,6 +227,34 @@ impl Engine {
         }
     }
 
+    /// Replaces the whole UI tree for demo/route switching.
+    ///
+    /// Hot-reload remounts (`set_root`) preserve hook state and tickers on
+    /// purpose; a demo switch must not: the old tree's clocks, timers and
+    /// memoized signals belong to a UI that no longer exists.
+    ///
+    /// Two-phase by necessity: component bodies run (and register tickers)
+    /// while the replacement tree is *built*, so the epoch bump and hook
+    /// clear happen in [`Self::prepare_switch`] *before* building, and this
+    /// commits the built tree after. Bumping after the build would retire
+    /// the new tree's own just-registered tickers (frozen animation).
+    /// Demo-owned `AppExtension`s still need explicit swapping by the caller.
+    pub fn switch_root(&mut self, element: Element) {
+        self.set_root(element);
+        self.request_full_repaint();
+    }
+
+    /// Begins a demo switch: retires older-epoch tickers and clears
+    /// per-component hook state so the incoming tree mounts genuinely fresh
+    /// (no recalled signals, no memoized clocks from a dead tree).
+    ///
+    /// Call before building the replacement tree, then commit with
+    /// [`Self::switch_root`].
+    pub fn prepare_switch(&mut self) {
+        self.scheduler.runtime.borrow_mut().advance_ticker_epoch();
+        self.scheduler.runtime.borrow_mut().clear_hook_state();
+    }
+
     /// Runs the frame passes, committing bounds and compiling the display list scene.
     ///
     /// A panicking pass does not propagate: the boundary catches it, keeps the

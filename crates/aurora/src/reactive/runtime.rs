@@ -78,6 +78,10 @@ pub struct ReactiveRuntime {
     next_subscriber_id: usize,
     on_dirty: Option<Rc<dyn Fn()>>,
     tickers: TickerRegistry,
+    /// Mount epoch stamping ticker registrations. Full-tree replacement
+    /// (`Engine::switch_root`) bumps it and retires older tickers, so the
+    /// previous demo's clocks and drivers stop with its tree.
+    ticker_epoch: u64,
     frame_seconds: f32,
     /// Motion hand-off attached to the next write of each signal, consumed once.
     ///
@@ -153,6 +157,7 @@ impl ReactiveRuntime {
             next_subscriber_id: 1,
             on_dirty: None,
             tickers: TickerRegistry::default(),
+            ticker_epoch: 0,
             frame_seconds: 0.0,
             motion_handoff: FxHashMap::default(),
             hook_states: FxHashMap::default(),
@@ -248,9 +253,32 @@ impl ReactiveRuntime {
         self.on_dirty = Some(Rc::new(hook));
     }
 
-    /// Registers a frame-driven ticker.
+    /// Registers a frame-driven ticker under the current mount epoch.
     pub fn register_ticker(&mut self, ticker: Box<dyn Ticker>) {
-        self.tickers.push(ticker);
+        let epoch = self.ticker_epoch;
+        self.tickers.push(epoch, ticker);
+    }
+
+    /// Retires every ticker from older mount epochs, then starts a new one.
+    ///
+    /// Called by full-tree replacement: the new tree re-registers its own
+    /// clocks on its first frames under the fresh epoch.
+    pub(crate) fn advance_ticker_epoch(&mut self) {
+        self.ticker_epoch = self.ticker_epoch.wrapping_add(1);
+        let epoch = self.ticker_epoch;
+        self.tickers.retire_old(epoch);
+    }
+
+    /// Drops all per-component hook state (plain and call-site-keyed).
+    ///
+    /// Called by full-tree replacement alongside the ticker retire: hook
+    /// state is keyed by component instance identity, so without this a
+    /// revisited demo would recall stale signals and memoized clocks
+    /// (whose tickers just died — a frozen animation). Clearing gives every
+    /// visit a genuinely fresh mount.
+    pub(crate) fn clear_hook_state(&mut self) {
+        self.hook_states.clear();
+        self.keyed_hook_states.clear();
     }
 
     /// Whether any registered ticker still wants frames.
