@@ -1,6 +1,7 @@
 // Single responsibility: Font database storage, lifetime management, and shaping dispatcher.
 
 use crate::foundation::Constraints;
+use crate::text::analytic;
 use crate::text::cache::ShapedTextCache;
 use crate::text::config::TextConfig;
 use crate::text::engine::ParleyEngine;
@@ -46,6 +47,10 @@ pub struct TextContext {
     bitmaps: GlyphBitmapCache,
     pub(crate) font_blobs: Arc<Mutex<Vec<Arc<Vec<u8>>>>>,
 }
+
+/// Tag mixed into analytic cache keys so exact-coverage slots can never
+/// collide with phase-bitmap or scaled-bitmap slots sharing the cache.
+const ANALYTIC_TAG: u64 = 0x616E616C79746963;
 
 /// Miss threshold for parallel batch shaping: below this, thread
 /// spawn/sync costs exceed the shaping work itself.
@@ -274,6 +279,146 @@ impl TextContext {
         key.0.hash(&mut h);
         ((sq * 16.0).round() as u16).hash(&mut h);
         self.raster_inner(GlyphKey(h.finish()), key, phase, sq, f)
+    }
+
+    /// Rasterizes a glyph with exact analytic coverage at a quarter-pixel
+    /// subpixel position, invoking the consumer closure with bitmap data.
+    ///
+    /// Unlike [`Self::raster_glyph`] (which rasterizes swash bitmaps at phase
+    /// bins and leaves the caller to interpolate the remainder), this path
+    /// flattens the glyph outline and integrates exact pixel coverage at
+    /// `(qx/4, qy/4)` via [`analytic`](crate::text::analytic). The caller
+    /// integer-places the result: residual placement error is at most 1/8px
+    /// with no coverage smoothing, so subpixel text stays as sharp as
+    /// pixel-aligned text. Bitmaps are memoized per (key, qx, qy) in distinct
+    /// cache slots that cannot collide with phase or scaled slots.
+    ///
+    /// Glyphs with no scalable outline (bitmap-emoji strikes), color
+    /// outlines, or outlines larger than the analytic cap fall back to
+    /// [`Self::raster_glyph`] at the matching phase, so behavior is total.
+    pub fn raster_glyph_exact<R>(
+        &self,
+        key: GlyphKey,
+        qx: u8,
+        qy: u8,
+        f: impl FnOnce(Option<GlyphBitmap>) -> R,
+    ) -> R {
+        let (qx, qy) = (qx & 3, qy & 3);
+        let mut h = FxHasher::default();
+        key.0.hash(&mut h);
+        ANALYTIC_TAG.hash(&mut h);
+        qx.hash(&mut h);
+        qy.hash(&mut h);
+        let cache_key = GlyphKey(h.finish());
+        if let Some(cached) = self.bitmaps.get(&cache_key, 0) {
+            return f(Some(GlyphBitmap {
+                left: cached.left,
+                top: cached.top,
+                width: cached.width,
+                height: cached.height,
+                data: &cached.data,
+            }));
+        }
+        // Exact-phase fallback for non-analytic glyphs: the quarter quantum
+        // maps onto eighth bins (2 per quarter) so the baked swash offset
+        // matches the analytic translation.
+        let fallback_phase = qx | ((qy * 2) << 2);
+
+        let rk = self.engine.key_map.lock().unwrap().get(&key).cloned();
+        let Some(rk) = rk else {
+            self.bitmaps.note_miss();
+            return f(None);
+        };
+        let size = f32::from_bits(rk.size_bits);
+        let mut scaler = self.scaler.lock().unwrap();
+        let Some(font) = swash::FontRef::from_index(rk.font.data.data(), rk.font.index as usize)
+        else {
+            drop(scaler);
+            self.bitmaps.note_miss();
+            return f(None);
+        };
+        let mut context = scaler
+            .builder(font)
+            .size(size)
+            .hint(size <= SMALL_TEXT_HINT_CUTOFF_PX)
+            .normalized_coords(&rk.coords)
+            .build();
+        // Outline extraction holds the scaler lock; the (expensive)
+        // coverage integration below runs lock-free on the owned outline.
+        let outline = if context.has_outlines() {
+            context.scale_outline(rk.glyph_id as u16)
+        } else {
+            None
+        };
+        drop(scaler);
+        let Some(outline) = outline else {
+            return self.raster_glyph(key, fallback_phase, f);
+        };
+        if outline.is_color() || outline.is_empty() {
+            return self.raster_glyph(key, fallback_phase, f);
+        }
+        // Oversized outlines bypass the analytic path (bounded work per
+        // miss): the swash bitmap path handles them, including its own
+        // oversized-bypass convention.
+        let bounds = outline.bounds();
+        if bounds.width() > 512.0 || bounds.height() > 512.0 {
+            return self.raster_glyph(key, fallback_phase, f);
+        }
+        let (tx, ty) = (qx as f32 * 0.25, qy as f32 * 0.25);
+        let mut acc = analytic::AnalyticBitmap::empty();
+        let mut first = true;
+        for i in 0..outline.len() {
+            let Some(layer) = outline.get(i) else {
+                continue;
+            };
+            let b = analytic::rasterize_layer(layer.points(), layer.verbs(), tx, ty);
+            if first {
+                acc = b;
+                first = false;
+            } else {
+                acc = analytic::union_max(acc, b);
+            }
+        }
+        if acc.is_empty() {
+            // Empty coverage (e.g. space): cache the empty entry so the hot
+            // path never pays for a repeated outline walk.
+            self.bitmaps
+                .store(cache_key, 0, CachedBitmap::new(0, 0, 0, 0, Vec::new()));
+            return match self.bitmaps.get(&cache_key, 0) {
+                Some(cached) => f(Some(GlyphBitmap {
+                    left: cached.left,
+                    top: cached.top,
+                    width: cached.width,
+                    height: cached.height,
+                    data: &cached.data,
+                })),
+                None => {
+                    self.bitmaps.note_miss();
+                    f(None)
+                }
+            };
+        }
+        // Grid space is y-down with `top` = floor(min-y) (usually
+        // negative); placement convention stores `-top` so backends keep
+        // their `dev_y - top` formulas unchanged.
+        self.bitmaps.store(
+            cache_key,
+            0,
+            CachedBitmap::new(acc.left, -acc.top, acc.width, acc.height, acc.data),
+        );
+        match self.bitmaps.get(&cache_key, 0) {
+            Some(cached) => f(Some(GlyphBitmap {
+                left: cached.left,
+                top: cached.top,
+                width: cached.width,
+                height: cached.height,
+                data: &cached.data,
+            })),
+            None => {
+                self.bitmaps.note_miss();
+                f(None)
+            }
+        }
     }
 
     fn raster_inner<R>(

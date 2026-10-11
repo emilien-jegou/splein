@@ -65,6 +65,7 @@
 //!   `TextConfig` and reshape — never the layout.
 
 pub mod align;
+pub mod analytic;
 pub mod cache;
 pub mod config;
 pub mod context;
