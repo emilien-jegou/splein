@@ -229,6 +229,10 @@ fn render_rect(
     if !rect_visible_in_tile(r, tx, tw, th) {
         return;
     }
+    // Snap the shared translation (not each rect): box fill, highlight and
+    // any other rect under this transform shift by the same amount, so
+    // coincident edges stay coincident and land integer together.
+    let tx = crate::path::snap_transform_to_device(tx);
     if let Some(fill) = &a.fill {
         if let Some(paint) = build_paint(fill, op * a.opacity) {
             // Device snap first: translation-only fractional offsets fringe
