@@ -10,7 +10,6 @@ use crate::svg::SvgCache;
 use crate::text::LineCompositeCache;
 use aurora::foundation::DamageRegion;
 use aurora::render::error::BackendError;
-use aurora::scene::command::hash_commands;
 use aurora::scene::scene::Scene;
 use aurora::text::TextContext;
 
@@ -26,11 +25,6 @@ pub struct TinySkiaRenderer {
     tx_stack: Vec<SkiaTransform>,
     opacity_stack: Vec<f32>,
     scratch_pixmap: Option<Pixmap>,
-    /// Per-chunk raster cache [STAGE1 #20]: chunk index → (content hash,
-    /// chunk-local pixmap). Bounded: only chunks ≤512px per side are cached;
-    /// larger chunks execute directly. Entries for `fresh` chunks are
-    /// refreshed; stale indices are pruned each frame.
-    chunk_cache: std::collections::HashMap<usize, (u64, Pixmap)>,
 }
 
 impl TinySkiaRenderer {
@@ -49,7 +43,6 @@ impl TinySkiaRenderer {
             tx_stack: Vec::with_capacity(32),
             opacity_stack: Vec::with_capacity(32),
             scratch_pixmap: None,
-            chunk_cache: std::collections::HashMap::new(),
         }
     }
 
@@ -72,7 +65,6 @@ impl TinySkiaRenderer {
             dst[di..di + cw * 4].copy_from_slice(&src[si..si + cw * 4]);
         }
         self.persistent_canvas = new_c;
-        self.chunk_cache.clear();
     }
 
     /// Accesses the backing CPU frame buffer.
@@ -191,142 +183,10 @@ impl TinySkiaRenderer {
                 line_cache: &mut self.line_cache,
             };
 
-            for (ci, chunk) in scene
-                .chunks
-                .iter()
-                .enumerate()
-                .filter(|(_, c)| c.bounds.overlaps(rect))
-            {
+            for chunk in scene.chunks.iter().filter(|c| c.bounds.overlaps(rect)) {
                 // Chunk-local streams: placement (origin + hoisted root
                 // transform) and absolute inherited clips are applied here,
                 // around the content, so moved chunks reuse their encoding.
-                let base = *ctx.tx_stack.last().unwrap();
-                // [STAGE1 #20] Fast path: unchanged small chunk under pure
-                // translation → blit cached chunk-local raster instead of
-                // re-executing commands.
-                if !chunk.fresh
-                    && chunk.placement.b == 0.0
-                    && chunk.placement.c == 0.0
-                    && chunk.placement.a == 1.0
-                    && chunk.placement.d == 1.0
-                {
-                    let cw_px = chunk.bounds.width.ceil() as u32;
-                    let ch_px = chunk.bounds.height.ceil() as u32;
-                    if cw_px > 0 && ch_px > 0 && cw_px <= 512 && ch_px <= 512 {
-                        let mut h = std::collections::hash_map::DefaultHasher::new();
-                        std::hash::Hash::hash(&hash_commands(&chunk.commands), &mut h);
-                        std::hash::Hash::hash(
-                            &(
-                                chunk.abs_origin.x.to_bits(),
-                                chunk.abs_origin.y.to_bits(),
-                                chunk.placement.tx.to_bits(),
-                                chunk.placement.ty.to_bits(),
-                                chunk.inherited_clips.len(),
-                            ),
-                            &mut h,
-                        );
-                        for clip in chunk.inherited_clips.iter() {
-                            std::hash::Hash::hash(
-                                &(
-                                    clip.rect.x.to_bits(),
-                                    clip.rect.y.to_bits(),
-                                    clip.rect.width.to_bits(),
-                                    clip.rect.height.to_bits(),
-                                ),
-                                &mut h,
-                            );
-                        }
-                        let key = std::hash::Hasher::finish(&h);
-                        if let Some((kh, pix)) = self.chunk_cache.get(&ci) {
-                            if *kh == key {
-                                // Composite cached chunk-local raster into the
-                                // tile scratch at its screen offset.
-                                let sx = (chunk.bounds.x - x as f32).round() as i32;
-                                let sy = (chunk.bounds.y - y as f32).round() as i32;
-                                let (pw, ph) =
-                                    (pix.width().min(cw_px), pix.height().min(ch_px));
-                                let sdata = pix.data();
-                                let tw = scratch.width() as usize;
-                                let tdata = scratch.data_mut();
-                                for row in 0..ph as usize {
-                                    let dy = sy + row as i32;
-                                    if dy < 0 || dy >= rh as i32 {
-                                        continue;
-                                    }
-                                    let si = row * pix.width() as usize * 4;
-                                    let di = (dy as usize * tw + sx.max(0) as usize) * 4;
-                                    let skip_l = (-sx).max(0) as usize;
-                                    let w = ((pw as usize).saturating_sub(skip_l)).min(
-                                        tw.saturating_sub(sx.max(0) as usize),
-                                    );
-                                    if w == 0 {
-                                        continue;
-                                    }
-                                    // Alpha-over composite (cached raster is
-                                    // premultiplied like the canvas).
-                                    for px in 0..w {
-                                        let s =
-                                            &sdata[(si + (skip_l + px) * 4)..(si + (skip_l + px) * 4 + 4)];
-                                        let d = &mut tdata[(di + px * 4)..(di + px * 4 + 4)];
-                                        let sa = s[3] as u32;
-                                        if sa == 255 {
-                                            d.copy_from_slice(s);
-                                        } else if sa != 0 {
-                                            let inv = 255 - sa;
-                                            for k in 0..3 {
-                                                d[k] = ((s[k] as u32 * sa
-                                                    + d[k] as u32 * inv)
-                                                    / 255)
-                                                    as u8;
-                                            }
-                                            d[3] = (sa + d[3] as u32 * inv / 255).min(255) as u8;
-                                        }
-                                    }
-                                }
-                                continue;
-                            }
-                        }
-                        // Miss: render chunk-local raster into cache entry,
-                        // reusing the shared stacks (tile base already reset
-                        // per tile above).
-                        let mut cpix =
-                            Pixmap::new(cw_px.max(1), ch_px.max(1)).unwrap();
-                        {
-                            ctx.tx_stack.push(SkiaTransform::from_translate(
-                                -(chunk.abs_origin.x + chunk.placement.tx),
-                                -(chunk.abs_origin.y + chunk.placement.ty),
-                            ));
-                            for clip in chunk.inherited_clips.iter() {
-                                let b = *ctx.tx_stack.last().unwrap();
-                                ctx.clip_stack.push(
-                                    &clip.rect,
-                                    clip.radius,
-                                    b,
-                                    cw_px,
-                                    ch_px,
-                                    cw_px,
-                                    ch_px,
-                                );
-                            }
-                            execute_commands(
-                                &chunk.commands,
-                                &mut cpix.as_mut(),
-                                &mut ctx,
-                                cw_px as f32,
-                                ch_px as f32,
-                            );
-                            for _ in chunk.inherited_clips.iter() {
-                                ctx.clip_stack.pop();
-                            }
-                            ctx.tx_stack.pop();
-                        }
-                        self.chunk_cache.insert(ci, (key, cpix));
-                        // Fall through to direct execution for *this* tile to
-                        // keep a single placement code path.
-                    }
-                }
-                // Direct placement path (cache miss, fresh chunk, or large /
-                // transformed chunk): execute into the tile scratch.
                 let base = *ctx.tx_stack.last().unwrap();
                 for clip in chunk.inherited_clips.iter() {
                     ctx.clip_stack.push(
@@ -373,10 +233,6 @@ impl TinySkiaRenderer {
             }
             self.scratch_pixmap = Some(scratch);
         }
-        // Prune entries for chunks that no longer exist; fresh-chunk misses
-        // were refreshed above. Bounded by construction (≤512px/side each).
-        let n = scene.chunks.len();
-        self.chunk_cache.retain(|&k, _| k < n);
         Ok(())
     }
     /// Moves retained pixels inside `clip` by (`dx`, `dy`) device px.

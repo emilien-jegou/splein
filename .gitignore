@@ -4,6 +4,7 @@
 !.envrc
 !cliff.toml
 !CHANGELOG.md
+!optimization_plan.md
 !.gitignore
 !Cargo.lock
 !Cargo.toml
