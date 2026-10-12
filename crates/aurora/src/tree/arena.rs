@@ -34,6 +34,8 @@ pub struct TreeArena {
     /// alongside the reactive mutations and dedups. Entries for nodes
     /// removed mid-commit are skipped by validity checks downstream.
     pub dirty_outbox: SmallVec<[(NodeId, DirtyFlags); 8]>,
+    /// Frame stamp for `LayoutNode::abs_tx` caching [STAGE1 #15].
+    pub tx_frame: u64,
 }
 
 impl TreeArena {
@@ -45,7 +47,15 @@ impl TreeArena {
             removed_damage: Vec::new(),
             keys: KeyRegistry::new(),
             dirty_outbox: SmallVec::new(),
+            tx_frame: 1,
         }
+    }
+
+    /// Advances the absolute-transform cache epoch; call once per frame
+    /// before layout so stale `abs_tx` entries miss. Wrapping is harmless:
+    /// on wrap every entry misses exactly once.
+    pub fn bump_tx_frame(&mut self) {
+        self.tx_frame = self.tx_frame.wrapping_add(1).max(1);
     }
 
     /// Inserts a layout node and returns its generational identifier.
@@ -149,6 +159,17 @@ impl TreeArena {
 
     /// Marks a node dirty and propagates invalidation up to containing layout boundaries.
     pub fn mark_dirty(&mut self, node_id: NodeId, flags: DirtyFlags) {
+        // Geometry may move: drop this node's cached absolute transform so the
+        // next query re-walks (ancestors stay cached — they didn't move).
+        // Descendants cache their *own* full chain, so they must go too.
+        let mut stack = vec![node_id];
+        while let Some(cur) = stack.pop() {
+            if !self.is_valid(cur) {
+                continue;
+            }
+            self.slots[cur.index as usize].node.abs_tx_frame = 0;
+            stack.extend(self.slots[cur.index as usize].children.iter().copied());
+        }
         mark_node_dirty(self, node_id, flags);
     }
 
@@ -225,21 +246,36 @@ impl TreeArena {
     }
 
     /// Computes the absolute screen-space transformation matrix for a node.
+    /// Uses a per-frame memo on each node [STAGE1 #15]: the walk stops at
+    /// the nearest ancestor whose `abs_tx` is current, then fills the cache
+    /// on the way back down, so M queries over depth D cost O(M+D).
     pub fn node_absolute_transform(&self, id: NodeId) -> Transform {
         if !self.is_valid(id) {
             return Transform::IDENTITY;
         }
+        if self.get(id).abs_tx_frame == self.tx_frame {
+            return self.get(id).abs_tx;
+        }
         let mut path = SmallVec::<[NodeId; 16]>::new();
         let mut curr = Some(id);
         while let Some(n) = curr {
+            if self.get(n).abs_tx_frame == self.tx_frame {
+                break;
+            }
             path.push(n);
             curr = self.parent(n);
         }
-        path.reverse();
-
-        let mut tx = Transform::IDENTITY;
-        for &node_id in &path {
-            let node = self.get(node_id);
+        let mut tx = curr
+            .map(|n| self.get(n).abs_tx)
+            .unwrap_or(Transform::IDENTITY);
+        // path is leaf-up; iterate reversed to go top-down. Cache writes need
+        // `&mut`, so collect first then write via raw index (ids validated).
+        let order: SmallVec<[NodeId; 16]> = path.iter().rev().copied().collect();
+        let frame = self.tx_frame;
+        let arena_ptr = self as *const Self as *mut Self;
+        for &node_id in &order {
+            // SAFETY: ids were validated above; no insert/remove happens here.
+            let node = unsafe { (*arena_ptr).get(node_id) };
             tx = tx.multiply(&Transform::from_translation(
                 node.resolved_rect.x,
                 node.resolved_rect.y,
@@ -248,6 +284,9 @@ impl TreeArena {
             if local_tx != Transform::IDENTITY {
                 tx = tx.multiply(&local_tx);
             }
+            let slot = unsafe { (*arena_ptr).get_mut(node_id) };
+            slot.abs_tx = tx;
+            slot.abs_tx_frame = frame;
         }
         tx
     }

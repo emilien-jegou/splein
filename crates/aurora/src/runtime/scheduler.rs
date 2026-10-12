@@ -80,6 +80,7 @@ impl FrameScheduler {
         window_constraints: Constraints,
         layout_result: &mut LayoutResult,
     ) -> FrameStats {
+        self.arena.bump_tx_frame();
         self.dirty_nodes_this_frame.clear();
         let mut external_flags = DirtyFlags::NONE;
         // Every mark since the last commit — reactive bindings and direct

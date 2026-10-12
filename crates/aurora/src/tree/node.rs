@@ -45,6 +45,10 @@ pub struct LayoutNode {
     /// layout against a gesture needs this frame rather than the parent-relative one.
     pub absolute_rect: ResolvedRect,
     pub transform: Transform,
+    /// Cached screen-space transform [STAGE1 #15]; valid when `abs_tx_frame`
+    /// equals the arena's current frame (see `TreeArena::tx_frame`).
+    pub abs_tx: Transform,
+    pub abs_tx_frame: u64,
     pub state: NodeState,
 }
 
@@ -57,6 +61,8 @@ impl LayoutNode {
             resolved_rect: ResolvedRect::ZERO,
             absolute_rect: ResolvedRect::ZERO,
             transform: Transform::IDENTITY,
+            abs_tx: Transform::IDENTITY,
+            abs_tx_frame: 0,
             state: NodeState::default(),
         }
     }

@@ -62,7 +62,23 @@ impl Transform {
         }
     }
 
+    /// Exact pure-translation check [STAGE1 #18]: only takes the fast path
+    /// when `a/d` are exactly 1 and `b/c` exactly 0. Transforms built from
+    /// `IDENTITY` via `from_translation`/`multiply` stay exact; anything
+    /// that drifted (rotation, scale) safely takes the general path — a
+    /// missed fast path, never a wrong answer.
+    #[inline(always)]
+    pub fn is_translation(&self) -> bool {
+        self.a == 1.0 && self.b == 0.0 && self.c == 0.0 && self.d == 1.0
+    }
+
+    #[inline(always)]
     pub fn transform_point(&self, p: Point) -> Point {
+        // Fast path: the common UI case (scroll offsets, placements, pure
+        // translations) skips 6 multiplies. One predictable branch.
+        if self.is_translation() {
+            return Point::new(p.x + self.tx, p.y + self.ty);
+        }
         Point::new(
             self.a * p.x + self.c * p.y + self.tx,
             self.b * p.x + self.d * p.y + self.ty,
