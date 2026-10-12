@@ -98,7 +98,35 @@ impl TinySkiaRenderer {
             self.persistent_canvas.height(),
         );
 
+        // Scroll shifts first: the persistent canvas is current through last
+        // frame (every frame repaints its own damage), so moving the covered
+        // bulk by the rounded delta is exact, and the damage tiles below only
+        // repaint the exposed strips. Exposed rows whose source falls outside
+        // the clip are left for the tile pass; rounding residue (<=0.5px) is
+        // covered by the 1px seam pad the damage plan adds to each strip.
+        //
+        // Integral device deltas only: a fractional memmove leaves subpixel
+        // AA seams at every moved edge (thousands of stray pixels, not
+        // theory). Fractional shifts repaint their whole clip box instead —
+        // correct at full cost. This backend works in physical pixels
+        // throughout, so logical integrality is device integrality.
+        let mut tiles = DamageRegion::new();
         for rect in damage.rects() {
+            tiles.push(*rect);
+        }
+        for shift in damage.scroll_shifts() {
+            if shift.delta.x.fract() == 0.0 && shift.delta.y.fract() == 0.0 {
+                self.blit_within_canvas(
+                    &shift.clip,
+                    shift.delta.x.round() as i32,
+                    shift.delta.y.round() as i32,
+                );
+            } else {
+                tiles.push(shift.clip);
+            }
+        }
+
+        for rect in tiles.rects() {
             let (x, y) = (
                 (rect.x.floor() as i32).max(0) as u32,
                 (rect.y.floor() as i32).max(0) as u32,
@@ -206,6 +234,73 @@ impl TinySkiaRenderer {
             self.scratch_pixmap = Some(scratch);
         }
         Ok(())
+    }
+    /// Moves retained pixels inside `clip` by (`dx`, `dy`) device px.
+    ///
+    /// Memmove semantics per row (`copy_within`), so overlapping shifts are
+    /// exact. Destination rows whose source row falls outside `clip` are
+    /// skipped — that is the newly-exposed band, repainted by the tile pass.
+    /// A zero shift is a no-op; out-of-canvas clips are clamped, never panic.
+    fn blit_within_canvas(&mut self, clip: &aurora::foundation::ResolvedRect, dx: i32, dy: i32) {
+        if dx == 0 && dy == 0 {
+            return;
+        }
+        let (cw, ch) = (
+            self.persistent_canvas.width() as i32,
+            self.persistent_canvas.height() as i32,
+        );
+        let x0 = (clip.x.floor() as i32).max(0);
+        let y0 = (clip.y.floor() as i32).max(0);
+        let x1 = (clip.right().ceil() as i32).min(cw);
+        let y1 = (clip.bottom().ceil() as i32).min(ch);
+        if x1 <= x0 || y1 <= y0 {
+            return;
+        }
+        let stride = cw as usize * 4;
+        let data = self.persistent_canvas.data_mut();
+        // Visit order matters across rows: a source row must be read before it
+        // is overwritten as a destination. dy > 0 pulls from above → descend;
+        // dy < 0 pulls from below → ascend; dy == 0 is intra-row (copy_within
+        // is overlap-safe) so either order works.
+        if dy > 0 {
+            for y in (y0..y1).rev() {
+                Self::blit_row(data, stride, cw, x0, x1, y0, y1, y, y - dy, dx);
+            }
+        } else {
+            for y in y0..y1 {
+                Self::blit_row(data, stride, cw, x0, x1, y0, y1, y, y - dy, dx);
+            }
+        }
+    }
+
+    /// Copies one blit row: destination row `y` pulls the clip-clamped segment
+    /// of source row `src_y`, shifted by `dx`. Skips rows/segments whose
+    /// source lies outside the clip span (the exposed band, repainted next).
+    #[allow(clippy::too_many_arguments)]
+    fn blit_row(
+        data: &mut [u8],
+        stride: usize,
+        canvas_w: i32,
+        x0: i32,
+        x1: i32,
+        y0: i32,
+        y1: i32,
+        y: i32,
+        src_y: i32,
+        dx: i32,
+    ) {
+        if src_y < y0 || src_y >= y1 {
+            return;
+        }
+        let sx0 = (x0 - dx).max(x0).max(0);
+        let sx1 = (x1 - dx).min(x1).min(canvas_w);
+        if sx1 <= sx0 {
+            return;
+        }
+        let src = src_y as usize * stride + sx0 as usize * 4;
+        let dst = y as usize * stride + (sx0 + dx) as usize * 4;
+        let len = (sx1 - sx0) as usize * 4;
+        data.copy_within(src..src + len, dst);
     }
 }
 

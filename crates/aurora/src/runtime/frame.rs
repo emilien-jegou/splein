@@ -113,6 +113,13 @@ pub fn run_frame_passes(
         for rect in plan.region.rects() {
             frame_damage.push(*rect);
         }
+        // Scroll shifts travel with the damage they were computed with: the
+        // raster blit reads them from this same region. Rect unions
+        // downstream (swapchain age) move rects only, so a shift never leaks
+        // into another frame.
+        for shift in plan.region.scroll_shifts() {
+            frame_damage.push_scroll_shift(shift.clip, shift.delta);
+        }
         // NOTE: no preserved-rect carve-out here, deliberately. A previous
         // revision subtracted the preserved overlap ("copied verbatim by the
         // present path"), which is true of the *renderer's* persistent canvas

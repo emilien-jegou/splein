@@ -48,9 +48,13 @@ pub fn reconcile_group(
         || def.y.as_ref().is_some_and(|p| p.is_dynamic())
         || def.scale.as_ref().is_some_and(|p| p.is_dynamic())
         || def.rotate_degrees.as_ref().is_some_and(|p| p.is_dynamic());
+    // Scroll offset rides its own channel: same transform effect as x/y, but
+    // tracked as SCROLL so damage applies the scroll rule instead of repaint.
+    let has_dyn_scroll = def.scroll_offset.as_ref().is_some_and(|p| p.is_dynamic());
 
     let m_sub = has_dyn_measure.then(|| router.measure_sub(id, &mut runtime.borrow_mut()));
     let p_sub = has_dyn_paint.then(|| router.paint_sub(id, &mut runtime.borrow_mut()));
+    let s_sub = has_dyn_scroll.then(|| router.scroll_sub(id, &mut runtime.borrow_mut()));
 
     let store = DynamicBindings {
         width: def.width.as_ref().and_then(|p| p.dynamic_closure()),
@@ -68,6 +72,10 @@ pub fn reconcile_group(
         presence: def.presence.as_ref().and_then(|p| p.dynamic_closure()),
         z_index: def.z_index.as_ref().and_then(|p| p.dynamic_closure()),
         pose: pose_bindings(&def),
+        scroll_offset: def
+            .scroll_offset
+            .as_ref()
+            .and_then(|p| p.dynamic_closure()),
         children: def
             .has_dynamic_segments()
             .then(|| def.child_segments.clone()),
@@ -80,7 +88,7 @@ pub fn reconcile_group(
     // two passes with node writes in between meant the second batch could observe a tree the
     // first batch had already half-updated. It also has to precede the handler extraction below,
     // which moves `def.handlers` out and so would leave `def` partially moved.
-    let props = ResolvedProps::evaluate(&def, pose.as_ref(), m_sub, p_sub, runtime);
+    let props = ResolvedProps::evaluate(&def, pose.as_ref(), m_sub, p_sub, s_sub, runtime);
     let change = ChangeSet::detect(arena.get(id), &def, &props);
     tracing::debug!(
         "aurora: reconcile group {:?} fill={:?} layout={} paint={} transform={}",
@@ -135,6 +143,9 @@ pub fn reconcile_group(
     node.style.margin = def.margin;
     node.style.padding = def.padding;
     node.style.clip = def.clip;
+    node.style.scrollable = def.scrollable;
+    node.style.overscroll = def.overscroll;
+    node.style.isolate_children = def.isolate_children;
     node.style.is_absolute = def.is_absolute;
     node.style.anchor = def.anchor;
     node.style.z_index = props.z_index;
@@ -177,7 +188,7 @@ pub fn reconcile_group(
         // the first time its parent re-rendered. Entering the scope here makes the two
         // compose: the list can be rebuilt as often as its signals change.
         let cx = crate::reactive::Cx::new(Rc::clone(runtime));
-        let spec = if let Some(sub) = m_sub.or(p_sub) {
+        let spec = if let Some(sub) = m_sub.or(p_sub).or(s_sub) {
             runtime
                 .borrow_mut()
                 .push_observer(Observer::Subscriber(sub));
@@ -288,6 +299,7 @@ impl ResolvedProps {
         pose: Option<&PoseBindings>,
         m_sub: Option<SubscriberId>,
         p_sub: Option<SubscriberId>,
+        s_sub: Option<SubscriberId>,
         runtime: &Rc<RefCell<ReactiveRuntime>>,
     ) -> Self {
         let width = evaluate_prop(&def.width, m_sub, runtime);
@@ -312,6 +324,14 @@ impl ResolvedProps {
         });
         let declared_transform = declared.unwrap_or(Transform::IDENTITY);
 
+        // Scroll offset reads under its own subscriber so it schedules SCROLL
+        // rather than paint: same transform effect, cheaper damage downstream.
+        let scroll_offset = evaluate_prop(&def.scroll_offset, s_sub, runtime).unwrap_or(0.0);
+        let transform = NodeBindings::compose_with_scroll(
+            NodeBindings::compose_with_declared(declared_transform, composed_pose),
+            scroll_offset,
+        );
+
         let shadow = match &def.shadow {
             Some(DynamicProp::Static(s)) => Some(s.clone()),
             Some(DynamicProp::Dynamic(_)) | Some(DynamicProp::Context(_)) => {
@@ -325,7 +345,7 @@ impl ResolvedProps {
             height,
             presence,
             declared_transform,
-            transform: NodeBindings::compose_with_declared(declared_transform, composed_pose),
+            transform,
             fill: evaluate_prop(&def.fill, p_sub, runtime).flatten(),
             opacity: evaluate_prop(&def.opacity, p_sub, runtime),
             shadow,
@@ -368,7 +388,13 @@ impl ChangeSet {
             || app.radius != def.radius
             // Stacking is paint-class: a new z reorders paint (and hit testing, which mirrors
             // paint) without touching layout.
-            || prev.style.z_index != props.z_index;
+            || prev.style.z_index != props.z_index
+            // Scroll viewport flags change what gets encoded/culled, never a
+            // box: repaint-class. The SUBTREE_DIRTY that mark_dirty adds is
+            // what forces the subtree to re-encode under the new clip.
+            || prev.style.scrollable != def.scrollable
+            || prev.style.overscroll != def.overscroll
+            || prev.style.isolate_children != def.isolate_children;
         Self {
             layout,
             paint,

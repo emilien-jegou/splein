@@ -140,10 +140,17 @@ where
         let _span = tracing::info_span!("Wayland::Present").entered();
         let (w, h) = (self.width, self.height);
 
+        // Scroll shifts move retained pixels inside their clips (the blit in
+        // `render_damage` below): the compositor must upload those clips as
+        // well as the exposed strips, so expand them into the tile set.
+        let mut scroll_aware = frame.damage.clone();
+        for shift in frame.damage.scroll_shifts() {
+            scroll_aware.push(shift.clip);
+        }
         let tiles = if self.needs_full {
             vec![DamageTile { x: 0, y: 0, w, h }]
         } else {
-            damage_tiles(frame.damage, frame.extra_damage, w, h)
+            damage_tiles(&scroll_aware, frame.extra_damage, w, h)
         };
         if tiles.is_empty() {
             // Nothing changed: skip the commit entirely. SHM has no buffer age, so
@@ -155,7 +162,7 @@ where
         }
 
         let t_raster = Instant::now();
-        let mut paint = frame.damage.clone();
+        let mut paint = scroll_aware;
         if self.needs_full {
             paint.push(ResolvedRect::new(0.0, 0.0, w as f32, h as f32));
         } else {

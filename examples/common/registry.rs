@@ -58,6 +58,9 @@ mod showcase;
 #[path = "../text_demo/main.rs"]
 mod text_demo;
 #[allow(dead_code)]
+#[path = "../scroll_demo/main.rs"]
+mod scroll_demo;
+#[allow(dead_code)]
 #[path = "../text_smooth/main.rs"]
 mod text_smooth;
 #[allow(dead_code)]
@@ -148,6 +151,11 @@ pub fn all() -> Vec<DemoDef> {
             id: "motion-signals",
             title: "Signal-driven motion",
             boot: boot_motion_signals,
+        },
+        DemoDef {
+            id: "scroll-demo",
+            title: "Scroll drift repro",
+            boot: boot_scroll_demo,
         },
         DemoDef {
             id: "text-smooth",
@@ -272,6 +280,14 @@ fn boot_motion_interruption(ctx: &BootCtx) -> BootedDemo {
 fn boot_motion_signals(ctx: &BootCtx) -> BootedDemo {
     BootedDemo {
         root: mount_root(ctx, motion_signals::Page),
+        background: PAGE.into(),
+        extensions: vec![],
+    }
+}
+
+fn boot_scroll_demo(ctx: &BootCtx) -> BootedDemo {
+    BootedDemo {
+        root: mount_root(ctx, scroll_demo::Page),
         background: PAGE.into(),
         extensions: vec![],
     }

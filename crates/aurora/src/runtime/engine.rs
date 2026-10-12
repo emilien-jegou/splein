@@ -10,7 +10,7 @@ use crate::dsl::reconciler::reconcile;
 use crate::dsl::IntoElement;
 use crate::foundation::{Color, DamageRegion, DamageRing, Key, Point, ResolvedRect, Transform};
 use crate::hot_reload::{HotReload, HotReloadStats, ReloadReport, SharedFactory};
-use crate::input::{CursorIcon, KeyEvent, PointerEvent, PointerOutcome};
+use crate::input::{CursorIcon, KeyEvent, PointerEvent, PointerOutcome, WheelInfo};
 use crate::reactive::{Cx, ReactiveRuntime, Signal};
 use crate::runtime::diagnostics::EngineDiagnostics;
 use crate::runtime::frame::run_frame_passes;
@@ -39,6 +39,8 @@ pub struct Engine {
     /// Key presses waiting for the next frame, drained after pointer events so a
     /// press that moves focus lands before the key that uses it.
     queued_keys: Vec<KeyEvent>,
+    /// Wheel scrolls waiting for the next frame, drained with the keys.
+    queued_wheels: Vec<WheelInfo>,
     /// Last published caret blink phase, so only flips repaint.
     caret_blink_on: bool,
     /// Focused caret seen by the last blink poll, to restart blink on change.
@@ -103,6 +105,7 @@ impl Engine {
             pending_preserved_canvas_rect: None,
             pointer: PointerInput::new(),
             queued_keys: Vec::new(),
+            queued_wheels: Vec::new(),
             caret_blink_on: true,
             caret_last_seen: None,
             caret_epoch: 0.0,
@@ -628,6 +631,11 @@ impl Engine {
         self.queued_keys.push(event);
     }
 
+    /// Queues a wheel scroll for dispatch at the start of the next frame.
+    pub fn queue_wheel_event(&mut self, event: WheelInfo) {
+        self.queued_wheels.push(event);
+    }
+
     /// Cursor shape for the platform: I-beam while hovering selectable text.
     pub fn cursor_icon(&self) -> CursorIcon {
         self.pointer.router().cursor_icon(&self.scheduler.arena)
@@ -725,6 +733,24 @@ impl Engine {
         })
     }
 
+    /// Whether a key press would reach anything: focused selectable text or a
+    /// focused node with a key handler (e.g. a scroll viewport). The bridge
+    /// uses this (not `focused_text`) to decide whether forwarding a key can
+    /// change anything.
+    pub fn has_keyboard_target(&self) -> bool {
+        self.with_arena(|arena, _| {
+            let Some(id) = self.pointer.router().focused() else {
+                return false;
+            };
+            if !arena.is_valid(id) {
+                return false;
+            }
+            let node = arena.get(id);
+            node.state.input.handlers.get().is_some_and(|h| h.key.is_some())
+                || matches!(&node.kind, crate::tree::NodeKind::Text(t) if t.selectable)
+        })
+    }
+
     /// Last text copied with Ctrl+C, if any (internal clipboard).
     pub fn clipboard_text(&self) -> Option<String> {
         self.pointer.router().clipboard().map(str::to_string)
@@ -782,11 +808,19 @@ impl Engine {
             .pointer
             .dispatch(&mut self.scheduler, last_delta, wall_delta);
         // Keys run after the pointer queue so a press that moves focus lands
-        // before the key that uses it.
+        // before the key that uses it. Wheels run with them: position-routed,
+        // needing no focus, but sharing the frame boundary for signal writes.
         for key in std::mem::take(&mut self.queued_keys) {
             self.pointer
                 .router_mut()
                 .dispatch_key(&mut self.scheduler.arena, &key);
+        }
+        for wheel in std::mem::take(&mut self.queued_wheels) {
+            self.pointer.router_mut().dispatch_wheel(
+                &mut self.scheduler.arena,
+                self.scheduler.root,
+                &wheel,
+            );
         }
         outcome
     }

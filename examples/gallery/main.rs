@@ -94,6 +94,11 @@ const DEMOS: &[DemoEntry] = &[
         blurb: "Signals driving motion.",
     },
     DemoEntry {
+        binary: "scroll_demo",
+        title: "Scroll · Drift repro",
+        blurb: "Clip viewport + absolute content triage.",
+    },
+    DemoEntry {
         binary: "text_smooth",
         title: "Text · Smooth drift repro",
         blurb: "Subpixel animation triage.",

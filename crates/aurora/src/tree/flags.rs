@@ -12,6 +12,10 @@ impl DirtyFlags {
     pub const LAYOUT: Self = Self(1 << 1);
     pub const PAINT: Self = Self(1 << 2);
     pub const INTERACTION: Self = Self(1 << 3);
+    /// Scroll-offset shift: paint-class like PAINT (never triggers layout), but
+    /// tracked separately so damage/compile can apply the scroll rule
+    /// (clip-threaded old+new / strip+blit) instead of the repaint rule.
+    pub const SCROLL: Self = Self(1 << 5);
     /// Indicates that at least one descendant within this subtree has dirty flags.
     pub const SUBTREE_DIRTY: Self = Self(1 << 4);
 

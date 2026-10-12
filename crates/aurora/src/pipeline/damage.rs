@@ -4,6 +4,7 @@ use crate::foundation::{DamageRegion, LightEnvironment, Point, ResolvedRect, Tra
 use crate::tree::TreeArena;
 use crate::tree::{DirtyFlags, NodeId, NodeKind};
 
+
 /// Damage calculation plan containing aggregated damaged regions and removed node bounds.
 #[derive(Clone, Debug, Default)]
 pub struct DamagePlan {
@@ -36,9 +37,12 @@ impl DamagePlan {
         if !laid_out && dirty_nodes.is_empty() && plan.removed_rects.is_empty() {
             return plan;
         }
-
         // Fast Path 2: Paint-only mutations walk only the dirty subtrees (O(M*K)), pushing
         // each node's previous and current bounds so a moved node damages both positions.
+        //
+        // The walk is clip-threaded: each dirty root starts from the clip its
+        // ancestors establish (a scroll viewport's box included), so scrolled
+        // or repainted content inside a clip never damages outside it.
         if !laid_out {
             for &id in dirty_nodes {
                 if !arena.is_valid(id) {
@@ -47,15 +51,19 @@ impl DamagePlan {
                 let parent_tx = arena
                     .parent(id)
                     .map_or(Transform::IDENTITY, |p| arena.node_absolute_transform(p));
+                let (root_clip, root_viewport) = ancestor_clipping(arena, id);
                 resolve_spatial_and_damage(
                     arena,
                     id,
                     parent_tx,
-                    None,
+                    root_clip,
+                    root_viewport,
+                    false,
                     LightEnvironment::DEFAULT,
                     &mut plan.region,
                 );
             }
+            expand_nested_shifts(&mut plan);
             return plan;
         }
 
@@ -67,13 +75,19 @@ impl DamagePlan {
         );
 
         // Layout path: Full / boundary tree resolution with hierarchical pruning
-        let root_clip = if arena.get(root).style.clip {
+        let root_node = arena.get(root);
+        let root_clip = if root_node.style.clip {
             Some(ResolvedRect::new(
                 0.0,
                 0.0,
-                arena.get(root).resolved_rect.width,
-                arena.get(root).resolved_rect.height,
+                root_node.resolved_rect.width,
+                root_node.resolved_rect.height,
             ))
+        } else {
+            None
+        };
+        let root_viewport = if root_node.style.clip && root_node.style.scrollable {
+            root_clip
         } else {
             None
         };
@@ -83,11 +97,158 @@ impl DamagePlan {
             root,
             Transform::IDENTITY,
             root_clip,
+            root_viewport,
+            false,
             LightEnvironment::DEFAULT,
             &mut plan.region,
         );
+        expand_nested_shifts(&mut plan);
         plan
     }
+}
+
+/// Nearest scrollable+clip ancestor of `id`: the viewport whose box the
+/// damage walk threaded down. `expected` is that box (recomputed here would
+/// be identical); the walk up finds its node for overlay repair. `None` when
+/// the threaded box came from nowhere searchable (defensive; skips repair).
+fn scroll_viewport_node(
+    arena: &TreeArena,
+    id: NodeId,
+    expected: Option<ResolvedRect>,
+) -> Option<NodeId> {
+    if expected.is_none() {
+        return None;
+    }
+    let mut current = arena.parent(id);
+    while let Some(parent) = current {
+        let node = arena.get(parent);
+        if node.style.clip && node.style.scrollable {
+            return Some(parent);
+        }
+        current = arena.parent(parent);
+    }
+    None
+}
+
+/// Union of last-painted bounds over a subtree: where its pixels sat last
+/// frame. Read-only mid-walk (commit runs post-frame), so it is stable no
+/// matter the visit order. Nodes never painted contribute nothing — mount
+/// damage already covers them.
+fn subtree_old_bounds(arena: &TreeArena, id: NodeId) -> ResolvedRect {
+    if !arena.is_valid(id) {
+        return ResolvedRect::ZERO;
+    }
+    let mut out = arena
+        .get(id)
+        .state
+        .paint
+        .last_painted_bounds
+        .unwrap_or(ResolvedRect::ZERO);
+    for &child in arena.children(id) {
+        out = out.union(&subtree_old_bounds(arena, child));
+    }
+    out
+}
+
+/// Whether `node` is `ancestor` or descends from it.
+fn is_within(arena: &TreeArena, mut node: NodeId, ancestor: NodeId) -> bool {
+    loop {
+        if node == ancestor {
+            return true;
+        }
+        match arena.parent(node) {
+            Some(p) => node = p,
+            None => return false,
+        }
+    }
+}
+
+/// Repairs overlay pixels a scroll blit corrupts.
+///
+/// The blit moves every pixel in the viewport box, but overlays (thumb,
+/// sticky — anything in the viewport outside the shifted content subtree)
+/// do not move with content: their old pixels get copied to a wrong
+/// destination, which no other damage covers. Pushing each overlay's old
+/// bounds shifted by the delta repaints exactly those destinations from the
+/// new scene. Overlays' own old/new positions stay covered by their own
+/// damage (or are untouched sources, when static).
+fn repair_scroll_overlays(
+    arena: &TreeArena,
+    shifted: NodeId,
+    viewport: NodeId,
+    delta: Point,
+    damage: &mut DamageRegion,
+) {
+    if shifted == viewport {
+        // The viewport itself moved: the whole subtree moves rigidly with it,
+        // so the blit is correct everywhere inside.
+        return;
+    }
+    // Direct child of the viewport on the shifted node's path — the one
+    // subtree that moves with the shift and needs no repair.
+    let mut top = shifted;
+    while let Some(p) = arena.parent(top) {
+        if p == viewport {
+            break;
+        }
+        top = p;
+    }
+    for &child in arena.children(viewport) {
+        if child == top || is_within(arena, shifted, child) {
+            continue;
+        }
+        let old = subtree_old_bounds(arena, child);
+        if !old.is_empty() {
+            damage.push(old.shifted_by(delta));
+        }
+    }
+}
+
+/// Expands nested same-tick shifts to full boxes.
+///
+/// Sequential blits compose, but overlay repair is computed pre-frame: when
+/// one shift's clip contains another's, the inner repair coordinates go
+/// stale under the outer blit. This is rare (two viewports scrolling one
+/// frame); the outer box repaint is always correct. Single shifts — the
+/// common case — keep the fast strip path untouched.
+fn expand_nested_shifts(plan: &mut DamagePlan) {
+    let shifts = plan.region.scroll_shifts().to_vec();
+    for (i, a) in shifts.iter().enumerate() {
+        for (j, b) in shifts.iter().enumerate() {
+            if i != j && (a.clip == b.clip || a.clip.contains_rect(&b.clip)) {
+                plan.region.push(a.clip);
+            }
+        }
+    }
+}
+///
+/// A node's own clip is excluded from `clip` (it bounds the node's children,
+/// not itself; the recursive walk threads it down via `next_clip`). The
+/// viewport half exists for Fast Path 2 roots, where the walk starts mid-tree
+/// and never passes the viewport node itself.
+fn ancestor_clipping(arena: &TreeArena, id: NodeId) -> (Option<ResolvedRect>, Option<ResolvedRect>) {
+    let mut clip: Option<ResolvedRect> = None;
+    let mut viewport: Option<ResolvedRect> = None;
+    let mut current = arena.parent(id);
+    while let Some(parent) = current {
+        let node = arena.get(parent);
+        if node.style.clip {
+            let origin = arena.node_absolute_point(parent);
+            let box_rect = ResolvedRect::new(
+                origin.x,
+                origin.y,
+                node.resolved_rect.width,
+                node.resolved_rect.height,
+            );
+            clip = Some(clip.map_or(box_rect, |c| c.intersect(&box_rect)));
+            // Innermost wins: ancestors overwrite only when nothing closer set.
+            if viewport.is_none() && node.style.scrollable {
+                viewport = Some(box_rect);
+            }
+        }
+        current = arena.parent(parent);
+    }
+    (clip, viewport)
 }
 
 fn resolve_spatial_and_damage(
@@ -95,10 +256,12 @@ fn resolve_spatial_and_damage(
     id: NodeId,
     parent_tx: Transform,
     active_clip: Option<ResolvedRect>,
+    scroll_viewport: Option<ResolvedRect>,
+    ancestor_shifted: bool,
     inherited_light: LightEnvironment,
     damage: &mut DamageRegion,
 ) -> ResolvedRect {
-    let (node_tx, is_clip, painted) = {
+    let (node_tx, is_clip, is_scroll_viewport, painted) = {
         let node = arena.get(id);
         // Origin comes from the render box so damage follows what is on screen.
         let painted = node.resolved_rect;
@@ -107,7 +270,12 @@ fn resolve_spatial_and_damage(
         if local_tx != Transform::IDENTITY {
             tx = tx.multiply(&local_tx);
         }
-        (tx, node.style.clip, painted)
+        (
+            tx,
+            node.style.clip,
+            node.style.clip && node.style.scrollable,
+            painted,
+        )
     };
 
     // Ambient light resolves top-down: the nearest override wins, and the
@@ -128,6 +296,50 @@ fn resolve_spatial_and_damage(
     // Visible extent under the active clip: bounds the subtree work a chunk has to rasterize.
     let visual_bounds = arena.get(id).compute_visual_bounds(&node_tx, active_clip);
     let mut subtree_bounds = visual_bounds;
+    // Scroll fast path, decided before descending: a transform-only
+    // SCROLL-dirty node inside a scroll viewport moved by a pure
+    // translation. Damage is the newly-exposed strip only (plus a 1px seam
+    // pad for the blit's device rounding); the backend moves the covered
+    // bulk via the recorded shift. Descendants inherit `shifted` as
+    // `ancestor_shifted`: their old/new positions are already covered by
+    // this shift, so they stay silent unless they changed themselves.
+    let shifted = {
+        let node = arena.get(id);
+        let dirty = node.state.core.dirty;
+        let transform_only = dirty.contains(DirtyFlags::SCROLL)
+            && !dirty.contains(DirtyFlags::MEASURE | DirtyFlags::LAYOUT | DirtyFlags::PAINT);
+        let old = node.state.paint.last_painted_bounds;
+        match (transform_only, scroll_viewport, old) {
+            (true, Some(viewport), Some(old)) => {
+                let (dx, dy) = (full_bounds.x - old.x, full_bounds.y - old.y);
+                if dx == 0.0 && dy == 0.0 {
+                    false
+                } else {
+                    let covered = viewport.intersect(&viewport.shifted_by(Point::new(dx, dy)));
+                    let mut exposed_any = false;
+                    for strip in viewport.subtract(&covered) {
+                        let padded = strip.expand(1.0).intersect(&viewport);
+                        if !padded.is_empty() {
+                            damage.push(padded);
+                            exposed_any = true;
+                        }
+                    }
+                    if exposed_any {
+                        damage.push_scroll_shift(viewport, Point::new(dx, dy));
+                        // The blit moves overlay pixels (thumb, sticky) that
+                        // do not move with content — repair their destinations.
+                        if let Some(vp) =
+                            scroll_viewport_node(arena, id, scroll_viewport)
+                        {
+                            repair_scroll_overlays(arena, id, vp, Point::new(dx, dy), damage);
+                        }
+                    }
+                    true
+                }
+            }
+            _ => false,
+        }
+    };
 
     let next_clip = if is_clip {
         let box_rect = ResolvedRect::new(node_abs.x, node_abs.y, painted.width, painted.height);
@@ -135,12 +347,28 @@ fn resolve_spatial_and_damage(
     } else {
         active_clip
     };
+    // The viewport box threads down like the clip; a nested scroll viewport
+    // overwrites it for its own subtree (contain: shifts never escape it).
+    let next_viewport = if is_scroll_viewport {
+        let box_rect = ResolvedRect::new(node_abs.x, node_abs.y, painted.width, painted.height);
+        Some(box_rect)
+    } else {
+        scroll_viewport
+    };
 
     let child_count = arena.children(id).len();
     for i in 0..child_count {
         let child = arena.children(id)[i];
-        let child_subtree =
-            resolve_spatial_and_damage(arena, child, node_tx, next_clip, ambient, damage);
+        let child_subtree = resolve_spatial_and_damage(
+            arena,
+            child,
+            node_tx,
+            next_clip,
+            next_viewport,
+            ancestor_shifted || shifted,
+            ambient,
+            damage,
+        );
         subtree_bounds = subtree_bounds.union(&child_subtree);
     }
 
@@ -159,8 +387,18 @@ fn resolve_spatial_and_damage(
         // Clipped to the active clip: paint outside it never happened (compile culls
         // there), so there is nothing to clear beyond it — including for a node that
         // moved, whose old painted pixels were inside the clip it was painted under.
-        if old != full_bounds || old_flow != Some(flow_bounds) {
-            match active_clip {
+        //
+        // A node whose move an ancestor shift already covers stays silent
+        // unless it changed itself (measure/layout/paint): the ancestor's
+        // blit moved its old pixels and the strip covers the rest.
+        let self_changed = node.state.core.dirty.contains(
+            DirtyFlags::MEASURE | DirtyFlags::LAYOUT | DirtyFlags::PAINT,
+        );
+        if !shifted
+            && (!ancestor_shifted || self_changed)
+            && (old != full_bounds || old_flow != Some(flow_bounds))
+        {
+                match active_clip {
                 Some(clip) => {
                     damage.push(old.intersect(&clip));
                     damage.push(full_bounds.intersect(&clip));
@@ -170,7 +408,15 @@ fn resolve_spatial_and_damage(
                     damage.push(full_bounds);
                 }
             }
-        } else if node.state.core.dirty.contains(DirtyFlags::PAINT) || is_text_mutation {
+        // A shifted node needs no repaint on top: the blit moved the covered
+        // bulk and the strip above covers the rest. Without this guard the
+        // branch below re-adds the whole clipped subtree on every scroll tick.
+        } else if !shifted
+            && (node.state.core.dirty.contains(DirtyFlags::PAINT)
+                || node.state.core.dirty.contains(DirtyFlags::SCROLL)
+                || is_text_mutation
+                || (ancestor_shifted && self_changed))
+        {
             let damage_target = if child_count > 0 {
                 subtree_bounds
             } else {

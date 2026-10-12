@@ -260,7 +260,10 @@ impl FrameScheduler {
             // previous value and hands the delta to an engine-side controller, so a signal write
             // takes effect on the frame it happens and whatever reads that signal -- including a
             // child's own text -- moves with it.
-            if flags.contains(DirtyFlags::PAINT) {
+            //
+            // SCROLL rides alongside PAINT: a scroll offset only shifts the node's
+            // transform (like x/y), never a box, so it is equally layout-safe.
+            if flags.contains(DirtyFlags::PAINT) || flags.contains(DirtyFlags::SCROLL) {
                 let n = self.arena.get_mut(node);
                 let tx_changed =
                     bindings.update_transform(n.state.core.declared_transform, &mut n.transform);
@@ -272,7 +275,7 @@ impl FrameScheduler {
                 // Stacking rides the paint path: it reorders paint without touching layout.
                 let z_changed = bindings.update_z(&mut n.style.z_index, n.style.is_absolute);
                 if tx_changed || paint_changed || z_changed {
-                    effective.insert(DirtyFlags::PAINT);
+                    effective.insert(flags & (DirtyFlags::PAINT | DirtyFlags::SCROLL));
                 }
             }
         }
@@ -349,12 +352,12 @@ impl FrameScheduler {
             let mut deferred = rustc_hash::FxHashSet::default();
 
             for sub in dirty_subs {
-                // Anything that is not a pure paint subscriber is requeued for the next
+                // Anything that is not a pure paint/scroll subscriber is requeued for the next
                 // frame's pre-layout drain, which can still act on it before layout runs.
                 let Some((node, flags)) = self.router.lookup(sub) else {
                     continue;
                 };
-                if !flags.contains(DirtyFlags::PAINT) {
+                if !flags.contains(DirtyFlags::PAINT) && !flags.contains(DirtyFlags::SCROLL) {
                     deferred.insert(sub);
                     continue;
                 }

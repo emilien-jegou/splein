@@ -193,16 +193,16 @@ fn sibling_content_change_recompiles_only_it() {
 }
 
 /// A dirty offscreen row scrolled onscreen repaints exactly its revealed
-/// pixels: one re-emit for the dirty row, replays everywhere else.
+/// pixels: the edit encodes while offscreen (dirty subtrees are never
+/// culled), so the reveal replays everything and damages only the strip.
 ///
-/// IGNORED — documents a real content-loss bug, not intended behavior:
-/// `compile_node_hierarchy` culls offscreen non-context nodes mid-emit
-/// (`hierarchy.rs`), but the enclosing stacking root still reaches the
-/// flag-clear, so the ancestor replays fill-only content that never included
-/// the dirty descendant, and nothing re-emits it on reveal. Un-ignore when
-/// culled-dirty descendants force their context to stay dirty.
+/// This used to be ignored: `compile_node_hierarchy` culled offscreen
+/// non-context nodes mid-emit while the enclosing stacking root still
+/// cleared its flags, so the ancestor replayed fill-only content that never
+/// included the dirty descendant. Fixed by encoding dirty offscreen nodes
+/// (settled-subtree cull) — the accounting below is the proof: zero fresh
+/// rows on reveal, because the work already happened at edit time.
 #[test]
-#[ignore = "culled-dirty descendants are lost from replayed chunks; see docs/retention.md Known gap"]
 #[ntest::timeout(5_000)]
 fn dirty_offscreen_row_reveals_cleanly() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
@@ -263,12 +263,15 @@ fn dirty_offscreen_row_reveals_cleanly() {
         .assert_no_strays(128, "editing an offscreen row");
 
     // Scroll the column up: row 4 (was y 240..300) lands at y 60..120.
+    // Its edit encoded while offscreen, so the reveal must replay every row
+    // and damage only the exposed strip — no fresh rows, no holes.
     dy.set(-180.0);
     h.step();
     h.damage_parity()
         .assert_no_strays(128, "revealing a dirty offscreen row");
 
-    // Row-height chunks only: the revealed row re-emitted, the rest replayed.
+    // Row-height chunks only: every row replays (the dirty row's edit encoded
+    // while it was still offscreen), and damage stays a strip, not a viewport.
     let mut fresh_rows = 0usize;
     let mut replayed_rows = 0usize;
     for chunk in h.engine().scene().chunks.iter() {
@@ -283,15 +286,14 @@ fn dirty_offscreen_row_reveals_cleanly() {
         }
         if chunk.fresh {
             fresh_rows += 1;
-            assert!(
-                (y - 60.0).abs() < 2.0,
-                "the only recompiled row must be the revealed row 4 at y~=60, got y={y}"
-            );
         } else {
             replayed_rows += 1;
         }
     }
-    assert_eq!(fresh_rows, 1, "exactly the revealed dirty row re-emits");
+    assert_eq!(
+        fresh_rows, 0,
+        "no row re-emits on reveal: the offscreen edit already encoded"
+    );
     assert!(
         replayed_rows >= 4,
         "the rows that merely moved must replay, got {replayed_rows} replays"

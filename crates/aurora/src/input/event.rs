@@ -73,6 +73,27 @@ pub struct HoverInfo {
     pub position: Point,
 }
 
+/// Data handed to a wheel callback.
+///
+/// Deltas are in engine (window) pixels, already normalized from the
+/// platform's line/pixel units by the bridge. Positive `delta_y` is
+/// scroll-up intent (wheel up / swipe up): a viewport decreases its offset,
+/// like a drag that moved the content down.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct WheelInfo {
+    /// Pointer position in absolute window coordinates.
+    pub position: Point,
+    /// Horizontal wheel component; reserved (v1 viewports ignore it).
+    pub delta_x: f32,
+    /// Vertical wheel component, in window pixels.
+    pub delta_y: f32,
+    /// Whether the platform reported modifiers at the time of the event.
+    pub shift: bool,
+    pub alt: bool,
+    pub ctrl: bool,
+    pub meta: bool,
+}
+
 /// Pointer cursor shape the engine asks the platform for.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub enum CursorIcon {

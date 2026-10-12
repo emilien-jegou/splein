@@ -375,19 +375,52 @@ impl WgpuRenderer {
                 // per-chunk snapshot below would slice verts whose draw ops
                 // belong to the previous chunk (invisible on cache replay).
                 batch.begin_chunk();
-                if let Some(hit) = chunks.get(key, agen) {
-                    let rb = batch.rect_verts.len() as u32;
-                    let gb = batch.glyph_verts.len() as u32;
-                    let qb = batch.rrect_verts.len() as u32;
-                    batch.rect_verts.extend_from_slice(&hit.rects);
-                    batch.glyph_verts.extend_from_slice(&hit.glyphs);
-                    batch.rrect_verts.extend_from_slice(&hit.rrects);
-                    let ops: Vec<Op> = hit
-                        .ops
-                        .iter()
-                        .map(|op| ChunkCache::rebased(op, rb, gb, qb))
-                        .collect();
-                    batch.ops.extend(ops);
+                // Origin-rebased replay: a hit at a new origin translates
+                // cached verts instead of re-tessellating (scroll); a hit at
+                // the baked origin is a plain copy. Anything rebase_for
+                // rejects (scale change, local frames, fractional glyph
+                // phase) falls through to fresh emission below.
+                let replayed = match chunks.get(key, agen) {
+                    Some(hit) => match hit.rebase_for(chunk.abs_origin, batch.scale()) {
+                        Some((0.0, 0.0)) => {
+                            let rb = batch.rect_verts.len() as u32;
+                            let gb = batch.glyph_verts.len() as u32;
+                            let qb = batch.rrect_verts.len() as u32;
+                            batch.rect_verts.extend_from_slice(&hit.rects);
+                            batch.glyph_verts.extend_from_slice(&hit.glyphs);
+                            batch.rrect_verts.extend_from_slice(&hit.rrects);
+                            let ops: Vec<Op> = hit
+                                .ops
+                                .iter()
+                                .map(|op| ChunkCache::rebased(op, rb, gb, qb))
+                                .collect();
+                            batch.ops.extend(ops);
+                            true
+                        }
+                        Some((dx, dy)) => {
+                            let rb = batch.rect_verts.len() as u32;
+                            let gb = batch.glyph_verts.len() as u32;
+                            let qb = batch.rrect_verts.len() as u32;
+                            hit.append_rebased(
+                                dx,
+                                dy,
+                                &mut batch.rect_verts,
+                                &mut batch.glyph_verts,
+                                &mut batch.rrect_verts,
+                            );
+                            let ops: Vec<Op> = hit
+                                .ops
+                                .iter()
+                                .map(|op| ChunkCache::rebased(op, rb, gb, qb))
+                                .collect();
+                            batch.ops.extend(ops);
+                            true
+                        }
+                        None => false,
+                    },
+                    None => false,
+                };
+                if replayed {
                     continue;
                 }
                 let (r0, g0, q0, o0) = (
@@ -455,7 +488,16 @@ impl WgpuRenderer {
                     .collect();
                 chunks.insert(
                     key,
-                    crate::cache::CachedChunk::new(rects, glyphs, rrects, ops, atlas.generation()),
+                    crate::cache::CachedChunk::new(
+                        rects,
+                        glyphs,
+                        rrects,
+                        ops,
+                        atlas.generation(),
+                        chunk.abs_origin,
+                        batch.scale(),
+                        crate::cache::rebaseable_stream(&chunk.commands),
+                    ),
                 );
             }
         }

@@ -29,7 +29,22 @@ pub fn compile_node_hierarchy(
         parent_tx.multiply(&Transform::from_translation(painted.x, painted.y))
     };
     let visual_screen = node.compute_visual_bounds(&own_tx, None);
-    if !visual_screen.overlaps(&viewport) && !node.style.has_layer && !is_stacking_root {
+    // A culled node keeps its flags (the early return skips the clear at the
+    // end of this function), so culling a dirty node lets its parent replay
+    // content that never included it — and nothing re-emits it on reveal.
+    // Only settled subtrees cull: a dirty offscreen node encodes (once,
+    // cheap) and clears together with its parent, so reveal always replays
+    // complete content.
+    let dirty = node.state.core.dirty;
+    let subtree_settled = !dirty.contains(DirtyFlags::SUBTREE_DIRTY)
+        && !dirty.contains(
+            DirtyFlags::MEASURE | DirtyFlags::LAYOUT | DirtyFlags::PAINT | DirtyFlags::SCROLL,
+        );
+    if !visual_screen.overlaps(&viewport)
+        && !node.style.has_layer
+        && !is_stacking_root
+        && subtree_settled
+    {
         return;
     }
 
@@ -50,11 +65,15 @@ pub fn compile_node_hierarchy(
     emit_node_content(node, chunk, text_ctx, caret_visible);
 
     let child_count = arena.children(id).len();
+    // Children that live in their own chunks — real stacking contexts, or
+    // isolated children of an `isolate_children` parent — are compiled by the
+    // context loops, never inline here. Emitting both would double-paint.
+    let isolates = arena.get(id).style.isolate_children;
     for i in 0..child_count {
         let child_id = arena.children(id)[i];
         let child = arena.get(child_id);
         let creates_context = child.creates_stacking_context();
-        if !creates_context {
+        if !creates_context && !isolates {
             compile_node_hierarchy(
                 arena,
                 child_id,
@@ -79,5 +98,5 @@ pub fn compile_node_hierarchy(
         .state
         .core
         .dirty
-        .remove(DirtyFlags::PAINT | DirtyFlags::SUBTREE_DIRTY);
+        .remove(DirtyFlags::PAINT | DirtyFlags::SCROLL | DirtyFlags::SUBTREE_DIRTY);
 }

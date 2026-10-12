@@ -15,6 +15,7 @@ pub struct SubscriberRouter {
     node_measure_subs: FxHashMap<NodeId, SubscriberId>,
     node_layout_subs: FxHashMap<NodeId, SubscriberId>,
     node_paint_subs: FxHashMap<NodeId, SubscriberId>,
+    node_scroll_subs: FxHashMap<NodeId, SubscriberId>,
 }
 
 impl SubscriberRouter {
@@ -56,6 +57,23 @@ impl SubscriberRouter {
         sub
     }
 
+    /// Obtains or allocates a scroll subscriber for a node.
+    ///
+    /// Scroll is paint-class: it moves the node's transform without changing
+    /// any box, so it never triggers layout (see `execute_layout`, which only
+    /// runs on `MEASURE`/`LAYOUT`). Tracked separately from `PAINT` so the
+    /// damage plan can apply the scroll rule (clip-threaded old+new/strip)
+    /// instead of the repaint rule.
+    pub fn scroll_sub(&mut self, node: NodeId, runtime: &mut ReactiveRuntime) -> SubscriberId {
+        if let Some(&sub) = self.node_scroll_subs.get(&node) {
+            return sub;
+        }
+        let sub = runtime.alloc_subscriber();
+        self.node_scroll_subs.insert(node, sub);
+        self.bind(sub, node, DirtyFlags::SCROLL);
+        sub
+    }
+
     /// Binds an existing subscriber handle to an arena node and category flags.
     pub fn bind(&mut self, sub: SubscriberId, node: NodeId, flags: DirtyFlags) {
         self.subscriber_to_node.insert(sub, (node, flags));
@@ -73,6 +91,7 @@ impl SubscriberRouter {
         self.node_measure_subs.remove(&node);
         self.node_layout_subs.remove(&node);
         self.node_paint_subs.remove(&node);
+        self.node_scroll_subs.remove(&node);
         if let Some(subs) = self.node_to_subscribers.remove(&node) {
             for s in &subs {
                 self.subscriber_to_node.remove(s);

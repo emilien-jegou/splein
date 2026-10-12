@@ -82,13 +82,21 @@ impl Backend for CpuBackend {
             .buffer_mut()
             .map_err(|e| BackendError::surface(format!("buffer acquire: {e:?}")))?;
         let accumulated = frame.damage_resolver.for_age(buffer.age());
+        // The blit moved retained pixels inside each shift clip: those pixels
+        // changed since the last commit too, so the compositor must upload
+        // them alongside the aged damage (whose union already dropped the
+        // shifts — they belong to this frame only).
+        let mut os_damage = accumulated;
+        for shift in frame.damage.scroll_shifts() {
+            os_damage.push(shift.clip);
+        }
         let (width, height) = (frame.surface.width, frame.surface.height);
         let mut post = frame.post_process;
 
         SurfacePresenter::present_damaged()
             .pixmap(self.renderer.canvas())
             .buffer(buffer)
-            .damage(&accumulated)
+            .damage(&os_damage)
             .extra_damage(frame.extra_damage)
             .active_w(width)
             .active_h(height)

@@ -75,7 +75,14 @@ impl PointerRouter {
             self.clear_active_selection(arena);
             self.pending_collapse = None;
             self.pending_press = None;
-            self.set_focus(arena, None);
+            // Keyboard still needs somewhere to go: focus the nearest scroll
+            // viewport outward from the press (its key handler scrolls), or
+            // defocus when there is none.
+            let viewport = self.press_chain.iter().copied().find(|id| {
+                let style = &arena.get(*id).style;
+                style.scrollable && style.clip
+            });
+            self.set_focus(arena, viewport);
             return;
         };
         // Empty runs take no caret, no highlight, and no focus: there is

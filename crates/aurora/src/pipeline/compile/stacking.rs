@@ -72,12 +72,17 @@ pub fn build_stacking_tree(
         child_inherited.extend(clips_imposed_by(node, abs_origin));
     }
 
+    // An isolating parent compiles every child as its own chunk, so clean
+    // siblings replay while one changes. Paint order is unchanged: same z,
+    // stable sort below. (compile_node_hierarchy skips these children for
+    // the same reason it skips real stacking contexts.)
+    let isolate = arena.get(parent_id).style.isolate_children;
     for &child_id in arena.children(parent_id) {
         let child = arena.get(child_id);
         let painted = child.resolved_rect;
         let child_tx = parent_tx.multiply(&Transform::from_translation(painted.x, painted.y));
 
-        if child.creates_stacking_context() {
+        if child.creates_stacking_context() || isolate {
             *count += 1;
             // The chunk origin is the child's rendered box origin, before its own transform.
             let child_origin = child_tx.transform_point(Point::ZERO);

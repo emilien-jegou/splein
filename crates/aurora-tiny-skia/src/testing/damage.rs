@@ -69,6 +69,11 @@ pub fn redrawn_at(x: u32, y: u32, damage: &DamageRegion) -> bool {
 ///
 /// Does not disturb the engine: the reference is rendered into a throwaway renderer, so the
 /// next `frame()` behaves exactly as it would have.
+///
+/// Must be the SOLE painter of the frame it checks: call after
+/// `engine.frame()`, never after `step()`/`canvas()` for the same frame.
+/// Tile repaints are idempotent, but scroll blits are moves — painting the
+/// same damage twice shifts pixels twice and reports phantom strays.
 pub fn parity(engine: &mut Engine, raster: &mut crate::raster::HeadlessRaster) -> DamageParity {
     let size = engine.logical_size();
     let text_ctx = engine.text_context();

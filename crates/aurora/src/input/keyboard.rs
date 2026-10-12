@@ -5,9 +5,10 @@
 
 /// A key the engine acts on for text selection.
 ///
-/// Deliberately small: arrows, line edges, and characters (for Ctrl+A/C and
-/// future editing). Typing, function keys, and IME composition are out of scope
-/// for readonly selection.
+/// Deliberately small: arrows, line edges, pages, and characters (for Ctrl+A/C
+/// and future editing). Typing, function keys, and IME composition are out of
+/// scope for readonly selection. Page keys fall through text handling to the
+/// nearest scroll viewport.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum KeyCode {
     Left,
@@ -16,6 +17,8 @@ pub enum KeyCode {
     Down,
     Home,
     End,
+    PageUp,
+    PageDown,
     Escape,
     /// A printable character, already resolved through the platform layout.
     Char(char),

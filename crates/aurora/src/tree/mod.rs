@@ -19,6 +19,7 @@
 //!   [`SceneState`] (retained chunk), [`PaintState`] (committed bounds).
 //!   Each group moves with the code that owns it if this ever splits again.
 //! - [`DirtyFlags`]: `MEASURE` (reshape), `LAYOUT` (replace), `PAINT` (repaint),
+//!   `SCROLL` (paint-class offset shift: moves transforms, never boxes),
 //!   `INTERACTION` (handlers), `SUBTREE_DIRTY` (descendant changed). Fill/opacity/shadow
 //!   are paint-only; text content is measure; structure goes through reconciliation.
 //! - [`mark_node_dirty`]: upward invalidation to layout boundaries. Prefer it over
@@ -61,7 +62,7 @@
 //!
 //! - `with_arena` hands out the *whole* arena including `get_mut`. It exists for
 //!   diagnostics and tests; passes must grow narrow methods instead.
-//! - `SUBTREE_DIRTY` propagates upward; `PAINT` does not need layout. Marking `LAYOUT`
+//! - `SUBTREE_DIRTY` propagates upward; `PAINT`/`SCROLL` do not need layout. Marking `LAYOUT`
 //!   when only paint changed forces a full pass for nothing — check
 //!   `tests/pipeline_stage1_invalidation.rs` for the class table.
 //! - Cached text layouts (`TextState::cached_text_layout`) are shared `Arc`s: clearing

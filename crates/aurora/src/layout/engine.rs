@@ -38,7 +38,14 @@ pub fn layout_node(arena: &mut TreeArena, node_id: NodeId, constraints: Constrai
 /// sibling churn, surviving even resizes). Unchanged slots keep the cache fast
 /// path; the mark fires only on actual change, so layout still reaches fixpoint.
 fn place_child(arena: &mut TreeArena, child: NodeId, rect: ResolvedRect) {
-    if arena.get(child).resolved_rect != rect {
+    // A pure translation schedules nothing: children lay out against the
+    // tight (w, h) below, which is unchanged, and the cached path still
+    // refreshes absolute geometry (see below). Marking here used to dirty
+    // every moved node, so shifting a spacer re-encoded all its siblings
+    // instead of replaying them at the new origin. Size changes still mark:
+    // a new box can reflow the interior.
+    let prev = arena.get(child).resolved_rect;
+    if prev.width != rect.width || prev.height != rect.height {
         arena.mark_dirty(child, DirtyFlags::MEASURE | DirtyFlags::LAYOUT);
     }
     arena.get_mut(child).resolved_rect = rect;

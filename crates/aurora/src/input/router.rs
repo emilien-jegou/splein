@@ -5,7 +5,7 @@ use super::selection::{
 };
 use crate::foundation::Key;
 use crate::foundation::Point;
-use crate::input::event::{ClickInfo, CursorIcon, HoverInfo, PointerEvent, PointerPhase};
+use crate::input::event::{ClickInfo, CursorIcon, HoverInfo, PointerEvent, PointerPhase, WheelInfo};
 use crate::input::handlers::Propagation;
 use crate::input::hit::{hit_chain, HitNode, HitTest};
 use crate::input::keyboard::{KeyCode, KeyEvent};
@@ -324,8 +324,9 @@ impl PointerRouter {
                     handled |= self.deliver_to(
                         &*arena,
                         captured,
-                        |h, info| h.fire_drag_step(info),
+                        |h, info| h.drag_step.as_ref().map(|f| f(info)),
                         event.position,
+                        true,
                     );
                     self.extend_active_selection(arena, event.position);
                 }
@@ -334,8 +335,9 @@ impl PointerRouter {
                 handled |= self.deliver_to(
                     &*arena,
                     captured,
-                    |h, info| h.fire_drag_start(info),
+                    |h, info| h.drag_start.as_ref().map(|f| f(info)),
                     event.position,
+                    true,
                 );
                 // A real drag cancels the deferred collapse: pressing inside a
                 // selection and moving starts a fresh range from the press point.
@@ -346,8 +348,9 @@ impl PointerRouter {
                 handled |= self.deliver_to(
                     &*arena,
                     captured,
-                    |h, info| h.fire_drag_step(info),
+                    |h, info| h.drag_step.as_ref().map(|f| f(info)),
                     event.position,
+                    true,
                 );
                 self.extend_active_selection(arena, event.position);
             }
@@ -387,10 +390,13 @@ impl PointerRouter {
             }
             TrackerChange::DragEnded => {
                 let position = event.position;
-                let info = self.tracker.drag_info(position, false);
-                if let Some(target) = captured {
-                    handled |= fire(&*arena, target, |h| h.fire_drag_end(&info)).0;
-                }
+                handled |= self.deliver_to(
+                    &*arena,
+                    captured,
+                    |h, info| h.drag_end.as_ref().map(|f| f(info)),
+                    position,
+                    false,
+                );
                 self.press_chain.clear();
                 // The highlight stays selected and stays tracked: a later
                 // foreign press must still find and clear it, and shift-click
@@ -422,7 +428,73 @@ impl PointerRouter {
         }
     }
 
+    /// Delivers a wheel/touchpad scroll at the pointer position.
+    ///
+    /// No press is needed: the hit chain resolves topmost-first and the first
+    /// node with a wheel slot handles it, ending the walk (contain — a
+    /// scroller consumes the wheel even at its ends, never chaining outward).
+    /// Returns whether any handler ran.
+    pub fn dispatch_wheel(
+        &mut self,
+        arena: &mut TreeArena,
+        root: NodeId,
+        info: &WheelInfo,
+    ) -> bool {
+        let chain = hit_chain(&*arena, root, info.position);
+        for hit in &chain {
+            if !arena.is_valid(hit.id) {
+                continue;
+            }
+            let slot = match arena.get(hit.id).state.input.handlers.get() {
+                Some(handlers) => handlers.wheel.clone(),
+                None => None,
+            };
+            if let Some(f) = slot {
+                let _eval_node =
+                    crate::reactive::context::enter_node(hit.id, &*arena);
+                f(info);
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Delivers a key press to the focus chain.
+    ///
+    /// From the focused node outward: the first node with a key slot handles
+    /// it, ending the walk (contain). Text editing keeps priority — see
+    /// `dispatch_key`, which runs the text path before falling through here.
+    fn fire_key_chain(&mut self, arena: &mut TreeArena, key: &KeyEvent) -> bool {
+        let Some(focused) = self.focused.filter(|n| arena.is_valid(*n)) else {
+            return false;
+        };
+        let mut id = Some(focused);
+        while let Some(n) = id {
+            let slot = match arena.get(n).state.input.handlers.get() {
+                Some(handlers) => handlers.key.clone(),
+                None => None,
+            };
+            if let Some(f) = slot {
+                let _eval_node = crate::reactive::context::enter_node(n, &*arena);
+                f(key);
+                return true;
+            }
+            id = arena.parent(n);
+        }
+        false
+    }
+
     /// Hands a gesture payload to the capturing node, if it still exists.
+    ///
+    /// Transfer, not strict capture: when the captured node declares no
+    /// handler for the phase, the nearest press-chain ancestor with one
+    /// handles it instead — so a drag that starts on a clickable-but-not-
+    /// draggable row still scrolls its viewport, and clicks on bare rows
+    /// keep working. The first node with a slot wins and the walk ends
+    /// there (contain): a scroller never chains a gesture outward, and a
+    /// node that handles a phase never shares it with an ancestor.
+    /// Single-handler behavior is unchanged: when the captured node handles
+    /// the phase it fires exactly as before.
     fn deliver_to(
         &mut self,
         arena: &TreeArena,
@@ -430,8 +502,9 @@ impl PointerRouter {
         invoke: fn(
             &crate::input::handlers::HandlerSet,
             &crate::input::event::DragInfo,
-        ) -> Propagation,
+        ) -> Option<Propagation>,
         position: Point,
+        held: bool,
     ) -> bool {
         let Some(target) = target else {
             return false;
@@ -442,8 +515,33 @@ impl PointerRouter {
             self.tracker.set_capture(None);
             return false;
         }
-        let info = self.tracker.drag_info(position, true);
-        fire(arena, target, |h| invoke(h, &info)).0
+        // The press bound target-outward, so the captured node is first and
+        // transfer walks outward from there. A capture taken outside any
+        // press (synthetic drags) starts at the chain head.
+        let start = self
+            .press_chain
+            .iter()
+            .position(|id| *id == target)
+            .unwrap_or(0);
+        let info = self.tracker.drag_info(position, held);
+        for &id in &self.press_chain[start..] {
+            if !arena.is_valid(id) {
+                continue;
+            }
+            let slot = match arena.get(id).state.input.handlers.get() {
+                Some(handlers) => {
+                    // Evaluation node for context reads inside handlers: reads snapshot
+                    // (no subscription — events act, then set signals explicitly).
+                    let _eval_node = crate::reactive::context::enter_node(id, arena);
+                    invoke(handlers, &info)
+                }
+                None => None,
+            };
+            if slot.is_some() {
+                return true;
+            }
+        }
+        false
     }
 
     /// Emits enter/leave as the topmost interested node under the cursor changes.
@@ -476,12 +574,25 @@ impl PointerRouter {
     /// Returns whether anything changed (and so whether the caller owes a
     /// redraw). Readonly semantics: movement, select-all, copy, and collapse;
     /// typing and deletion are no-ops.
+    ///
+    /// Text keeps priority for the keys it consumes (arrows, Home/End,
+    /// Escape): they never reach the focus chain. Page keys and Space fall
+    /// through to it, so a caret sitting inside a scroller still pages the
+    /// viewport — and when focus itself is a viewport, its key handler gets
+    /// everything including arrows.
     pub fn dispatch_key(&mut self, arena: &mut TreeArena, key: &KeyEvent) -> bool {
+        // Page keys never edit text: offer them to the focus chain first.
+        if matches!(
+            key.code,
+            KeyCode::PageUp | KeyCode::PageDown | KeyCode::Char(' ')
+        ) {
+            self.fire_key_chain(arena, key);
+        }
         let Some(node) = self
             .focused
             .filter(|n| arena.is_valid(*n) && selectable_text(arena, *n))
         else {
-            return false;
+            return self.fire_key_chain(arena, key);
         };
         let (content, layout) = match &arena.get(node).kind {
             NodeKind::Text(t) => (
@@ -602,6 +713,10 @@ impl PointerRouter {
                     }
                 };
                 Some(extend(anchor, f))
+            }
+            KeyCode::PageUp | KeyCode::PageDown => {
+                // Never text edits; offered to the focus chain up front.
+                return false;
             }
             KeyCode::Char(_) => return false,
         };

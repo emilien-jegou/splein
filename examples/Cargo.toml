@@ -121,6 +121,10 @@ name = "text_demo"
 path = "text_demo/main.rs"
 
 [[example]]
+name = "scroll_demo"
+path = "scroll_demo/main.rs"
+
+[[example]]
 name = "text_smooth"
 path = "text_smooth/main.rs"
 

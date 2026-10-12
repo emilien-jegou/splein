@@ -86,6 +86,10 @@ pub use diff::ChildOp;
 pub use element::Element;
 pub use element_ref::ElementRef;
 pub use flip::{use_flip, use_follow, use_ref, FollowHandle, Trigger};
+pub use scroll::{
+    use_scroll, OnScroll, RowFn, ScrollHandle, ScrollView, ScrollViewProps, Scrollbar,
+    VirtualScrollView, VirtualScrollViewProps,
+};
 pub use group::{group, index_keyed_list, keyed_list, Behavior, ChildSegment, GroupDef};
 pub use image::image;
 pub use reconciler::reconcile;
@@ -107,5 +111,6 @@ pub mod reconcile_children;
 pub mod reconcile_group;
 pub mod reconcile_leaf;
 pub mod reconciler;
+pub mod scroll;
 pub mod svg;
 pub mod text;

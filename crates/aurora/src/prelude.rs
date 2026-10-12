@@ -9,8 +9,9 @@ pub use crate::app::{App, AppConfig, AppExtension, FpsLimit, OverlayCaps, Overla
 /// Named derived handle from a plain closure: `derived!(move || signal.get() + 1)`.
 pub use crate::derived;
 pub use crate::dsl::{
-    custom, group, image, svg, text, view_child, Behavior, ChildSegment, Component, CustomDef,
-    Element, GroupDef, IntoElement, Provider, TextDef,
+    custom, group, image, svg, text, use_scroll, view_child, Behavior, ChildSegment, Component,
+    CustomDef, Element, GroupDef, IntoElement, OnScroll, Provider, RowFn, ScrollHandle,
+    ScrollView, ScrollViewProps, Scrollbar, TextDef, VirtualScrollView, VirtualScrollViewProps,
 };
 pub use crate::foundation::{
     Alignment, Anchor, BlendMode, Color, Direction, Distribution, FalloffCurve, Fill, Gap,
@@ -27,7 +28,7 @@ pub use crate::hot_reload::{
 };
 pub use crate::input::{
     ClickInfo, CursorIcon, DragInfo, HitTest, HoverInfo, KeyCode, KeyEvent, PointerButton,
-    PointerEvent, PointerPhase, Propagation,
+    PointerEvent, PointerPhase, Propagation, WheelInfo,
 };
 pub use crate::reactive::{
     ambient_guard, batch, computed, use_frame_clock, use_interval, use_interval_toggle,

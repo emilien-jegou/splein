@@ -6,9 +6,9 @@
 // atlas generation: an atlas repack rewrites UVs, so stale glyph ranges are
 // dropped while rect-only ranges survive.
 
-use aurora::foundation::{Radius, ResolvedRect, Transform};
+use aurora::foundation::{Point, Radius, ResolvedRect, Transform};
 use aurora::scene::chunk::SceneChunk;
-use aurora::scene::command::{hash_commands, transform_bits};
+use aurora::scene::command::{hash_commands, transform_bits, SceneCommand};
 use rustc_hash::FxHashMap;
 use std::hash::{Hash, Hasher};
 
@@ -48,12 +48,15 @@ fn rect_key<H: Hasher>(r: &ResolvedRect, h: &mut H) {
 }
 
 /// Identity of a chunk's emitted output: content + placement + clips + scale.
+///
+/// The origin is deliberately NOT part of identity: a scrolled/translated
+/// chunk (same content, new origin) hits the same entry and replays
+/// translated verts via [`CachedChunk::rebase_for`], instead of
+/// re-tessellating. Origin travels in the replay translation, never in identity.
 pub fn chunk_key(chunk: &SceneChunk, scale_q16: u16) -> u64 {
     let mut h = rustc_hash::FxHasher::default();
     hash_commands(&chunk.commands).hash(&mut h);
     transform_bits(&chunk.placement).hash(&mut h);
-    chunk.abs_origin.x.to_bits().hash(&mut h);
-    chunk.abs_origin.y.to_bits().hash(&mut h);
     scale_q16.hash(&mut h);
     chunk.inherited_clips.len().hash(&mut h);
     for clip in chunk.inherited_clips.iter() {
@@ -61,6 +64,26 @@ pub fn chunk_key(chunk: &SceneChunk, scale_q16: u16) -> u64 {
         radius_key(&clip.radius, &mut h);
     }
     h.finish()
+}
+
+/// Whether a command stream replays translated.
+///
+/// Only streams with no local frames qualify: no clips, transforms, or
+/// layers. Their baked device geometry (scissors, glyph phases) moves with
+/// content in ways a pure translation cannot reproduce. Everything else —
+/// inherited clips (viewport-anchored, static across scrolls), offsets,
+/// opacity, draws — is translation-invariant: inherited clips bound the
+/// replay to the same viewport, offsets are origin-relative structure, and
+/// opacity rides the verts unchanged.
+pub fn rebaseable_stream(commands: &[SceneCommand]) -> bool {
+    commands.iter().all(|c| {
+        !matches!(
+            c,
+            SceneCommand::PushClip { .. }
+                | SceneCommand::PushTransform(_)
+                | SceneCommand::BeginLayer { .. }
+        )
+    })
 }
 
 pub struct CachedChunk {
@@ -72,6 +95,12 @@ pub struct CachedChunk {
     pub atlas_gen: u64,
     pub has_glyphs: bool,
     last_frame: u64,
+    /// Logical origin the verts were baked at; replay translates from here.
+    origin: Point,
+    /// Device scale at bake time; a scale change re-emits (never rebases).
+    scale: f32,
+    /// Whether the stream replays translated (see [`rebaseable_stream`]).
+    rebaseable: bool,
 }
 
 impl CachedChunk {
@@ -81,6 +110,9 @@ impl CachedChunk {
         rrects: Vec<RRectVertex>,
         ops: Vec<Op>,
         atlas_gen: u64,
+        origin: Point,
+        scale: f32,
+        rebaseable: bool,
     ) -> Self {
         let has_glyphs = !glyphs.is_empty();
         Self {
@@ -91,7 +123,62 @@ impl CachedChunk {
             atlas_gen,
             has_glyphs,
             last_frame: 0,
+            origin,
+            scale,
+            rebaseable,
         }
+    }
+
+    /// Device-space translation from the baked origin to `live`, or `None`
+    /// when replay must fall back to fresh emission.
+    ///
+    /// Three guards, each load-bearing: a scale change re-emits (baked device
+    /// px differ); a non-rebaseable stream re-emits (local frames); and when
+    /// glyphs are present the device-X shift must be integral — glyph UVs
+    /// bake the subpixel phase, so a fractional X move needs new bins (Y is
+    /// phase-free and rides the quad position). Rect/rrect verts are raw
+    /// device floats: translating them is exact to float rounding (~1e-4px,
+    /// invisible and non-accumulating — every replay translates from the
+    /// baked origin, never from the last replay).
+    pub fn rebase_for(&self, live: Point, scale: f32) -> Option<(f32, f32)> {
+        if !self.rebaseable || self.scale != scale {
+            return None;
+        }
+        let dx = (live.x - self.origin.x) * scale;
+        let dy = (live.y - self.origin.y) * scale;
+        if dx == 0.0 && dy == 0.0 {
+            return Some((0.0, 0.0));
+        }
+        if self.has_glyphs && dx.fract() != 0.0 {
+            return None;
+        }
+        Some((dx, dy))
+    }
+
+    /// Appends translated copies of the cached verts. Scissors and UVs replay
+    /// untouched: scissors are inherited (viewport-anchored, static) whenever
+    /// `rebaseable` holds, and UV validity is enforced by `rebase_for`.
+    pub fn append_rebased(
+        &self,
+        dx: f32,
+        dy: f32,
+        rects: &mut Vec<RectVertex>,
+        glyphs: &mut Vec<GlyphVertex>,
+        rrects: &mut Vec<RRectVertex>,
+    ) {
+        rects.extend(self.rects.iter().map(|v| RectVertex {
+            pos: [v.pos[0] + dx, v.pos[1] + dy],
+            ..*v
+        }));
+        glyphs.extend(self.glyphs.iter().map(|v| GlyphVertex {
+            pos: [v.pos[0] + dx, v.pos[1] + dy],
+            ..*v
+        }));
+        rrects.extend(self.rrects.iter().map(|v| RRectVertex {
+            pos: [v.pos[0] + dx, v.pos[1] + dy],
+            fbox: [v.fbox[0] + dx, v.fbox[1] + dy, v.fbox[2], v.fbox[3]],
+            ..*v
+        }));
     }
 
     fn is_live(&self, atlas_gen: u64) -> bool {

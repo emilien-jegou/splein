@@ -17,6 +17,11 @@ pub struct DynamicBindings {
     /// Stacking order evaluator, when the node declares a dynamic one.
     pub z_index: Option<Rc<dyn Fn() -> i32>>,
     pub pose: Option<PoseBindings>,
+    /// Vertical scroll offset in logical px, when the node declares one.
+    /// Evaluated on the `SCROLL` channel and folded into the transform as a
+    /// `(0, -offset)` translation — after the pose, so an offset never fights
+    /// a bound x/y; both are pure translations and compose additively.
+    pub scroll_offset: Option<Rc<dyn Fn() -> f32>>,
     /// Retained child segments, when any rebuild from reactive state.
     ///
     /// `None` means static-only (today's fast path: children reconcile once at
@@ -181,6 +186,36 @@ impl NodeBindings {
         changed
     }
 
+    /// Whether this node has a bound scroll offset evaluator.
+    #[inline(always)]
+    pub fn has_scroll_binding(&self) -> bool {
+        self.inner
+            .as_ref()
+            .is_some_and(|b| b.scroll_offset.is_some())
+    }
+
+    /// Folds a scroll offset into a composed transform.
+    ///
+    /// Positive offset scrolls content up (translation is negated), matching
+    /// the "offset = distance from the top" convention. Zero is exact, so the
+    /// unbound case needs no branch at either call site.
+    #[inline]
+    pub fn compose_with_scroll(base: Transform, offset: f32) -> Transform {
+        if offset == 0.0 {
+            base
+        } else {
+            base.multiply(&Transform::from_translation(0.0, -offset))
+        }
+    }
+
+    /// Re-evaluates the bound scroll offset, returning 0.0 when unbound.
+    pub fn eval_scroll_offset(&self) -> f32 {
+        self.inner
+            .as_deref()
+            .and_then(|b| b.scroll_offset.as_ref())
+            .map_or(0.0, |f| f())
+    }
+
     /// Folds a pose into a declared transform.
     ///
     /// The one place the two are combined. Both writers of a node's transform go through
@@ -213,8 +248,14 @@ impl NodeBindings {
         };
         // `compose()` is identity when nothing is bound, and multiplying by identity is
         // exact in this representation, so the unbound case needs no branch here.
+        // Scroll folds in last: a pure translation composes additively with the
+        // pose, so a bound x/y and a scroll offset never fight over an axis.
         let composed =
             Self::compose_with_declared(declared, b.pose.as_ref().map(PoseBindings::compose));
+        let composed = Self::compose_with_scroll(
+            composed,
+            b.scroll_offset.as_ref().map_or(0.0, |f| f()),
+        );
         if *transform == composed {
             false
         } else {

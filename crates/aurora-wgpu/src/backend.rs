@@ -59,6 +59,12 @@ impl Backend for WgpuBackend {
         for r in frame.damage.rects().iter().chain(frame.extra_damage.iter()) {
             cull.push(*r);
         }
+        // No scroll blit on this backend yet: repaint the whole viewport the
+        // shift moved through, from the new scene. Correct at full cost; the
+        // blit fast path lands with the placement work.
+        for shift in frame.damage.scroll_shifts() {
+            cull.push(shift.clip);
+        }
         self.renderer
             .render_frame(frame.scene, frame.surface.background, &cull)?;
         self.needs_present = false;

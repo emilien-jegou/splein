@@ -480,7 +480,7 @@ fn bench_fan_out_200(c: &mut Criterion) {
 fn shape_labels(ctx: &aurora::text::TextContext, labels: &[String]) {
     use aurora::foundation::Constraints;
     use aurora::text::shaper::TextShapeParams;
-    use aurora::text::{FontStyle, TextAlign, TextOverflow};
+    use aurora::text::{FontStyle, TextAlign, TextOverflow, TextWrap};
     for s in labels {
         black_box(ctx.shape(TextShapeParams {
             text: s,
@@ -496,6 +496,7 @@ fn shape_labels(ctx: &aurora::text::TextContext, labels: &[String]) {
             weight: 400,
             variations: &[],
             constraints: Constraints::loose(f32::INFINITY, f32::INFINITY),
+            wrap: TextWrap::NoWrap,
         }));
     }
 }
@@ -547,7 +548,7 @@ fn bench_text_shaping(c: &mut Criterion) {
     group.bench_function("labels_500_jittered_widths", |b| {
         use aurora::foundation::Constraints;
         use aurora::text::shaper::TextShapeParams;
-        use aurora::text::{FontStyle, TextAlign, TextOverflow};
+        use aurora::text::{FontStyle, TextAlign, TextOverflow, TextWrap};
         let mut iter = 0u32;
         b.iter(|| {
             iter = iter.wrapping_add(1);
@@ -569,6 +570,7 @@ fn bench_text_shaping(c: &mut Criterion) {
                     weight: 400,
                     variations: &[],
                     constraints: Constraints::loose(400.0 + wobble, f32::INFINITY),
+                    wrap: TextWrap::NoWrap,
                 }));
             }
         });
@@ -766,7 +768,7 @@ fn bench_glyph_raster(c: &mut Criterion) {
 fn bench_shape_many(c: &mut Criterion) {
     use aurora::foundation::Constraints;
     use aurora::text::shaper::TextShapeParams;
-    use aurora::text::{FontStyle, TextAlign, TextContext, TextOverflow};
+    use aurora::text::{FontStyle, TextAlign, TextContext, TextOverflow, TextWrap};
 
     let texts: Vec<String> = (0..64)
         .map(|i| format!("batch shape many {i:02} with several words"))
@@ -798,6 +800,7 @@ fn bench_shape_many(c: &mut Criterion) {
                         weight: 400,
                         variations: &[],
                         constraints: Constraints::loose(400.0, f32::INFINITY),
+                    wrap: TextWrap::NoWrap,
                     }));
                 }
             },
@@ -829,6 +832,7 @@ fn bench_shape_many(c: &mut Criterion) {
                         weight: 400,
                         variations: &[],
                         constraints: Constraints::loose(400.0, f32::INFINITY),
+                    wrap: TextWrap::NoWrap,
                     })
                     .collect();
                 black_box(ctx.shape_many(&params));
@@ -850,10 +854,304 @@ criterion_group!(
     bench_text_shaping,
     bench_glyph_raster,
     bench_shape_many,
-    bench_reorder_and_scroll
+    bench_reorder_and_scroll,
+    bench_scroll_tick
 );
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 criterion_main!(benches);
+
+// ---------------------------------------------------------------------------
+// Bench: real scroll ticks through ScrollView / VirtualScrollView.
+//
+// Unlike `scroll_step_spacer_500` (a layout-shift proxy), these drive the
+// actual SCROLL channel on mounted viewports and rasterize through the
+// retained tiny-skia canvas (blit + exposed strip). Per-tick wall time is
+// the B target (~1ms at 4K); the eprintln counters prove the mechanism:
+// `laid_out` must stay 0 (no layout per tick), `new_cmds` near 0 (row
+// replay), `rects` small (strip damage). Fill-only rows: shaping is a
+// separate bench, this one isolates scroll machinery.
+// ---------------------------------------------------------------------------
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+fn bench_scroll_tick(c: &mut Criterion) {
+    use aurora::dsl::{group, Element, IntoElement, RowFn, ScrollView, VirtualScrollView};
+    use aurora::foundation::{Color, Size};
+    use aurora::reactive::Cx;
+    use aurora::runtime::Engine;
+    use aurora_tiny_skia::raster::HeadlessRaster;
+
+    fn fill_rows(n: usize, h: f32) -> Vec<Element> {
+        (0..n)
+            .map(|i| {
+                group()
+                    .key(format!("brow-{i:05}"))
+                    .width(Size::fill())
+                    .height(Size::Fixed(h))
+                    .fill(Color::hex(if i % 2 == 0 { 0xEDEFF3 } else { 0xE2E5EC }))
+                    .into_element()
+            })
+            .collect()
+    }
+
+    /// Times steady-state ticks only: setup (mount, first paint, shaping)
+    /// runs before the loop, and each `b.iter` call runs a fixed batch so
+    /// the headline number cannot include setup no matter how the harness
+    /// schedules routine executions. (Stays local: `rich_case` below inlines
+    /// its own loop for the same reason.)
+    macro_rules! tick_batch {
+        ($b:ident, $n:expr, $tick:expr) => {
+            $b.iter(|| {
+                for _ in 0..$n {
+                    $tick();
+                }
+            })
+        };
+    }
+
+    let mut cg = c.benchmark_group("scroll_tick");
+
+    // ScrollView, 500 fill rows, +-6px ping-pong ticks, engine + raster.
+    cg.bench_function("scrollview_500r_tick", |b| {
+        let mut engine = Engine::headless(400, 600);
+        let offset = engine.signal(0.0f32);
+        let rt = engine.runtime();
+        let rows = fill_rows(500, 32.0);
+        let el = Cx::new(Rc::clone(&rt)).enter(|| {
+            ScrollView(
+                Size::Fixed(400.0),
+                Size::Fixed(600.0),
+                None,
+                None,
+                Some(offset.clone()),
+                None,
+                None,
+                None,
+                None,
+                None,
+                rows,
+            )
+        });
+        engine.mount(el);
+        engine.frame();
+        let mut raster = HeadlessRaster::new();
+        // Settle caches, clamp, and thumb before measuring.
+        let (mut x, mut dir) = (0.0f32, 1.0f32);
+        for _ in 0..40 {
+            x += dir * 6.0;
+            if x >= 120.0 {
+                dir = -1.0;
+            } else if x <= 0.0 {
+                dir = 1.0;
+            }
+            offset.set(x);
+            engine.frame();
+            raster.draw_engine(&mut engine);
+        }
+        let (mut frames, mut cmds, mut cached, mut rects, mut laid) = (0u64, 0u64, 0u64, 0usize, 0u64);
+        tick_batch!(b, 100, || {
+            x += dir * 6.0;
+            if x >= 120.0 {
+                dir = -1.0;
+            } else if x <= 0.0 {
+                dir = 1.0;
+            }
+            offset.set(x);
+            let report = engine.frame();
+            raster.draw_engine(&mut engine);
+            frames += 1;
+            cmds += report.diagnostics.compile.commands_emitted as u64;
+            cached += report.diagnostics.compile.cached_chunks as u64;
+            rects += report.diagnostics.spatial.damaged_rects.len();
+            laid += report.diagnostics.layout.laid_out as u64;
+            black_box(report.diagnostics.frame_index);
+        });
+        eprintln!(
+            "scrollview_500r: frames={frames} avg_new_cmds={:.1} avg_replays={:.1} avg_rects={:.2} laid_out={laid}",
+            cmds as f64 / frames.max(1) as f64,
+            cached as f64 / frames.max(1) as f64,
+            rects as f64 / frames.max(1) as f64,
+        );
+    });
+
+    // VirtualScrollView, 100k uniform rows, 240px ramp (window slides),
+    // engine + raster. Mounted rows must stay near window size throughout.
+    cg.bench_function("virtual_100k_tick", |b| {
+        let mut engine = Engine::headless(400, 600);
+        let offset = engine.signal(0.0f32);
+        let rt = engine.runtime();
+        let el = Cx::new(Rc::clone(&rt)).enter(|| {
+            VirtualScrollView(
+                Size::Fixed(400.0),
+                Size::Fixed(600.0),
+                100_000usize,
+                32.0,
+                RowFn::from(|i: usize| {
+                    group()
+                        .width(Size::fill())
+                        .height(Size::Fixed(32.0))
+                        .fill(Color::hex(if i % 2 == 0 { 0xEDEFF3 } else { 0xE2E5EC }))
+                        .into_element()
+                }),
+                None,
+                None,
+                Some(offset.clone()),
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+        });
+        engine.mount(el);
+        engine.frame();
+        let mut raster = HeadlessRaster::new();
+        let mut x = 0.0f32;
+        // Settle the window on its ramp before measuring.
+        for _ in 0..40 {
+            x += 24.0;
+            if x > 2400.0 {
+                x = 0.0;
+            }
+            offset.set(x);
+            engine.frame();
+            raster.draw_engine(&mut engine);
+        }
+        let (mut frames, mut cmds, mut cached, mut rects, mut laid, mut mounted) =
+            (0u64, 0u64, 0u64, 0usize, 0u64, 0usize);
+        tick_batch!(b, 100, || {
+            x += 24.0;
+            if x > 2400.0 {
+                x = 0.0;
+            }
+            offset.set(x);
+            let report = engine.frame();
+            raster.draw_engine(&mut engine);
+            frames += 1;
+            cmds += report.diagnostics.compile.commands_emitted as u64;
+            cached += report.diagnostics.compile.cached_chunks as u64;
+            rects += report.diagnostics.spatial.damaged_rects.len();
+            laid += report.diagnostics.layout.laid_out as u64;
+            mounted = report.diagnostics.compile.stacking_contexts;
+            black_box(report.diagnostics.frame_index);
+        });
+        eprintln!(
+            "virtual_100k: frames={frames} avg_new_cmds={:.1} avg_replays={:.1} avg_rects={:.2} laid_out={laid} last_contexts={mounted}",
+            cmds as f64 / frames.max(1) as f64,
+            cached as f64 / frames.max(1) as f64,
+            rects as f64 / frames.max(1) as f64,
+        );
+    });
+    // Rich content: text (12 distinct shaped runs, cached after first paint)
+    // plus a live shadow per row — the complex-page gate. Shaping happens
+    // once per distinct string; steady ticks measure replay + strip raster
+    // of glyph coverage and shadow maps. Text-only and shadow-only variants
+    // isolate which dominates the strip cost.
+    rich_case(&mut cg, "scrollview_rich_tick", true, true);
+    rich_case(&mut cg, "scrollview_text_tick", true, false);
+    rich_case(&mut cg, "scrollview_shadow_tick", false, true);
+    cg.finish();
+}
+
+/// One rich-content scroll case. `with_text`/`with_shadow` toggle the two
+/// strip-raster cost drivers independently.
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+fn rich_case(
+    cg: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
+    name: &str,
+    with_text: bool,
+    with_shadow: bool,
+) {
+    use aurora::dsl::{group, text, Element, IntoElement, ScrollView};
+    use aurora::foundation::{Color, Size};
+    use aurora::reactive::Cx;
+    use aurora::runtime::Engine;
+    use aurora_tiny_skia::raster::HeadlessRaster;
+
+    cg.bench_function(name, |b| {
+        let mut engine = Engine::headless(800, 1000);
+        engine.load_font(include_bytes!("../../../assets/inter-var.ttf"));
+        let offset = engine.signal(0.0f32);
+        let rt = engine.runtime();
+        let rows: Vec<Element> = (0..150)
+            .map(|i| {
+                let mut row = group()
+                    .key(format!("rrow-{i:04}"))
+                    .width(Size::fill())
+                    .height(Size::Fixed(44.0))
+                    .fill(Color::hex(if i % 2 == 0 { 0xFFFFFF } else { 0xF1F3F5 }));
+                if with_shadow {
+                    row = row.shadow(6.0);
+                }
+                if with_text {
+                    let copy = format!(
+                        "Article {:02} — pack my box with five dozen liquor jugs 0123456789",
+                        i % 12
+                    );
+                    row = row.children([
+                        text(copy).size(14.0).color(Color::hex(0x1A1D21)).into_element(),
+                    ]);
+                }
+                row.into_element()
+            })
+            .collect();
+        let el = Cx::new(Rc::clone(&rt)).enter(|| {
+            ScrollView(
+                Size::Fixed(800.0),
+                Size::Fixed(1000.0),
+                None,
+                None,
+                Some(offset.clone()),
+                None,
+                None,
+                None,
+                None,
+                None,
+                rows,
+            )
+        });
+        engine.mount(el);
+        engine.frame();
+        engine.frame();
+        let mut raster = HeadlessRaster::new();
+        let (mut x, mut dir) = (0.0f32, 1.0f32);
+        let mut step = || {
+            x += dir * 9.0;
+            if x >= 240.0 {
+                dir = -1.0;
+            } else if x <= 0.0 {
+                dir = 1.0;
+            }
+            offset.set(x);
+        };
+        // Settle shaping, clamp, and thumb before measuring.
+        for _ in 0..40 {
+            step();
+            engine.frame();
+            raster.draw_engine(&mut engine);
+        }
+        let (mut frames, mut cmds, mut cached, mut rects, mut laid) = (0u64, 0u64, 0u64, 0usize, 0u64);
+        // Fixed batch per `b.iter` call (see `tick_batch` in
+        // `bench_scroll_tick`): setup stays out of the headline number.
+        b.iter(|| {
+            for _ in 0..50 {
+                step();
+                let report = engine.frame();
+                raster.draw_engine(&mut engine);
+                frames += 1;
+                cmds += report.diagnostics.compile.commands_emitted as u64;
+                cached += report.diagnostics.compile.cached_chunks as u64;
+                rects += report.diagnostics.spatial.damaged_rects.len();
+                laid += report.diagnostics.layout.laid_out as u64;
+                black_box(report.diagnostics.frame_index);
+            }
+        });
+        eprintln!(
+            "{name}: frames={frames} avg_new_cmds={:.1} avg_replays={:.1} avg_rects={:.2} laid_out={laid}",
+            cmds as f64 / frames.max(1) as f64,
+            cached as f64 / frames.max(1) as f64,
+            rects as f64 / frames.max(1) as f64,
+        );
+    });
+}
 
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 fn main() {

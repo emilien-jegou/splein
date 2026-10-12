@@ -86,6 +86,12 @@ impl Batch {
         self.scale = dsf.clamp(0.5, 4.0);
     }
 
+    /// Device scale baked into emitted verts; the vertex cache keys replay
+    /// validity off it (a scale change re-emits, never rebases).
+    pub fn scale(&self) -> f32 {
+        self.scale
+    }
+
     pub fn reset(&mut self) {
         self.tx.clear();
         self.tx.push(Transform::from_scale(self.scale, self.scale));

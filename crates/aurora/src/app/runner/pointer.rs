@@ -1,12 +1,12 @@
 // Single responsibility: Translating platform window events into engine pointer events.
 
 use winit::event::Modifiers;
-use winit::event::{ElementState, MouseButton, WindowEvent};
+use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::keyboard::ModifiersKeyState;
 use winit::keyboard::{Key, NamedKey};
 
 use crate::foundation::Point;
-use crate::input::{KeyCode, KeyEvent, PointerButton, PointerEvent, PointerPhase};
+use crate::input::{KeyCode, KeyEvent, PointerButton, PointerEvent, PointerPhase, WheelInfo};
 use crate::runtime::Engine;
 
 /// Bridges a platform's window events to the engine's pointer vocabulary.
@@ -113,6 +113,32 @@ impl PointerBridge {
                 // screen has changed yet, so this does not ask for a redraw.
                 false
             }
+            WindowEvent::MouseWheel { delta, .. } => {
+                let Some(p) = self.position else {
+                    // Same rule as a press: no position, no target.
+                    return false;
+                };
+                // Winit reports lines (notched wheels) or physical pixels
+                // (touchpads). A line scrolls about three text rows.
+                let (dx, dy) = match delta {
+                    MouseScrollDelta::LineDelta(x, y) => (x * 48.0, y * 48.0),
+                    MouseScrollDelta::PixelDelta(pos) => (pos.x as f32, pos.y as f32),
+                };
+                if dx == 0.0 && dy == 0.0 {
+                    return false;
+                }
+                let modifiers = self.modifiers;
+                engine.queue_wheel_event(WheelInfo {
+                    position: p,
+                    delta_x: dx,
+                    delta_y: dy,
+                    shift: down(modifiers.lshift_state()) || down(modifiers.rshift_state()),
+                    alt: down(modifiers.lalt_state()) || down(modifiers.ralt_state()),
+                    ctrl: down(modifiers.lcontrol_state()) || down(modifiers.rcontrol_state()),
+                    meta: down(modifiers.lsuper_state()) || down(modifiers.rsuper_state()),
+                });
+                true
+            }
             WindowEvent::KeyboardInput { event, .. } => {
                 // Releases carry no editing intent; auto-repeats arrive as presses.
                 if event.state != ElementState::Pressed {
@@ -121,9 +147,10 @@ impl PointerBridge {
                 let Some(code) = map_logical_key(&event.logical_key) else {
                     return false;
                 };
-                // Keys only edit a focused selection; without one nothing can
-                // change, so this asks for no redraw either.
-                if engine.focused_text().is_none() {
+                // Keys reach focused text or a focused key handler (e.g. a
+                // scroll viewport); without either nothing can change, so this
+                // asks for no redraw either.
+                if !engine.has_keyboard_target() {
                     return false;
                 }
                 let modifiers = self.modifiers;
@@ -146,7 +173,12 @@ impl PointerBridge {
                     engine.cancel_pointer_gesture();
                     return true;
                 }
-                false
+                // Even with nothing held, route one offscreen move: hover
+                // states (viewport enter/leave, scrollbar visibility) resolve
+                // on hit position, and without this they stick visible with
+                // no pointer left to correct them.
+                engine.queue_pointer_move(-10.0, -10.0);
+                true
             }
             WindowEvent::Focused(false) => {
                 let was_held = self.held;
@@ -156,7 +188,9 @@ impl PointerBridge {
                     engine.cancel_pointer_gesture();
                     return true;
                 }
-                false
+                // Same as CursorLeft: an app switch must resolve hover outward.
+                engine.queue_pointer_move(-10.0, -10.0);
+                true
             }
             _ => false,
         }
@@ -185,7 +219,10 @@ pub fn map_logical_key(key: &Key) -> Option<KeyCode> {
             NamedKey::ArrowDown => Some(KeyCode::Down),
             NamedKey::Home => Some(KeyCode::Home),
             NamedKey::End => Some(KeyCode::End),
+            NamedKey::PageUp => Some(KeyCode::PageUp),
+            NamedKey::PageDown => Some(KeyCode::PageDown),
             NamedKey::Escape => Some(KeyCode::Escape),
+            NamedKey::Space => Some(KeyCode::Char(' ')),
             _ => None,
         },
         Key::Character(text) => text.chars().next().map(KeyCode::Char),

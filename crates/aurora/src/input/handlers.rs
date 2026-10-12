@@ -2,7 +2,8 @@
 
 use std::rc::Rc;
 
-use crate::input::event::{ClickInfo, DragInfo, HoverInfo, PointerEvent};
+use crate::input::event::{ClickInfo, DragInfo, HoverInfo, PointerEvent, WheelInfo};
+use crate::input::keyboard::KeyEvent;
 
 /// Bubbling control returned by `_handled` handler variants.
 ///
@@ -37,6 +38,17 @@ pub struct HandlerSet {
     pub drag_step: Option<Rc<dyn Fn(&DragInfo) -> Propagation>>,
     /// Fired on release, carrying the release velocity a gesture hands to a spring.
     pub drag_end: Option<Rc<dyn Fn(&DragInfo) -> Propagation>>,
+    /// Fired for a wheel/touchpad scroll at the pointer position.
+    ///
+    /// Routed by hit position (no press needed): the topmost node with a
+    /// wheel slot fires, ending the walk.
+    pub wheel: Option<Rc<dyn Fn(&WheelInfo) -> Propagation>>,
+    /// Fired for a key press while this node (or its subtree) owns focus.
+    ///
+    /// Routed from the focused node outward: the first node with a key slot
+    /// fires and the walk ends (contain — a scroller never chains keys to an
+    /// outer scroller).
+    pub key: Option<Rc<dyn Fn(&KeyEvent) -> Propagation>>,
 }
 
 impl HandlerSet {
@@ -52,9 +64,11 @@ impl HandlerSet {
             && self.pointer_move.is_none()
             && self.pointer_enter.is_none()
             && self.pointer_leave.is_none()
-            && self.drag_start.is_none()
+            &&         self.drag_start.is_none()
             && self.drag_step.is_none()
             && self.drag_end.is_none()
+            && self.wheel.is_none()
+            && self.key.is_none()
     }
 
     /// Whether this node declared drag handlers, which is what makes it a drag target.
@@ -166,6 +180,26 @@ impl HandlerSet {
     #[inline]
     pub fn fire_pointer_move(&self, event: &PointerEvent) -> Propagation {
         if let Some(h) = self.pointer_move.as_ref() {
+            h(event)
+        } else {
+            Propagation::Bubble
+        }
+    }
+
+    /// Invokes the wheel handler, if present.
+    #[inline]
+    pub fn fire_wheel(&self, info: &WheelInfo) -> Propagation {
+        if let Some(h) = self.wheel.as_ref() {
+            h(info)
+        } else {
+            Propagation::Bubble
+        }
+    }
+
+    /// Invokes the key handler, if present.
+    #[inline]
+    pub fn fire_key(&self, event: &KeyEvent) -> Propagation {
+        if let Some(h) = self.key.as_ref() {
             h(event)
         } else {
             Propagation::Bubble

@@ -7,7 +7,8 @@ use crate::dsl::element::{Element, IntoChildList};
 use crate::dsl::element_ref::ElementRef;
 use crate::foundation::*;
 use crate::input::{
-    ClickInfo, DragInfo, HandlerSet, HitTest, HoverInfo, PointerEvent, Propagation,
+    ClickInfo, DragInfo, HandlerSet, HitTest, HoverInfo, KeyEvent, PointerEvent, Propagation,
+    WheelInfo,
 };
 use crate::reactive::prop::{DynamicProp, IntoProp};
 use crate::reactive::readable::Readable;
@@ -34,6 +35,16 @@ pub struct GroupDef {
     pub radius: Radius,
     pub clip: bool,
     pub is_absolute: bool,
+    /// Scroll viewport marker, retained on the style (see `NodeStyle`).
+    pub scrollable: bool,
+    /// Preload band in logical px per edge for a scroll viewport.
+    pub overscroll: f32,
+    /// Compile each child of this node as its own scene chunk (see `NodeStyle`).
+    pub isolate_children: bool,
+    /// Vertical scroll offset in logical px, bound to the `SCROLL` channel.
+    /// Composed into the node's transform as a `(0, -offset)` translation:
+    /// paint-class like x/y, so it never triggers layout.
+    pub scroll_offset: Option<DynamicProp<f32>>,
     pub anchor: Option<Anchor>,
     /// Optional width-to-height ratio, resolved by the layout engine.
     pub aspect_ratio: Option<f32>,
@@ -106,6 +117,10 @@ pub fn group() -> GroupDef {
         radius: Radius::ZERO,
         clip: false,
         is_absolute: false,
+        scrollable: false,
+        overscroll: 0.0,
+        isolate_children: false,
+        scroll_offset: None,
         anchor: None,
         aspect_ratio: None,
         z_index: None,
@@ -233,6 +248,27 @@ impl GroupDef {
         self.clip = c;
         self
     }
+    /// Marks this clipped box as a scroll viewport (see `NodeStyle`).
+    pub fn scrollable(mut self, s: bool) -> Self {
+        self.scrollable = s;
+        self
+    }
+    /// Preload band in logical px per edge for a scroll viewport.
+    pub fn overscroll(mut self, px: f32) -> Self {
+        self.overscroll = px.max(0.0);
+        self
+    }
+    /// Compile each child of this node as its own scene chunk (see `NodeStyle`).
+    pub fn isolate_children(mut self, on: bool) -> Self {
+        self.isolate_children = on;
+        self
+    }
+    /// Vertical scroll offset in logical px, usually bound to a scroll signal.
+    /// Rides the `SCROLL` channel: shifts the transform, never lays out.
+    pub fn scroll_offset<P: IntoProp<f32>>(mut self, v: P) -> Self {
+        self.scroll_offset = Some(v.into_prop());
+        self
+    }
     pub fn direction(mut self, d: impl Into<Direction>) -> Self {
         self.layout.direction = d.into();
         self
@@ -346,6 +382,7 @@ impl GroupDef {
             || is_ctx(&self.shadow)
             || is_ctx(&self.z_index)
             || is_ctx(&self.presence)
+            || is_ctx(&self.scroll_offset)
     }
 
     /// Appends pre-built child segments (static elements and reactive builders
@@ -608,6 +645,39 @@ impl GroupDef {
     /// Handles a drag-end, with control over whether ancestors still observe it.
     pub fn on_drag_end_handled(mut self, f: impl Fn(&DragInfo) -> Propagation + 'static) -> Self {
         self.handlers.drag_end = Some(Rc::new(f));
+        self
+    }
+
+    /// Handles a wheel/touchpad scroll over this node.
+    ///
+    /// Routed by hit position with no press needed; `Stop` (via `_handled`)
+    /// keeps an outer scroller from also observing it.
+    pub fn on_wheel(mut self, f: impl Fn(&WheelInfo) + 'static) -> Self {
+        self.handlers.wheel = Some(Rc::new(move |info| {
+            f(info);
+            Propagation::Bubble
+        }));
+        self
+    }
+
+    /// Handles a wheel, with control over whether ancestors still observe it.
+    pub fn on_wheel_handled(mut self, f: impl Fn(&WheelInfo) -> Propagation + 'static) -> Self {
+        self.handlers.wheel = Some(Rc::new(f));
+        self
+    }
+
+    /// Handles a key press while this node or its subtree owns focus.
+    pub fn on_key(mut self, f: impl Fn(&KeyEvent) + 'static) -> Self {
+        self.handlers.key = Some(Rc::new(move |event| {
+            f(event);
+            Propagation::Bubble
+        }));
+        self
+    }
+
+    /// Handles a key press, with control over whether ancestors still observe it.
+    pub fn on_key_handled(mut self, f: impl Fn(&KeyEvent) -> Propagation + 'static) -> Self {
+        self.handlers.key = Some(Rc::new(f));
         self
     }
 

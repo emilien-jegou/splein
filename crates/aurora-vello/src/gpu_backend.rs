@@ -91,6 +91,11 @@ impl Backend for GpuBackend {
         for r in frame.damage.rects().iter().chain(frame.extra_damage.iter()) {
             cull.push(*r);
         }
+        // No scroll blit on this backend yet: repaint the whole viewport the
+        // shift moved through, from the new scene (same fallback as wgpu).
+        for shift in frame.damage.scroll_shifts() {
+            cull.push(shift.clip);
+        }
         // Empty (unknown) → full render path inside renderer.
         let encoded = self
             .renderer

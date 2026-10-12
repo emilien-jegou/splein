@@ -96,6 +96,15 @@ impl ResolvedRect {
             && self.bottom() > other.y
     }
 
+    /// Whether `other` lies fully inside this box (edges inclusive).
+    #[inline]
+    pub fn contains_rect(&self, other: &Self) -> bool {
+        other.x >= self.x
+            && other.y >= self.y
+            && other.right() <= self.right()
+            && other.bottom() <= self.bottom()
+    }
+
     /// Computes the intersection of two rectangles. Returns ZERO if disjoint.
     #[inline]
     pub fn intersect(&self, other: &Self) -> Self {
@@ -142,7 +151,6 @@ impl ResolvedRect {
             self.height + 2.0 * amount,
         )
     }
-
     /// Converts logical coordinates to physical device pixels with outward rounding to eliminate fractional seams.
     #[inline]
     pub fn to_physical_outward(&self, scale_factor: f32) -> Self {
@@ -157,12 +165,71 @@ impl ResolvedRect {
 
         Self::new(left, top, right - left, bottom - top)
     }
+
+    /// Returns this box translated by `delta`.
+    #[inline]
+    pub fn shifted_by(&self, delta: Point) -> Self {
+        Self::new(
+            self.x + delta.x,
+            self.y + delta.y,
+            self.width,
+            self.height,
+        )
+    }
+
+    /// Subtracts `cut` from this box, returning the up-to-four disjoint rects
+    /// that remain (fewer when edges align; empty when `cut` covers all).
+    pub fn subtract(&self, cut: &Self) -> SmallVec<[ResolvedRect; 4]> {
+        let mut out = SmallVec::new();
+        let hit = self.intersect(cut);
+        if hit.is_empty() {
+            if !self.is_empty() {
+                out.push(*self);
+            }
+            return out;
+        }
+        // Left / right bands span the cut's height; top / bottom span full width.
+        let left = Self::new(self.x, hit.y, hit.x - self.x, hit.height);
+        let right = Self::new(hit.right(), hit.y, self.right() - hit.right(), hit.height);
+        let top = Self::new(self.x, self.y, self.width, hit.y - self.y);
+        let bottom = Self::new(self.x, hit.bottom(), self.width, self.bottom() - hit.bottom());
+        for r in [left, right, top, bottom] {
+            if !r.is_empty() {
+                out.push(r);
+            }
+        }
+        out
+    }
+}
+
+/// A retained-pixel move a backend may apply before repainting damage.
+///
+/// Produced when scroll content translates inside its viewport: instead of
+/// re-rasterizing the whole viewport, a capable backend memmoves the covered
+/// region by `delta` (rounded to device px) and repaints only the damage —
+/// which the damage plan keeps to the newly-exposed strip. Backends that do
+/// not implement the blit expand each `clip` into damage (see
+/// [`DamageRegion::expanded_without_blit`]) and repaint it from the new
+/// scene: slower, but correct with no capability negotiation.
+#[derive(Copy, Clone, Debug, Default, PartialEq)]
+pub struct ScrollShift {
+    /// The viewport box whose retained pixels moved, in screen space.
+    pub clip: ResolvedRect,
+    /// Content translation this frame (`new_origin − old_origin`), logical px.
+    pub delta: Point,
 }
 
 /// Disjoint physical damage region capped at 4 non-overlapping rectangles.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct DamageRegion {
     rects: SmallVec<[ResolvedRect; 4]>,
+    /// Retained-pixel moves recorded this frame (see [`ScrollShift`]).
+    ///
+    /// Deliberately NOT merged by accumulation: `damage_for_age` unions rects
+    /// only, so a shift never leaks into another frame's region (a stale
+    /// shift would move pixels the aged damage also covers). Backends read
+    /// shifts from the current frame's region only.
+    scroll_shifts: Vec<ScrollShift>,
 }
 
 impl DamageRegion {
@@ -172,6 +239,7 @@ impl DamageRegion {
     pub fn new() -> Self {
         Self {
             rects: SmallVec::new(),
+            scroll_shifts: Vec::new(),
         }
     }
 
@@ -188,6 +256,37 @@ impl DamageRegion {
     #[inline(always)]
     pub fn clear(&mut self) {
         self.rects.clear();
+        self.scroll_shifts.clear();
+    }
+
+    /// Scroll shifts recorded this frame, in visit order (parents before children).
+    #[inline(always)]
+    pub fn scroll_shifts(&self) -> &[ScrollShift] {
+        &self.scroll_shifts
+    }
+
+    /// Records a retained-pixel move. The damage plan pushes the exposed
+    /// strip separately; shifts never stand in for damage.
+    pub fn push_scroll_shift(&mut self, clip: ResolvedRect, delta: Point) {
+        if clip.is_empty() || (delta.x == 0.0 && delta.y == 0.0) {
+            return;
+        }
+        self.scroll_shifts.push(ScrollShift { clip, delta });
+    }
+
+    /// Fallback for backends without a scroll blit: the shift clips pushed as
+    /// ordinary damage, shifts cleared. Rasterizing the result from the new
+    /// scene is always correct — it just repaints the viewport instead of
+    /// moving pixels.
+    pub fn expanded_without_blit(&self) -> Self {
+        let mut out = Self {
+            rects: self.rects.clone(),
+            scroll_shifts: Vec::new(),
+        };
+        for shift in &self.scroll_shifts {
+            out.push(shift.clip);
+        }
+        out
     }
 
     /// Pushes a damaged rectangle, merging overlapping areas and applying greedy clustering if capacity is exceeded.
