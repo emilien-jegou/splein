@@ -40,7 +40,7 @@ fn hello_rect(h: &mut Harness) -> aurora::foundation::ResolvedRect {
             }
             let node = arena.get(id);
             if let aurora::tree::NodeKind::Text(t) = &node.kind {
-                if t.content == "Hello" {
+                if t.content == "Hello you" {
                     let p = arena.node_absolute_point(id);
                     let layout = node.state.text.cached_text_layout.clone().expect("shaped");
                     let w = layout.total_size.width;
@@ -63,7 +63,7 @@ fn hello_selection(h: &mut Harness) -> Option<TextSelection> {
             }
             let node = arena.get(id);
             if let aurora::tree::NodeKind::Text(t) = &node.kind {
-                if t.content == "Hello" {
+                if t.content == "Hello you" {
                     return node.state.text.text_selection;
                 }
             }

@@ -29,6 +29,18 @@ impl DirtyFlags {
         (self.0 & other.0) == other.0
     }
 
+    /// Whether ANY of the masked bits is set [S2-2].
+    ///
+    /// Note the trap this exists to close: `contains(A | B)` is true only
+    /// when BOTH are set. A cleanliness check written as
+    /// `!dirty.contains(MEASURE | LAYOUT | PAINT)` treats a PAINT-only node
+    /// as clean (it lacks MEASURE/LAYOUT) and skips work it needed. Any
+    /// "does this node have any of these flags" test must use this.
+    #[inline(always)]
+    pub fn intersects(self, other: Self) -> bool {
+        (self.0 & other.0) != 0
+    }
+
     #[inline(always)]
     pub fn insert(&mut self, other: Self) {
         self.0 |= other.0;
