@@ -1,8 +1,11 @@
 // Single responsibility: Keyboard shortcut evaluation for visual debugger inspector modes.
 
+#[cfg(feature = "desktop")]
 use winit::event::{ElementState, WindowEvent};
+#[cfg(feature = "desktop")]
 use winit::keyboard::{Key, NamedKey};
 
+#[cfg(feature = "desktop")]
 use crate::app::debug::InspectorMode;
 
 /// Rates the slow-motion control steps through, slowest first.
@@ -13,6 +16,7 @@ use crate::app::debug::InspectorMode;
 pub const TIME_SCALE_STEPS: [f32; 5] = [0.05, 0.1, 0.25, 0.5, 1.0];
 
 /// Evaluates a window keyboard event against debugging shortcut bindings.
+#[cfg(feature = "desktop")]
 pub fn handle_debug_key(
     event: &WindowEvent,
     mode: &mut InspectorMode,
@@ -36,6 +40,7 @@ pub fn handle_debug_key(
 /// Split from [`handle_debug_key`] because a `KeyEvent` cannot be constructed outside winit --
 /// it carries a private extra payload -- so folding the window-event shape into this function
 /// would make every binding here untestable.
+#[cfg(feature = "desktop")]
 pub fn apply_debug_key(
     key: &Key,
     mode: &mut InspectorMode,
@@ -47,6 +52,7 @@ pub fn apply_debug_key(
 }
 
 /// The next rate slower than `scale`, or the slowest available.
+#[cfg(feature = "desktop")]
 fn slower(scale: f32) -> f32 {
     TIME_SCALE_STEPS
         .iter()
@@ -57,6 +63,7 @@ fn slower(scale: f32) -> f32 {
 }
 
 /// The next rate faster than `scale`, or real time.
+#[cfg(feature = "desktop")]
 fn faster(scale: f32) -> f32 {
     TIME_SCALE_STEPS
         .iter()
@@ -74,6 +81,7 @@ pub fn is_frozen(scale: f32) -> bool {
     scale <= 1e-4
 }
 
+#[cfg(feature = "desktop")]
 fn toggle_key(
     key: &Key,
     mode: &mut InspectorMode,

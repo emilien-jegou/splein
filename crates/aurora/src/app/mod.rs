@@ -80,15 +80,18 @@ pub mod debug_panel;
 pub mod debug_scene;
 pub mod debug_toggle;
 pub mod extension;
+#[cfg(feature = "desktop")]
 pub mod multibackend;
 pub mod painter;
 pub mod runner;
+#[cfg(feature = "desktop")]
 pub mod switcher;
 pub mod telemetry;
 
 pub use debug::{InspectorMode, VisualDebugger};
 pub use debug_bus::{DebugBus, DebugCommand, NodeBrief, Snapshot};
 pub use extension::{AppExtension, OverlayCaps};
+#[cfg(feature = "desktop")]
 pub use multibackend::{
     backend_display_name, BackendStats, DisplayMode, MultiBackend, BACKEND_ORDER,
 };
@@ -97,16 +100,24 @@ pub use runner::FpsLimit;
 
 use std::cell::RefCell;
 use std::rc::Rc;
+#[cfg(feature = "desktop")]
 use std::sync::Arc;
+#[cfg(feature = "desktop")]
 use winit::event_loop::EventLoopBuilder;
+#[cfg(feature = "desktop")]
 use winit::window::WindowBuilder;
 
+#[cfg(feature = "desktop")]
 use crate::dsl::component::IntoElement;
 use crate::foundation::Color;
+#[cfg(feature = "desktop")]
 use crate::hot_reload::SharedFactory;
-use crate::reactive::{Cx, ReactiveRuntime};
+use crate::reactive::ReactiveRuntime;
+#[cfg(feature = "desktop")]
+use crate::reactive::Cx;
 use crate::render::RenderBackend;
 use crate::runtime::Engine;
+#[cfg(feature = "desktop")]
 use runner::{run_event_loop, Backend, BackendFactory};
 
 /// Declarative builder for application window initialization and lifecycle execution.
@@ -118,6 +129,7 @@ pub struct AppConfig {
     fonts: Vec<Vec<u8>>,
     background: Color,
     backend: RenderBackend,
+    #[cfg(feature = "desktop")]
     backend_factory: Option<BackendFactory>,
     extensions: Vec<Box<dyn AppExtension>>,
     runtime: Option<Rc<RefCell<ReactiveRuntime>>>,
@@ -138,6 +150,7 @@ impl App {
             fonts: Vec::new(),
             background: Color::WHITE,
             backend: RenderBackend::default(),
+            #[cfg(feature = "desktop")]
             backend_factory: None,
             extensions: Vec::new(),
             runtime: None,
@@ -178,6 +191,8 @@ impl AppConfig {
     /// The engine crate implements no rasterizer, so the factory comes from a backend
     /// crate: `aurora_tiny_skia::create_backend`, `aurora_vello::create_backend`,
     /// or `aurora_vello::create_cpu_backend` (for `RenderBackend::VelloCpu`).
+    /// Desktop-only.
+    #[cfg(feature = "desktop")]
     pub fn backend_factory(mut self, factory: BackendFactory) -> Self {
         self.backend_factory = Some(factory);
         self
@@ -195,6 +210,7 @@ impl AppConfig {
         self
     }
 
+    #[cfg(feature = "desktop")]
     pub fn run<E: IntoElement, F: Fn() -> E + 'static>(mut self, root_fn: F) {
         let event_loop = EventLoopBuilder::with_user_event()
             .build()

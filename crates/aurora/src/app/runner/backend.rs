@@ -1,12 +1,15 @@
 // Single responsibility: Backend presentation contract and shared per-frame parameters.
 
+#[cfg(feature = "desktop")]
 use std::sync::Arc;
 use std::time::Duration;
+#[cfg(feature = "desktop")]
 use winit::window::Window;
 
 use crate::foundation::{Color, DamageRegion, ResolvedRect};
 use crate::render::BackendError;
 use crate::scene::Scene;
+#[cfg(feature = "desktop")]
 use crate::text::TextContext;
 
 /// Resolves the accumulated damage a swapchain buffer age requires.
@@ -98,5 +101,8 @@ pub trait Backend {
 /// `aurora-vello` for `Vello`. The factory is handed to
 /// [`AppConfig::backend_factory`](crate::app::AppConfig::backend_factory) so the engine
 /// crate never names a concrete rasterizer.
+///
+/// Desktop-only: headless embedders implement [`Backend`] directly without windows.
+#[cfg(feature = "desktop")]
 pub type BackendFactory =
     fn(Arc<Window>, u32, u32, TextContext) -> Result<Box<dyn Backend>, BackendError>;

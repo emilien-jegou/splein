@@ -35,6 +35,7 @@ pub fn reconcile_text(
         ..Default::default()
     };
     arena.get_mut(id).state.core.bindings = NodeBindings::from_store(store);
+    arena.invalidate_static_up(id);
 
     let content = evaluate_prop(&Some(def.content.clone()), m_sub, runtime).unwrap_or_default();
     let config = def.to_config(content);
@@ -113,6 +114,7 @@ pub fn reconcile_custom(
     // any nested evaluation the reconciler performs for it.
     let _eval_node = crate::reactive::context::enter_node(id, arena);
     arena.get_mut(id).state.core.bindings = NodeBindings::default();
+    arena.invalidate_static_up(id);
 
     let effective_z = if def.z_index != 0 {
         def.z_index

@@ -121,7 +121,7 @@ fn perform_node_layout(
     let mut absolute: SmallVec<[NodeId; 2]> = SmallVec::new();
     let mut collapsed: SmallVec<[NodeId; 2]> = SmallVec::new();
 
-    for &child in children {
+    for child in children {
         if arena.get(child).style.is_absolute {
             absolute.push(child);
         } else if arena.get(child).state.core.presence.occupies_space() {

@@ -741,6 +741,7 @@ mod tests {
         assert!(local.width() > 1e5);
     }
 
+    #[cfg(feature = "svg-runtime")]
     fn svg_chunk() -> SceneChunk {
         let mut c = SceneChunk::new(
             ResolvedRect::new(0.0, 0.0, 10.0, 10.0),
@@ -756,6 +757,7 @@ mod tests {
         c
     }
 
+    #[cfg(feature = "svg-runtime")]
     #[test]
     fn svg_forces_area_aa() {
         let plain = sample_commands();

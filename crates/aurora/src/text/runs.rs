@@ -1,13 +1,16 @@
 // Single responsibility: Converting Parley layout lines into Aurora shaped lines.
 
+#![cfg_attr(not(feature = "text-runtime"), allow(dead_code))]
 use crate::foundation::Point;
 use crate::text::engine::{ParleyEngine, RasterKey};
 use crate::text::glyph::{GlyphKey, ShapedGlyph, ShapedLine};
+#[cfg(feature = "text-runtime")]
 use parley::{Layout, PositionedLayoutItem};
 use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
 use std::hash::{Hash, Hasher};
 
 /// Pending raster-key insert, collected lock-free and flushed in one batch.
+#[cfg(feature = "text-runtime")]
 struct PendingKey {
     key: GlyphKey,
     font: parley::FontData,
@@ -20,6 +23,7 @@ struct PendingKey {
 ///
 /// Runs inside a Parley line are merged: selection, decoration, and ellipsis
 /// code all treat a visual line as one glyph sequence keyed by cluster bytes.
+#[cfg(feature = "text-runtime")]
 pub(crate) fn extract_lines(
     engine: &ParleyEngine,
     layout: &Layout<()>,
@@ -190,6 +194,7 @@ pub(crate) fn extract_lines(
 }
 
 /// Offset of `baseline` inside its uniform line box.
+#[cfg(feature = "text-runtime")]
 fn line_off(line_height: f32, line: &ShapedLine) -> f32 {
     let lh = line_height.max(1e-6);
     let off = line.baseline - (line.baseline / lh).floor() * lh;
@@ -207,6 +212,7 @@ fn line_off(line_height: f32, line: &ShapedLine) -> f32 {
 /// size-sensitive so the quantum is finer than the shape cache's 1/16px, but
 /// 1/64px (0.016px) is far below visibility. Glyph advances and positions
 /// keep full precision — only the raster identity is quantized.
+#[cfg(feature = "text-runtime")]
 pub(crate) fn raster_size_bits(size: f32) -> u32 {
     if !size.is_finite() || size <= 0.0 {
         return size.to_bits();
@@ -226,6 +232,7 @@ struct BlobCacheKey {
 /// The registration blob id map answers in O(1); the byte comparison below
 /// only runs when fontique re-wrapped the blob (unknown fonts fall back to
 /// blob zero, mirroring the old single-blob assumption).
+#[cfg(feature = "text-runtime")]
 fn blob_for_font(
     engine: &ParleyEngine,
     cache: &mut FxHashMap<BlobCacheKey, usize>,
@@ -260,6 +267,7 @@ fn blob_for_font(
 
 /// Content width of a line: trailing whitespace advances are trimmed so
 /// centering and wrap-budget checks ignore the break opportunity's space.
+#[cfg(feature = "text-runtime")]
 fn line_content_width(glyphs: &[ShapedGlyph], text: &str) -> f32 {
     let mut width = 0.0f32;
     for g in glyphs {

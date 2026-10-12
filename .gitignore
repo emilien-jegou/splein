@@ -45,6 +45,9 @@
 !crates/aurora-tiny-skia/
 !crates/aurora-tiny-skia/**/*
 
+!crates/aurora-linebuffer/
+!crates/aurora-linebuffer/**/*
+
 !crates/aurora-vello/
 !crates/aurora-vello/**/*
 

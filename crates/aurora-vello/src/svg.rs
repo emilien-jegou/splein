@@ -1,5 +1,6 @@
 // Single responsibility: Native GPU vector SVG compilation and scene segment caching for Vello.
 
+#[cfg(feature = "svg-runtime")]
 use resvg::usvg::{self, tiny_skia_path};
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
@@ -7,6 +8,7 @@ use vello::kurbo::{Affine, BezPath, PathEl, Point as KurboPoint, Stroke as Kurbo
 use vello::peniko::Fill as VelloFillRule;
 use vello::Scene as VelloScene;
 
+#[cfg(feature = "svg-runtime")]
 use crate::svg_paint::convert_usvg_paint;
 use aurora::foundation::ResolvedRect;
 use aurora::scene::vector::VectorGraphic;
@@ -14,11 +16,13 @@ use aurora::scene::vector::VectorGraphic;
 const MAX_CACHED_SVGS: usize = 128;
 
 /// Retained GPU vector cache compiling USVG trees to native Kurbo vector paths.
+#[cfg(feature = "svg-runtime")]
 #[derive(Default)]
 pub struct VelloSvgCache {
     cache: FxHashMap<usize, Arc<VelloScene>>,
 }
 
+#[cfg(feature = "svg-runtime")]
 impl VelloSvgCache {
     /// Constructs a clean native vector SVG cache.
     pub fn new() -> Self {
@@ -60,6 +64,7 @@ impl VelloSvgCache {
     }
 }
 
+#[cfg(feature = "svg-runtime")]
 fn compile_usvg_group(group: &usvg::Group, scene: &mut VelloScene, parent_tx: Affine) {
     let t = group.transform();
     let group_tx = parent_tx
@@ -118,5 +123,26 @@ fn compile_usvg_group(group: &usvg::Group, scene: &mut VelloScene, parent_tx: Af
             }
             _ => {}
         }
+    }
+}
+
+/// Stub when `svg-runtime` is off: vector draws become no-ops.
+#[cfg(not(feature = "svg-runtime"))]
+#[derive(Default)]
+pub struct VelloSvgCache;
+
+#[cfg(not(feature = "svg-runtime"))]
+impl VelloSvgCache {
+    pub fn new() -> Self {
+        Self
+    }
+
+    pub fn draw(
+        &mut self,
+        _scene: &mut VelloScene,
+        _rect: &ResolvedRect,
+        _graphic: &VectorGraphic,
+        _tx: Affine,
+    ) {
     }
 }

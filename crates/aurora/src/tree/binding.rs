@@ -96,6 +96,27 @@ impl DynamicBindings {
     pub fn has_dimension_bindings(&self) -> bool {
         self.width.is_some() || self.height.is_some()
     }
+
+    /// Whether no dynamic evaluator is bound anywhere in the store [S2-2].
+    ///
+    /// A node whose store is empty never re-evaluates: its properties are
+    /// fully described by retained style. (The store itself is always
+    /// present — reconciliation wraps even static declarations.)
+    #[inline(always)]
+    pub fn is_empty(&self) -> bool {
+        self.width.is_none()
+            && self.height.is_none()
+            && self.fill.is_none()
+            && self.opacity.is_none()
+            && self.text.is_none()
+            && self.transform.is_none()
+            && self.shadow.is_none()
+            && self.presence.is_none()
+            && self.z_index.is_none()
+            && self.pose.as_ref().is_none_or(|p| !p.is_bound())
+            && self.scroll_offset.is_none()
+            && self.children.is_none()
+    }
 }
 
 /// Dynamic property evaluation closures with O(1) single-pointer cloning.
@@ -110,6 +131,14 @@ impl NodeBindings {
         Self {
             inner: Some(Rc::new(store)),
         }
+    }
+
+    /// Whether this node carries no live evaluators [S2-2]: either no store
+    /// at all, or a store whose every slot is `None` (static declarations
+    /// still get wrapped — see `DynamicBindings::is_empty`).
+    #[inline(always)]
+    pub fn is_static(&self) -> bool {
+        self.inner.as_ref().is_none_or(|b| b.is_empty())
     }
 
     /// Whether this node has dynamic dimension evaluators bound.

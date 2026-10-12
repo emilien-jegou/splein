@@ -1,5 +1,6 @@
 // Single responsibility: Parley ranged-builder shaping into Aurora text layouts.
 
+#![cfg_attr(not(feature = "text-runtime"), allow(dead_code))]
 use std::cell::RefCell;
 
 use crate::foundation::{Constraints, IntrinsicSize};
@@ -7,9 +8,11 @@ use crate::text::align::apply_alignment;
 use crate::text::engine::ParleyEngine;
 use crate::text::fonts::FontStyle;
 use crate::text::layout::TextLayout;
-use crate::text::runs::extract_lines;
-use crate::text::shaper::TextShapeParams;
 use crate::text::wrap::TextWrap;
+use crate::text::shaper::TextShapeParams;
+#[cfg(feature = "text-runtime")]
+use crate::text::runs::extract_lines;
+#[cfg(feature = "text-runtime")]
 use parley::{
     FontFamily, FontStyle as ParleyStyle, FontWeight, Layout, LayoutContext, LineHeight,
     OverflowWrap, StyleProperty, TextWrapMode,
@@ -19,6 +22,7 @@ use parley::{
 // granularity. A single global context behind a mutex would serialize every
 // shaping thread; thread-local contexts remove that serial section while the
 // shared font collection stays behind its (shorter-lived) lock.
+#[cfg(feature = "text-runtime")]
 thread_local! {
     static LAYOUT_CTX: RefCell<LayoutContext<()>> = RefCell::new(LayoutContext::new());
 }
@@ -32,6 +36,7 @@ thread_local! {
 /// independently, so Windows `\r\n` input would render a phantom blank line
 /// per break. Cluster offsets are remapped back to the original bytes, since
 /// selection and ellipsis slicing index the caller's text, not the copy.
+#[cfg(feature = "text-runtime")]
 pub(crate) fn shape_text(
     engine: &ParleyEngine,
     fcx: &mut parley::FontContext,
@@ -73,6 +78,7 @@ pub(crate) fn shape_text(
 ///
 /// ASCII-only transformation: `\r` and `\n` are single bytes that never appear
 /// inside multibyte sequences, so offsets stay on char boundaries.
+#[cfg(feature = "text-runtime")]
 fn normalize_line_endings(text: &str) -> (String, Vec<usize>) {
     let bytes = text.as_bytes();
     let mut normalized = String::with_capacity(text.len());
@@ -105,6 +111,7 @@ fn normalize_line_endings(text: &str) -> (String, Vec<usize>) {
 }
 
 /// Finite positive wrap width from constraints, or None when unconstrained.
+#[cfg(feature = "text-runtime")]
 fn wrap_width(constraints: Constraints) -> Option<f32> {
     if constraints.max_width.is_finite() && constraints.max_width > 0.0 {
         Some(constraints.max_width)
@@ -114,6 +121,7 @@ fn wrap_width(constraints: Constraints) -> Option<f32> {
 }
 
 /// Sanitizes tracking into a finite, non-negative interval.
+#[cfg(feature = "text-runtime")]
 fn safe_spacing(spacing: f32) -> f32 {
     if spacing.is_finite() && spacing > 0.0 {
         spacing
@@ -127,6 +135,7 @@ fn safe_spacing(spacing: f32) -> f32 {
 /// Takes the font context by mutable reference: single-shape callers pass the
 /// shared collection under its lock; batch workers pass a thread-local clone.
 /// Either way the layout scratch comes from the calling thread's `LAYOUT_CTX`.
+#[cfg(feature = "text-runtime")]
 fn shape_at_width(
     engine: &ParleyEngine,
     fcx: &mut parley::FontContext,
@@ -217,6 +226,7 @@ fn shape_at_width(
 /// the caller caches the final balanced layout under the offered width, so
 /// this search runs only on a cache miss. Score is line-length raggedness
 /// (`max − min`); ties prefer the wider width for reflow stability.
+#[cfg(feature = "text-runtime")]
 fn balance_best_width(
     engine: &ParleyEngine,
     fcx: &mut parley::FontContext,
@@ -269,6 +279,7 @@ fn balance_best_width(
 }
 
 /// Spread between the longest and shortest line of a layout.
+#[cfg(feature = "text-runtime")]
 fn line_raggedness(layout: &TextLayout) -> f32 {
     let mut min = f32::INFINITY;
     let mut max = 0.0_f32;
@@ -282,4 +293,18 @@ fn line_raggedness(layout: &TextLayout) -> f32 {
     } else {
         0.0
     }
+}
+
+// ── Stub shaping when `text-runtime` is off: empty layout, no fonts. ──
+#[cfg(not(feature = "text-runtime"))]
+pub(crate) fn shape_text(
+    _engine: &crate::text::engine::ParleyEngine,
+    _fcx: &mut (),
+    _text: &str,
+    _params: &crate::text::shaper::TextShapeParams,
+) -> crate::text::layout::TextLayout {
+    crate::text::layout::TextLayout::new(
+        Vec::new(),
+        crate::foundation::IntrinsicSize::default(),
+    )
 }

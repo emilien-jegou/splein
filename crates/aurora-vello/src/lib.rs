@@ -11,6 +11,7 @@ pub mod renderer;
 pub mod shader;
 pub mod shadow;
 pub mod svg;
+#[cfg(feature = "svg-runtime")]
 pub mod svg_paint;
 pub mod text;
 

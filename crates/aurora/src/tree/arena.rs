@@ -13,7 +13,28 @@ struct Slot {
     generation: u32,
     is_active: bool,
     parent: Option<NodeId>,
-    children: Vec<NodeId>,
+    /// First child in document order [S2-3 CSR]: siblings chain through
+    /// `next_sibling`. No per-parent heap allocation (was `Vec<NodeId>`).
+    first_child: Option<NodeId>,
+    next_sibling: Option<NodeId>,
+}
+
+/// Borrowed child iterator over CSR sibling links: `Copy` ids, no allocation.
+/// Same borrow rules as the old child slice (immutable arena borrow for the
+/// loop). For reversed or indexed access use `children_vec`.
+#[derive(Clone)]
+pub struct ChildIter<'a> {
+    arena: &'a TreeArena,
+    next: Option<NodeId>,
+}
+
+impl<'a> Iterator for ChildIter<'a> {
+    type Item = NodeId;
+    fn next(&mut self) -> Option<NodeId> {
+        let cur = self.next?;
+        self.next = self.arena.slots[cur.index as usize].next_sibling;
+        Some(cur)
+    }
 }
 
 /// Generational arena managing retained layout node lifecycles.
@@ -65,7 +86,8 @@ impl TreeArena {
             slot.node = node;
             slot.is_active = true;
             slot.parent = None;
-            slot.children.clear();
+            slot.first_child = None;
+            slot.next_sibling = None;
             NodeId::new(idx, slot.generation)
         } else {
             let idx = self.slots.len() as u32;
@@ -74,7 +96,8 @@ impl TreeArena {
                 generation: 1,
                 is_active: true,
                 parent: None,
-                children: Vec::new(),
+                first_child: None,
+                next_sibling: None,
             });
             NodeId::new(idx, 1)
         }
@@ -90,15 +113,27 @@ impl TreeArena {
         if !self.is_valid(id) {
             return;
         }
-        if let Some(parent) = self.slots[id.index as usize].parent {
-            if self.is_valid(parent) {
-                // Single order-preserving unlink for the top node only:
-                // one shift here replaces a scan per descendant, and
-                // surviving siblings keep document order.
-                let siblings = &mut self.slots[parent.index as usize].children;
-                if let Some(pos) = siblings.iter().position(|&c| c == id) {
-                    siblings.remove(pos);
+        // Capture the surviving parent up front: the loop below kills slots
+        // (and their generations), so re-deriving it afterwards is unsound.
+        let live_parent = self.slots[id.index as usize]
+            .parent
+            .filter(|&p| self.is_valid(p));
+        // Unlink the top node from its sibling chain (order-preserving).
+        if let Some(parent) = live_parent {
+            let mut prev: Option<NodeId> = None;
+            let mut cur = self.slots[parent.index as usize].first_child;
+            while let Some(c) = cur {
+                let next = self.slots[c.index as usize].next_sibling;
+                if c == id {
+                    if let Some(p) = prev {
+                        self.slots[p.index as usize].next_sibling = next;
+                    } else {
+                        self.slots[parent.index as usize].first_child = next;
+                    }
+                    break;
                 }
+                prev = Some(c);
+                cur = next;
             }
         }
         let mut stack = vec![id];
@@ -106,8 +141,15 @@ impl TreeArena {
             if !self.is_valid(cur) {
                 continue;
             }
-            let children = std::mem::take(&mut self.slots[cur.index as usize].children);
-            stack.extend(children.into_iter());
+            // Drain children through the sibling chain (no allocation beyond
+            // the explicit stack): unlink each child as it is pushed.
+            let mut child = self.slots[cur.index as usize].first_child;
+            self.slots[cur.index as usize].first_child = None;
+            while let Some(c) = child {
+                child = self.slots[c.index as usize].next_sibling;
+                self.slots[c.index as usize].next_sibling = None;
+                stack.push(c);
+            }
             on_remove(cur);
             self.keys.unbind(cur);
 
@@ -123,9 +165,16 @@ impl TreeArena {
             slot.is_active = false;
             slot.generation += 1;
             slot.parent = None;
-            // Children were taken above, so the buffer is already empty and
-            // keeps its capacity for the slot's next occupant.
+            slot.first_child = None;
+            slot.next_sibling = None;
+            // Children were unlinked above; nothing left to clear.
             self.free_indices.push(cur.index);
+        }
+        // The surviving parent's child list changed: its static proof is void.
+        if let Some(parent) = live_parent {
+            if self.is_valid(parent) {
+                self.invalidate_static_up(parent);
+            }
         }
     }
 
@@ -168,7 +217,12 @@ impl TreeArena {
                 continue;
             }
             self.slots[cur.index as usize].node.abs_tx_frame = 0;
-            stack.extend(self.slots[cur.index as usize].children.iter().copied());
+            // Sibling-chain walk (no allocation): extend the explicit stack.
+            let mut child = self.slots[cur.index as usize].first_child;
+            while let Some(c) = child {
+                child = self.slots[c.index as usize].next_sibling;
+                stack.push(c);
+            }
         }
         mark_node_dirty(self, node_id, flags);
     }
@@ -217,23 +271,71 @@ impl TreeArena {
         self.is_valid(id).then_some(id)
     }
 
+    /// Clears the static-subtree memo on a node and all its ancestors [S2-2].
+    ///
+    /// Call when the node's bindings, providers, or child structure change:
+    /// every ancestor's proof depends on this subtree. Descendants keep
+    /// their proofs (their interiors didn't change). Deliberately NOT called
+    /// from `mark_dirty` — dirty means "changed", not "dynamic".
+    pub fn invalidate_static_up(&mut self, node_id: NodeId) {
+        let mut curr = Some(node_id);
+        while let Some(n) = curr {
+            if !self.is_valid(n) {
+                break;
+            }
+            self.slots[n.index as usize].node.state.core.subtree_static = None;
+            curr = self.slots[n.index as usize].parent;
+        }
+    }
+
     /// Attaches child nodes to a parent container.
     pub fn set_children(&mut self, parent: NodeId, new_children: Vec<NodeId>) {
         assert!(self.is_valid(parent));
+        let mut first: Option<NodeId> = None;
+        let mut prev: Option<NodeId> = None;
         for &child in &new_children {
             assert!(self.is_valid(child));
             self.slots[child.index as usize].parent = Some(parent);
+            self.slots[child.index as usize].next_sibling = None;
+            if let Some(p) = prev {
+                self.slots[p.index as usize].next_sibling = Some(child);
+            } else {
+                first = Some(child);
+            }
+            prev = Some(child);
         }
-        self.slots[parent.index as usize].children = new_children;
+        self.slots[parent.index as usize].first_child = first;
+        // Structure changed: ancestors' static proofs (which quantify over
+        // children) are void. The children's own proofs stay valid.
+        self.invalidate_static_up(parent);
+    }
+
+    /// Iterates immediate child node IDs in document order (no allocation).
+    #[inline(always)]
+    pub fn each_child(&self, id: NodeId) -> ChildIter<'_> {
+        let next = if self.is_valid(id) {
+            self.slots[id.index as usize].first_child
+        } else {
+            None
+        };
+        ChildIter { arena: self, next }
+    }
+
+    /// Collects child IDs into a stack-resident buffer (spills to heap past
+    /// 8 children). For indexed loops and borrow-conflicting bodies that the
+    /// borrowed [`Self::each_child`] iterator cannot serve.
+    #[inline(always)]
+    pub fn children_vec(&self, id: NodeId) -> SmallVec<[NodeId; 8]> {
+        self.each_child(id).collect()
     }
 
     /// Returns the immediate child node IDs of a parent container.
+    ///
+    /// Compatibility shim over [`Self::children_vec`]: prefer `each_child`
+    /// (borrowed iteration) or `children_vec` (owned) at new call sites.
     #[inline(always)]
-    pub fn children(&self, id: NodeId) -> &[NodeId] {
-        if !self.is_valid(id) {
-            return &[];
-        }
-        &self.slots[id.index as usize].children
+    pub fn children(&self, id: NodeId) -> SmallVec<[NodeId; 8]> {
+        self.children_vec(id)
     }
 
     /// Returns the parent node ID of a child if attached.

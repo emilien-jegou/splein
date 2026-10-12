@@ -5,29 +5,45 @@ pub mod backend;
 pub mod clipboard;
 pub(crate) mod frame_flow;
 pub mod pacing;
+#[cfg(feature = "desktop")]
 pub mod pointer;
 
 pub use backend::{
-    Backend, BackendFactory, DamageResolver, FramePostProcess, Present, PresentReport,
-    QuadEngineStat, SurfaceRequest,
+    Backend, DamageResolver, FramePostProcess, Present, PresentReport, QuadEngineStat,
+    SurfaceRequest,
 };
+#[cfg(feature = "desktop")]
+pub use backend::BackendFactory;
 pub use pacing::FpsLimit;
 
+#[cfg(feature = "desktop")]
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+#[cfg(feature = "desktop")]
 use winit::event::{ElementState, Event, WindowEvent};
+#[cfg(feature = "desktop")]
 use winit::event_loop::{ControlFlow, EventLoop};
+#[cfg(feature = "desktop")]
 use winit::keyboard::NamedKey;
+#[cfg(feature = "desktop")]
 use winit::window::Window;
 
+#[cfg(feature = "desktop")]
 use crate::app::extension::AppExtension;
+#[cfg(feature = "desktop")]
 use crate::input::CursorIcon;
+#[cfg(feature = "desktop")]
 use crate::runtime::Engine;
+#[cfg(feature = "desktop")]
 use clipboard::OsClipboardSync;
+#[cfg(feature = "desktop")]
 use frame_flow::present_one;
+#[cfg(feature = "desktop")]
 use pacing::{compute_jit_wake, compute_target_interval};
+#[cfg(feature = "desktop")]
 use pointer::PointerBridge;
 /// Runs the native window event loop, driving frame updates and presentation.
+#[cfg(feature = "desktop")]
 #[tracing::instrument(skip_all, fields(fps_limit = ?fps_limit))]
 pub fn run_event_loop(
     event_loop: EventLoop<()>,
@@ -134,6 +150,7 @@ pub fn run_event_loop(
         .expect("Event loop execution failed");
 }
 
+#[cfg(feature = "desktop")]
 fn handle_idle_pacing(
     pending: bool,
     window: &Window,
@@ -175,6 +192,7 @@ fn handle_idle_pacing(
 /// A bare `.expect` here once ate a whole verification session in a display-less
 /// sandbox behind a one-line message. Name the cause, point at headless
 /// verification, and exit non-zero instead of panicking.
+#[cfg(feature = "desktop")]
 pub fn fail_display_init<T>(err: winit::error::EventLoopError) -> T {
     eprintln!("aurora: display init failed ({err})");
     eprintln!(

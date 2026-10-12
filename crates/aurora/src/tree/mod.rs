@@ -81,7 +81,7 @@ pub mod router;
 pub mod state;
 pub mod style;
 
-pub use arena::TreeArena;
+pub use arena::{ChildIter, TreeArena};
 pub use binding::NodeBindings;
 pub use cache::LayoutCache;
 pub use flags::DirtyFlags;

@@ -5,11 +5,15 @@ use std::sync::Arc;
 /// Parsed scalable vector document representation for scene rendering.
 #[derive(Clone)]
 pub struct VectorGraphic {
+    #[cfg(feature = "svg-runtime")]
     pub tree: Arc<resvg::usvg::Tree>,
+    #[cfg(not(feature = "svg-runtime"))]
+    tree_stub: (),
     pub width: f32,
     pub height: f32,
 }
 
+#[cfg(feature = "svg-runtime")]
 impl VectorGraphic {
     /// Parses an SVG XML string into a vector graphic handle.
     pub fn from_str(xml: &str) -> Result<Self, String> {
@@ -30,6 +34,23 @@ impl VectorGraphic {
             tree,
             width: size.width(),
             height: size.height(),
+        }
+    }
+}
+
+/// Stub when `svg-runtime` is off: parsing is unavailable (use
+/// pre-rasterized images); dimensions default to zero.
+#[cfg(not(feature = "svg-runtime"))]
+impl VectorGraphic {
+    pub fn from_str(_xml: &str) -> Result<Self, String> {
+        Err("svg-runtime feature is disabled".to_string())
+    }
+
+    pub fn stub(width: f32, height: f32) -> Self {
+        Self {
+            tree_stub: (),
+            width,
+            height,
         }
     }
 }

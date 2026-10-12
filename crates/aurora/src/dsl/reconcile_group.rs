@@ -108,6 +108,8 @@ pub fn reconcile_group(
     let node = arena.get_mut(id);
     node.state.core.bindings = bindings;
     node.state.input.handlers = handlers;
+    // Bindings decide staticness: clear this node's proof and ancestors'.
+    arena.invalidate_static_up(id);
 
     if change.layout {
         arena.mark_dirty(id, DirtyFlags::MEASURE | DirtyFlags::LAYOUT);
@@ -174,6 +176,8 @@ pub fn reconcile_group(
     } else {
         arena.get_mut(id).state.core.provided = Some(def.provided.clone());
     }
+    // Providers are reactive (signal readers): same invalidation.
+    arena.invalidate_static_up(id);
     let _descent = crate::reactive::context::enter_descent(&def.provided);
 
     // Children merge in declaration order: static segments splice in place,

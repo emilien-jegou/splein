@@ -62,6 +62,7 @@ impl FontVariation {
     }
 
     /// Converts to the Parley setting consumed by the shaper.
+    #[cfg(feature = "text-runtime")]
     pub(crate) fn to_parley(self) -> parley::FontVariation {
         parley::FontVariation::new(parley::setting::Tag::from_bytes(self.tag), self.value)
     }

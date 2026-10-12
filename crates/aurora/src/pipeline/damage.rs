@@ -144,7 +144,7 @@ fn subtree_old_bounds(arena: &TreeArena, id: NodeId) -> ResolvedRect {
         .paint
         .last_painted_bounds
         .unwrap_or(ResolvedRect::ZERO);
-    for &child in arena.children(id) {
+    for child in arena.each_child(id) {
         out = out.union(&subtree_old_bounds(arena, child));
     }
     out
@@ -193,7 +193,7 @@ fn repair_scroll_overlays(
         }
         top = p;
     }
-    for &child in arena.children(viewport) {
+    for child in arena.each_child(viewport) {
         if child == top || is_within(arena, shifted, child) {
             continue;
         }
@@ -296,6 +296,60 @@ fn resolve_spatial_and_damage(
     // Visible extent under the active clip: bounds the subtree work a chunk has to rasterize.
     let visual_bounds = arena.get(id).compute_visual_bounds(&node_tx, active_clip);
     let mut subtree_bounds = visual_bounds;
+    let flow_bounds = arena.get(id).compute_flow_bounds(&node_tx, active_clip);
+
+    // [S2-2] Static-subtree freeze: a proven-static, clean subtree whose own
+    // occupancy, flow, and resolved light are all identical to last frame
+    // cannot contribute damage — and neither can its descendants, whose
+    // positions derive from this node's transform plus their own unchanged
+    // rects. Full-bounds equality is the complete proof: it folds the entire
+    // ancestor chain (any ancestor move shifts these bounds and voids the
+    // skip), and the ambient check folds the light chain (an ancestor light
+    // change with no movement would otherwise leave stale stashed lights).
+    // Children's *stored* subtree bounds are still current (same argument,
+    // inductively), so the union below equals a full recompute.
+    //
+    // The memo + all child memos must be present: any missed invalidation
+    // leaves `None` somewhere on the path and forces the full walk, which
+    // recomputes the proofs bottom-up. Stale-`true` can never skip.
+    let frozen = (|| {
+        let node = arena.get(id);
+        if node.state.core.subtree_static != Some(true) {
+            return false;
+        }
+        if node.state.core.dirty.intersects(
+            DirtyFlags::MEASURE
+                | DirtyFlags::LAYOUT
+                | DirtyFlags::PAINT
+                | DirtyFlags::SCROLL
+                | DirtyFlags::SUBTREE_DIRTY,
+        ) {
+            return false;
+        }
+        if node.state.paint.last_painted_bounds != Some(full_bounds) {
+            return false;
+        }
+        if node.state.paint.last_painted_flow != Some(flow_bounds) {
+            return false;
+        }
+        if node.state.core.resolved_light != ambient {
+            return false;
+        }
+        for child in arena.each_child(id) {
+            if arena.get(child).state.core.subtree_static != Some(true) {
+                return false;
+            }
+        }
+        true
+    })();
+    if frozen {
+        for child in arena.each_child(id) {
+            subtree_bounds = subtree_bounds.union(&arena.get(child).state.paint.subtree_bounds);
+        }
+        arena.get_mut(id).state.paint.subtree_bounds = subtree_bounds;
+        return subtree_bounds;
+    }
+
     // Scroll fast path, decided before descending: a transform-only
     // SCROLL-dirty node inside a scroll viewport moved by a pure
     // translation. Damage is the newly-exposed strip only (plus a 1px seam
@@ -372,8 +426,6 @@ fn resolve_spatial_and_damage(
         subtree_bounds = subtree_bounds.union(&child_subtree);
     }
 
-    let flow_bounds = arena.get(id).compute_flow_bounds(&node_tx, active_clip);
-
     let node = arena.get_mut(id);
     let old_bounds = node.state.paint.last_painted_bounds;
     let old_flow = node.state.paint.last_painted_flow;
@@ -434,6 +486,24 @@ fn resolve_spatial_and_damage(
         damage.push(full_bounds);
     }
 
-    node.state.paint.subtree_bounds = subtree_bounds;
+    // [S2-2] Bottom-up static proof (free: this walk already visited the
+    // children, whose memos are current). Skipped subtrees keep their proven
+    // memo; anything else recomputes here.
+    let own_static = {
+        let n = arena.get(id);
+        n.state.core.bindings.is_static() && n.state.core.provided.is_none()
+    };
+    let mut proven = own_static;
+    if proven {
+        for child in arena.each_child(id) {
+            if arena.get(child).state.core.subtree_static != Some(true) {
+                proven = false;
+                break;
+            }
+        }
+    }
+    let n = arena.get_mut(id);
+    n.state.paint.subtree_bounds = subtree_bounds;
+    n.state.core.subtree_static = Some(proven);
     subtree_bounds
 }

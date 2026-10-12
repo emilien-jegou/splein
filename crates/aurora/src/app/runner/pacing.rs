@@ -1,6 +1,7 @@
 // Single responsibility: Frame rate pacing policy and JIT late-latch frame deadline calculation.
 
 use std::time::{Duration, Instant};
+#[cfg(feature = "desktop")]
 use winit::window::Window;
 
 /// Frame rate pacing limit policy.
@@ -31,6 +32,7 @@ impl From<Option<u32>> for FpsLimit {
 }
 
 /// Computes the target frame interval duration from an FPS policy and window monitor.
+#[cfg(feature = "desktop")]
 pub fn compute_target_interval(limit: FpsLimit, window: &Window) -> Option<Duration> {
     let target_fps = match limit {
         FpsLimit::Auto => window

@@ -240,6 +240,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "aurora-linebuffer"
+version = "0.0.1-rc.1"
+dependencies = [
+ "aurora",
+ "aurora-tiny-skia",
+ "tiny-skia",
+ "tracing",
+]
+
+[[package]]
 name = "aurora-macros"
 version = "0.0.1-rc.1"
 dependencies = [

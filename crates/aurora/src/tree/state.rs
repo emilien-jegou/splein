@@ -58,6 +58,12 @@ pub struct CoreState {
             crate::reactive::context::ProviderValue,
         )>,
     >,
+    /// Memoized static-subtree proof [S2-2]: `Some(true)` iff this node has
+    /// no live bindings, provides no context, and every child is static.
+    /// `None` means unproven (recomputed bottom-up by the damage walk).
+    /// Cleared on the node + ancestors whenever bindings, providers, or
+    /// structure change (see `TreeArena::invalidate_static_up`).
+    pub subtree_static: Option<bool>,
 }
 
 /// Pointer interaction state: owned by the input domain.

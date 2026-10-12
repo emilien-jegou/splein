@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/splein", "crates/aurora", "crates/aurora/macros", "crates/aurora-tiny-skia", "crates/aurora-vello", "crates/aurora-wayland", "crates/aurora-wgpu", "crates/aurora-quad", "crates/aurora/benches/bench_suite", "crates/aurora-hot-ui", "crates/aurora-shared", "crates/aurora-devkit-bin", "crates/aurora-cli", "examples/demo1-ui", "examples/demo2-ui", "examples/demo3-ui", "examples/motion_accordion-ui", "examples/motion_playback-ui", "examples/motion_imperative-ui", "examples/motion_interruption-ui", "examples/motion_layout_split-ui", "examples/motion_press-ui", "examples/motion_reorder-ui", "examples/motion_signals-ui", "examples/motion_transitions-ui", "examples/motion_validate-ui", "examples/selectable_text-ui", "examples/shadow_lab-ui", "examples/scroll_demo-ui", "examples/text_demo-ui", "examples/text_smooth-ui", "examples/wrap_repro-ui", "examples/view_demo-ui", "examples", "crates/probe-min"]
+members = ["crates/splein", "crates/aurora-linebuffer", "crates/aurora", "crates/aurora/macros", "crates/aurora-tiny-skia", "crates/aurora-vello", "crates/aurora-wayland", "crates/aurora-wgpu", "crates/aurora-quad", "crates/aurora/benches/bench_suite", "crates/aurora-hot-ui", "crates/aurora-shared", "crates/aurora-devkit-bin", "crates/aurora-cli", "examples/demo1-ui", "examples/demo2-ui", "examples/demo3-ui", "examples/motion_accordion-ui", "examples/motion_playback-ui", "examples/motion_imperative-ui", "examples/motion_interruption-ui", "examples/motion_layout_split-ui", "examples/motion_press-ui", "examples/motion_reorder-ui", "examples/motion_signals-ui", "examples/motion_transitions-ui", "examples/motion_validate-ui", "examples/selectable_text-ui", "examples/shadow_lab-ui", "examples/scroll_demo-ui", "examples/text_demo-ui", "examples/text_smooth-ui", "examples/wrap_repro-ui", "examples/view_demo-ui", "examples", "crates/probe-min"]
 
 [workspace.dependencies]
 smithay-client-toolkit = { version = "0.19", default-features = false }
@@ -24,3 +24,12 @@ calloop = "0.13"
 taffy = "0.5"
 cosmic-text = "0.12"
 
+# Embedded size preset (S2 #11): optimize for flash footprint.
+# Build with: cargo build --profile embedded -p aurora --no-default-features
+[profile.embedded]
+inherits = "release"
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

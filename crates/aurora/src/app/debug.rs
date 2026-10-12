@@ -3,11 +3,13 @@
 use std::cell::Cell;
 use std::collections::VecDeque;
 use std::time::Instant;
+#[cfg(feature = "desktop")]
 use winit::event::WindowEvent;
 
 use crate::app::debug_layout::hud_panel;
 use crate::app::debug_overlay::draw_inspector_overlay;
 use crate::app::debug_scene::{emit_hud_overlay, emit_inspector_overlay};
+#[cfg(feature = "desktop")]
 use crate::app::debug_toggle::handle_debug_key;
 use crate::app::extension::{AppExtension, OverlayCaps};
 use crate::app::painter::OverlayPainter;
@@ -374,6 +376,7 @@ impl AppExtension for VisualDebugger {
         Some(self)
     }
 
+    #[cfg(feature = "desktop")]
     fn on_event(&mut self, event: &WindowEvent) -> bool {
         let handled = handle_debug_key(
             event,

@@ -1,6 +1,7 @@
 // Single responsibility: Font database storage, lifetime management, and shaping dispatcher.
 
 use crate::foundation::Constraints;
+#[cfg(feature = "text-runtime")]
 use crate::text::analytic;
 use crate::text::cache::ShapedTextCache;
 use crate::text::config::TextConfig;
@@ -9,10 +10,14 @@ use crate::text::glyph::GlyphKey;
 use crate::text::glyph_cache::{CachedBitmap, GlyphBitmapCache, GlyphCacheBudget, GlyphCacheStats};
 use crate::text::layout::TextLayout;
 use crate::text::min_content;
-use crate::text::shaper::{TextShapeParams, TextShaper};
+use crate::text::shaper::TextShapeParams;
+use crate::text::shaper::TextShaper;
+#[cfg(feature = "text-runtime")]
 use rustc_hash::FxHasher;
+#[cfg(feature = "text-runtime")]
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex};
+#[cfg(feature = "text-runtime")]
 use swash::scale::{Render, ScaleContext, Source, StrikeWith};
 
 /// Size at or below which outlines rasterize hinted: grid-fit stems carry
@@ -42,6 +47,7 @@ pub struct GlyphBitmap<'a> {
 #[derive(Clone)]
 pub struct TextContext {
     pub(crate) engine: ParleyEngine,
+    #[cfg(feature = "text-runtime")]
     scaler: Arc<Mutex<ScaleContext>>,
     cache: ShapedTextCache,
     bitmaps: GlyphBitmapCache,
@@ -70,6 +76,7 @@ impl TextContext {
         let font_blobs = Arc::clone(&engine.font_blobs);
         Self {
             engine,
+            #[cfg(feature = "text-runtime")]
             scaler: Arc::new(Mutex::new(ScaleContext::new())),
             cache: ShapedTextCache::new(),
             bitmaps: GlyphBitmapCache::with_budget(budget),
@@ -259,6 +266,7 @@ impl TextContext {
     /// (grid-fit stems carry small UI text) and linear above it (display
     /// type stays smooth; swash's hinter preserves linear metrics anyway,
     /// so hinting never snaps advances).
+    #[cfg(feature = "text-runtime")]
     pub fn raster_glyph<R>(
         &self,
         key: GlyphKey,
@@ -277,6 +285,7 @@ impl TextContext {
     /// and dimensions by [`quantize_raster_scale(scale)`] to recover layout
     /// units. Near-unity scales delegate to [`Self::raster_glyph`] exactly
     /// (shared slot, shared bitmap).
+    #[cfg(feature = "text-runtime")]
     pub fn raster_glyph_scaled<R>(
         &self,
         key: GlyphKey,
@@ -309,6 +318,7 @@ impl TextContext {
     /// Glyphs with no scalable outline (bitmap-emoji strikes), color
     /// outlines, or outlines larger than the analytic cap fall back to
     /// [`Self::raster_glyph`] at the matching phase, so behavior is total.
+    #[cfg(feature = "text-runtime")]
     pub fn raster_glyph_exact<R>(
         &self,
         key: GlyphKey,
@@ -434,6 +444,7 @@ impl TextContext {
         }
     }
 
+    #[cfg(feature = "text-runtime")]
     fn raster_inner<R>(
         &self,
         cache_key: GlyphKey,
@@ -543,5 +554,41 @@ impl TextContext {
 impl Default for TextContext {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+// ── Stub rasterization when `text-runtime` is off: no glyphs rasterize. ──
+#[cfg(not(feature = "text-runtime"))]
+impl TextContext {
+    pub fn raster_glyph<R>(
+        &self,
+        _key: GlyphKey,
+        _phase: u8,
+        f: impl FnOnce(Option<GlyphBitmap>) -> R,
+    ) -> R {
+        self.bitmaps.note_miss();
+        f(None)
+    }
+
+    pub fn raster_glyph_scaled<R>(
+        &self,
+        _key: GlyphKey,
+        _phase: u8,
+        _scale: f32,
+        f: impl FnOnce(Option<GlyphBitmap>) -> R,
+    ) -> R {
+        self.bitmaps.note_miss();
+        f(None)
+    }
+
+    pub fn raster_glyph_exact<R>(
+        &self,
+        _key: GlyphKey,
+        _qx: u8,
+        _qy: u8,
+        f: impl FnOnce(Option<GlyphBitmap>) -> R,
+    ) -> R {
+        self.bitmaps.note_miss();
+        f(None)
     }
 }

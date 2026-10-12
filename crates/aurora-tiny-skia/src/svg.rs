@@ -1,5 +1,7 @@
 // Single responsibility: Bounded raster cache for vector graphics.
 
+#![cfg_attr(not(feature = "svg-runtime"), allow(dead_code))]
+
 use aurora::scene::vector::VectorGraphic;
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
@@ -7,11 +9,13 @@ use tiny_skia::{Pixmap, PixmapPaint, Transform as SkiaTransform};
 
 const MAX_CACHED_SVGS: usize = 128;
 
+#[cfg(feature = "svg-runtime")]
 #[derive(Default)]
 pub struct SvgCache {
     cache: FxHashMap<u64, Pixmap>,
 }
 
+#[cfg(feature = "svg-runtime")]
 impl SvgCache {
     pub fn new() -> Self {
         Self {
@@ -66,5 +70,30 @@ impl SvgCache {
             transform,
             clip,
         );
+    }
+}
+
+/// Stub when `svg-runtime` is off: vector draws become no-ops.
+#[cfg(not(feature = "svg-runtime"))]
+#[derive(Default)]
+pub struct SvgCache;
+
+#[cfg(not(feature = "svg-runtime"))]
+impl SvgCache {
+    pub fn new() -> Self {
+        Self
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw(
+        &mut self,
+        _graphic: &aurora::scene::vector::VectorGraphic,
+        _rw: u32,
+        _rh: u32,
+        _target: &mut tiny_skia::PixmapMut,
+        _opacity: f32,
+        _transform: tiny_skia::Transform,
+        _clip: Option<&tiny_skia::Mask>,
+    ) {
     }
 }

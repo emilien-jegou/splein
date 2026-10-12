@@ -77,7 +77,7 @@ pub fn build_stacking_tree(
     // stable sort below. (compile_node_hierarchy skips these children for
     // the same reason it skips real stacking contexts.)
     let isolate = arena.get(parent_id).style.isolate_children;
-    for &child_id in arena.children(parent_id) {
+    for child_id in arena.each_child(parent_id) {
         let child = arena.get(child_id);
         let painted = child.resolved_rect;
         let child_tx = parent_tx.multiply(&Transform::from_translation(painted.x, painted.y));

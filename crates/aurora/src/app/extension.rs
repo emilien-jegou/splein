@@ -4,6 +4,7 @@ use crate::app::painter::OverlayPainter;
 use crate::foundation::{Color, DamageRegion, ResolvedRect};
 use crate::runtime::{Engine, FrameDiagnostics};
 use crate::text::TextContext;
+#[cfg(feature = "desktop")]
 use winit::event::WindowEvent;
 
 /// Presentation capabilities an overlay must adapt itself to.
@@ -23,6 +24,8 @@ pub struct OverlayCaps {
 /// Extension hooks for events, telemetry, scene overlays, and presentation.
 pub trait AppExtension {
     /// Handles native window input events; returns true if redraw requested.
+    /// Desktop-only: headless embedders drive `Engine` directly.
+    #[cfg(feature = "desktop")]
     fn on_event(&mut self, _event: &WindowEvent) -> bool {
         false
     }

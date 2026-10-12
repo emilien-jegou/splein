@@ -8,7 +8,32 @@
 // winding, matching Vello's fill rule), evaluated at the true subpixel pen
 // position. No phase bins, no coverage interpolation, no supersampling.
 
+#![cfg_attr(not(feature = "text-runtime"), allow(dead_code))]
+#[cfg(feature = "text-runtime")]
 use swash::zeno::{Point, Verb};
+
+/// Stub outline types when `text-runtime` is off: identical shape to the
+/// swash/zeno types this module's pure geometry operates on, so the exact
+/// same flatten/integrate code compiles without the dependency. Nothing
+/// constructs these in stub mode (raster entry points return empty).
+#[cfg(not(feature = "text-runtime"))]
+mod zenostub {
+    #[derive(Copy, Clone)]
+    pub struct Point {
+        pub x: f32,
+        pub y: f32,
+    }
+    #[derive(Copy, Clone, PartialEq, Eq)]
+    pub enum Verb {
+        MoveTo,
+        LineTo,
+        QuadTo,
+        CurveTo,
+        Close,
+    }
+}
+#[cfg(not(feature = "text-runtime"))]
+use zenostub::{Point, Verb};
 
 /// Owned grayscale coverage bitmap in `GlyphBitmap` convention: bearings
 /// relative to the pen, `top` positive-down like swash placement.

@@ -1,22 +1,30 @@
 // Single responsibility: Parley shaper construction, font loading, and shaping entry.
 
+#![cfg_attr(not(feature = "text-runtime"), allow(dead_code))]
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+#[cfg(feature = "text-runtime")]
 use parley::fontique::{Blob, Collection, CollectionOptions};
+#[cfg(feature = "text-runtime")]
 use parley::FontContext;
 use rustc_hash::FxHashMap;
 
+#[cfg(feature = "text-runtime")]
 use crate::text::glyph::GlyphKey;
 use crate::text::layout::TextLayout;
+#[cfg(feature = "text-runtime")]
 use crate::text::overflow::{truncate_to_lines, TextOverflow};
+#[cfg(feature = "text-runtime")]
 use crate::text::shape::shape_text;
+#[cfg(feature = "text-runtime")]
 use crate::text::shaper::{TextShapeParams, TextShaper};
 
 /// Raster identity for one shaped glyph behind an opaque [`GlyphKey`].
 ///
 /// The same key always maps to the same entry: shaping is deterministic for
 /// identical inputs, so the map is insert-only and never invalidated.
+#[cfg(feature = "text-runtime")]
 #[derive(Clone)]
 pub(crate) struct RasterKey {
     /// Shareable font binary the glyph was shaped from.
@@ -37,6 +45,7 @@ pub(crate) struct ResolvedStyleKey {
 }
 
 /// Production text layout shaper wrapping Parley with zero system font scanning.
+#[cfg(feature = "text-runtime")]
 #[derive(Clone)]
 pub struct ParleyEngine {
     pub(crate) font_ctx: Arc<Mutex<FontContext>>,
@@ -50,8 +59,10 @@ pub struct ParleyEngine {
     pub(crate) font_blobs: Arc<Mutex<Vec<Arc<Vec<u8>>>>>,
 }
 
+#[cfg(feature = "text-runtime")]
 impl ParleyEngine {
     /// Constructs a clean shaper with an empty font database for 0.00ms boot time.
+    #[cfg(feature = "text-runtime")]
     pub fn new() -> Self {
         let collection = Collection::new(CollectionOptions {
             shared: false,
@@ -157,12 +168,14 @@ impl ParleyEngine {
     }
 }
 
+#[cfg(feature = "text-runtime")]
 impl Default for ParleyEngine {
     fn default() -> Self {
         Self::new()
     }
 }
 
+#[cfg(feature = "text-runtime")]
 impl TextShaper for ParleyEngine {
     fn shape(&self, params: TextShapeParams) -> TextLayout {
         let mut fcx = self.font_ctx.lock().unwrap();
@@ -170,6 +183,7 @@ impl TextShaper for ParleyEngine {
     }
 }
 
+#[cfg(feature = "text-runtime")]
 impl ParleyEngine {
     /// Shapes against an explicitly provided font context.
     ///
@@ -187,5 +201,97 @@ impl ParleyEngine {
             }
         }
         layout
+    }
+}
+
+// ── Stub engine when `text-runtime` is off ──────────────────────────────
+// Same public shape as the Parley engine (fields, constructors, shaper
+// trait) so layout, caches, and backends compile unchanged. Shaping yields
+// empty layouts; glyph rasterization yields nothing (see context.rs stubs).
+
+#[cfg(not(feature = "text-runtime"))]
+#[derive(Clone, Debug, Default)]
+pub(crate) struct StubFontData;
+
+#[cfg(not(feature = "text-runtime"))]
+#[derive(Clone)]
+pub(crate) struct RasterKey {
+    pub font: StubFontData,
+    pub glyph_id: u32,
+    pub size_bits: u32,
+    pub coords: Vec<i16>,
+}
+
+/// Stub shaper: font database accepts loads (indexes retained for
+/// `font_data`) but shaping always yields an empty layout.
+#[cfg(not(feature = "text-runtime"))]
+#[derive(Clone)]
+pub struct ParleyEngine {
+    pub(crate) font_ctx: Arc<Mutex<()>>,
+    pub(crate) key_map: Arc<Mutex<HashMap<crate::text::glyph::GlyphKey, RasterKey>>>,
+    pub(crate) blob_families: Arc<Mutex<Vec<Vec<String>>>>,
+    pub(crate) blob_ids: Arc<Mutex<FxHashMap<u64, usize>>>,
+    pub(crate) resolved_styles: Arc<Mutex<FxHashMap<ResolvedStyleKey, Option<String>>>>,
+    pub(crate) font_blobs: Arc<Mutex<Vec<Arc<Vec<u8>>>>>,
+}
+
+#[cfg(not(feature = "text-runtime"))]
+impl ParleyEngine {
+    pub fn new() -> Self {
+        Self {
+            font_ctx: Arc::new(Mutex::new(())),
+            key_map: Arc::new(Mutex::new(HashMap::new())),
+            blob_families: Arc::new(Mutex::new(Vec::new())),
+            blob_ids: Arc::new(Mutex::new(FxHashMap::default())),
+            resolved_styles: Arc::new(Mutex::new(FxHashMap::default())),
+            font_blobs: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    pub fn load_font(&self, bytes: &[u8], blob_index: usize) {
+        let mut map = self.blob_families.lock().unwrap();
+        while map.len() <= blob_index {
+            map.push(Vec::new());
+        }
+        map[blob_index] = Vec::new();
+        let id = {
+            use std::hash::{Hash, Hasher};
+            let mut h = rustc_hash::FxHasher::default();
+            bytes.len().hash(&mut h);
+            bytes.get(..64).hash(&mut h);
+            h.finish()
+        };
+        self.blob_ids.lock().unwrap().insert(id, blob_index);
+    }
+
+    pub(crate) fn resolve_family(
+        &self,
+        _fcx: &mut (),
+        _font: Option<crate::text::fonts::FontId>,
+        _family: Option<&str>,
+    ) -> Option<String> {
+        None
+    }
+
+    pub(crate) fn shape_with(
+        &self,
+        _fcx: &mut (),
+        _params: crate::text::shaper::TextShapeParams,
+    ) -> TextLayout {
+        TextLayout::new(Vec::new(), crate::foundation::IntrinsicSize::default())
+    }
+}
+
+#[cfg(not(feature = "text-runtime"))]
+impl Default for ParleyEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(not(feature = "text-runtime"))]
+impl crate::text::shaper::TextShaper for ParleyEngine {
+    fn shape(&self, _params: crate::text::shaper::TextShapeParams) -> TextLayout {
+        TextLayout::new(Vec::new(), crate::foundation::IntrinsicSize::default())
     }
 }

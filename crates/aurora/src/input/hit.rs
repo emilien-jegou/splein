@@ -94,7 +94,7 @@ fn collect(
         let mut above = Vec::new();
         let mut below = Vec::new();
         let mut flow = Vec::new();
-        for &child_id in children {
+        for child_id in children {
             if !arena.get(child_id).creates_stacking_context() {
                 flow.push(child_id);
                 continue;

@@ -345,7 +345,14 @@ fn image_bits(img: &ImageSource) -> [usize; 3] {
 
 fn svg_bits(g: &VectorGraphic) -> [u32; 3] {
     [
-        (Arc::as_ptr(&g.tree) as usize) as u32 ^ ((Arc::as_ptr(&g.tree) as usize) >> 32) as u32,
+        #[cfg(feature = "svg-runtime")]
+        {
+            (Arc::as_ptr(&g.tree) as usize) as u32 ^ ((Arc::as_ptr(&g.tree) as usize) >> 32) as u32
+        },
+        #[cfg(not(feature = "svg-runtime"))]
+        {
+            0u32
+        },
         g.width.to_bits(),
         g.height.to_bits(),
     ]

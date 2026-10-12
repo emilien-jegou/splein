@@ -11,6 +11,23 @@ use std::sync::{Arc, Mutex};
 
 const MAX_CACHE_ENTRIES: usize = 2048;
 
+/// Byte budget for retained shaped layouts [S2-4]: count caps alone admit
+/// ~20 MiB of long paragraphs (2048 × ~10 KB); the byte cap bounds worst
+/// case regardless of entry size. Eviction only costs re-shaping — layouts
+/// are deterministic, so pixels never change, only cache-hit rate.
+const MAX_CACHE_BYTES: usize = 8 << 20;
+
+/// Rough retained size of one entry: content key + glyph vec + line boxes.
+/// `ShapedGlyph` ≈ 40 B, `ShapedLine` ≈ 48 B + glyphs; over-counting slightly
+/// is safe (earlier eviction, identical pixels).
+fn entry_bytes(text_len: usize, layout: &TextLayout) -> usize {
+    let mut bytes = text_len + 128;
+    for line in &layout.lines {
+        bytes += 48 + line.glyphs.len() * 40;
+    }
+    bytes
+}
+
 /// Cache identity granularity: layout routinely produces fractional widths
 /// (spring values, fill division, window resize) that differ by far less
 /// than a pixel. Quantizing to 1/16px is visually identical in shaping
@@ -81,6 +98,7 @@ impl StyleKey {
 struct Entry {
     layout: Arc<TextLayout>,
     used: u64,
+    bytes: usize,
 }
 
 /// Mutable cache state guarded by a single mutex.
@@ -88,6 +106,7 @@ struct Entry {
 struct Inner {
     styles: FxHashMap<StyleKey, FxHashMap<Box<str>, Entry>>,
     entries: usize,
+    bytes: usize,
     clock: u64,
 }
 
@@ -118,15 +137,25 @@ impl ShapedTextCache {
     pub fn store(&self, params: &TextShapeParams, layout: Arc<TextLayout>) {
         let key = StyleKey::from_params(params);
         let mut inner = self.inner.lock().unwrap();
-        if inner.entries >= MAX_CACHE_ENTRIES {
+        while inner.entries >= MAX_CACHE_ENTRIES || inner.bytes >= MAX_CACHE_BYTES {
+            let before = inner.entries;
             inner.evict_lru();
+            if inner.entries == before {
+                break;
+            }
         }
         inner.clock += 1;
         let used = inner.clock;
+        let bytes = entry_bytes(params.text.len(), &layout);
         let bucket = inner.styles.entry(key).or_default();
-        let inserted = bucket.insert(params.text.into(), Entry { layout, used });
-        if inserted.is_none() {
-            inner.entries += 1;
+        match bucket.insert(params.text.into(), Entry { layout, used, bytes }) {
+            None => {
+                inner.entries += 1;
+                inner.bytes += bytes;
+            }
+            Some(old) => {
+                inner.bytes = inner.bytes.saturating_sub(old.bytes) + bytes;
+            }
         }
     }
 }
@@ -160,8 +189,9 @@ impl Inner {
         }
         let Some((key, content)) = victim else { return };
         if let Some(bucket) = self.styles.get_mut(&key) {
-            if bucket.remove(&content).is_some() {
+            if let Some(old) = bucket.remove(&content) {
                 self.entries = self.entries.saturating_sub(1);
+                self.bytes = self.bytes.saturating_sub(old.bytes);
             }
             if bucket.is_empty() {
                 self.styles.remove(&key);
