@@ -232,7 +232,7 @@ fn perform_node_layout(
     let wrapped_v = dir == Direction::Vertical && wrapping && content_h.is_finite();
     // End of the flow along the main axis: collapsed (zero-size) nodes slot
     // here so they can grow back in place.
-    let mut flow_end = 0.0_f32;
+    let flow_end: f32;
     if wrapped_h {
         flow_end = layout_wrapped_horizontal(
             arena,

@@ -115,6 +115,8 @@ pub enum DebugCommand {
     StepOnce,
     /// Write presented pixels + scene dump (the `s` action).
     Capture,
+    /// Send the next presented frame to Tracy (the `T` action).
+    TracySnapshot,
     /// Arm node picking: the next app-window click selects.
     ArmPick,
     /// Clear the picked node.

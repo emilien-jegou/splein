@@ -58,6 +58,11 @@ pub struct VisualDebugger {
     reload_requested: bool,
     /// Whether the next presented frame should be written out as a PNG.
     capture_pending: bool,
+    /// Whether the next presented frame should be sent to Tracy as a message
+    /// + frame image (the `T` action). Consumed in `on_present` on CPU
+    /// backends (pixels available) or in `on_frame` on GPU backends
+    /// (message only — no presented pixels to copy).
+    tracy_snapshot_pending: bool,
     /// Path of the most recently written capture (PNG or scene dump).
     last_capture: Option<String>,
     /// How many captures have been taken, used to number the files.
@@ -96,6 +101,7 @@ impl Default for VisualDebugger {
             step_requested: false,
             reload_requested: false,
             capture_pending: false,
+            tracy_snapshot_pending: false,
             last_capture: None,
             captures: 0,
             scene_dump: None,
@@ -193,6 +199,10 @@ impl VisualDebugger {
                 self.capture_pending = true;
                 true
             }
+            C::TracySnapshot => {
+                self.tracy_snapshot_pending = true;
+                true
+            }
             C::ReloadAll => {
                 engine.queue_full_reload();
                 true
@@ -269,6 +279,85 @@ impl VisualDebugger {
     }
 }
 
+/// Sends the presented frame to Tracy: a searchable message plus a thumbnail
+/// frame image docked onto the current frame.
+///
+/// Without the `tracy` feature this compiles to nothing. With it but no
+/// running client (Tracy server never connected / layer not installed), this
+/// is a no-op rather than a panic — a debug key must never crash the app.
+#[allow(unused_variables)]
+fn send_tracy_snapshot(buf: &[u32], stride: usize, height: usize, frame_index: u64) {
+    #[cfg(feature = "tracy")]
+    {
+        let Some(client) = tracy_client::Client::running() else {
+            return;
+        };
+        client.message(&format!("aurora frame #{frame_index} (T snapshot)"), 0);
+        if let Some((rgba, w, h)) = tracy_thumbnail(buf, stride, height) {
+            client.frame_image(&rgba, w, h, 0, false);
+            tracing::info!(frame = frame_index, width = w, height = h, "sent frame to tracy");
+        } else {
+            tracing::error!("tracy thumbnail failed (degenerate viewport?)");
+        }
+    }
+}
+
+/// Message-only fallback for GPU backends: no presented pixels exist to copy,
+/// but the mark still anchors the frame in Tracy's timeline.
+#[allow(unused_variables)]
+fn send_tracy_message_only(frame_index: u64) {
+    #[cfg(feature = "tracy")]
+    {
+        if let Some(client) = tracy_client::Client::running() {
+            client.message(
+                &format!("aurora frame #{frame_index} (T snapshot, no pixels on GPU backend)"),
+                0,
+            );
+            tracing::info!(frame = frame_index, "sent tracy mark (no pixels on GPU backend)");
+        }
+    }
+}
+
+/// Downscales presented `0x00RRGGBB` pixels to an RGBA thumbnail inside
+/// Tracy's `frame_image` limits: sides divisible by 4, payload < 256 KB.
+///
+/// Width targets 224px (height follows the aspect, both snapped to multiples
+/// of 4 and shrunk until the payload fits). Nearest-neighbor: this is a
+/// timeline thumbnail for spotting *which* frame spiked, not evidence — the
+/// `s`-capture PNG stays the pixel-truth path.
+#[cfg(feature = "tracy")]
+fn tracy_thumbnail(buf: &[u32], stride: usize, height: usize) -> Option<(Vec<u8>, u16, u16)> {
+    const MAX_SIDE: usize = 224;
+    const MAX_BYTES: usize = 245_760; // 240 KB, under Tracy's 256 KB cap.
+    if stride < 4 || height < 4 || buf.len() < stride * height {
+        return None;
+    }
+    let tw = (stride.min(MAX_SIDE) / 4) * 4;
+    if tw == 0 {
+        return None;
+    }
+    let mut th = ((tw * height / stride.max(1)) / 4) * 4;
+    while tw > 0 && th > 0 && tw * th * 4 > MAX_BYTES {
+        th = th.saturating_sub(4);
+    }
+    if tw == 0 || th == 0 || tw > u16::MAX as usize || th > u16::MAX as usize {
+        return None;
+    }
+    let mut rgba = Vec::with_capacity(tw * th * 4);
+    for y in 0..th {
+        let sy = (y * height / th).min(height - 1);
+        for x in 0..tw {
+            let sx = (x * stride / tw).min(stride - 1);
+            let v = buf[sy * stride + sx];
+            rgba.push(((v >> 16) & 0xFF) as u8);
+            rgba.push(((v >> 8) & 0xFF) as u8);
+            rgba.push((v & 0xFF) as u8);
+            rgba.push(255);
+        }
+    }
+    Some((rgba, tw as u16, th as u16))
+}
+
 /// Numbered capture path under `$AURORA_CAPTURE_DIR` (default `/tmp`).
 fn capture_path(captures: u32, ext: &str) -> String {
     let dir = std::env::var("AURORA_CAPTURE_DIR").unwrap_or_else(|_| "/tmp".into());
@@ -302,6 +391,16 @@ impl AppExtension for VisualDebugger {
                     && key.logical_key == winit::keyboard::Key::Character("s".into())
                 {
                     self.capture_pending = true;
+                    return true;
+                }
+                // `T` arms a Tracy frame snapshot: the next presented frame is
+                // annotated with a message and its pixels ride along as a
+                // frame image. No focus guard, mirroring `s`: text runs are
+                // mouse-only and readonly, so no key target can swallow this.
+                if key.state == winit::event::ElementState::Pressed
+                    && key.logical_key == winit::keyboard::Key::Character("t".into())
+                {
+                    self.tracy_snapshot_pending = true;
                     return true;
                 }
                 // F6 queues a state-preserving hot-reload rebuild (consumed in `on_update`,
@@ -346,6 +445,13 @@ impl AppExtension for VisualDebugger {
 
     fn on_frame(&mut self, diag: &FrameDiagnostics) {
         self.last_diag = diag.clone();
+        crate::app::telemetry::TelemetryWorker::plot_frame(diag);
+        // GPU backends never run `on_present` (no presented pixels to copy),
+        // so an unconsumed snapshot degrades to a message-only mark here.
+        if self.tracy_snapshot_pending {
+            self.tracy_snapshot_pending = false;
+            send_tracy_message_only(diag.frame_index);
+        }
         self.prev_show_hud = self.show_hud;
         self.prev_mode = self.mode;
         let now = Instant::now();
@@ -496,6 +602,13 @@ impl AppExtension for VisualDebugger {
         if self.capture_pending {
             self.capture_pending = false;
             self.write_capture(buf, stride, h);
+        }
+        // Same pixels as the PNG capture, downscaled into Tracy's frame-image
+        // limits (RGBA, sides divisible by 4, < 256 KB). Consumed here so the
+        // image docks onto this exact frame.
+        if self.tracy_snapshot_pending {
+            self.tracy_snapshot_pending = false;
+            send_tracy_snapshot(buf, stride, h, self.last_diag.frame_index);
         }
         draw_inspector_overlay(buf, self.mode, &self.last_diag, stride, h);
     }
@@ -657,5 +770,29 @@ mod tests {
         // …then silence.
         dbg.on_frame(&diag_with(&[]));
         assert!(dbg.overlay_damage().is_none());
+    }
+
+    /// Thumbnail stays inside Tracy's frame-image limits for a 1080p source.
+    #[cfg(feature = "tracy")]
+    #[test]
+    fn tracy_thumbnail_fits_limits() {
+        let w = 1920usize;
+        let h = 1080usize;
+        let buf = vec![0x00112233u32; w * h];
+        let (rgba, tw, th) = tracy_thumbnail(&buf, w, h).expect("thumbnail builds");
+        assert_eq!(tw % 4, 0);
+        assert_eq!(th % 4, 0);
+        assert_eq!(rgba.len(), tw as usize * th as usize * 4);
+        assert!(rgba.len() < 256 * 1024);
+        // R channel lands first in RGBA order.
+        assert_eq!(&rgba[0..4], &[0x11, 0x22, 0x33, 255]);
+    }
+
+    /// Degenerate viewports refuse instead of dividing by zero.
+    #[cfg(feature = "tracy")]
+    #[test]
+    fn tracy_thumbnail_rejects_degenerate() {
+        assert!(tracy_thumbnail(&[], 0, 0).is_none());
+        assert!(tracy_thumbnail(&[0u32; 4], 2, 2).is_none());
     }
 }

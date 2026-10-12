@@ -401,6 +401,14 @@ fn toolbar(ui: &PanelUi, snap: &Snapshot) -> Element {
                     notice.set("capture requested".into());
                 }
             })}
+            {text_btn(ui, "Tracy", {
+                let bus = bus.clone();
+                let notice = notice.clone();
+                move || {
+                    bus.send(DebugCommand::TracySnapshot);
+                    notice.set("tracy snapshot requested (T)".into());
+                }
+            })}
             {text_btn(ui, "Reload", {
                 let bus = bus.clone();
                 let notice = notice.clone();

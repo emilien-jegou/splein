@@ -27,7 +27,15 @@ pub fn present_one(
         engine.resize(w, h);
     }
 
-    let mut diag = engine.frame().diagnostics;
+    let mut diag = {
+        // Zone mirror of the engine's own phase timings: plots tell *how
+        // long*, this tells *where* when a spike is clicked in Tracy. The
+        // tracing span of the same name carries the textual trail; this one
+        // carries the timeline. Compiles out without the `tracy` feature.
+        #[cfg(feature = "tracy")]
+        let _engine_span = tracy_client::span!("aurora::engine");
+        engine.frame().diagnostics
+    };
     let text_ctx = engine.text_context();
     let (lw, lh) = engine.logical_size();
     let caps = OverlayCaps {
@@ -52,6 +60,9 @@ pub fn present_one(
         .collect();
     let damage = engine.current_damage().clone();
     let report = {
+        // Zone mirror of the present phase (see the engine span above).
+        #[cfg(feature = "tracy")]
+        let _present_span = tracy_client::span!("aurora::present");
         let mut resolver = EngineDamage::new(&engine);
         let mut scanline = caps
             .scanline_overlays
