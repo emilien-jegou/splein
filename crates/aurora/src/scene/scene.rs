@@ -68,7 +68,12 @@ impl Scene {
             let mut rc = chunk.commands;
             if let Some(buf) = std::rc::Rc::get_mut(&mut rc) {
                 if self.cmd_pool.len() < 32 {
-                    self.cmd_pool.push(std::mem::take(buf));
+                    // Reclaim capacity only: the buffer still holds this
+                    // frame's commands, so clear it — the next chunk must
+                    // start empty, never with stale commands appended.
+                    let mut buf = std::mem::take(buf);
+                    buf.clear();
+                    self.cmd_pool.push(buf);
                 }
             }
         }
