@@ -46,7 +46,7 @@ pub struct ReactiveRuntime {
     pub(crate) values: Vec<SignalSlot>,
     /// Indices of free slots; popped (LIFO) by `create_signal`.
     free_slots: Vec<usize>,
-    pub(crate) subscribers: FxHashMap<SignalId, FxHashSet<Observer>>,
+    pub(crate) subscribers: FxHashMap<SignalId, smallvec::SmallVec<[Observer; 4]>>,
     pub(crate) effects: FxHashMap<SubscriberId, Rc<dyn Fn()>>,
     pub(crate) listeners: FxHashMap<SubscriberId, Rc<dyn Fn()>>,
     pub(crate) derived_dirty: FxHashSet<SignalId>,
@@ -75,6 +75,11 @@ pub struct ReactiveRuntime {
     /// exits, which is what makes a burst of writes pay marking only once
     /// instead of once per write.
     pending_roots: FxHashSet<SignalId>,
+    /// Scratch buffers reused by `invalidate_roots` [STAGE0 #27] to avoid
+    /// per-write `FxHashSet`+`Vec` allocation. Cleared on each use; never
+    /// held across effect-body execution (bodies run after `&mut` release).
+    invalidate_visited: FxHashSet<SignalId>,
+    invalidate_stack: Vec<SignalId>,
     next_subscriber_id: usize,
     on_dirty: Option<Rc<dyn Fn()>>,
     tickers: TickerRegistry,
@@ -88,6 +93,9 @@ pub struct ReactiveRuntime {
     /// recalled (not dropped) — without ownership the re-registered twin would run
     /// beside the original forever. Swept by generation on commit/abort.
     effect_owners: FxHashMap<SubscriberId, BuildTag>,
+    /// Reverse index [STAGE0 #17/#26]: signals each effect/subscriber reads,
+    /// so disposal unlinks exactly those sets instead of sweeping all.
+    pub(crate) effect_sources: FxHashMap<SubscriberId, Vec<SignalId>>,
     /// Owner tags for listener registrations made during reload builds. Same sweep.
     listener_owners: FxHashMap<SubscriberId, BuildTag>,
     /// Monotonic generation stamping full-tree builds. Bumped when a window opens.
@@ -178,6 +186,9 @@ impl ReactiveRuntime {
             tickers: TickerRegistry::default(),
             ticker_epoch: 0,
             effect_owners: FxHashMap::default(),
+            effect_sources: FxHashMap::default(),
+            invalidate_visited: FxHashSet::default(),
+            invalidate_stack: Vec::new(),
             listener_owners: FxHashMap::default(),
             build_gen: 0,
             build_depth: 0,
@@ -640,8 +651,19 @@ impl ReactiveRuntime {
     pub fn dispose_effect(&mut self, id: SubscriberId) {
         self.effects.remove(&id);
         self.effect_owners.remove(&id);
-        for subs in self.subscribers.values_mut() {
-            subs.remove(&Observer::Effect(id));
+        if let Some(sources) = self.effect_sources.remove(&id) {
+            for src in sources {
+                if let Some(subs) = self.subscribers.get_mut(&src) {
+                    subs.retain(|o| *o != Observer::Effect(id));
+                    if subs.is_empty() {
+                        self.subscribers.remove(&src);
+                    }
+                }
+            }
+        } else {
+            for subs in self.subscribers.values_mut() {
+                subs.retain(|o| *o != Observer::Effect(id));
+            }
         }
     }
 
@@ -650,8 +672,19 @@ impl ReactiveRuntime {
         self.listener_owners.remove(&id);
         self.dirty_subscribers.remove(&id);
         self.pending_subscribers.remove(&id);
-        for subs in self.subscribers.values_mut() {
-            subs.remove(&Observer::Subscriber(id));
+        if let Some(sources) = self.effect_sources.remove(&id) {
+            for src in sources {
+                if let Some(subs) = self.subscribers.get_mut(&src) {
+                    subs.retain(|o| *o != Observer::Subscriber(id));
+                    if subs.is_empty() {
+                        self.subscribers.remove(&src);
+                    }
+                }
+            }
+        } else {
+            for subs in self.subscribers.values_mut() {
+                subs.retain(|o| *o != Observer::Subscriber(id));
+            }
         }
     }
 
@@ -664,7 +697,10 @@ impl ReactiveRuntime {
         if let Some(sources) = self.derived_sources.remove(&id) {
             for src in sources {
                 if let Some(set) = self.subscribers.get_mut(&src) {
-                    set.remove(&Observer::Derived(id));
+                    set.retain(|o| *o != Observer::Derived(id));
+                    if set.is_empty() {
+                        self.subscribers.remove(&src);
+                    }
                 }
             }
         }
@@ -705,9 +741,20 @@ impl ReactiveRuntime {
 
     pub fn track_read(&mut self, id: SignalId) {
         if let Some(&current) = self.observer_stack.last() {
-            self.subscribers.entry(id).or_default().insert(current);
-            if let Observer::Derived(d) = current {
-                self.derived_sources.entry(d).or_default().insert(id);
+            let subs = self.subscribers.entry(id).or_default();
+            if !subs.contains(&current) {
+                subs.push(current);
+            }
+            match current {
+                Observer::Derived(d) => {
+                    self.derived_sources.entry(d).or_default().insert(id);
+                }
+                Observer::Effect(e) | Observer::Subscriber(e) => {
+                    let srcs = self.effect_sources.entry(e).or_default();
+                    if !srcs.contains(&id) {
+                        srcs.push(id);
+                    }
+                }
             }
         }
     }
@@ -740,8 +787,10 @@ impl ReactiveRuntime {
     /// action gathering follow under one exclusive borrow. Returned bodies
     /// run after the caller's borrow is released.
     pub(crate) fn invalidate_roots(&mut self, roots: &[SignalId]) -> Vec<Rc<dyn Fn()>> {
-        let mut visited = FxHashSet::default();
-        let mut stack: Vec<SignalId> = Vec::new();
+        self.invalidate_visited.clear();
+        self.invalidate_stack.clear();
+        let mut visited = std::mem::take(&mut self.invalidate_visited);
+        let mut stack = std::mem::take(&mut self.invalidate_stack);
         let mut pending: smallvec::SmallVec<[Observer; 8]> = smallvec::SmallVec::new();
         for &root in roots {
             if visited.insert(root) {
@@ -783,6 +832,10 @@ impl ReactiveRuntime {
                 Observer::Derived(_) => {}
             }
         }
+        visited.clear();
+        stack.clear();
+        self.invalidate_visited = visited;
+        self.invalidate_stack = stack;
         effects_to_run
     }
 

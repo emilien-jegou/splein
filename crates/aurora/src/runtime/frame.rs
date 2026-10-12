@@ -135,7 +135,16 @@ pub fn run_frame_passes(
 
     let viewport = ResolvedRect::new(0.0, 0.0, w as f32, h as f32);
     let t2 = std::time::Instant::now();
-    let comp = {
+    // [STAGE0 #19] Idle skip: no layout, no damage, past first frame → reuse scene.
+    let idle = frame_counter > 0 && !stats.laid_out && frame_damage.is_empty() && !caret_visible;
+    let comp = if idle {
+        CompileResult {
+            new_commands_emitted: 0,
+            cached_chunks_reused: scene.chunks.len(),
+            stacking_contexts_count: 0,
+            context_bounds: Vec::new(),
+        }
+    } else {
         let _span = tracing::info_span!("Pass::Compile").entered();
         CompileResult::compile(
             &mut scheduler.arena,

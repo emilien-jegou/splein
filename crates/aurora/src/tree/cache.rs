@@ -5,11 +5,10 @@ use crate::foundation::{Constraints, IntrinsicSize, ResolvedRect};
 /// Multi-slot MRU layout cache preventing multi-pass flexbox eviction.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct LayoutCache {
-    /// Memoized intrinsic size. The flag distinguishes item sizing (`false`:
-    /// max-content, for row allocation) from container-height sizing (`true`:
-    /// wrapped at the offer, for fit boxes) — same constraints, two different
-    /// queries, never the same slot.
-    pub intrinsic: Option<(Constraints, bool, IntrinsicSize)>,
+    /// Memoized intrinsic size, dual-slot by role: index 0 = item sizing
+    /// (`false`: max-content, for row allocation), index 1 = container-height
+    /// sizing (`true`: wrapped at the offer, for fit boxes). [STAGE0 #16]
+    pub intrinsic: [Option<(Constraints, IntrinsicSize)>; 2],
     /// Memoized min-content inline size, the `min-width: auto` shrink floor.
     pub min_inline: Option<f32>,
     /// Memoized min-content block size, the `min-height: auto` shrink floor.
@@ -22,8 +21,8 @@ pub struct LayoutCache {
 impl LayoutCache {
     /// Retrieves memoized intrinsic bounding size if constraints and role match.
     pub fn get_intrinsic(&self, constraints: &Constraints, for_height: bool) -> Option<IntrinsicSize> {
-        self.intrinsic.and_then(|(c, f, s)| {
-            if &c == constraints && f == for_height {
+        self.intrinsic[usize::from(for_height)].and_then(|(c, s)| {
+            if &c == constraints {
                 Some(s)
             } else {
                 None
@@ -50,7 +49,7 @@ impl LayoutCache {
         for_height: bool,
         size: IntrinsicSize,
     ) {
-        self.intrinsic = Some((constraints, for_height, size));
+        self.intrinsic[usize::from(for_height)] = Some((constraints, size));
     }
 
     /// Stores layout calculation in MRU slot 0, shifting slot 0 to slot 1.
@@ -71,7 +70,7 @@ impl LayoutCache {
 
     /// Clears intrinsic measurements, including the min-content shrink floors.
     pub fn clear_intrinsic(&mut self) {
-        self.intrinsic = None;
+        self.intrinsic = [None, None];
         self.clear_min_sizes();
     }
 

@@ -3,7 +3,7 @@
 use crate::foundation::{DamageRegion, ResolvedRect, Transform};
 use crate::pipeline::compile::hierarchy::compile_node_hierarchy;
 use crate::pipeline::compile::stacking::StackingContext;
-use crate::scene::{Scene, SceneChunk};
+use crate::scene::Scene;
 use crate::text::TextContext;
 use crate::tree::DirtyFlags;
 use crate::tree::TreeArena;
@@ -84,7 +84,7 @@ pub fn compile_stacking_context(
             *cached_chunks += 1;
         }
         None => {
-            let mut chunk = SceneChunk::new(
+            let mut chunk = scene.new_chunk(
                 arena.get(ctx.node_id).state.paint.subtree_bounds,
                 ctx.abs_origin,
             );

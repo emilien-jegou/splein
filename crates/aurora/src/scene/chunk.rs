@@ -68,8 +68,23 @@ impl SceneChunk {
         }
     }
 
-    pub fn with_layer(bounds: ResolvedRect, abs_origin: Point, layer_id: LayerId) -> Self {
+    pub fn with_commands(
+        bounds: ResolvedRect,
+        abs_origin: Point,
+        commands: Vec<SceneCommand>,
+    ) -> Self {
         Self {
+            bounds,
+            abs_origin,
+            commands: Rc::new(commands),
+            layer_id: None,
+            inherited_clips: InheritedClips::new(),
+            placement: Transform::IDENTITY,
+            fresh: true,
+        }
+    }
+
+    pub fn with_layer(bounds: ResolvedRect, abs_origin: Point, layer_id: LayerId) -> Self {        Self {
             bounds,
             abs_origin,
             commands: Rc::new(Vec::new()),
