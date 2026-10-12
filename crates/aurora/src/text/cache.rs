@@ -5,6 +5,7 @@ use crate::text::fonts::{FontId, FontStyle};
 use crate::text::layout::TextLayout;
 use crate::text::overflow::TextOverflow;
 use crate::text::shaper::TextShapeParams;
+use crate::text::wrap::TextWrap;
 use rustc_hash::FxHashMap;
 use std::sync::{Arc, Mutex};
 
@@ -40,6 +41,7 @@ struct StyleKey {
     line_height_bits: u32,
     letter_spacing_bits: u32,
     align: TextAlign,
+    wrap: TextWrap,
     overflow: TextOverflow,
     max_lines: Option<u32>,
     max_width_bits: u32,
@@ -67,6 +69,7 @@ impl StyleKey {
             line_height_bits: quantize_bits(params.line_height),
             letter_spacing_bits: quantize_bits(params.letter_spacing),
             align: params.align,
+            wrap: params.wrap,
             overflow: params.overflow,
             max_lines: params.max_lines,
             max_width_bits: quantize_bits(params.constraints.max_width),
@@ -183,6 +186,7 @@ mod tests {
             line_height: 20.0,
             letter_spacing: 0.0,
             align: TextAlign::Start,
+            wrap: TextWrap::Wrap,
             overflow: TextOverflow::Clip,
             max_lines: None,
             weight: 400,

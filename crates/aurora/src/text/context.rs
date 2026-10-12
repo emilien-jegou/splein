@@ -216,6 +216,7 @@ impl TextContext {
             line_height: config.line_height.resolve(config.size),
             letter_spacing: config.letter_spacing,
             align: config.align,
+            wrap: config.wrap,
             overflow: config.overflow,
             max_lines: config.max_lines,
             weight: config.weight,
@@ -227,10 +228,22 @@ impl TextContext {
     /// Widest unbreakable segment of a run: its min-content inline size, i.e. CSS `min-width: auto`.
     ///
     /// Derived from the unbounded layout, which `Size::Fit` text already shapes and caches, so
-    /// measuring the floor costs no extra shaping pass.
+    /// measuring the floor costs no extra shaping pass. A `NoWrap` run cannot break at all,
+    /// so its floor is its full (max-content) width.
     pub fn min_inline_width(&self, config: &TextConfig) -> f32 {
         let layout = self.shape_config(config, Constraints::UNCONSTRAINED);
+        if config.wrap.is_nowrap() {
+            return layout.total_size.width;
+        }
         min_content::min_inline_width(&config.content, &layout.lines)
+    }
+
+    /// Full single-line width of a run: its max-content inline size.
+    ///
+    /// Same unbounded cached layout as [`Self::min_inline_width`]; no extra shaping.
+    pub fn max_inline_width(&self, config: &TextConfig) -> f32 {
+        let layout = self.shape_config(config, Constraints::UNCONSTRAINED);
+        min_content::max_inline_width(&layout.lines)
     }
 
     /// Rasterizes a glyph by opaque key and subpixel phase, invoking the

@@ -39,3 +39,35 @@ impl From<f32> for Size {
         Self::Fixed(value)
     }
 }
+
+/// Width-to-height ratio (`width / height`) for aspect-ratio sizing.
+///
+/// Accepts a plain ratio (`16.0 / 9.0`), `"16/9"` / `"16:9"` pairs, or a bare
+/// number in markup. Non-positive or non-finite values are rejected by the
+/// parser (falling back to the sentinel); the builder clamps defensively.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct AspectRatio(f32);
+
+impl AspectRatio {
+    pub fn new(ratio: f32) -> Option<Self> {
+        if ratio.is_finite() && ratio > 0.0 {
+            Some(Self(ratio))
+        } else {
+            None
+        }
+    }
+
+    pub fn ratio(self) -> f32 {
+        self.0
+    }
+}
+
+impl From<f32> for AspectRatio {
+    fn from(value: f32) -> Self {
+        Self(if value.is_finite() && value > 0.0 {
+            value
+        } else {
+            1.0
+        })
+    }
+}

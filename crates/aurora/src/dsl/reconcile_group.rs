@@ -131,7 +131,9 @@ pub fn reconcile_group(
     node.state.core.declared_transform = props.declared_transform;
     node.transform = props.transform;
     node.style.layout = def.layout;
+    node.style.aspect_ratio = def.aspect_ratio;
     node.style.margin = def.margin;
+    node.style.padding = def.padding;
     node.style.clip = def.clip;
     node.style.is_absolute = def.is_absolute;
     node.style.anchor = def.anchor;
@@ -350,7 +352,9 @@ impl ChangeSet {
         let layout = (props.width.is_some() && props.width != Some(prev.style.width))
             || (props.height.is_some() && props.height != Some(prev.style.height))
             || prev.style.layout != def.layout
+            || prev.style.aspect_ratio != def.aspect_ratio
             || prev.style.margin != def.margin
+            || prev.style.padding != def.padding
             || prev.style.clip != def.clip
             || prev.style.anchor != def.anchor
             || prev.style.is_absolute != def.is_absolute

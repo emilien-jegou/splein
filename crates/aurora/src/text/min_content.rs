@@ -33,6 +33,24 @@ pub(crate) fn min_inline_width(text: &str, lines: &[ShapedLine]) -> f32 {
     widest.max(running)
 }
 
+/// Max-content inline width: the run laid out with no forced breaks.
+///
+/// Shaped with `wrap = None`, Parley only breaks at mandatory breaks (`\n`),
+/// so the total width is the longest unbroken line — the ideal width with
+/// zero forced wrapping. Computed from the same unbounded layout the
+/// min-content probe already uses, so no extra shaping pass.
+pub(crate) fn max_inline_width(lines: &[ShapedLine]) -> f32 {
+    let mut widest = 0.0_f32;
+    for line in lines {
+        let mut w = 0.0_f32;
+        for glyph in &line.glyphs {
+            w += glyph.advance;
+        }
+        widest = widest.max(w);
+    }
+    widest
+}
+
 /// Byte ranges of the unbreakable segments a line may not be cut inside.
 fn segment_ranges(text: &str) -> SmallVec<[(usize, usize); 8]> {
     let mut ranges = SmallVec::new();

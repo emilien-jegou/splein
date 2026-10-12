@@ -66,6 +66,7 @@ pub mod group_measure;
 pub mod measure;
 pub mod min_size;
 pub mod report;
+pub mod wrap;
 
 pub use engine::{layout_node, layout_node_with_text};
 pub use report::LayoutResult;

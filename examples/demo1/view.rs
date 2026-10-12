@@ -40,7 +40,7 @@ pub fn build_ui() -> impl IntoElement {
                     direction="horizontal"
                     width={460.0}
                     height={204.0}
-                    fill={0x91DF69}
+                    fill={0x336133}
                     gap={16.0}
                     alignment="center"
                     distribution="center"
@@ -60,12 +60,12 @@ pub fn build_ui() -> impl IntoElement {
                             color={Color::WHITE}
                         >"Hello you"</Text>
                     </Group>
-                    <Group width={116.0} height={45.0} fill={0x4900FF}>
+                    <Group width={116.0} height={45.0} fill={0xFFFFFF}>
                         <Text
                             selectable={true}
                             size={12.0}
                             line_height={16.0}
-                            color={Color::WHITE}
+                            color={Color::BLACK}
                             anchor={Anchor::BottomRight}
                         >"bottom-right"</Text>
                     </Group>

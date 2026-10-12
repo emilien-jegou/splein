@@ -82,6 +82,7 @@ pub mod runs;
 pub mod selection;
 pub mod shape;
 pub mod shaper;
+pub mod wrap;
 
 pub use align::TextAlign;
 pub use cache::ShapedTextCache;
@@ -101,3 +102,4 @@ pub use selection::{
     DEFAULT_SELECTION_COLOR,
 };
 pub use shaper::{TextShapeParams, TextShaper};
+pub use wrap::TextWrap;

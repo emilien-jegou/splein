@@ -6,6 +6,7 @@ use crate::text::decoration::TextDecoration;
 use crate::text::fonts::{FontId, FontStyle, FontVariation};
 use crate::text::overflow::TextOverflow;
 use crate::text::selection::DEFAULT_SELECTION_COLOR;
+use crate::text::wrap::TextWrap;
 
 /// Line height policy: fixed pixels or a multiple of the font size.
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -61,6 +62,8 @@ pub struct TextConfig {
     pub letter_spacing: f32,
     /// Horizontal alignment of lines within the paragraph box.
     pub align: TextAlign,
+    /// Line-breaking policy: wrap, refuse, or balance.
+    pub wrap: TextWrap,
     /// Decoration lines drawn under or over the run.
     pub decoration: TextDecoration,
     /// Overflow behavior past the line budget.
@@ -92,6 +95,7 @@ impl Default for TextConfig {
             line_height: LineHeight::Multiple(1.2),
             letter_spacing: 0.0,
             align: TextAlign::Start,
+            wrap: TextWrap::Wrap,
             decoration: TextDecoration::NONE,
             overflow: TextOverflow::Clip,
             max_lines: None,

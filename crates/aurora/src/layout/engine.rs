@@ -2,7 +2,7 @@
 
 use smallvec::SmallVec;
 
-use crate::foundation::{Constraints, Direction, Distribution, Point, ResolvedRect, Size};
+use crate::foundation::{Constraints, Direction, Distribution, FlowWrap, Point, ResolvedRect, Size};
 use crate::layout::allocate_absolute::resolve_absolute_child;
 use crate::layout::allocate_cross::resolve_child_cross;
 use crate::layout::allocate_main::{allocate_main_axis, MainAxisItems};
@@ -12,6 +12,7 @@ use crate::layout::measure::{
 };
 use crate::layout::min_size::compute_min_size;
 use crate::layout::report::LayoutResult;
+use crate::layout::wrap::{layout_wrapped_horizontal, layout_wrapped_vertical};
 use crate::text::TextContext;
 use crate::tree::TreeArena;
 use crate::tree::{DirtyFlags, NodeId};
@@ -102,6 +103,12 @@ fn perform_node_layout(
     // A run must not paint wider than the inline size its parent actually assigned to it.
     fit_text_run_to_width(arena, node_id, w, text_ctx);
 
+    // Padding insets the content box children lay out in; the node's own box
+    // keeps the full size (paint covers it all).
+    let pad = arena.get(node_id).style.padding;
+    let content_w = (w - pad.horizontal()).max(0.0);
+    let content_h = (h - pad.vertical()).max(0.0);
+
     let children = arena.children(node_id);
     let mut normal: SmallVec<[NodeId; 8]> = SmallVec::new();
     let mut absolute: SmallVec<[NodeId; 2]> = SmallVec::new();
@@ -117,14 +124,23 @@ fn perform_node_layout(
         }
     }
 
-    let (dir, gap, align, dist) = {
+    let (dir, gap, align, dist, flow_wrap) = {
         let l = arena.get(node_id).style.layout;
-        (l.direction, l.gap, l.alignment, l.distribution)
+        (
+            l.direction,
+            l.gap,
+            l.alignment,
+            l.distribution,
+            l.flow_wrap,
+        )
     };
+    let gap_main = gap.main_px();
+    let gap_cross = gap.cross_px();
+    let wrapping = flow_wrap == FlowWrap::Wrap;
 
     let avail_main = match dir {
-        Direction::Horizontal => w,
-        Direction::Vertical => h,
+        Direction::Horizontal => content_w,
+        Direction::Vertical => content_h,
     };
 
     let node_abs = Point::new(
@@ -151,28 +167,27 @@ fn perform_node_layout(
                     (n.style.margin, n.style.width)
                 };
                 let intrinsic_cross = if width_intent.is_fit() {
-                    compute_intrinsic_with_constraints(
-                        arena,
-                        child,
-                        Constraints::UNCONSTRAINED,
-                        text_ctx,
-                    )
-                    .width
+                    // Fit cross clamps to the content box: an ancestor boundary
+                    // reaches every descendant, so fit children wrap lines
+                    // instead of widening past the parent (unbounded parents
+                    // probe unbounded, which is max-content by definition).
+                    let probe = Constraints::loose(content_w, f32::INFINITY);
+                    compute_intrinsic_with_constraints(arena, child, probe, text_ctx, false).width
                 } else {
                     0.0
                 };
                 let (content, offset) =
-                    resolve_child_cross(align, w, width_intent, intrinsic_cross, m.left, m.right);
+                    resolve_child_cross(align, content_w, width_intent, intrinsic_cross, m.left, m.right);
                 cross_content.push(content);
-                cross_offset.push(offset);
+                cross_offset.push(pad.left + offset);
 
                 // Height is measured against the final width, never the parent width.
                 let d = compute_child_desired(
                     arena,
                     child,
                     Constraints::tight_width(content),
-                    Some(w),
-                    Some(h),
+                    Some(content_w),
+                    Some(content_h),
                     text_ctx,
                 );
                 let block_floor = compute_min_size(arena, child, Direction::Vertical, text_ctx)
@@ -191,9 +206,9 @@ fn perform_node_layout(
                 let d = compute_child_desired(
                     arena,
                     child,
-                    Constraints::loose(w, h),
-                    Some(w),
-                    Some(h),
+                    Constraints::loose(content_w, content_h),
+                    Some(content_w),
+                    Some(content_h),
                     text_ctx,
                 );
                 let inline_floor = compute_min_size(arena, child, Direction::Horizontal, text_ctx)
@@ -210,6 +225,55 @@ fn perform_node_layout(
         }
     }
 
+    // Wrapping containers place line-by-line (rows) or column-by-column instead
+    // of the single-line path below. Unbounded wrapping degrades to single-line:
+    // with no boundary there is nothing to break against.
+    let wrapped_h = dir == Direction::Horizontal && wrapping && content_w.is_finite();
+    let wrapped_v = dir == Direction::Vertical && wrapping && content_h.is_finite();
+    // End of the flow along the main axis: collapsed (zero-size) nodes slot
+    // here so they can grow back in place.
+    let mut flow_end = 0.0_f32;
+    if wrapped_h {
+        flow_end = layout_wrapped_horizontal(
+            arena,
+            &normal,
+            &desired_main,
+            &is_fills,
+            &shrinks,
+            &margins,
+            &min_mains,
+            content_w,
+            content_h,
+            pad,
+            align,
+            dist,
+            gap_main,
+            gap_cross,
+            text_ctx,
+            result,
+            node_abs,
+        );
+    } else if wrapped_v {
+        flow_end = layout_wrapped_vertical(
+            arena,
+            &normal,
+            &desired_main,
+            &is_fills,
+            &shrinks,
+            &margins,
+            &min_mains,
+            content_w,
+            content_h,
+            pad,
+            align,
+            dist,
+            gap_main,
+            gap_cross,
+            text_ctx,
+            result,
+            node_abs,
+        );
+    } else {
     let plan = allocate_main_axis(
         avail_main,
         gap,
@@ -244,9 +308,9 @@ fn perform_node_layout(
                 0.0
             };
             let (content, offset) =
-                resolve_child_cross(align, h, height_intent, intrinsic_cross, m.top, m.bottom);
+                resolve_child_cross(align, content_h, height_intent, intrinsic_cross, m.top, m.bottom);
             cross_content[i] = content;
-            cross_offset[i] = offset;
+            cross_offset[i] = pad.top + offset;
         }
     }
 
@@ -278,12 +342,18 @@ fn perform_node_layout(
         let main_len = (main_alloc - margins[i]).max(0.0);
 
         let rect = match dir {
-            Direction::Horizontal => {
-                ResolvedRect::new(cursor + main_m_start, offset_cross, main_len, content_cross)
-            }
-            Direction::Vertical => {
-                ResolvedRect::new(offset_cross, cursor + main_m_start, content_cross, main_len)
-            }
+            Direction::Horizontal => ResolvedRect::new(
+                pad.left + cursor + main_m_start,
+                offset_cross,
+                main_len,
+                content_cross,
+            ),
+            Direction::Vertical => ResolvedRect::new(
+                offset_cross,
+                pad.top + cursor + main_m_start,
+                content_cross,
+                main_len,
+            ),
         };
 
         cursor += main_alloc + plan.gap_px;
@@ -297,12 +367,14 @@ fn perform_node_layout(
             node_abs,
         );
     }
+    flow_end = cursor;
+    } // end single-line placement
 
     // Collapsed nodes hold a zero-sized slot at the end of the flow so they can grow back in place.
     for &child in &collapsed {
         let rect = match dir {
-            Direction::Vertical => ResolvedRect::new(0.0, cursor, 0.0, 0.0),
-            Direction::Horizontal => ResolvedRect::new(cursor, 0.0, 0.0, 0.0),
+            Direction::Vertical => ResolvedRect::new(pad.left, pad.top + flow_end, 0.0, 0.0),
+            Direction::Horizontal => ResolvedRect::new(pad.left + flow_end, pad.top, 0.0, 0.0),
         };
         place_child(arena, child, rect);
 
@@ -325,12 +397,20 @@ fn perform_node_layout(
         let d = compute_child_desired(
             arena,
             child,
-            Constraints::loose(w, h),
-            Some(w),
-            Some(h),
+            Constraints::loose(content_w, content_h),
+            Some(content_w),
+            Some(content_h),
             text_ctx,
         );
-        let rect = resolve_absolute_child(arena.get(child), w, h, d.width, d.height);
+        let slot = resolve_absolute_child(arena.get(child), content_w, content_h, d.width, d.height);
+        // Absolute children anchor to the padding box: the slot resolves in
+        // content space, then shifts by the padding origin.
+        let rect = ResolvedRect::new(
+            pad.left + slot.x,
+            pad.top + slot.y,
+            slot.width,
+            slot.height,
+        );
         place_child(arena, child, rect);
         layout_node_with_text(
             arena,
@@ -392,12 +472,53 @@ fn resolve_node_bounds(
     );
 
     if w_size.is_fit() || h_size.is_fit() {
-        let intrinsic = compute_intrinsic(arena, node_id, constraints, text_ctx);
+        // Width sizes the item (max-content role, then capped): a `Fit` leaf in
+        // a row keeps max-content so rows shrink-to-floor or overflow exactly
+        // as before — narrowing re-wraps through the tight follow-up pass.
+        // Retained for the height fast path below.
+        let mut width_intrinsic: Option<crate::foundation::IntrinsicSize> = None;
         if w_size.is_fit() {
+            let intrinsic = compute_intrinsic(arena, node_id, constraints, text_ctx, false);
             w = intrinsic.width.min(constraints.max_width);
+            width_intrinsic = Some(intrinsic);
         }
+        // Height sizes the box (wrapped role): re-measure at the resolved width
+        // so a capped fit container reports wrapped height, not single-line
+        // height. Fast path: when the unwrapped width already fits, no wrap
+        // occurred and the item probe's height is final — this keeps
+        // non-wrapping layouts at exactly one shaping pass, as before.
         if h_size.is_fit() {
-            h = intrinsic.height.min(constraints.max_height);
+            let reused = width_intrinsic.filter(|i| i.width <= w + 0.01).map(|i| i.height);
+            match reused {
+                Some(h_full) => {
+                    h = h_full.min(constraints.max_height);
+                }
+                None => {
+                    let height_constraints = Constraints {
+                        min_width: 0.0,
+                        max_width: if w.is_finite() { w.max(0.0) } else { w },
+                        min_height: 0.0,
+                        max_height: constraints.max_height,
+                    };
+                    let wrapped =
+                        compute_intrinsic(arena, node_id, height_constraints, text_ctx, true);
+                    h = wrapped.height.min(constraints.max_height);
+                }
+            }
+        }
+    }
+
+    // Aspect ratio derives the `Fit` axis from the determined one: a `320×Fit`
+    // card at 16/9 resolves height as `w / r` before layout finalizes, so line
+    // heights and paint see the final box. Needs one finite determined axis;
+    // `Fit×Fit` stays content-sized and unbounded `Fill` stays unbounded.
+    if let Some(ratio) = arena.get(node_id).style.aspect_ratio {
+        if ratio.is_finite() && ratio > 0.0 {
+            if !w_size.is_fit() && h_size.is_fit() && w.is_finite() {
+                h = (w / ratio).min(constraints.max_height).max(0.0);
+            } else if !h_size.is_fit() && w_size.is_fit() && h.is_finite() {
+                w = (h * ratio).min(constraints.max_width).max(0.0);
+            }
         }
     }
 

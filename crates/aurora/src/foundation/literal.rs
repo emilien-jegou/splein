@@ -31,15 +31,16 @@
 
 use std::str::FromStr;
 
-use crate::foundation::alignment::{Alignment, Direction, Distribution};
+use crate::foundation::alignment::{Alignment, Direction, Distribution, FlowWrap};
 use crate::foundation::color::Color;
 use crate::foundation::fill::Fill;
 use crate::foundation::positioning::Anchor;
 use crate::foundation::radius::Radius;
 use crate::foundation::shadow::Shadow;
-use crate::foundation::sizing::Size;
-use crate::foundation::spacing::{Gap, Margin};
+use crate::foundation::sizing::{AspectRatio, Size};
+use crate::foundation::spacing::{Gap, Margin, Padding};
 use crate::foundation::stroke::{Stroke, StrokeAlign};
+use crate::text::TextWrap;
 
 /// Accepted color grammar, for panic messages.
 pub const COLOR_GRAMMAR: &str =
@@ -188,11 +189,11 @@ pub fn parse_radius(s: &str) -> Option<Radius> {
     }
 }
 
-/// Parses `full` / `12px` / `12`.
+/// Parses `12px` / `12`. The legacy `full` keyword parses as zero.
 pub fn parse_gap(s: &str) -> Option<Gap> {
     let s = s.trim().to_lowercase();
     match s.as_str() {
-        "full" | "fill" => Some(Gap::Full),
+        "full" | "fill" => Some(Gap::Fixed(0.0)),
         _ => {
             let v = parse_px(&s).or_else(|| s.parse::<f32>().ok())?;
             Some(Gap::Fixed(v))
@@ -226,6 +227,13 @@ pub fn parse_margin(s: &str) -> Option<Margin> {
     }
 }
 
+/// Parses CSS padding shorthand: `8` / `8 16` / `8 16 4` / `8 16 4 2`
+/// (top / vertical horizontal / top horizontal bottom / clockwise).
+/// Parts accept `px` suffixes.
+pub fn parse_padding(s: &str) -> Option<Padding> {
+    parse_margin(s).map(Padding::from)
+}
+
 pub fn parse_direction(s: &str) -> Option<Direction> {
     match s.trim().to_lowercase().as_str() {
         "horizontal" | "row" | "x" => Some(Direction::Horizontal),
@@ -252,6 +260,42 @@ pub fn parse_distribution(s: &str) -> Option<Distribution> {
         "space-between" | "between" => Some(Distribution::SpaceBetween),
         _ => None,
     }
+}
+
+/// Parses `wrap` / `nowrap` (`no-wrap`, `no_wrap`).
+pub fn parse_flow_wrap(s: &str) -> Option<FlowWrap> {
+    match s.trim().to_lowercase().replace(['-', '_'], "").as_str() {
+        "wrap" => Some(FlowWrap::Wrap),
+        "nowrap" | "no" | "none" => Some(FlowWrap::NoWrap),
+        _ => None,
+    }
+}
+
+/// Parses `wrap` / `nowrap` / `balance` (CSS `white-space` / `text-wrap` words).
+pub fn parse_text_wrap(s: &str) -> Option<TextWrap> {
+    match s.trim().to_lowercase().replace(['-', '_'], "").as_str() {
+        "wrap" | "normal" | "prewrap" => Some(TextWrap::Wrap),
+        "nowrap" | "no" | "none" => Some(TextWrap::NoWrap),
+        "balance" => Some(TextWrap::Balance),
+        _ => None,
+    }
+}
+
+/// Parses `16/9`, `16:9`, `1.78`, or `16/9px` (suffix tolerated).
+pub fn parse_aspect_ratio(s: &str) -> Option<AspectRatio> {
+    let s = s.trim().to_lowercase();
+    let s = s.strip_suffix("px").unwrap_or(&s);
+    for sep in ['/', ':'] {
+        if let Some((a, b)) = s.split_once(sep) {
+            let w: f32 = a.trim().parse().ok()?;
+            let h: f32 = b.trim().parse().ok()?;
+            if h == 0.0 {
+                return None;
+            }
+            return AspectRatio::new(w / h);
+        }
+    }
+    AspectRatio::new(s.trim().parse().ok()?)
 }
 
 pub fn parse_stroke_align(s: &str) -> Option<StrokeAlign> {
@@ -408,7 +452,7 @@ impl_str_from!(
 impl_str_from!(
     Gap,
     parse_gap,
-    "`full`, `12px`, or a number (px)",
+    "`12px` or a number (px)",
     "gap",
     Gap::Fixed(0.0)
 );
@@ -418,6 +462,13 @@ impl_str_from!(
     "1-4 numbers (`8`, `8 16`, `8 16 4`, `8 16 4 2`), `px` suffixes allowed",
     "margin",
     Margin::ZERO
+);
+impl_str_from!(
+    Padding,
+    parse_padding,
+    "1-4 numbers (`8`, `8 16`, `8 16 4`, `8 16 4 2`), `px` suffixes allowed",
+    "padding",
+    Padding::ZERO
 );
 impl_str_from!(
     Direction,
@@ -439,6 +490,27 @@ impl_str_from!(
     "`start`, `center`, `end`, or `space-between`",
     "distribution",
     Distribution::Start
+);
+impl_str_from!(
+    FlowWrap,
+    parse_flow_wrap,
+    "`wrap` or `nowrap`",
+    "flow_wrap",
+    FlowWrap::NoWrap
+);
+impl_str_from!(
+    TextWrap,
+    parse_text_wrap,
+    "`wrap`, `nowrap`, or `balance`",
+    "text_wrap",
+    TextWrap::Wrap
+);
+impl_str_from!(
+    AspectRatio,
+    parse_aspect_ratio,
+    "`16/9`, `16:9`, or a number",
+    "aspect_ratio",
+    AspectRatio::from(1.0)
 );
 impl_str_from!(
     Stroke,
@@ -608,7 +680,11 @@ mod tests {
         assert_eq!(parse_size("12").unwrap(), Size::Fixed(12.0));
         assert_eq!(parse_radius("max").unwrap(), Radius::Max);
         assert_eq!(parse_radius("8").unwrap(), Radius::Scalar(8.0));
-        assert_eq!(parse_gap("full").unwrap(), Gap::Full);
+        assert_eq!(parse_gap("full").unwrap(), Gap::Fixed(0.0));
+        assert_eq!(
+            parse_gap("8").unwrap().main_px(),
+            8.0
+        );
         assert_eq!(parse_margin("8").unwrap(), Margin::all(8.0));
         assert_eq!(parse_margin("8 16").unwrap(), Margin::symmetric(8.0, 16.0));
         assert_eq!(

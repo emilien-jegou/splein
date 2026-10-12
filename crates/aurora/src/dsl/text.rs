@@ -2,11 +2,11 @@
 
 use crate::dsl::component::IntoElement;
 use crate::dsl::element::Element;
-use crate::foundation::{Anchor, Color, Key, Margin, Size};
+use crate::foundation::{Anchor, Color, Key, Margin, Padding, Size};
 use crate::reactive::prop::{DynamicProp, IntoProp};
 use crate::text::{
     FontId, FontStyle, FontVariation, LineHeight, TextAlign, TextConfig, TextDecoration,
-    TextOverflow,
+    TextOverflow, TextWrap,
 };
 
 /// Declarative element builder for configured typography nodes.
@@ -34,6 +34,8 @@ pub struct TextDef {
     pub letter_spacing: f32,
     /// Horizontal alignment of lines within the paragraph box.
     pub align: TextAlign,
+    /// Line-breaking policy: wrap (default), nowrap, or balance.
+    pub wrap: TextWrap,
     /// Decoration lines drawn under or over the run.
     pub decoration: TextDecoration,
     /// Overflow behavior past the line budget.
@@ -52,6 +54,9 @@ pub struct TextDef {
     pub anchor: Option<Anchor>,
     /// Surrounding margin offsets.
     pub margin: Margin,
+    /// Internal padding inset. Grows the text box; the run paints at the
+    /// padding origin (top-left inset).
+    pub padding: Padding,
     /// Layout width sizing intent (Fit wraps to content, Fill/Fixed constrain wrap).
     pub width: Option<Size>,
     /// Layout height sizing intent.
@@ -78,6 +83,7 @@ pub fn text<P: IntoProp<String>>(content: P) -> TextDef {
         line_height: LineHeight::Multiple(1.2),
         letter_spacing: 0.0,
         align: TextAlign::Start,
+        wrap: TextWrap::Wrap,
         decoration: TextDecoration::NONE,
         overflow: TextOverflow::Clip,
         max_lines: None,
@@ -87,6 +93,7 @@ pub fn text<P: IntoProp<String>>(content: P) -> TextDef {
         is_absolute: false,
         anchor: None,
         margin: Margin::ZERO,
+        padding: Padding::ZERO,
         width: None,
         height: None,
         z_index: 0,
@@ -174,6 +181,11 @@ impl TextDef {
         self.align = align;
         self
     }
+    /// Sets the line-breaking policy (`TextWrap`, `"wrap"` / `"nowrap"` / `"balance"`).
+    pub fn text_wrap(mut self, wrap: impl Into<TextWrap>) -> Self {
+        self.wrap = wrap.into();
+        self
+    }
     /// Sets the decoration line set.
     pub fn decoration(mut self, decoration: TextDecoration) -> Self {
         self.decoration = decoration;
@@ -229,6 +241,11 @@ impl TextDef {
         self.margin = self.margin.merged(m.into());
         self
     }
+    /// Merges a padding: nonzero sides of `p` win, the rest is kept.
+    pub fn padding(mut self, p: impl Into<Padding>) -> Self {
+        self.padding = self.padding.merged(p.into());
+        self
+    }
     /// Sets the layout width sizing intent.
     pub fn width(mut self, w: impl Into<Size>) -> Self {
         self.width = Some(w.into());
@@ -275,6 +292,7 @@ impl TextDef {
             line_height: self.line_height,
             letter_spacing: self.letter_spacing,
             align: self.align,
+            wrap: self.wrap,
             decoration: self.decoration,
             overflow: self.overflow,
             max_lines: self.max_lines,

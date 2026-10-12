@@ -125,5 +125,9 @@ name = "text_smooth"
 path = "text_smooth/main.rs"
 
 [[example]]
+name = "wrap_repro"
+path = "wrap_repro/main.rs"
+
+[[example]]
 name = "view_demo"
 path = "view_demo/main.rs"

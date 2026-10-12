@@ -2,7 +2,7 @@
 
 use smallvec::SmallVec;
 
-use crate::foundation::{Direction, Gap};
+use crate::foundation::{Direction, FlowWrap};
 use crate::text::TextContext;
 use crate::tree::cache::LayoutCache;
 use crate::tree::TreeArena;
@@ -58,7 +58,12 @@ fn measure_min_size(
     };
 
     if let Some(floor) = leaf {
-        return floor;
+        let pad = arena.get(id).style.padding;
+        return floor
+            + match axis {
+                Direction::Horizontal => pad.horizontal(),
+                Direction::Vertical => pad.vertical(),
+            };
     }
 
     min_group_size(arena, id, axis, text_ctx)
@@ -71,9 +76,13 @@ fn min_group_size(
     axis: Direction,
     text_ctx: &TextContext,
 ) -> f32 {
-    let (own_dir, gap) = {
+    let (own_dir, gap, wrapping) = {
         let layout = arena.get(id).style.layout;
-        (layout.direction, layout.gap)
+        (
+            layout.direction,
+            layout.gap,
+            layout.flow_wrap == FlowWrap::Wrap,
+        )
     };
 
     // Out-of-flow children do not participate in intrinsic sizing, exactly as in CSS.
@@ -87,7 +96,11 @@ fn min_group_size(
         })
         .collect();
     if flow.is_empty() {
-        return 0.0;
+        let pad = arena.get(id).style.padding;
+        return match axis {
+            Direction::Horizontal => pad.horizontal(),
+            Direction::Vertical => pad.vertical(),
+        };
     }
 
     let mut sum = 0.0_f32;
@@ -103,12 +116,23 @@ fn min_group_size(
         widest = widest.max(item);
     }
 
-    if own_dir != axis {
-        return widest;
+    // A wrapping container's main-axis floor is its widest item: every line
+    // holds at least one item, so the container can always narrow to that.
+    // (Cross-axis floors stay single-line lower bounds; wrapped height depends
+    // on the final width, which the floor must not presume.)
+    if own_dir != axis || (own_dir == axis && wrapping) {
+        let pad = arena.get(id).style.padding;
+        return widest
+            + match axis {
+                Direction::Horizontal => pad.horizontal(),
+                Direction::Vertical => pad.vertical(),
+            };
     }
-    let gap_px = match gap {
-        Gap::Fixed(px) if px.is_finite() => px.max(0.0),
-        Gap::Fixed(_) | Gap::Full => 0.0,
-    };
+    let gap_px = gap.main_px();
+    let pad = arena.get(id).style.padding;
     sum + gap_px * (flow.len().saturating_sub(1)) as f32
+        + match axis {
+            Direction::Horizontal => pad.horizontal(),
+            Direction::Vertical => pad.vertical(),
+        }
 }

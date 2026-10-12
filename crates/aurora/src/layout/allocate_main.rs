@@ -44,10 +44,7 @@ pub fn allocate_main_axis(
 
     let floors = resolve_floors(items);
     let fill_count = items.is_fill.iter().filter(|&&f| f).count();
-    let mut gap_px = match gap {
-        Gap::Fixed(px) => px,
-        Gap::Full => 0.0,
-    };
+    let mut gap_px = gap.main_px();
     let total_desired: f32 = items.desired.iter().sum();
     let total_fixed_gaps = (count - 1) as f32 * gap_px;
     let mut plan_sizes: SmallVec<[f32; 8]> = items.desired.iter().copied().collect();

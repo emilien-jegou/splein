@@ -172,14 +172,23 @@ pub fn emit_node_content(
                 text_ctx,
                 node.state.text.cached_text_layout.clone(),
                 node.style.width.is_fit(),
-                node.resolved_rect.width,
+                (node.resolved_rect.width - node.style.padding.horizontal()).max(0.0),
             );
+            // Text inks at the padding origin: the box grows around the run,
+            // and the run starts inset rather than at the border edge.
+            let pad = node.style.padding;
+            if pad.left != 0.0 || pad.top != 0.0 {
+                chunk.push(SceneCommand::PushOffset(Point::new(pad.left, pad.top)));
+            }
             t.emit(
                 &layout,
                 chunk,
                 node.state.text.text_selection,
                 node.state.input.text_focused && caret_visible,
             );
+            if pad.left != 0.0 || pad.top != 0.0 {
+                chunk.push(SceneCommand::PopOffset);
+            }
         }
         NodeKind::Custom(p) => {
             p.paint(&mut PaintContext::new(chunk), flow_rect);

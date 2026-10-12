@@ -44,6 +44,7 @@ pub fn reconcile_text(
         NodeKind::Text(t) => t != &config,
         _ => true,
     } || node_ref.style.margin != def.margin
+        || node_ref.style.padding != def.padding
         || node_ref.style.width != def.width.unwrap_or(Size::Fit)
         || node_ref.style.height != def.height.unwrap_or(Size::Fit);
 
@@ -86,6 +87,7 @@ pub fn reconcile_text(
     let node = arena.get_mut(id);
     node.kind = NodeKind::Text(config);
     node.style.margin = def.margin;
+    node.style.padding = def.padding;
     node.style.width = def.width.unwrap_or(Size::Fit);
     node.style.height = def.height.unwrap_or(Size::Fit);
     node.style.is_absolute = def.is_absolute;
@@ -124,6 +126,7 @@ pub fn reconcile_custom(
     node.style.width = def.width.unwrap_or(Size::Fit);
     node.style.height = def.height.unwrap_or(Size::Fit);
     node.style.margin = def.margin;
+    node.style.padding = def.padding;
     node.style.anchor = def.anchor;
     node.style.is_absolute = def.is_absolute;
     node.style.z_index = effective_z;

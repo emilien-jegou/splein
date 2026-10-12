@@ -18,22 +18,57 @@ use crate::text::TextContext;
 impl TextConfig {
     /// Inline width text wraps against, from the node's width intent and offered space.
     ///
-    /// Moved out of layout measurement so the wrapping policy (tight widths bind,
-    /// `Fit` is unbounded, `Fill`/`Percent` clamp to what is available) is defined
-    /// wherever shaping is defined.
-    pub fn wrap_width(style_width: Size, constraints: Constraints) -> f32 {
+    /// Moved out of layout measurement so the wrapping policy is defined wherever
+    /// shaping is defined. Two roles share this query:
+    ///
+    /// - Item sizing (`for_height = false`): a `Fit` leaf inside a row keeps its
+    ///   max-content width (unbounded). The row may shrink its box to the
+    ///   min-content floor or let it overflow; narrowing re-wraps through the
+    ///   tight follow-up pass, exactly as before this rewrite.
+    /// - Container-height sizing (`for_height = true`): a `Fit` box (or a
+    ///   wrapping column band) must wrap *before* reporting, i.e. the
+    ///   intrinsic-sizing clamp `max(min-content, min(max-content, available))`.
+    ///   Without this, every fit container reports single-line height no matter
+    ///   how narrow its capped width is (the fit-vs-wrap bug).
+    ///
+    /// Both probes shape the unbounded layout, which is shared through the
+    /// shaping cache — one cached shape, not two cold ones.
+    pub fn wrap_width(
+        config: &TextConfig,
+        style_width: Size,
+        ctx: &TextContext,
+        constraints: Constraints,
+        for_height: bool,
+    ) -> f32 {
         // When the width is already resolved (tight), reuse it directly instead of
         // re-applying the sizing intent, which would double-count Fill/Percent and
         // ignore a wrapped cross size.
         if constraints.is_tight_width() {
             return constraints.max_width.max(0.0);
         }
-        if matches!(style_width, Size::Fit) {
+        // Refusing to wrap means unbounded by definition; the parent caps the
+        // box and paint clips. Balance searches its own width inside shaping:
+        // item sizing takes the full offer, height sizing takes the offer
+        // directly so the search runs inside the final box.
+        let available = constraints.max_width;
+        if config.wrap.is_nowrap() {
             return f32::INFINITY;
         }
-        let available = constraints.max_width;
+        if config.wrap.is_balance() {
+            if for_height && available.is_finite() {
+                return available.max(0.0);
+            }
+            return f32::INFINITY;
+        }
         match style_width {
-            Size::Fit => f32::INFINITY,
+            Size::Fit => {
+                if !for_height || !available.is_finite() {
+                    return f32::INFINITY;
+                }
+                let min = ctx.min_inline_width(config);
+                let max = ctx.max_inline_width(config);
+                min.max(0.0).max(max.min(available.max(0.0)))
+            }
             Size::Fill => {
                 if available.is_finite() {
                     available.max(0.0)

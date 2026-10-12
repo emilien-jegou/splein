@@ -14,7 +14,7 @@ pub use crate::dsl::{
 };
 pub use crate::foundation::{
     Alignment, Anchor, BlendMode, Color, Direction, Distribution, FalloffCurve, Fill, Gap,
-    LayoutPresence, LightEnvironment, Margin, Radius, RenderDriver, Shadow, ShadowOffset,
+    LayoutPresence, LightEnvironment, Margin, Padding, Radius, RenderDriver, Shadow, ShadowOffset,
     ShadowShape, Size, Stroke, StrokeAlign, Transform,
 };
 pub use crate::hot_reload::{

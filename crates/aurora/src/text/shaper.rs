@@ -5,6 +5,7 @@ use crate::text::align::TextAlign;
 use crate::text::fonts::{FontId, FontStyle, FontVariation};
 use crate::text::layout::TextLayout;
 use crate::text::overflow::TextOverflow;
+use crate::text::wrap::TextWrap;
 
 /// Unified parameter specification for text layout and shaping passes.
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -25,6 +26,8 @@ pub struct TextShapeParams<'a> {
     pub letter_spacing: f32,
     /// Horizontal alignment of lines within the paragraph box.
     pub align: TextAlign,
+    /// Line-breaking policy: wrap, refuse, or balance.
+    pub wrap: TextWrap,
     /// Overflow behavior past the line budget.
     pub overflow: TextOverflow,
     /// Maximum visible line count, or None for unbounded.

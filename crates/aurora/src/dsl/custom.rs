@@ -2,7 +2,7 @@
 
 use crate::dsl::component::IntoElement;
 use crate::dsl::element::Element;
-use crate::foundation::{Anchor, Key, Margin, Size};
+use crate::foundation::{Anchor, Key, Margin, Padding, Size};
 use crate::tree::Primitive;
 use std::rc::Rc;
 
@@ -16,6 +16,7 @@ pub struct CustomDef {
     pub width: Option<Size>,
     pub height: Option<Size>,
     pub margin: Margin,
+    pub padding: Padding,
     pub anchor: Option<Anchor>,
     pub is_absolute: bool,
     pub z_index: i32,
@@ -30,6 +31,7 @@ pub fn custom<P: Primitive + 'static>(primitive: P) -> CustomDef {
         width: None,
         height: None,
         margin: Margin::ZERO,
+        padding: Padding::ZERO,
         anchor: None,
         is_absolute: false,
         z_index: 0,
@@ -55,6 +57,11 @@ impl CustomDef {
     /// only reading under which the per-side constructors make sense.
     pub fn margin(mut self, m: Margin) -> Self {
         self.margin = self.margin.merged(m);
+        self
+    }
+    /// Merges a padding: nonzero sides of `p` win, the rest is kept.
+    pub fn padding(mut self, p: Padding) -> Self {
+        self.padding = self.padding.merged(p);
         self
     }
     pub fn anchor(mut self, a: Anchor) -> Self {

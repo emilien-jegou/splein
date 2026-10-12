@@ -93,6 +93,7 @@ pub use svg::svg;
 pub use text::{text, TextDef};
 
 pub mod cleanup;
+pub mod auto_grid;
 pub mod component;
 pub mod custom;
 pub mod diff;

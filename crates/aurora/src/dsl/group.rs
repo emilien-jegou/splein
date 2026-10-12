@@ -29,11 +29,14 @@ pub struct GroupDef {
     pub light_override: Option<LightEnvironment>,
     pub layout: LayoutConfig,
     pub margin: Margin,
+    pub padding: Padding,
     pub stroke: Option<Stroke>,
     pub radius: Radius,
     pub clip: bool,
     pub is_absolute: bool,
     pub anchor: Option<Anchor>,
+    /// Optional width-to-height ratio, resolved by the layout engine.
+    pub aspect_ratio: Option<f32>,
     /// Stacking order, optionally bound to a reactive value.
     ///
     /// Static like every other prop by default; bound when the caller hands over a signal
@@ -98,11 +101,13 @@ pub fn group() -> GroupDef {
         light_override: None,
         layout: LayoutConfig::default(),
         margin: Margin::ZERO,
+        padding: Padding::ZERO,
         stroke: None,
         radius: Radius::ZERO,
         clip: false,
         is_absolute: false,
         anchor: None,
+        aspect_ratio: None,
         z_index: None,
         is_overlay: false,
         has_layer: false,
@@ -206,6 +211,16 @@ impl GroupDef {
         self
     }
 
+    /// Merges a padding: nonzero sides of `p` win, the rest is kept.
+    ///
+    /// Chained calls compose (`.padding(left(..)).padding(top(..))`), mirroring
+    /// `.margin()`. Padding insets children inside this node's box and grows
+    /// its intrinsic size; it never offsets the node within its parent.
+    pub fn padding(mut self, p: impl Into<Padding>) -> Self {
+        self.padding = self.padding.merged(p.into());
+        self
+    }
+
     pub fn stroke(mut self, s: impl Into<Stroke>) -> Self {
         self.stroke = Some(s.into());
         self
@@ -232,6 +247,30 @@ impl GroupDef {
     }
     pub fn distribution(mut self, d: impl Into<Distribution>) -> Self {
         self.layout.distribution = d.into();
+        self
+    }
+    pub fn flow_wrap(mut self, w: impl Into<FlowWrap>) -> Self {
+        self.layout.flow_wrap = w.into();
+        self
+    }
+    /// Inter-line (cross-axis) gap for wrapped layouts; preserves the main-axis gap.
+    pub fn row_gap(mut self, gap: f32) -> Self {
+        self.layout.gap = self.layout.gap.with_cross(gap);
+        self
+    }
+    /// In-line (main-axis) gap; preserves the cross-axis gap.
+    pub fn col_gap(mut self, gap: f32) -> Self {
+        self.layout.gap = self.layout.gap.with_main(gap);
+        self
+    }
+    /// Sets both axes at once: `gaps(main, cross)`.
+    pub fn gaps(mut self, main: f32, cross: f32) -> Self {
+        self.layout.gap = Gap::Split { main, cross };
+        self
+    }
+    /// Width-to-height ratio: `16.0/9.0`, or `"16/9"` / `"1.78"` in markup.
+    pub fn aspect_ratio(mut self, ratio: impl Into<AspectRatio>) -> Self {
+        self.aspect_ratio = Some(ratio.into().ratio());
         self
     }
 

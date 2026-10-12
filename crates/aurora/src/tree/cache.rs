@@ -5,7 +5,11 @@ use crate::foundation::{Constraints, IntrinsicSize, ResolvedRect};
 /// Multi-slot MRU layout cache preventing multi-pass flexbox eviction.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct LayoutCache {
-    pub intrinsic: Option<(Constraints, IntrinsicSize)>,
+    /// Memoized intrinsic size. The flag distinguishes item sizing (`false`:
+    /// max-content, for row allocation) from container-height sizing (`true`:
+    /// wrapped at the offer, for fit boxes) — same constraints, two different
+    /// queries, never the same slot.
+    pub intrinsic: Option<(Constraints, bool, IntrinsicSize)>,
     /// Memoized min-content inline size, the `min-width: auto` shrink floor.
     pub min_inline: Option<f32>,
     /// Memoized min-content block size, the `min-height: auto` shrink floor.
@@ -16,10 +20,15 @@ pub struct LayoutCache {
 }
 
 impl LayoutCache {
-    /// Retrieves memoized intrinsic bounding size if constraints match.
-    pub fn get_intrinsic(&self, constraints: &Constraints) -> Option<IntrinsicSize> {
-        self.intrinsic
-            .and_then(|(c, s)| if &c == constraints { Some(s) } else { None })
+    /// Retrieves memoized intrinsic bounding size if constraints and role match.
+    pub fn get_intrinsic(&self, constraints: &Constraints, for_height: bool) -> Option<IntrinsicSize> {
+        self.intrinsic.and_then(|(c, f, s)| {
+            if &c == constraints && f == for_height {
+                Some(s)
+            } else {
+                None
+            }
+        })
     }
 
     /// Retrieves memoized layout bounds matching constraints.
@@ -34,9 +43,14 @@ impl LayoutCache {
         None
     }
 
-    /// Stores intrinsic measurement computation for given constraints.
-    pub fn store_intrinsic(&mut self, constraints: Constraints, size: IntrinsicSize) {
-        self.intrinsic = Some((constraints, size));
+    /// Stores intrinsic measurement computation for given constraints and role.
+    pub fn store_intrinsic(
+        &mut self,
+        constraints: Constraints,
+        for_height: bool,
+        size: IntrinsicSize,
+    ) {
+        self.intrinsic = Some((constraints, for_height, size));
     }
 
     /// Stores layout calculation in MRU slot 0, shifting slot 0 to slot 1.
