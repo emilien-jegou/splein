@@ -21,6 +21,27 @@ const MAX_SHADOW_PATCHES: usize = 64;
 /// ~10 KB; oversize singles bypass like everywhere else.
 const MAX_SHADOW_BYTES: usize = 8 << 20;
 
+/// Count cap for direct-path blurred coverage (same order as patches).
+const MAX_DIRECT_CACHED: usize = 64;
+
+/// Byte budget for direct coverage (whole-rect footprints dwarf patches).
+const MAX_DIRECT_BYTES: usize = 8 << 20;
+
+/// Identity of one direct-blurred coverage bitmap: geometry only (no
+/// color/opacity/transform/clip — those apply at tint/draw time, so one
+/// entry serves every paint of the same shape). Offset IS included: it
+/// shifts the shape within same-size buffers.
+#[derive(Copy, Clone, Hash, PartialEq, Eq)]
+pub(crate) struct DirectKey {
+    blur_bits: u32,
+    spread_bits: u32,
+    falloff_tag: u8,
+    w_bits: u32,
+    h_bits: u32,
+    radius_bits: u32,
+    offset_bits: [u32; 2],
+}
+
 /// Software shadow rasterizer caching 9-patch blurred corner templates.
 ///
 /// Renders each [`Shadow`] layer back-to-front (largest extent first) with
@@ -38,6 +59,64 @@ pub struct ShadowRasterizer {
     /// Reused direct-path temp pixmap (M4): exact-size match only, since
     /// `draw_pixmap` blits the whole buffer.
     direct_scratch: Option<Pixmap>,
+    /// Blurred coverage per direct geometry (blur/pad/spread/falloff/size):
+    /// the 9-patch cache's counterpart for rects too small (or too skewed)
+    /// to subdivide. Tint + draw still run per frame; the 4 blur passes,
+    /// shape raster, and alpha extract run once per geometry.
+    direct: DirectCache,
+}
+
+/// Blurred-coverage cache for the direct path: same LRU + byte-budget
+/// discipline as patches, keyed by geometry alone.
+#[derive(Default)]
+pub(crate) struct DirectCache {
+    map: FxHashMap<DirectKey, std::sync::Arc<Vec<u8>>>,
+    used: FxHashMap<DirectKey, u64>,
+    clock: u64,
+    bytes: usize,
+}
+
+impl DirectCache {
+    fn touch(&mut self, key: DirectKey) {
+        self.clock += 1;
+        self.used.insert(key, self.clock);
+    }
+
+    fn evict_oldest(&mut self) {
+        let victim = self.used.iter().min_by_key(|(_, t)| **t).map(|(k, _)| *k);
+        if let Some(k) = victim {
+            if let Some(old) = self.map.remove(&k) {
+                self.bytes = self.bytes.saturating_sub(old.len());
+            }
+            self.used.remove(&k);
+        }
+    }
+
+    /// Makes room and stores coverage, evicting stalest-first. Oversize
+    /// singles (> budget) are used once and not retained.
+    fn insert(&mut self, key: DirectKey, coverage: Vec<u8>) {
+        while self.map.len() >= MAX_DIRECT_CACHED || self.bytes >= MAX_DIRECT_BYTES {
+            let before = self.map.len();
+            self.evict_oldest();
+            if self.map.len() == before {
+                break;
+            }
+        }
+        if coverage.len() > MAX_DIRECT_BYTES {
+            return;
+        }
+        self.bytes += coverage.len();
+        self.map.insert(key, std::sync::Arc::new(coverage));
+        self.touch(key);
+    }
+
+    fn get(&mut self, key: &DirectKey) -> Option<std::sync::Arc<Vec<u8>>> {
+        let hit = self.map.get(key).cloned();
+        if hit.is_some() {
+            self.touch(*key);
+        }
+        hit
+    }
 }
 
 /// Grow-only scratch would pin a once-huge frame forever (M6): shrink back
@@ -69,6 +148,7 @@ impl ShadowRasterizer {
             patch_clock: 0,
             patch_bytes: 0,
             direct_scratch: None,
+            direct: DirectCache::default(),
         }
     }
 
@@ -159,6 +239,8 @@ impl ShadowRasterizer {
                     &mut self.scratch_b,
                     &mut self.scratch_temp,
                     &mut self.direct_scratch,
+                    &mut self.direct,
+                    layer.falloff.tag(),
                     pixmap,
                     rect,
                     r_scalar,

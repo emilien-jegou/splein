@@ -466,3 +466,40 @@ fn zero_radius_casts_square() {
     assert_eq!(at(&square, sdim, 0, 0), 0);
     assert_eq!(at(&round, rdim, 0, 0), 0);
 }
+
+/// Direct-path replay determinism: a second identical render must hit the
+/// coverage cache and produce byte-identical pixels (small rect forces the
+/// direct path, bypassing 9-patch).
+#[test]
+fn direct_cache_replay_is_identical() {
+    let shadow = shadow_with_layer(6.0, 12.0);
+    // Small enough to take the direct path regardless of patch_dim.
+    let rect = ResolvedRect::new(200.0, 200.0, 20.0, 12.0);
+    let mut raster = ShadowRasterizer::new();
+    let mut first = Pixmap::new(500, 500).unwrap();
+    raster.render(
+        &mut first.as_mut(),
+        &rect,
+        Radius::Scalar(4.0),
+        &shadow,
+        &LightEnvironment::DEFAULT,
+        1.0,
+        Transform::identity(),
+        None,
+    );
+    let mut second = Pixmap::new(500, 500).unwrap();
+    raster.render(
+        &mut second.as_mut(),
+        &rect,
+        Radius::Scalar(4.0),
+        &shadow,
+        &LightEnvironment::DEFAULT,
+        1.0,
+        Transform::identity(),
+        None,
+    );
+    // The first render must have populated the direct cache (proving the
+    // second render took the hit path, not a second full blur).
+    assert_eq!(raster.direct.map.len(), 1);
+    assert_eq!(first.data(), second.data());
+}

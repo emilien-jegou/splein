@@ -11,6 +11,8 @@ pub fn render_direct_blur(
     scratch_b: &mut Vec<u8>,
     scratch_temp: &mut Vec<u8>,
     scratch_pixmap: &mut Option<Pixmap>,
+    direct: &mut super::DirectCache,
+    falloff_tag: u8,
     pixmap: &mut PixmapMut,
     rect: &ResolvedRect,
     radius: f32,
@@ -40,11 +42,25 @@ pub fn render_direct_blur(
         (bounds.height.ceil() as u32).max(1),
     );
     let buf_len = (bw * bh) as usize;
-    super::fit_scratch_buffers([scratch_a, scratch_b, scratch_temp], buf_len, 0);
-    scratch_a.fill(0);
-    scratch_b.fill(0);
-
     let blur_r = ((softness * scale).round() as usize).max(1);
+
+    // Direct-result cache: identical geometry reuses blurred coverage
+    // across frames (tint + draw still run — color/opacity vary per paint).
+    let direct_key = super::DirectKey {
+        blur_bits: blur_r as u32,
+        spread_bits: spread.to_bits(),
+        falloff_tag,
+        w_bits: bw,
+        h_bits: bh,
+        radius_bits: radius.to_bits(),
+        offset_bits: [(offset_x * scale).to_bits(), (offset_y * scale).to_bits()],
+    };
+    let cached = direct.get(&direct_key);
+    if cached.is_none() {
+        super::fit_scratch_buffers([scratch_a, scratch_b, scratch_temp], buf_len, 0);
+        scratch_a.fill(0);
+        scratch_b.fill(0);
+    }
     // Spread inflates the occluder before blurring, matching the 9-patch
     // shape inflation (arc centers fixed, radii grown).
     let spread_s = spread * scale;
@@ -71,39 +87,49 @@ pub fn render_direct_blur(
         return;
     };
 
-    let draw_tx = Transform::from_translate(-bounds.x, -bounds.y)
-        .post_translate(offset_x * scale, offset_y * scale);
-    let mut paint = tiny_skia::Paint::default();
-    paint.set_color_rgba8(255, 255, 255, 255);
+    // On a cache hit the shape raster + extract + 4 blur passes are skipped
+    // outright; tint + draw below run identically from cached coverage.
+    if cached.is_none() {
+        let draw_tx = Transform::from_translate(-bounds.x, -bounds.y)
+            .post_translate(offset_x * scale, offset_y * scale);
+        let mut paint = tiny_skia::Paint::default();
+        paint.set_color_rgba8(255, 255, 255, 255);
 
-    temp_pixmap.fill_path(
-        &shape_path,
-        &paint,
-        tiny_skia::FillRule::Winding,
-        draw_tx,
-        None,
-    );
-    for (dst, src) in scratch_a.iter_mut().zip(temp_pixmap.data().chunks_exact(4)) {
-        *dst = src[3];
+        temp_pixmap.fill_path(
+            &shape_path,
+            &paint,
+            tiny_skia::FillRule::Winding,
+            draw_tx,
+            None,
+        );
+        for (dst, src) in scratch_a.iter_mut().zip(temp_pixmap.data().chunks_exact(4)) {
+            *dst = src[3];
+        }
+        box_blur_alpha_with_falloff(
+            scratch_a,
+            scratch_b,
+            scratch_temp,
+            bw as usize,
+            bh as usize,
+            blur_r,
+            falloff_lut,
+        );
+        direct.insert(direct_key, scratch_b.clone());
     }
-    box_blur_alpha_with_falloff(
-        scratch_a,
-        scratch_b,
-        scratch_temp,
-        bw as usize,
-        bh as usize,
-        blur_r,
-        falloff_lut,
-    );
+    let alphas: &[u8] = match &cached {
+        Some(cov) => cov,
+        None => scratch_b,
+    };
 
     // Coverage only: node opacity rides on the draw's PixmapPaint (Normal)
     // or scales the resolve factor (Multiply), exactly once either way.
+    // Source is cached coverage on hits, fresh scratch on misses.
     for (dst, &alpha) in temp_pixmap
         .data_mut()
         .as_chunks_mut::<4>()
         .0
         .iter_mut()
-        .zip(scratch_b.iter())
+        .zip(alphas.iter())
     {
         let a = alpha as f32 / 255.0;
         match blend {
