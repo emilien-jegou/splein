@@ -62,6 +62,7 @@ pub mod allocate_absolute;
 pub mod allocate_cross;
 pub mod allocate_main;
 pub mod engine;
+pub mod frozen;
 pub mod group_measure;
 pub mod measure;
 pub mod min_size;
@@ -69,4 +70,5 @@ pub mod report;
 pub mod wrap;
 
 pub use engine::{layout_node, layout_node_with_text};
+pub use frozen::FrozenLayout;
 pub use report::LayoutResult;
