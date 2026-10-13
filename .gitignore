@@ -79,6 +79,18 @@
 !docs/
 !docs/**/*
 
+!documentation/
+!documentation/app
+!documentation/app/**/*
+!documentation/components
+!documentation/components/**/*
+!documentation/next.config.ts
+!documentation/package-lock.json
+!documentation/package.json
+!documentation/postcss.config.mjs
+!documentation/tsconfig.json
+
+
 # To fix:
 !flake.nix
 !flake.lock
