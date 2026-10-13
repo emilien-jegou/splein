@@ -76,6 +76,7 @@ pub mod glyph;
 pub mod glyph_cache;
 pub mod layout;
 pub mod leaf;
+pub mod preshaped;
 pub(crate) mod min_content;
 pub mod overflow;
 pub mod runs;
@@ -94,6 +95,7 @@ pub use fonts::{FontData, FontId, FontStyle, FontVariation};
 pub use glyph::{GlyphKey, ShapedGlyph, ShapedLine};
 pub use glyph_cache::{GlyphBitmapCache, GlyphCacheBudget, GlyphCacheStats};
 pub use layout::TextLayout;
+pub use preshaped::{PreShapedText, PRESHAPED_NO_BLOB};
 pub use overflow::TextOverflow;
 pub use selection::{
     caret_at_point, caret_line_col, caret_rect, expand_selection, grapheme_boundaries,

@@ -16,6 +16,7 @@ mod flow_util;
 mod for_node;
 mod if_node;
 mod match_node;
+mod preshape;
 mod props;
 mod view;
 
@@ -79,6 +80,32 @@ pub fn component(attr: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro]
 pub fn view(tokens: TokenStream) -> TokenStream {
     match view::expand(tokens.into()) {
+        Ok(t) => t.into(),
+        Err(e) => e.to_compile_error().into(),
+    }
+}
+
+/// Build-time text shaping: `pre_shaped!(font = "f.ttf", text = "...", size = 16.0)`.
+///
+/// Shapes on the build host and emits
+/// `::aurora::text::PreShapedText::from_bytes(&[...]).unwrap()`.
+/// See `preshape.rs` for contract + limits (single-line rhythm,
+/// start-aligned, integer-snapped raster).
+#[proc_macro]
+pub fn pre_shaped(tokens: TokenStream) -> TokenStream {
+    match preshape::pre_shaped_impl(tokens) {
+        Ok(t) => t.into(),
+        Err(e) => e.to_compile_error().into(),
+    }
+}
+
+/// Build-time SVG rasterization: `include_svg!("icon.svg", 64, 64)`.
+///
+/// Rasterizes on the host at exactly W×H px and emits
+/// `::aurora::scene::ImageSource::from_static_rgba8(..)`.
+#[proc_macro]
+pub fn include_svg(tokens: TokenStream) -> TokenStream {
+    match preshape::include_svg_impl(tokens) {
         Ok(t) => t.into(),
         Err(e) => e.to_compile_error().into(),
     }

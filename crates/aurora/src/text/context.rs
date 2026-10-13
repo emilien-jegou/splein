@@ -241,6 +241,26 @@ impl TextContext {
         })
     }
 
+    /// Shapes pre-shaped build-time text into a layout, seeding the glyph
+    /// bitmap cache from the embedded bitmaps.
+    ///
+    /// No parley shaping, no swash rasterization, no font lookup: the blob
+    /// carries exact advances and integer-snapped coverage. Bitmaps seed
+    /// the cache on first use (check-then-store); later frames hit the same
+    /// blit path as runtime-shaped glyphs.
+    pub fn shape_pre_shaped(&self, pre: &crate::text::preshaped::PreShapedText) -> Arc<TextLayout> {
+        for (key, left, top, w, h, data) in pre.bitmaps() {
+            if self.bitmaps.get(&key, 0).is_none() {
+                self.bitmaps.store(
+                    key,
+                    0,
+                    CachedBitmap::new(left, top, w, h, data.to_vec()),
+                );
+            }
+        }
+        Arc::new(pre.to_layout())
+    }
+
     /// Widest unbreakable segment of a run: its min-content inline size, i.e. CSS `min-width: auto`.
     ///
     /// Derived from the unbounded layout, which `Size::Fit` text already shapes and caches, so

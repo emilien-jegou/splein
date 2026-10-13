@@ -24,4 +24,21 @@ impl ImageSource {
             data: Arc::new(bytes),
         }
     }
+
+    /// Creates an image source from build-time bytes (e.g. `include_svg!`
+    /// output). Copies once into the retained `Arc` — one memcpy instead of
+    /// an SVG parse — then behaves exactly like any runtime image downstream
+    /// (same caches, same backends, no `resvg` at runtime).
+    pub fn from_static_rgba8(width: u32, height: u32, bytes: &'static [u8]) -> Self {
+        assert_eq!(
+            (width * height * 4) as usize,
+            bytes.len(),
+            "Image buffer size mismatch"
+        );
+        Self {
+            width,
+            height,
+            data: Arc::new(bytes.to_vec()),
+        }
+    }
 }

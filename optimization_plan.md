@@ -33,7 +33,7 @@ Exhaustive list of every optimization identified in the Aurora vs Slint comparis
 
 ---
 
-## 2. Build-Time Text Shaping via Proc Macros — DEFERRED (text-runtime kill-switch done in S2-1; pre-shape proc-macro is #2-full, needs macro/API design)
+## 2. Build-Time Text Shaping via Proc Macros ✅ DONE (`pre_shaped!`: parley shaping + swash phase-0 raster on build host → versioned blob → `shape_pre_shaped` rehydrates with zero shaping latency, zero font lookup; integer-snapped raster documented tradeoff; metrics-equality test guards the mirror)
 
 **Runtime cost:** Parley shaping (~0.1–1 ms per string cache miss) + swash rasterization (~0.05–0.5 ms per glyph cache miss) + 4–64 MB glyph cache + 2048-entry shaped text cache.
 
@@ -72,7 +72,7 @@ fn Greeting() -> Node {
 
 ---
 
-## 3. Build-Time SVG Rasterization — DEFERRED (svg-runtime kill-switch done in S2-1; pre-raster proc-macro is #3-full, needs asset pipeline design)
+## 3. Build-Time SVG Rasterization ✅ DONE (`include_svg!(path, W, H)`: host resvg → `ImageSource::from_static_rgba8`, one memcpy instead of a parse; dynamic theming stays on runtime path)
 
 **Runtime cost:** resvg pulls ~50 dependencies (usvg, svgtypes, kurbo, etc.) and is a full SVG 1.1 renderer. On desktop this is fine; on embedded it's ~2 MB of code and significant RAM.
 
@@ -123,59 +123,7 @@ fn Greeting() -> Node {
 
 ---
 
-## 5. DMA2D Backend (STM32)
-
-**Current:** No hardware-accelerated blitting path for STM32 targets.
-
-**Target:** A backend that uses STM32's DMA2D peripheral for hardware-accelerated pixel copies, blends, and format conversions.
-
-**Benefits:**
-- Zero CPU cost for blits and fills (DMA2D runs independently)
-- Hardware-accelerated alpha blending
-- Frees CPU for layout and signal processing
-
-**Tradeoffs:**
-- STM32-specific (not portable to other MCUs)
-- Requires STM32 HAL or PAC as dependency
-- Only useful on STM32F4/F7/H7 families with DMA2D
-
-**Approach:**
-1. Create `aurora-dma2d` crate
-2. Use `stm32f4xx-hal` or `stm32h7xx-hal` for DMA2D registers
-3. Implement `Backend` trait with DMA2D-accelerated blit paths
-4. Fall back to CPU blitting for unsupported operations
-5. Feature-gate: `feature = "dma2d"`
-
----
-
-## 6. SIMD Rasterization Paths 🔷 STAGE 1 — DEFERRED (blur kernels have bit-exactness tests — symmetry/antisymmetry — and the col pass is strided; needs criterion benchmarks proving auto-vectorization gaps before hand-rolled AVX2/NEON)
-
-**Current:** No explicit SIMD. Relies on auto-vectorization (unpredictable).
-
-**Target:** Explicit NEON (ARM) and AVX2 (x86) paths for box blur, glyph blitting, and pixel swizzling.
-
-**Benefits:**
-- 4–8× speedup on box blur (the most CPU-intensive operation)
-- Deterministic performance (no relying on compiler auto-vectorization)
-- Frees CPU for other work on constrained devices
-
-**Tradeoffs:**
-- Platform-specific code paths with runtime dispatch
-- Increased code size (multiple implementations of each kernel)
-- Maintenance burden (each SIMD path needs testing)
-
-**Approach:**
-1. Identify hot paths: box blur, glyph blit, RGBA↔BGRA swizzle, tile copy
-2. Implement scalar baseline (already exists)
-3. Add AVX2 paths using `core::arch::x86_64` intrinsics
-4. Add NEON paths using `core::arch::aarch64` intrinsics
-5. Runtime-dispatch via `is_x86_feature_detected!("avx2")` / `std::arch::is_aarch64_feature_detected!("neon")`
-6. Benchmark each kernel scalar vs AVX2 vs NEON
-7. Feature-gate: `feature = "simd"`
-
----
-
-## 7. AOT-Resolved Static Layouts ✅ STAGE 2 (S2-2) — DONE (runtime static-subtree freeze: memoized proof + damage-walk skip; no proc macros needed)
+## 7. AOT-Resolved Static Layouts ✅ DONE (runtime freeze S2-2 + FrozenLayout key-path snapshots with cache priming, viewport-gated, corrupt-rejecting; 4 tests)
 
 **Current:** Full flexbox layout runs every frame for every node (with caching via layout boundaries).
 
@@ -198,73 +146,6 @@ fn Greeting() -> Node {
 4. Only re-layout dynamic subtrees when their signals change
 5. Invalidate static layout when the viewport resizes or fonts change
 6. This is complementary to the existing `LayoutCache` — it extends it to full pre-computation
-
----
-
-## 8. `no_std` Support
-
-**Current:** All crates use `std::` extensively (`Arc`, `HashMap`, `Vec`, `RefCell`, `std::thread`).
-
-**Target:** Engine core (signals, layout, damage, scene) compiles for `no_std` + `alloc`. Text and rasterizer backends remain `std` (feature-gated).
-
-**Benefits:**
-- Enables RTOS and baremetal targets
-- Reduces binary size (no std overhead)
-- Unlocks MCU-class deployment
-
-**Tradeoffs:**
-- Significant refactoring effort
-- `parley` and `swash` are `std`-only (must be feature-gated out)
-- `winit` is `std`-only (replaced by direct display access)
-- `tiny-skia` may have `std` dependencies (needs verification)
-
-**Approach:**
-1. Audit all `std::` usage in `aurora` crate (engine core)
-2. Replace `std::` with `core`/`alloc` equivalents:
-   - `std::rc::Rc` → `alloc::rc::Rc`
-   - `std::collections::HashMap` → `alloc::collections::BTreeMap` or `hashbrown` (no_std compatible)
-   - `std::vec::Vec` → `alloc::vec::Vec`
-   - `std::string::String` → `alloc::string::String`
-3. Feature-gate `std`-dependent modules behind `feature = "std"`
-4. Text stack (`parley`, `swash`) behind `feature = "text-std"` (runtime shaping)
-5. Pre-shaped text (from #2) works without `std`
-6. Rasterizer backends behind their own features (`tiny-skia`, `linebuffer`, `dma2d`)
-7. Provide a `no_std` backend trait implementable by the embedder
-
----
-
-## 9. RTOS/Baremetal Support
-
-**Current:** No RTOS integration. Event loop is `winit`-based.
-
-**Target:** Engine can run inside an RTOS task with a timer tick source.
-
-**Benefits:**
-- Deployment on FreeRTOS, Zephyr, QNX
-- Deterministic real-time behavior
-- MCU-class deployment
-
-**Approaches:**
-1. Implement `no_std` support (prerequisite — see #8)
-2. Provide a `HeadlessEngine` that is already partially implemented — extend it to accept a tick source from the RTOS
-3. Implement a `no_std` backend that writes directly to a framebuffer
-4. Document integration patterns for FreeRTOS/Zephyr
-5. Provide a `Cargo.toml` example for STM32/RP2040/ESP32
-
-**RTOS integration sketch:**
-```rust
-// In the RTOS task:
-fn ui_task() {
-    let mut engine = Engine::headless();
-    let backend = FramebufferBackend::new(FB_ADDR, WIDTH, HEIGHT);
-    engine.set_backend(backend);
-    loop {
-        engine.tick();       // advance clock
-        engine.frame();     // render one frame
-        rtos::delay(16);    // ~60fps
-    }
-}
-```
 
 ---
 
@@ -294,6 +175,9 @@ fn ui_task() {
 
 ## 11. Binary Size Reduction ✅ STAGE 2 (S2-1) — DONE (text-runtime/svg-runtime/desktop features, per-backend svg-runtime, embedded profile)
 
+**Measured (demo1 release, 2026-10):** default 23.08 MB / `--no-default-features` 23.08 MB (deps unify via the demo's backend imports — flags pay off for downstream embedders, not the gallery) / `strip` 16.95 MB. Symbol attribution: wgpu 2.8, wayland 0.6, winit 0.5, skrifa+read_fonts+swash 1.2, parley 0.14, resvg 0.09, notify 0.19 MB.
+**`notify`/`libloading` deliberately NOT gated:** 0.3 MB combined vs. splitting the load-bearing dev loop (`HotReload` struct, `Engine::drain_hot_reload`, component-macro runtime all touch it). Below the noise floor until `no_std` returns.
+
 **Current:** Heavy runtime dependencies (parley, swash, resvg, tiny-skia, winit, wgpu, smithay-client-toolkit). Binary size is not optimized for embedded.
 
 **Target:** Strip embedded builds to < 1 MB (from current multi-MB).
@@ -319,7 +203,7 @@ fn ui_task() {
 
 ---
 
-## 12. Minimum RAM Reduction ✅ STAGE 2 — COMPOSED (S2-1 features + S2-4 shaped-cache 8MB cap + S2-5 linebuffer; glyph cache was already adaptive 4-64MB)
+## 12. Minimum RAM Reduction ✅ STAGE 2+ — CLOSED (S2-1 features + S2-4 shaped-cache 8MB cap + S2-5 linebuffer + state-of-the-art pass: LRU everywhere incl. VelloImageCache, byte budgets on mirrors, CacheDiagnostics gauge + tripwires; key_map documented insert-only-coupled)
 
 **Current:** Not practical below ~8 MB (frame buffer + glyph cache + shaped text cache + engine overhead).
 
@@ -342,7 +226,7 @@ fn ui_task() {
 
 ---
 
-## 13. AOT Compilation (Data Layout + Pre-Computation) ✅ STAGE 2 (S2-2) — RUNTIME HALF DONE (static freeze without macros; build-time half deferred with #2/#3)
+## 13. AOT Compilation (Data Layout + Pre-Computation) ✅ DONE (runtime freeze S2-2 + FrozenLayout snapshots + pre-shape/pre-raster macros; remaining sub-items closed individually)
 
 **Note:** The user questioned the value of AOT vs Rust compilation. The real win is not compilation per se — it's **pre-computation** and **data layout**. AOT is the mechanism; the benefit is eliminating runtime interpretation.
 
@@ -360,34 +244,6 @@ fn ui_task() {
 2. Does NOT require a new markup language — proc macros on Rust builders suffice
 3. The component tree is still constructed at runtime, but static subtrees are pre-computed
 4. The signal graph is the irreducible runtime cost — it cannot be AOT-compiled away
-
----
-
-## 14. Production Embedded Maturity
-
-**Current:** Zero embedded deployments. No field testing on real hardware.
-
-**Target:** Production-ready embedded deployment with real-world validation.
-
-**Benefits:**
-- Confidence in stability
-- Community contributions and bug fixes
-- Ecosystem growth (board support packages, examples)
-
-**Approaches:**
-1. All technical optimizations above (#1–#13) are prerequisites
-2. Build and maintain board support packages for:
-   - STM32F4/F7/H7 (DMA2D, LCD controllers)
-   - RP2040 (PIO for display, no DMA2D)
-   - ESP32-S3 (DMA, LCD peripheral)
-   - Raspberry Pi (Linux-class, GPU optional)
-3. Create embedded examples:
-   - Hello world on SPI OLED
-   - Sensor dashboard with live updates
-   - Touch UI with buttons and sliders
-4. Benchmark on real hardware: frame rate, memory, power consumption
-5. Document integration patterns for each RTOS
-6. Establish a testing pipeline for embedded targets (QEMU or hardware-in-loop)
 
 ---
 
@@ -538,28 +394,6 @@ pub intrinsic_height: Option<(Constraints, IntrinsicSize)>,
 
 ---
 
-## 21. Single-Pass Box Blur for Small Radii
-
-**Current:** The box blur (`render/blur.rs:28-45`) always runs two box blur iterations for Gaussian approximation, regardless of radius.
-
-**Target:** For radii ≤4px (common UI shadows), run a single pass. The difference between one and two passes at small radii is sub-pixel.
-
-**Benefits:**
-- 2× savings on the most expensive CPU raster operation
-- Visually indistinguishable for small radii (the common case for UI shadows)
-
-**Tradeoffs:**
-- Slightly less accurate Gaussian approximation for small radii
-- Must choose a threshold (≤4px is safe; ≤8px is borderline)
-
-**Approach:**
-1. Add a radius check in `box_blur_alpha_with_falloff`
-2. If `radius <= 4`, run only the first pass
-3. If `radius > 4`, run both passes (current behavior)
-4. Visual A/B test at radii 2, 4, 6, 8 to confirm the threshold
-
----
-
 ## 22. SoA Layout for TreeArena ✅ STAGE 2 (S2-3) — DONE (CSR sibling links replace per-parent Vec; ChildIter/children_vec call sites migrated)
 
 **Current:** `TreeArena` stores nodes in an array-of-structs layout. `LayoutNode` is a large struct containing style, geometry, and state. Tree walks access only a few fields per node but traverse the entire struct.
@@ -582,80 +416,6 @@ pub intrinsic_height: Option<(Constraints, IntrinsicSize)>,
 3. Migrate `TreeArena` operations to use SoA indexing
 4. Benchmark cache misses (perf stat) before/after
 5. Consider a hybrid: SoA for hot fields, AoS for cold fields
-
----
-
-## 23. Unified Command Emitter 🔷 STAGE 1 — DEFERRED (pure refactor, zero direct perf; sizable cross-backend churn — schedule with next SceneCommand variant addition)
-
-**Current:** Three backends (wgpu, vello, tiny-skia) each implement their own `match cmd { ... }` dispatch for `SceneCommand`. Adding a new variant requires updating all three.
-
-**Target:** A trait-based emitter or visitor pattern that each backend implements. Shared command-stream analysis (hashing, optimization) lives in one place.
-
-**Benefits:**
-- Eliminates triplicated bug surface
-- Enables cross-backend optimizations (shared command-stream optimizer)
-- Easier to add new `SceneCommand` variants
-- Single point of truth for command semantics
-
-**Tradeoffs:**
-- Requires defining a `CommandEmitter` trait with one method per variant
-- Each backend implements the trait (boilerplate, but mechanical)
-- May need to unify the emission context types
-
-**Approach:**
-1. Define `trait CommandEmitter { fn push_transform(&mut self, ...); fn draw_rect(&mut self, ...); ... }`
-2. Implement the trait for each backend's command executor
-3. Replace the three `match cmd { ... }` blocks with a single `cmd.emit(&mut emitter)` call
-4. Move `hash_commands` and other analysis to the shared `SceneCommand` type
-
----
-
-## 24. Speculative Text Prefetch
-
-**Current:** Text shaping happens synchronously when the layout pass requests it. No prefetching of likely-next-frame text.
-
-**Target:** During idle frames or low-CPU-usage periods, speculatively shape text for nodes just outside the viewport (next scroll page, next animation frame).
-
-**Benefits:**
-- Eliminates shaping latency when scrolling or animating
-- Smooth UX for text-heavy interfaces
-- Leverages idle CPU time that would otherwise be wasted
-
-**Tradeoffs:**
-- Wasted work if the user doesn't scroll/animate as predicted
-- Requires a visibility heuristic (which nodes are "near" the viewport?)
-- Adds complexity to the frame scheduler
-
-**Approach:**
-1. Track which text nodes are visible or near-visible (within one viewport of the scroll position)
-2. During idle frames (no dirty nodes, no damage), shape text for near-visible nodes
-3. Store results in the shaped text cache (they'll be used when the node scrolls into view)
-4. Cap prefetch work to avoid wasting CPU (e.g., max 2 nodes per idle frame)
-
----
-
-## 25. Glyph Bitmap Compression — DEFERRED (raster-scale quantization is pixel-visible; needs human A/B. Shaped-cache byte cap done in S2-4)
-
-**Current:** The glyph bitmap cache stores full `Vec<u8>` per glyph per phase (1 byte per pixel). Hinted glyphs (≤16px) have mostly binary coverage (hinted stems are 0 or 255).
-
-**Target:** For hinted glyphs, use 1-bit-per-pixel or simple RLE compression. 4-8× memory reduction for the hinted path.
-
-**Benefits:**
-- 4-8× more glyphs in the same memory budget
-- Reduced memory fragmentation (smaller allocations)
-- Better cache locality (smaller glyph data)
-
-**Tradeoffs:**
-- Decompression cost on glyph lookup (minimal for RLE)
-- Only applies to hinted path (≤16px); linear coverage above 16px is already compact
-- Adds complexity to the glyph cache
-
-**Approach:**
-1. Detect hinted glyphs (size ≤16px and hinted)
-2. Compress bitmap data with RLE (run-length encoding is simple and fast for binary-ish data)
-3. Store compressed data in `CachedBitmap` with a compression flag
-4. Decompress on lookup (or decompress to a temporary buffer)
-5. Benchmark memory savings vs decompression cost
 
 ---
 
@@ -704,30 +464,7 @@ pub intrinsic_height: Option<(Constraints, IntrinsicSize)>,
 
 ---
 
-## 28. `balance_best_width` Binary Search
-
-**Current:** `balance_best_width` (`text/shape.rs:220-269`) shapes the same text up to 12 times at different widths to find the optimal balanced wrapping.
-
-**Target:** Binary search over widths — O(log 10) ≈ 4 shapes instead of 10.
-
-**Benefits:**
-- ~3× fewer shaping calls for balanced text
-- Only affects cache misses (balanced headings are relatively rare)
-- Simple change to the search strategy
-
-**Tradeoffs:**
-- Binary search may not find the exact optimal width (but close enough)
-- The cost function may not be strictly monotonic (but usually is)
-
-**Approach:**
-1. Replace the linear scan over 10 candidates with a binary search
-2. Define a cost function (e.g., `|line_count - target| + |width - avail|`)
-3. Binary search for the width that minimizes the cost
-4. Fall back to linear scan if the cost function is non-monotonic
-
----
-
-## 29. Dual-Axis Min-Size Computation
+## 29. Dual-Axis Min-Size Computation ✅ VERIFIED SHIPPED (dual `min_inline`/`min_block` memo already in tree; no work remaining)
 
 **Current:** `compute_min_size` (`layout/engine.rs:200,221`) is called separately per axis per child, each triggering a subtree walk. O(2ND) for N children at depth D.
 
@@ -790,3 +527,21 @@ pub intrinsic_height: Option<(Constraints, IntrinsicSize)>,
 **Desktop wins (no embedded requirement):** #15 → #16 → #18 → #19 → #21 → #6 → #10
 
 **Quick wins (low effort, high impact):** #16 → #19 → #21 → #26 → #27 → #28
+
+
+---
+
+## Removed items (with cold verdicts)
+
+- **#5 DMA2D backend** — skipped by direction: STM32-only hardware path with no target on the desk.
+- **#6 SIMD rasterization** — removed: row pass is a sequential O(1)/px sliding window (likely memory-bound, auto-vectorizes); the hard part is structural (strided col pass), not intrinsics. Future kernel work starts from benches, not a speedup claim.
+- **#8 `no_std` support** — skipped by direction: portability deprioritized; feature flags are the foundation if revived.
+- **#9 RTOS/baremetal** — removed with #8 (no meaning without it).
+- **#14 Production embedded maturity** — skipped by direction: ecosystem/hardware work with no targets.
+- **#18-full GPU vertex transform** — removed: ~0.1–0.4 ms/frame worst-case savings vs. run-splitting cost (more draw calls); translation fast-path subset shipped.
+- **#21 Single-pass box blur** — removed: saves microseconds typical / ~0.9 ms only under cache thrash (better fixed via patch-cache LRU), changes Gaussian tails.
+- **#23 Unified command emitter** — removed from perf plan: zero perf content (cleanup track if anywhere).
+- **#24 Speculative text prefetch** — removed: wastes work by design, no shaping-latency evidence.
+- **#25 Glyph bitmap compression** — removed: decompress tax on hot path for ≤16px only; byte caps already bound memory.
+- **#28 `balance_best_width` binary search** — removed: unsound as specified (steppy cost); path is rare (balanced headings, cache-miss only).
+- **#1-full bump-arena / #22-full hot-cold split** — removed as committed items after CSR took the allocation win; re-add only on `perf stat` evidence.

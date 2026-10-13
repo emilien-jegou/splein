@@ -50,3 +50,7 @@ pub use crate::tree::Primitive;
 pub use aurora_macros::component;
 /// RSX macro building an element from XML-ish syntax over the builder DSL.
 pub use aurora_macros::view;
+/// Build-time text shaping: `pre_shaped!(font = "..", text = "..", size = ..)`.
+pub use aurora_macros::pre_shaped;
+/// Build-time SVG rasterization: `include_svg!("..", W, H)`.
+pub use aurora_macros::include_svg;
