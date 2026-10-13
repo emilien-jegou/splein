@@ -1,5 +1,7 @@
 // Single responsibility: Showcase dragging a list item into a new position.
 
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use super::motion_ui::*;
@@ -15,15 +17,21 @@ pub const HOT_WIDTH: u32 = 760;
 pub const HOT_HEIGHT: u32 = 660;
 pub const HOT_BG: u32 = PAGE;
 
-/// Declared gap between rows.
+/// Vertical padding inside each row, in pixels.
 ///
 /// The one geometric constant in the demo, and a declaration rather than a measurement on
 /// purpose: it is an *input* to layout. What the drag needs is the resulting distance between
 /// rows, and that is measured from the rows themselves every step — see [`Drag::target_slot`].
 ///
+/// Each row is an outer transparent group (the hit box, the measured slot, the animated
+/// node) holding the visible accent row. Symmetric padding makes the spacing between
+/// rows belong to the rows themselves, so presses starting there still grab a row.
+/// Content keeps its exact height; slot centres drift by at most a few pixels versus
+/// a gap, which measurement absorbs.
+///
 /// Nothing declares a row height. The rows fill the list and layout divides the space it was
 /// actually given, so there is no height to fall out of step with the window.
-pub const GAP: f32 = 10.0;
+pub const PAD: f32 = 4.0;
 /// Settle spring for displaced (non-held) rows.
 ///
 /// Local to the example so it can be tuned without touching the shared presets: overdamped,
@@ -76,6 +84,7 @@ pub fn Page() -> impl IntoElement {
         want_centre: want_centre.clone(),
         // One handle for the list, which is how the gesture learns where the rows are.
         list: use_ref(),
+        settlers: RefCell::new(HashMap::new()),
     });
 
     view! {
@@ -121,9 +130,31 @@ struct Drag {
     /// Reading the row boxes through the list rather than through each row's own handle is what
     /// lets one gesture compare the pointer against every slot without any of them cooperating.
     list: ElementRef,
+    /// Every row's release-glide state, by label. A new grab cancels all stale
+    /// glides (see `cancel_stale_glides`): a glide left running from a previous
+    /// drag keeps its row's FLIP masked, and new swaps re-invert the masked
+    /// spring forever, so the row teleports every swap until something clears it.
+    settlers: RefCell<HashMap<String, (Signal<bool>, Signal<Transform>)>>,
 }
 
 impl Drag {
+    /// Cancels every row's release-glide unconditionally.
+    ///
+    /// A fresh gesture obsoletes all release motion: whatever was gliding home is
+    /// either already home (no-op) or about to be dragged again (stale offset that
+    /// would fight the pointer). Critically, a glide whose FLIP never jointly
+    /// finished keeps masking that row's FLIP, and each new swap re-inverts the
+    /// masked spring — teleporting every move for the whole drag. Grab time is
+    /// the one moment all rows are accounted for, so this runs first, here.
+    fn cancel_stale_glides(&self) {
+        for (_, (settling, settle)) in self.settlers.borrow().iter() {
+            if settling.get() {
+                settling.set(false);
+                settle.set(Transform::IDENTITY);
+            }
+        }
+    }
+
     /// Moves a row and bumps the revision each row's FLIP watches.
     fn move_row(&self, from: usize, to: usize) {
         if from == to {
@@ -154,7 +185,7 @@ impl Drag {
     ///
     /// There is deliberately no pitch in this demo. Rows that fill a list share whatever space
     /// is left over, but each is then clamped at its own min-content floor, so a squashed window
-    /// makes the gaps *unequal* — and then no single stride exists to divide a distance by.
+    /// can leave the rows unequal — and then no single stride exists to divide a distance by.
     /// Reading the boxes sidesteps the question instead of answering it.
     fn target_slot(&self, centre: f32) -> Option<usize> {
         self.slots()
@@ -197,7 +228,9 @@ fn list(drag: Rc<Drag>) -> impl IntoElement {
             direction="vertical"
             width="fill"
             height="fill"
-            gap={GAP}
+            // No gap, no margins: each row tiles the list edge to edge, and the
+            // spacing lives in the rows' own padding (see `PAD`), so it belongs
+            // to the rows themselves.
             // Bound so the gesture can read the row boxes. Nothing is published into a signal: the
             // gesture reads them when the pointer moves, and a measurement that invalidated
             // subscribers would keep the redraw loop awake over a list that is not moving.
@@ -256,6 +289,13 @@ fn Row(index: usize, spec: RowSpec) -> impl IntoElement {
     // seeded by the gesture on release; a fresh grab cancels it outright.
     let settle = use_signal(Transform::IDENTITY);
     let settling = use_signal(false);
+    // Register this row's glide state for grab-time cancellation (see Drag): a stale
+    // glide from a previous drag masks this row's FLIP for the whole next drag.
+    // Keyed by label (overwritten per rebuild, so exactly one entry per row).
+    drag.settlers.borrow_mut().insert(
+        label.clone(),
+        (settling.clone(), settle.clone()),
+    );
     let flip = derived!({
         let is_held = is_held.clone();
         let settling = settling.clone();
@@ -301,19 +341,38 @@ fn Row(index: usize, spec: RowSpec) -> impl IntoElement {
 
     let displayed = offset(offset(flip, follow), settle.clone());
 
+    // The transform the node actually binds: a plain signal mirroring the composed
+    // value, refreshed in the post-layout phase like `FollowCell::resolve`. Going
+    // through a plain signal keeps node delivery independent of derived
+    // evaluation history (whatever the chain above does or skips, the node reads
+    // one signal that is rewritten every frame its value changes).
+    let displayed_sig = use_signal(Transform::IDENTITY);
+    {
+        let displayed = displayed.clone();
+        let displayed_sig = displayed_sig.clone();
+        let mirrored = use_signal(false);
+        if !mirrored.get() {
+            mirrored.set(true);
+            row_ref.runtime().borrow_mut().register_post_layout(move |_dt| {
+                displayed_sig.set_if_changed(displayed.get());
+            });
+        }
+    }
+
     view! {
+        // Outer row: the hit box, the measured slot, and the animated node. Transparent
+        // with vertical padding, so the spacing between rows belongs to the rows
+        // themselves and presses starting there still grab a row. Content keeps its
+        // exact height; slot centres drift by at most a few pixels, which the
+        // gesture absorbs by measuring instead of assuming a pitch.
         <Group
             key={format!("row-{label}")}
             ref={row_ref}
-            direction="horizontal"
+            direction="vertical"
             width="fill"
             height="fill"
-            radius={12.0}
-            fill={ACCENT}
-            alignment="center"
-            gap={14.0}
-            margin={Margin::x(4.0)}
-            transform={displayed.clone()}
+            padding={Padding::symmetric(PAD, 0.0)}
+            transform={displayed_sig.clone()}
             z_index={elevation}
             on:pointer-down={{
                 let drag = drag.clone();
@@ -321,6 +380,9 @@ fn Row(index: usize, spec: RowSpec) -> impl IntoElement {
                 let settle = settle.clone();
                 let settling = settling.clone();
                 move |event: &PointerEvent| {
+                    // A fresh gesture obsoletes every release-glide still running:
+                    // see Drag::cancel_stale_glides.
+                    drag.cancel_stale_glides();
                     settling.set(false);
                     settle.set(Transform::IDENTITY);
                     let centre = drag
@@ -395,10 +457,21 @@ fn Row(index: usize, spec: RowSpec) -> impl IntoElement {
                 }
             }}
         >
-            <Text size={13.0} weight={700u16} color={Color::white_alpha(0.70)} margin={Margin::left(16.0)}>{index + 1}</Text>
-            <Text size={14.0} weight={600u16} color={Color::WHITE}>{label}</Text>
-            <Group width="fill" />
-            <Text size={12.0} color={Color::white_alpha(0.6)} margin={Margin::right(16.0)}>"drag me"</Text>
+            <Group
+                direction="horizontal"
+                width="fill"
+                height="fill"
+                radius={12.0}
+                fill={ACCENT}
+                alignment="center"
+                gap={14.0}
+                margin={Margin::x(4.0)}
+            >
+                <Text size={13.0} weight={700u16} color={Color::white_alpha(0.70)} margin={Margin::left(16.0)}>{index + 1}</Text>
+                <Text size={14.0} weight={600u16} color={Color::WHITE}>{label}</Text>
+                <Group width="fill" />
+                <Text size={12.0} color={Color::white_alpha(0.6)} margin={Margin::right(16.0)}>"drag me"</Text>
+            </Group>
         </Group>
     }
 }

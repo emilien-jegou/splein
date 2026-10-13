@@ -240,13 +240,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "aurora-hot-ui"
-version = "0.0.1-rc.1"
-dependencies = [
- "aurora-shared",
-]
-
-[[package]]
 name = "aurora-linebuffer"
 version = "0.0.1-rc.1"
 dependencies = [

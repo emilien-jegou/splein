@@ -39,9 +39,20 @@ pub fn run_frame_passes(
     for _ in 0..steps {
         crate::reactive::tick(&scheduler.runtime, step);
     }
-    // Total time the tickers were given this frame, handed on to the post-layout phase so a
-    // transition that lives there integrates at exactly the same rate as one that lives here.
+    // Total time the tickers were given this frame. The post-layout phase instead gets the
+    // frame's own scaled delta, so work that lives there (FLIP spring integration, scroll
+    // resolution) advances on every present rather than only on whole-quantum frames. Tickers
+    // stay quantized for determinism; a zero-step frame would otherwise publish a duplicate
+    // scene, which reads as a freeze whenever nothing event-driven (e.g. pointer motion) is
+    // masking it.
+    //
+    // Exception: a frame whose own delta is exactly zero (frozen clock) still honors the
+    // tickers' quantum — that is the F8-freeze/`.`-step workflow advancing one quantum
+    // while stopped. Without this, post-layout work would ignore single-steps while
+    // ticker work obeys them, and a frozen FLIP would never move under inspection.
+    let render_dt = scheduler.clock.last_delta();
     let ticked = step * steps as f32;
+    let post_dt = if render_dt > 0.0 { render_dt } else { ticked };
     if steps == 0 {
         // Poll the tickers with no time passing. Adopting a new target is not a function of
         // elapsed time, so a frame too short to advance the clock still has to let a ticker
@@ -86,7 +97,7 @@ pub fn run_frame_passes(
     // only thing downstream is damage, and a callback cannot dirty a node — it writes signals,
     // which the reactive layer resolves below — so the region computed here is the one this
     // frame's compile will actually use.
-    crate::reactive::run_post_layout(&scheduler.runtime, ticked);
+    crate::reactive::run_post_layout(&scheduler.runtime, post_dt);
     let t_react = t_react0.elapsed();
 
     // Whatever those callbacks wrote into a bound signal is applied here, in the same frame.

@@ -4,11 +4,11 @@
 # example (`aurora-hot-gen-ui` with `AURORA_HOT_EXAMPLE=<name>`).
 # Edit `examples/<name>/view.rs` while it runs; the window rebuilds live.
 #
-# Usage: ./example.sh <name> [engine]  (e.g. ./example.sh motion_press wgpu; default: demo1)
+# Usage: nu scripts/toolbox.nu example <name> [engine]  (e.g. nu scripts/toolbox.nu example motion_press wgpu; default: demo1)
 # Engines: tiny-skia (default), vello, vello-cpu, wgpu
 # Release (no hot-reload, statically linked):
 #   cargo run -p aurora-examples --example <name> --release
-# Hot-reloadable names (tree-only views):
+# Hot-reloadable names (tree-only views: any examples/<name>/ dir with hot.rs):
 #   demo1 demo2 demo3 motion_accordion motion_playback
 #   motion_imperative motion_interruption motion_layout_split motion_press
 #   motion_reorder motion_signals motion_transitions motion_validate
@@ -17,7 +17,8 @@
 # switcher menus, winit plumbing, headless engines):
 #   gallery moving showcase shadow_studio selection_showcase studio render_bench hot_demo
 set -euox pipefail
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# This script lives in scripts/: the workspace root is one level up.
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 NAME="${1:-demo1}"
@@ -34,7 +35,7 @@ case "$NAME" in
     *)
         if [ ! -d "examples/$NAME" ]; then
             echo "example.sh: unknown example '$NAME'." >&2
-            echo "example.sh: usage: ./example.sh <name>; release: cargo run -p aurora-examples --example <name>" >&2
+            echo "example.sh: usage: nu scripts/toolbox.nu example <name>; release: cargo run -p aurora-examples --example <name>" >&2
             exit 2
         fi ;;
 esac
@@ -49,8 +50,6 @@ esac
 #      graph. `AURORA_HOT_EXAMPLE` selects which example the generative crate
 #      mounts; the loop itself rebuilds shared + UI with the same shape (see
 #      DevLoopConfig::companion_packages).
-#   NOTE: `aurora-hot-ui` is deliberately NOT built here — it serves only
-#   `hot_demo`, `aurora selftest`, and the e2e harnesses, never the example loop.
 # Everything is `--release`: runtime speed matters for interactive demos, and a
 # single profile everywhere keeps one unit family (the loop spawns release too).
 cargo build --release -p aurora-cli

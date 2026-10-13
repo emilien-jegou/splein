@@ -1,0 +1,38 @@
+# scripts/dev.yaml
+# yaml-language-server: $schema=https://carapace.sh/schemas/command.json
+name: dev
+description: Spleen dev toolbox
+
+commands:
+  - name: build
+    description: Build the project. Extra args pass through to cargo.
+    completion:
+      positionalany: ["$carapace.bridge.CarapaceBin([cargo, build])"]
+
+  - name: test
+    description: Run cargo tests. Extra args pass through to cargo.
+    completion:
+      positionalany: ["$carapace.bridge.CarapaceBin([cargo, test])"]
+
+  - name: watch
+    description: Run bacon (watch mode).
+    completion:
+      positionalany: ["$carapace.bridge.CarapaceBin([bacon])"]
+
+  - name: example
+    description: Run an example in hot-reload mode.
+    completion:
+      positional:
+        - ["$(nu -c 'use scripts/toolbox.nu spleen-complete-examples; spleen-complete-examples | each { print }')"]
+        - [
+            "tiny-skia\tSoftware rasterizer",
+            "vello\tGPU compute-centric 2D renderer",
+            "vello-cpu\tVello CPU fallback",
+            "wgpu\tWebGPU hardware renderer"
+          ]
+
+  - name: relacher
+    description: Generate release commit and git tags.
+
+  - name: release-github
+    description: Generate release patch for github and deploy changes.

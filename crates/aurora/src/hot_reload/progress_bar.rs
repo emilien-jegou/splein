@@ -72,18 +72,18 @@ struct BarScheme {
 }
 
 const DARK_SCHEME: BarScheme = BarScheme {
-    bar_lo: 0x009999,
-    bar_mid: 0x005555,
-    bar_hi: 0x009999,
+    bar_lo: 0xCC5500,
+    bar_mid: 0xFF8800,
+    bar_hi: 0xFFAA33,
     edge: 0xFFFFFF,
     glow: 0x000000,
     shimmer: 0x00FFFF,
 };
 
 const LIGHT_SCHEME: BarScheme = BarScheme {
-    bar_lo: 0x99FFFF,
-    bar_mid: 0x99DDDD,
-    bar_hi: 0x99FFFF,
+    bar_lo: 0xFFAA33,
+    bar_mid: 0xFF8800,
+    bar_hi: 0xCC5500,
     edge: 0x111111,
     glow: 0xFFFFFF,
     shimmer: 0x00FFFF,

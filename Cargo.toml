@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/splein", "crates/aurora-linebuffer", "crates/aurora", "crates/aurora/macros", "crates/aurora-tiny-skia", "crates/aurora-vello", "crates/aurora-wayland", "crates/aurora-wgpu", "crates/aurora-quad", "crates/aurora/benches/bench_suite", "crates/aurora-hot-ui", "crates/aurora-shared", "crates/aurora-devkit-bin", "crates/aurora-cli", "crates/aurora-hot-gen", "examples", "crates/probe-min"]
+members = ["crates/splein", "crates/aurora-linebuffer", "crates/aurora", "crates/aurora/macros", "crates/aurora-tiny-skia", "crates/aurora-vello", "crates/aurora-wayland", "crates/aurora-wgpu", "crates/aurora-quad", "crates/aurora/benches/bench_suite", "crates/aurora-shared", "crates/aurora-devkit-bin", "crates/aurora-cli", "crates/aurora-hot-gen", "examples", "crates/probe-min"]
 
 [workspace.dependencies]
 smithay-client-toolkit = { version = "0.19", default-features = false }

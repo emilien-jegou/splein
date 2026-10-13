@@ -65,15 +65,20 @@ they may never declare a fix correct.
 
 ## Examples
 
-- **Run:** `just example <name>` (e.g. `just example text_smooth`).
+- **Run:** `nu scripts/toolbox.nu example <name>` (e.g. `nu scripts/toolbox.nu example text_smooth`).
   Release (no hot-reload): `cargo run -p aurora-examples --example <name> --release`.
   Window chrome comes from `view::HOT_*` consts, read out of the freshly
   built UI image before the window is created — pass no geometry.
+- **Toolbox:** `nu scripts/toolbox.nu` lists dev commands (`build`, `test`,
+  `watch`, `example`, `relacher`, `release-github`); inside devenv, `dev`
+  does the same from anywhere. For native arg completion of `example` in
+  interactive nushell: `use ~/projects/splein/scripts/toolbox.nu [example]`
+  (import selectively — bare `test` would shadow the builtin).
 - **Anatomy (one folder per example, keep in sync):**
   - `examples/<name>/view.rs` — the view only (`Page` component, no `main`),
     plus `HOT_TITLE`/`HOT_WIDTH`/`HOT_HEIGHT`/`HOT_BG` consts: the single
     source for window chrome, referenced by both drivers below.
-    Edit this while `just example` runs; the window rebuilds live.
+    Edit this while `nu scripts/toolbox.nu example` runs; the window rebuilds live.
   - `examples/<name>/main.rs` — release driver: `#[path]`-includes `view.rs`
     (+ shared `common/` helpers), registers fonts, calls `.run(...)` with
     `view::HOT_*` for size/title/background.

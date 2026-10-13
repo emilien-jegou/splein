@@ -13,7 +13,7 @@
 // use std::path::PathBuf;
 //
 // let ext = RemoteReloadExtension::new(DevLoopConfig {
-//     package: "aurora-hot-ui".to_string(),
+//     package: "your-package".to_string(),
 //     workspace_root: PathBuf::from("/path/to/splein"),
 //     watch_dir: None,
 //     lib_path: None,

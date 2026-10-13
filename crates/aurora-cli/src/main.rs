@@ -12,7 +12,6 @@
 //
 // Usage:
 //   aurora hot --example motion_press [--engine vello]
-//   aurora hot --package aurora-hot-ui
 //   aurora selftest --ui target/release/libaurora_hot_ui.so
 
 use std::ffi::{c_char, CString};

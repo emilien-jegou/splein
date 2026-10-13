@@ -98,16 +98,16 @@ pub fn use_flip(
         }
     }));
 
-    // Sampling and integrating, once per frame, against final geometry. Registered only on the
-    // build that created the cell: a hook body runs again on every rebuild, and a callback
-    // registered per rebuild would accumulate — 24 drags in `reorder_resize_stress` grew this
-    // from 10 entries to 50.
+    // Sampling and integrating, once per frame, against final geometry. The post-layout
+    // callback registers only on the build that created the cell: a hook body runs
+    // again on every rebuild, and a callback registered per rebuild would accumulate —
+    // 24 drags in `reorder_resize_stress` grew this from 10 entries to 50.
     //
-    // One `if`, deliberately: `register_callbacks_once` is true exactly once, so two separate
-    // checks would leave the second body dead — the ticker that keeps the frame loop asking
-    // while an offset settles would never attach, and a FLIP would freeze mid-flight the
-    // moment nothing else was driving frames.
-    if cell.register_callbacks_once() {
+    // The keepalive ticker is the opposite case: build closes sweep superseded twins
+    // (see `refresh_ticker`), so it re-registers under every new build generation.
+    // Without that, a reload commit would sweep it while recalling this same cell,
+    // and the offset would freeze mid-flight the moment nothing else drove frames.
+    if cell.register_post_layout_once() {
         cell.runtime().borrow_mut().register_post_layout({
             let cell = Rc::clone(&cell);
             move |dt| {
@@ -117,10 +117,9 @@ pub fn use_flip(
                 cell.advance(dt);
             }
         });
-        // The ticker does no work. It exists solely so the frame loop knows an offset is still
-        // settling: `has_active_motion` is ticker-based, and a FLIP that animated without one
-        // would finish on screen only if something else happened to keep asking for frames.
-        cell.out.attach(Box::new(FlipTicker(Rc::clone(&cell))));
+        FlipCell::refresh_ticker(&cell, true);
+    } else {
+        FlipCell::refresh_ticker(&cell, false);
     }
 
     cell.out.clone()
@@ -176,8 +175,11 @@ struct FlipCell {
     /// An `Effect` unsubscribes when dropped, so holding it here is what makes the trigger
     /// observation outlive the call that created it.
     effect: RefCell<Option<Effect>>,
-    /// Whether this cell's tickers and post-layout callback have been registered.
+    /// Whether this cell's post-layout callback has been registered.
     registered: Cell<bool>,
+    /// Build generation the keepalive ticker was last registered under (`None`
+    /// for the initial untracked registration outside any window).
+    ticker_gen: Cell<Option<u64>>,
 }
 
 impl FlipCell {
@@ -193,20 +195,44 @@ impl FlipCell {
             running: Cell::new(false),
             effect: RefCell::new(None),
             registered: Cell::new(false),
+            ticker_gen: Cell::new(None),
         }
     }
 
     /// True exactly once, on the build that created this cell.
     ///
-    /// A hook body runs again on every rebuild, and both a ticker and a post-layout callback are
-    /// permanent once registered. Re-registering per rebuild would grow both structures without
-    /// bound — which is why this is a flag on the cell rather than a check at the call site.
-    fn register_callbacks_once(&self) -> bool {
+    /// A hook body runs again on every rebuild, and a post-layout callback is
+    /// permanent once registered (nothing sweeps it). Re-registering per rebuild
+    /// would grow that list without bound — which is why this is a flag on the
+    /// cell rather than a check at the call site. (The keepalive ticker is the
+    /// opposite case: the build close sweeps superseded twins, so it re-registers
+    /// per generation — see `refresh_ticker`.)
+    fn register_post_layout_once(&self) -> bool {
         if self.registered.get() {
             return false;
         }
         self.registered.set(true);
         true
+    }
+
+    /// Re-attaches this cell's keepalive ticker when it has none for the current
+    /// build generation.
+    ///
+    /// The ticker does no work. It exists solely so the frame loop knows an offset
+    /// is still settling: `has_active_motion` is ticker-based, and a FLIP that
+    /// animated without one would finish on screen only if something else happened
+    /// to keep asking for frames.
+    fn refresh_ticker(this: &Rc<Self>, force: bool) {
+        let gen = this.runtime().borrow().current_build_gen();
+        // Same generation already has this cell's ticker (including a repeat run
+        // inside one window, or a windowless repeat): attaching again would stack
+        // a twin the close keeps. A new generation re-registers so a reload commit
+        // sweeping the old one cannot silence a recalled cell.
+        if !force && this.ticker_gen.get() == gen {
+            return;
+        }
+        this.out.attach(Box::new(FlipTicker(Rc::clone(this))));
+        this.ticker_gen.set(gen);
     }
 
     /// Holds the trigger subscription for as long as this cell lives.
@@ -253,21 +279,24 @@ impl FlipCell {
     }
 
     /// Inverts to `delta` and springs back to rest.
+    ///
+    /// A re-invert that lands mid-flight carries the in-flight position and velocity
+    /// forward, so the rendered motion stays continuous across rapid swaps: seeding
+    /// from rest would teleport the row back by the undecayed remainder. Velocity is
+    /// preserved for the same reason — a fresh glide always starts from rest anyway.
     fn invert(&self, dx: f32, dy: f32) {
-        {
+        let (px, py) = {
             let mut x = self.x.borrow_mut();
-            x.position = dx;
-            x.velocity = 0.0;
+            x.position += dx;
             x.retarget(0.0);
-        }
-        {
+            let px = x.position;
             let mut y = self.y.borrow_mut();
-            y.position = dy;
-            y.velocity = 0.0;
+            y.position += dy;
             y.retarget(0.0);
-        }
+            (px, y.position)
+        };
         self.running.set(true);
-        self.publish(dx, dy);
+        self.publish(px, py);
     }
 
     /// Advances both axes and republishes, until they are both at rest.
@@ -371,12 +400,16 @@ pub fn use_follow(
     // Follow needs a frame every time the pointer moves, and no ticker expresses that: the
     // pointer is not a signal. Registering one keeps the frame loop asking while a drag is live,
     // which is what stops a slow drag from stalling between pointer samples.
-    if cell.register_callbacks_once() {
-        cell.out.attach(Box::new(FollowTicker(Rc::clone(&cell))));
+    // The ticker re-registers per build generation like `FlipCell`'s (a reload commit
+    // sweeps the old one); the post-layout callback has no sweep and stays once-ever.
+    if cell.register_post_layout_once() {
         cell.runtime().borrow_mut().register_post_layout({
             let cell = Rc::clone(&cell);
             move |_dt| cell.resolve()
         });
+        FollowCell::refresh_ticker(&cell, true);
+    } else {
+        FollowCell::refresh_ticker(&cell, false);
     }
 
     (cell.out.clone(), FollowHandle(Rc::clone(&cell)))
@@ -415,8 +448,11 @@ struct FollowCell {
     /// Mirrored rather than read because the frame loop asks "is anything still moving" from
     /// inside a borrow of the runtime, and reading the signal there would re-enter it.
     dragging: Cell<bool>,
-    /// Whether this cell's ticker and post-layout callback have been registered.
+    /// Whether this cell's post-layout callback has been registered.
     registered: Cell<bool>,
+    /// Build generation the keepalive ticker was last registered under. See
+    /// `FlipCell::ticker_gen`.
+    ticker_gen: Cell<Option<u64>>,
     out: Signal<Transform>,
 }
 
@@ -433,16 +469,29 @@ impl FollowCell {
             grab_dy: Box::new(grab_dy),
             dragging: Cell::new(false),
             registered: Cell::new(false),
+            ticker_gen: Cell::new(None),
         }
     }
 
     /// True exactly once, on the build that created this cell. See `FlipCell`'s.
-    fn register_callbacks_once(&self) -> bool {
+    fn register_post_layout_once(&self) -> bool {
         if self.registered.get() {
             return false;
         }
         self.registered.set(true);
         true
+    }
+
+    /// Re-attaches this cell's keepalive ticker when it has none for the current
+    /// build generation. See `FlipCell::refresh_ticker`: a reload commit sweeps
+    /// the old generation's ticker while recalling this same cell.
+    fn refresh_ticker(this: &Rc<Self>, force: bool) {
+        let gen = this.runtime().borrow().current_build_gen();
+        if !force && this.ticker_gen.get() == gen {
+            return;
+        }
+        this.out.attach(Box::new(FollowTicker(Rc::clone(this))));
+        this.ticker_gen.set(gen);
     }
 
     fn runtime(&self) -> Rc<RefCell<ReactiveRuntime>> {

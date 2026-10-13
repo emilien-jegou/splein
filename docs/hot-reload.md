@@ -58,19 +58,16 @@ bus commands, or the `queue_*` API.
 
 The component loop is hosted by the `aurora` launcher + `aurora-devkit-bin` (shared-instance
 land — see Constraints). `--example` selects the example (the generative UI
-crate mounts its `view.rs`/`hot.rs`); `just example` wraps
+crate mounts its `view.rs`/`hot.rs`); `nu scripts/toolbox.nu example` wraps
 the whole flow:
 
 ```bash
 # Terminal 1: run the component host against an example (generative UI)
-just example demo1
+nu scripts/toolbox.nu example demo1
 
 # Terminal 2: edit examples/demo1/view.rs (try the outer fill), save.
 # Watch the log: `rebuilding …` → `components reloaded` → `rebuilt`. A failing build
 # logs its stderr tail and the log path; the previous UI stays mounted.
-
-# The original demo UI: same flow with `--package aurora-hot-ui`, editing
-# crates/aurora-hot-ui/src/lib.rs (try the hero fill).
 ```
 
 ### Every example, both modes
@@ -95,7 +92,7 @@ chrome — no wrong-sized frame ever shows, and the clock stays frozen until
 reveal. Const edits live-resize through the rebuild path. Same loop, any example:
 
 ```bash
-just example motion_press
+nu scripts/toolbox.nu example motion_press
 # Terminal 2: edit examples/motion_press/view.rs, save → rebuilding → reloaded.
 ```
 
@@ -107,7 +104,7 @@ selectable_text, shadow_lab, text_demo, text_smooth, view_demo.
 Release-only (App-extension drivers the tree loop cannot host — extensions,
 switcher menus, winit plumbing, headless engines): gallery, moving, showcase,
 shadow_studio, selection_showcase, studio, render_bench, hot_demo.
-`just example <that-name>` refuses with the release command; it never half-boots.
+`nu scripts/toolbox.nu example <that-name>` refuses with the release command; it never half-boots.
 
 Headless verification without a window:
 

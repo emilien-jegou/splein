@@ -10,7 +10,6 @@
 !Cargo.toml
 !README.md
 !devenv.nix
-!justfile
 !AGENTS.md
 
 !scripts
@@ -61,9 +60,6 @@
 
 !crates/aurora-quad/
 !crates/aurora-quad/**/*
-
-!crates/aurora-hot-ui/
-!crates/aurora-hot-ui/**/*
 
 !crates/aurora-hot-gen/
 !crates/aurora-hot-gen/**/*

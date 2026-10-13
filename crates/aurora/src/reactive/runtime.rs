@@ -302,6 +302,15 @@ impl ReactiveRuntime {
         self.build_depth > 0
     }
 
+    /// The generation of the currently open build window, if any.
+    ///
+    /// Lets long-lived hook state re-register swept resources (e.g. keepalive
+    /// tickers) under the new generation instead of running exactly once and
+    /// going silent after a reload commit sweeps the old one.
+    pub(crate) fn current_build_gen(&self) -> Option<u64> {
+        self.build_tag
+    }
+
     /// Opens a full-tree build window: registrations made inside it are generation-tagged.
     ///
     /// Embedder recipe for sweepable initial trees (mirroring `AppConfig::run`): open
@@ -866,9 +875,8 @@ impl ReactiveRuntime {
 
 /// Runs the work registered for after layout, with the runtime's borrow released.
 ///
-/// `dt` is the same animation delta the tickers were given, so a transition that lives here
-/// integrates at the same rate as one that lives there and lands in the same place at 30fps as at
-/// 144fps.
+/// `dt` is the frame's own scaled delta — not the quantized ticker total — so work that lives
+/// here advances on every present, including frames too short to spend a whole quantum.
 pub fn run_post_layout(runtime: &Rc<RefCell<ReactiveRuntime>>, dt: f32) {
     // Copied out before anything runs: a callback that touches a signal would otherwise re-enter
     // a `RefCell` the caller is still holding.
