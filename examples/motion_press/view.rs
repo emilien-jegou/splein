@@ -3,6 +3,13 @@
 use super::motion_ui::*;
 use aurora::prelude::*;
 
+/// Window chrome shared by the release driver (`main.rs`) and the hot entry
+/// (`hot.rs`): declared once here, referenced by both — never mirrored.
+pub const HOT_TITLE: &str = "Aurora — Web 01 · Press feedback";
+pub const HOT_WIDTH: u32 = 760;
+pub const HOT_HEIGHT: u32 = 440;
+pub const HOT_BG: u32 = PAGE;
+
 /// Target scale while the button is held.
 const HELD: f32 = 0.9;
 /// A button that squeezes on press and springs back on release.

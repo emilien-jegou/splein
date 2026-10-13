@@ -13,7 +13,34 @@
 // - `aurora_component_root() -> aurora::dsl::Element` rebuilds the interface. It must be
 //   callable repeatedly: every reload re-runs it, and hook recall (not fresh state) is
 //   what preserves continuity.
+// - `aurora_hot_window() -> HotWindowInfo` (optional) reports the window chrome
+//   the host creates the window with. Missing symbols fall back to defaults,
+//   so images predating the window contract stay loadable.
 //
+
+/// Window chrome a hot UI crate declares for its window. Plain `repr(C)` data
+/// only, so the host can read it straight out of the loaded image.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HotWindowInfo {
+    /// Logical window width in pixels.
+    pub width: u32,
+    /// Logical window height in pixels.
+    pub height: u32,
+    /// Clear color as `0xRRGGBB`.
+    pub background: u32,
+}
+
+impl HotWindowInfo {
+    /// Fallback chrome when the image predates the window contract.
+    pub const fn fallback() -> Self {
+        Self {
+            width: 800,
+            height: 600,
+            background: 0xFFFFFF,
+        }
+    }
+}
 // Unlike the remote loop, clicks need no action queue: interpreted handlers are real
 // closures dispatching through the engine's own input path.
 
@@ -21,6 +48,7 @@ use crate::app::extension::{AppExtension, OverlayCaps};
 use crate::app::painter::OverlayPainter;
 use crate::dsl::element::Element;
 use crate::dsl::{group, text, IntoElement};
+use crate::foundation::Color;
 use crate::hot_reload::dev_loop::{DevLoop, DevLoopConfig};
 use crate::hot_reload::progress_bar::ReloadProgressBar;
 use crate::hot_reload::SharedFactory;
@@ -54,13 +82,21 @@ pub fn component_abi_fingerprint() -> u64 {
 pub type ComponentRootFn = extern "Rust" fn() -> Element;
 /// Reports the UI crate's ABI fingerprint. See [`component_abi_fingerprint`].
 pub type ComponentVersionFn = extern "Rust" fn() -> u64;
+/// Reports the window chrome the UI crate declares. Optional: images predating
+/// the window contract resolve as missing and the host uses [`HotWindowInfo::fallback`].
+pub type HotWindowFn = extern "Rust" fn() -> HotWindowInfo;
+/// Reports the window title the UI crate declares. Optional, same fallback rule
+/// (the host uses a default title when missing).
+pub type HotTitleFn = extern "Rust" fn() -> &'static str;
 
 /// Emits the component-loop entry points a hot UI crate must export.
 ///
 /// A hot-reloadable UI is just components plus this contract: the host resolves
 /// `aurora_hot_version` (fingerprint handshake) and `aurora_component_root`
 /// (rebuilt interface) by exact symbol and signature — a hand-written mismatch is
-/// undefined behavior across the boundary, so generate them instead:
+/// undefined behavior across the boundary, so generate them instead.
+/// The block form additionally emits `aurora_hot_window` / `aurora_hot_title`,
+/// which the host reads to size and title the window *before* creating it:
 ///
 /// ```ignore
 /// extern crate aurora_shared as aurora;
@@ -68,7 +104,12 @@ pub type ComponentVersionFn = extern "Rust" fn() -> u64;
 /// #[component(name = "shop::Page")]
 /// fn Page() -> impl IntoElement { /* ... */ }
 ///
-/// aurora::define_hot_ui!(Page);
+/// aurora::define_hot_ui! {
+///     root: view::Page,
+///     title: view::HOT_TITLE,
+///     size: (view::HOT_WIDTH, view::HOT_HEIGHT),
+///     background: view::HOT_BG,
+/// }
 /// ```
 ///
 /// `::aurora` paths resolve both through the shared-instance alias (UI crates) and
@@ -90,8 +131,33 @@ macro_rules! define_hot_ui {
             $root().into_element()
         }
     };
-}
+    {
+        root: $root:path,
+        title: $title:expr,
+        size: ($width:expr, $height:expr),
+        background: $background:expr $(,)?
+    } => {
+        $crate::define_hot_ui!($root);
 
+        /// Window chrome the host creates the window with. Read once before
+        /// the window exists, re-read on every reload for live resize.
+        #[no_mangle]
+        pub extern "Rust" fn aurora_hot_window() -> ::aurora::hot_reload::HotWindowInfo {
+            ::aurora::hot_reload::HotWindowInfo {
+                width: $width,
+                height: $height,
+                background: $background,
+            }
+        }
+
+        /// Window title the host applies. A plain `&'static str`: same
+        /// toolchain both sides, and the boundary already ships richer types.
+        #[no_mangle]
+        pub extern "Rust" fn aurora_hot_title() -> &'static str {
+            $title
+        }
+    };
+}
 /// Frame-driven real-component code-swap loop. See the module docs.
 pub struct ComponentReloadExtension {
     dev: DevLoop,
@@ -101,6 +167,19 @@ pub struct ComponentReloadExtension {
     /// A fresh library was observed where no engine was available (idle poll). Latched
     /// so the next frame swaps instead of the observation being lost.
     pending_activation: bool,
+    /// Window chrome resolved from the fresh library, awaiting application in
+    /// `on_window` (the only place with a window handle). `None` when the
+    /// image predates the window contract or nothing changed.
+    pending_chrome: Option<(HotWindowInfo, String)>,
+    /// Last applied chrome: re-applied only on change, so const edits
+    /// live-resize without redundant requests. `None` until the first dress.
+    applied_chrome: Option<(HotWindowInfo, String)>,
+    /// Boot freeze: the clock stays at 0 until the first UI library installs,
+    /// so drift demos reveal at t≈0 instead of mid-travel. Cleared once —
+    /// unless the user pressed F8 during the build (tracked via `on_event`),
+    /// in which case their freeze stands and no override happens.
+    boot_freeze_armed: bool,
+    user_froze: bool,
     /// Top loading bar shown while the loop is rebuilding.
     bar: ReloadProgressBar,
 }
@@ -113,6 +192,10 @@ impl ComponentReloadExtension {
             shared_root: Rc::new(Cell::new(None)),
             factory_installed: false,
             pending_activation: false,
+            pending_chrome: None,
+            applied_chrome: None,
+            boot_freeze_armed: true,
+            user_froze: false,
             bar: ReloadProgressBar::new(),
         }
     }
@@ -128,6 +211,7 @@ impl ComponentReloadExtension {
     fn activate_fresh_library(
         dev: &mut DevLoop,
         shared_root: &Rc<Cell<Option<ComponentRootFn>>>,
+        pending_chrome: &mut Option<(HotWindowInfo, String)>,
         factory_installed: &mut bool,
         engine: &mut Engine,
     ) -> bool {
@@ -179,6 +263,21 @@ impl ComponentReloadExtension {
                 };
             *root
         };
+        // Window chrome rides the same image: optional symbols, declared by
+        // the block form of `define_hot_ui!`. Missing (predating images) falls
+        // back to defaults, silently — the handshake already guards real drift.
+        let chrome: Option<(HotWindowInfo, String)> = unsafe {
+            let info = match dev.loader().get::<HotWindowFn>(b"aurora_hot_window") {
+                Ok(f) => f(),
+                Err(_) => HotWindowInfo::fallback(),
+            };
+            let title = match dev.loader().get::<HotTitleFn>(b"aurora_hot_title") {
+                Ok(f) => f().to_string(),
+                Err(_) => "Aurora Hot Reload".to_string(),
+            };
+            Some((info, title))
+        };
+        *pending_chrome = chrome;
         // The entry address proves a code swap at call level: it must differ from
         // the previously installed one after a rebuild (same bytes relinked keep
         // it — then nothing visible can change and the log says so honestly).
@@ -221,7 +320,53 @@ impl AppExtension for ComponentReloadExtension {
         self.dev.poll_idle(&mut self.pending_activation)
     }
 
+    /// Tracks an F8 press during the initial build so the first-load unfreeze
+    /// below never overrides a freeze the user asked for explicitly.
+    #[cfg(feature = "desktop")]
+    fn on_event(&mut self, event: &winit::event::WindowEvent) -> bool {
+        if let winit::event::WindowEvent::KeyboardInput { event: key, .. } = event {
+            if key.state == winit::event::ElementState::Pressed
+                && key.logical_key == winit::keyboard::Key::Named(winit::keyboard::NamedKey::F8)
+            {
+                self.user_froze = true;
+            }
+        }
+        false
+    }
+
+    /// Applies pending window chrome (resolved at activation) and owns the
+    /// boot freeze. Runs only on change after the first dress, so const edits
+    /// live-resize without redundant requests.
+    #[cfg(feature = "desktop")]
+    fn on_window(&mut self, window: &winit::window::Window, engine: &mut Engine) {
+        let Some((info, title)) = self.pending_chrome.take() else {
+            return;
+        };
+        if self.applied_chrome.as_ref() != Some(&(info, title.clone()))
+            || self.boot_freeze_armed
+        {
+            engine.set_background(Color::hex(info.background));
+            window.set_title(&title);
+            let _ = window
+                .request_inner_size(winit::dpi::LogicalSize::new(info.width.max(1), info.height.max(1)));
+            window.set_visible(true);
+            self.applied_chrome = Some((info, title));
+        }
+        if self.boot_freeze_armed {
+            self.boot_freeze_armed = false;
+            if !self.user_froze {
+                engine.set_time_scale(1.0);
+            }
+        }
+    }
+
     fn on_update(&mut self, engine: &mut Engine) -> bool {
+        // Boot freeze: hold the clock at 0 until the first UI library
+        // installs, so drift demos reveal at t≈0. Idempotent; cleared by
+        // `on_window` on first dress (or left for the user when F8 intervened).
+        if self.boot_freeze_armed && !self.is_live() {
+            engine.set_time_scale(0.0);
+        }
         let redraw = self.dev.poll_update(
             engine,
             &mut self.pending_activation,
@@ -229,6 +374,7 @@ impl AppExtension for ComponentReloadExtension {
                 Self::activate_fresh_library(
                     dev,
                     &self.shared_root,
+                    &mut self.pending_chrome,
                     &mut self.factory_installed,
                     engine,
                 )

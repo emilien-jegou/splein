@@ -4,9 +4,6 @@ mod view;
 
 pub use view::*;
 
-const WIDTH: u32 = 480;
-const HEIGHT: u32 = 130;
-
 fn main() {
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
@@ -16,12 +13,12 @@ fn main() {
     let icons = view::Icons::load();
 
     aurora::prelude::App::config()
-        .title("Aurora — Demo 2 (Paper HUD Dock)")
-        .size(WIDTH, HEIGHT)
+        .title(view::HOT_TITLE)
+        .size(view::HOT_WIDTH, view::HOT_HEIGHT)
         .font(
             "Inter",
             include_bytes!("../../crates/aurora/assets/inter-var.ttf"),
         )
-        .background(0x141414)
+        .background(view::HOT_BG)
         .run(move || view::build_ui(&icons));
 }

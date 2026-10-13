@@ -1,0 +1,27 @@
+import SectionShell from "../layout/SectionShell"
+import TextDemo from "../demos/TextDemo"
+
+export const code = `view! {
+    <Group direction="vertical" width="fill" gap={8.0}>
+        <Text
+            selectable={true}
+            size={16.0}
+            line_height={20.0}
+            color={Color::WHITE}
+        >"Hello you"</Text>
+        <Text
+            size={12.0}
+            weight={700u16}
+            color={Color::BLACK}
+        >"Bold label"</Text>
+    </Group>
+}`
+
+<SectionShell
+      number="03"
+      title="Text"
+      description="Text rendering with size, weight, color, line height, and selectable. The primary content primitive."
+  code={code}
+>
+  <TextDemo />
+</SectionShell>

@@ -274,7 +274,7 @@ fn gpu_matches_cpu_with_live_hud() {
     use aurora::foundation::ResolvedRect;
 
     let mut gpu = Gpu::init();
-    let mut h = Harness::page(reorder::Page, reorder::WIDTH, reorder::HEIGHT);
+    let mut h = Harness::page(reorder::Page, reorder::HOT_WIDTH, reorder::HOT_HEIGHT);
     assert!(h.settle(900), "page must settle");
     let mut worst = 1.0f32;
     // Sixty frames of evolving HUD telemetry (FPS/ms strings change constantly,
@@ -372,7 +372,7 @@ fn inject_hud(h: &mut Harness, fps: u32) {
 #[ntest::timeout(300_000)]
 fn gpu_matches_cpu_drag_with_hud() {
     let mut gpu = Gpu::init();
-    let mut h = Harness::page(reorder::Page, reorder::WIDTH, reorder::HEIGHT);
+    let mut h = Harness::page(reorder::Page, reorder::HOT_WIDTH, reorder::HOT_HEIGHT);
     assert!(h.settle(900), "page must settle");
 
     // Full gesture under a live HUD: press Baseline, drag down across three rows
@@ -413,7 +413,7 @@ fn gpu_matches_cpu_drag_with_hud() {
 #[ntest::timeout(120_000)]
 fn gpu_matches_cpu_mid_drag() {
     let mut gpu = Gpu::init();
-    let mut h = Harness::page(reorder::Page, reorder::WIDTH, reorder::HEIGHT);
+    let mut h = Harness::page(reorder::Page, reorder::HOT_WIDTH, reorder::HOT_HEIGHT);
     assert!(h.settle(900), "page must settle");
     // Grab Baseline and hold it two rows down: the held row follows the pointer
     // (compositor transform + elevation) while the others are mid-FLIP. This is
@@ -443,7 +443,7 @@ fn gpu_matches_cpu_mid_drag() {
 #[ntest::timeout(120_000)]
 fn gpu_matches_cpu_on_reorder_page() {
     let mut gpu = Gpu::init();
-    let mut h = Harness::page(reorder::Page, reorder::WIDTH, reorder::HEIGHT);
+    let mut h = Harness::page(reorder::Page, reorder::HOT_WIDTH, reorder::HOT_HEIGHT);
     assert!(h.settle(900), "page must settle");
     // CPU pixels come from the harness's own retained raster: a fresh raster
     // replaying post-settle (empty) damage would just return transparency.

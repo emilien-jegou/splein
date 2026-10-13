@@ -3,6 +3,13 @@
 use aurora::prelude::*;
 use std::sync::Arc;
 
+/// Window chrome shared by the release driver (`main.rs`) and the hot entry
+/// (`hot.rs`): declared once here, referenced by both — never mirrored.
+pub const HOT_TITLE: &str = "Aurora — Demo 2 (Paper HUD Dock)";
+pub const HOT_WIDTH: u32 = 480;
+pub const HOT_HEIGHT: u32 = 130;
+pub const HOT_BG: u32 = 0x141414;
+
 pub(crate) struct Icons {
     handle: Arc<VectorGraphic>,
     pen: Arc<VectorGraphic>,

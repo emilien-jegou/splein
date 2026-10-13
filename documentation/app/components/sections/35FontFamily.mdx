@@ -1,0 +1,25 @@
+import SectionShell from "../layout/SectionShell"
+import FontFamilyDemo from "../demos/FontFamilyDemo"
+
+export const code = `// Register at startup
+cli.app_config("Aurora")
+    .font("Inter", include_bytes!("../assets/inter-var.ttf"))
+    .run(move || build_ui());
+
+// Use in any Text
+view! {
+    <Text
+        font_family="Inter"
+        size={15.0}
+        color={0xE2E8F0}
+    >"Custom font"</Text>
+}`
+
+<SectionShell
+      number="35"
+      title="Font Family"
+      description="Custom font loading with font_family. Register fonts at startup, reference by name in any Text component."
+  code={code}
+>
+  <FontFamilyDemo />
+</SectionShell>

@@ -1,0 +1,25 @@
+import SectionShell from "../layout/SectionShell"
+import AlignmentDemo from "../demos/AlignmentDemo"
+
+export const code = `view! {
+    <Group
+        direction="horizontal"
+        width="fill"
+        height="fill"
+        alignment="center"
+        distribution="space-between"
+    >
+        <Text size={14.0}>"Left"</Text>
+        <Text size={14.0}>"Center"</Text>
+        <Text size={14.0}>"Right"</Text>
+    </Group>
+}`
+
+<SectionShell
+      number="07"
+      title="Alignment & Distribution"
+      description="Control child positioning with alignment (start/center/end) and distribution (start/center/end/space-between)."
+  code={code}
+>
+  <AlignmentDemo />
+</SectionShell>

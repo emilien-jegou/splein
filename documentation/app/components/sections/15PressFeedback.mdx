@@ -1,0 +1,28 @@
+import SectionShell from "../layout/SectionShell"
+import PressFeedbackDemo from "../demos/PressFeedbackDemo"
+
+export const code = `view! {
+    <Group
+        height={52.0}
+        radius="max"
+        fill={ACCENT}
+        scale={active}
+        on:pointer-down={move |_| down.set(true)}
+        on:pointer-up={move |_| up.set(false)}
+        on:pointer-leave={move |_| drop.set(false)}
+        on:click={move |info| {
+            counted.update(|n| *n += info.click_count as u32)
+        }}
+    >
+        <Text size={15.0} weight={700u16} color={Color::WHITE}>"Continue"</Text>
+    </Group>
+}`
+
+<SectionShell
+      number="15"
+      title="Press Feedback"
+      description="Press-and-release with asymmetric transitions. on:pointer-down, on:pointer-up, on:pointer-leave."
+  code={code}
+>
+  <PressFeedbackDemo />
+</SectionShell>

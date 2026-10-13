@@ -1,0 +1,24 @@
+import SectionShell from "../layout/SectionShell"
+import TransitionsDemo from "../demos/TransitionsDemo"
+
+export const code = `// Tween: duration + curve
+let tween = Transition::from_str("out-cubic 200ms");
+let opacity = tween.on(enabled.map(|on| if on { 1.0 } else { 0.35 }));
+let slide_x = tween.on(enabled.map(|on| if on { 0.0 } else { 48.0 }));
+
+// Spring: physics-based, no duration
+let spring = Transition::from_str("spring");
+let scale = spring.on(enabled.map(|on| if on { 1.18 } else { 1.0 }));
+
+// Named spring presets
+let bouncy = Transition::from_str("spring:bouncy");
+let smooth = Transition::from_str("spring:smooth");`
+
+<SectionShell
+      number="10"
+      title="Transitions"
+      description="Animate properties with Transition::from_str. Supports tween curves (out-cubic, out-quint) and springs."
+  code={code}
+>
+  <TransitionsDemo />
+</SectionShell>

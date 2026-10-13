@@ -8,17 +8,14 @@ mod view;
 use common::ExampleCli;
 pub use view::*;
 
-const WIDTH: u32 = 760;
-const HEIGHT: u32 = 980;
-
 fn main() {
-    let cli = ExampleCli::parse(WIDTH, HEIGHT);
+    let cli = ExampleCli::parse(view::HOT_WIDTH, view::HOT_HEIGHT);
     cli.init_telemetry();
-    cli.app_config_multi("Aurora — Text Layout")
+    cli.app_config_multi(view::HOT_TITLE)
         .font(
             "Inter",
             include_bytes!("../../crates/aurora/assets/inter-var.ttf"),
         )
-        .background(0x0B1020)
+        .background(view::HOT_BG)
         .run(view::build_ui);
 }

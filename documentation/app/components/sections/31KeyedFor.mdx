@@ -1,0 +1,25 @@
+import SectionShell from "../layout/SectionShell"
+import KeyedForDemo from "../demos/KeyedForDemo"
+
+export const code = `view! {
+    <Group
+        direction="vertical"
+        width="fill"
+        height="fill"
+        gap={GAP}
+        ref={list_ref}
+    >
+        <for (i, spec) in items key={.label.clone()}>
+            <Row index={i} spec={spec} />
+        </for>
+    </Group>
+}`
+
+<SectionShell
+      number="31"
+      title="Keyed For"
+      description="The <for> block with key= for keyed reconciliation. Items are matched by key across re-renders, preserving component state."
+  code={code}
+>
+  <KeyedForDemo />
+</SectionShell>

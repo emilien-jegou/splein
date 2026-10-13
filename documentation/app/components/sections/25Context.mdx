@@ -1,0 +1,25 @@
+import SectionShell from "../layout/SectionShell"
+import ContextDemo from "../demos/ContextDemo"
+
+export const code = `static STATUS: Context<String> = initContext!();
+static CLIPBOARD: Context<String> = initContext!();
+
+view! {
+    <Provider grant={STATUS.provide(status)}>
+        <Provider grant={CLIPBOARD.provide(clipboard)}>
+            <Page />
+        </Provider>
+    </Provider>
+}
+
+// Consume anywhere in the tree
+<Text size={12.0} color={INK}>{STATUS.get()}</Text>`
+
+<SectionShell
+      number="25"
+      title="Context"
+      description="Dependency injection with Context<T>, initContext!, and Provider. Share state without prop drilling."
+  code={code}
+>
+  <ContextDemo />
+</SectionShell>

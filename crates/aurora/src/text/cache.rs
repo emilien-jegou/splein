@@ -65,6 +65,23 @@ struct StyleKey {
 }
 
 impl StyleKey {
+    /// Same style ignoring the wrap width: everything but `max_width_bits`.
+    /// Used by `get_nearby` to find sibling buckets during resize drags.
+    fn same_style(&self, other: &Self) -> bool {
+        self.font == other.font
+            && self.family == other.family
+            && self.style == other.style
+            && self.size_bits == other.size_bits
+            && self.weight == other.weight
+            && self.variations == other.variations
+            && self.line_height_bits == other.line_height_bits
+            && self.letter_spacing_bits == other.letter_spacing_bits
+            && self.align == other.align
+            && self.wrap == other.wrap
+            && self.overflow == other.overflow
+            && self.max_lines == other.max_lines
+    }
+
     /// Builds a style identity from shaping parameters, ignoring the content string.
     ///
     /// Float dimensions are quantized (see `quantize_bits`): two layouts
@@ -133,6 +150,69 @@ impl ShapedTextCache {
         Some(Arc::clone(&entry.layout))
     }
 
+    /// Approximate lookup for resize drags: same style (ignoring width)
+    /// and content, width within `tolerance_quanta` (1/16px units).
+    ///
+    /// During a live resize every frame crosses width buckets, so exact
+    /// lookups miss continuously and each miss pays a full Parley shape.
+    /// A nearby width reuses an already-shaped layout (wrap may differ by
+    /// a subpixel boundary word — invisible in motion, exact on release
+    /// when the hint expires and misses shape precisely). Best match wins;
+    /// entries are NOT stored under the requested key, so the cache stays
+    /// exact. Non-finite widths never fuzzy-match. Scan capped at 256
+    /// style buckets.
+    pub fn get_nearby(
+        &self,
+        params: &TextShapeParams,
+        tolerance_quanta: u32,
+    ) -> Option<Arc<TextLayout>> {
+        let target = StyleKey::from_params(params);
+        if target.max_width_bits == u32::MAX {
+            return None;
+        }
+        let mut inner = self.inner.lock().unwrap();
+        let mut best: Option<(f32, StyleKey, Arc<TextLayout>)> = None;
+        let mut scanned = 0u32;
+        // Stored widths are quantum counts as floats (round(v*16)), so the
+        // difference is already in 1/16px units — compare against the quantum
+        // tolerance directly.
+        for (sk, bucket) in inner.styles.iter() {
+            if scanned >= 256 {
+                break;
+            }
+            if !sk.same_style(&target) || sk.max_width_bits == u32::MAX {
+                continue;
+            }
+            scanned += 1;
+            let d = (f32::from_bits(sk.max_width_bits)
+                - f32::from_bits(target.max_width_bits))
+            .abs();
+            if !(d <= tolerance_quanta as f32) {
+                continue;
+            }
+            if let Some(entry) = bucket.get(params.text) {
+                let replace = match &best {
+                    None => true,
+                    Some((bd, _, _)) => d < *bd,
+                };
+                if replace {
+                    best = Some((d, sk.clone(), Arc::clone(&entry.layout)));
+                }
+            }
+        }
+        let (_, key, layout) = best?;
+        // Recency bump so burst reuse doesn't age the winner out.
+        inner.clock += 1;
+        let clock = inner.clock;
+        if let Some(entry) = inner
+            .styles
+            .get_mut(&key)
+            .and_then(|b| b.get_mut(params.text))
+        {
+            entry.used = clock;
+        }
+        Some(layout)
+    }
     /// Stores a shaped layout, evicting the least-recently-used entry at capacity.
     pub fn store(&self, params: &TextShapeParams, layout: Arc<TextLayout>) {
         let key = StyleKey::from_params(params);
@@ -233,6 +313,30 @@ mod tests {
                 height: 20.0,
             },
         ))
+    }
+
+    /// Nearby widths reuse within tolerance during resize drags, miss
+    /// outside it, and never match across styles or content.
+    #[test]
+    fn nearby_width_reuse() {
+        let cache = ShapedTextCache::new();
+        let stored = dummy_layout();
+        cache.store(&params_for("hello", 400.0), Arc::clone(&stored));
+
+        // 400.4px = 6.4 quanta away: within ±8.
+        let near = cache
+            .get_nearby(&params_for("hello", 400.4), 8)
+            .expect("nearby width must hit");
+        assert!(Arc::ptr_eq(&near, &stored));
+        // Exact lookup still misses (cache stays exact, not polluted).
+        assert!(cache.get(&params_for("hello", 400.4)).is_none());
+        // 401.0px = 16 quanta: outside tolerance.
+        assert!(cache.get_nearby(&params_for("hello", 401.0), 8).is_none());
+        // Different content or style never fuzzy-matches.
+        assert!(cache.get_nearby(&params_for("other", 400.4), 8).is_none());
+        let mut wide = params_for("hello", 400.4);
+        wide.size = 20.0;
+        assert!(cache.get_nearby(&wide, 8).is_none());
     }
 
     /// Fractional width jitter within 1/16px must hit the same entry:

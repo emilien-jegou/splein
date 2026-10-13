@@ -8,6 +8,13 @@ use aurora::foundation::ResolvedRect;
 use aurora::prelude::*;
 use aurora::reactive::Ticker;
 
+/// Window chrome shared by the release driver (`main.rs`) and the hot entry
+/// (`hot.rs`): declared once here, referenced by both — never mirrored.
+pub const HOT_TITLE: &str = "Aurora — Web 04 · Drag to reorder";
+pub const HOT_WIDTH: u32 = 760;
+pub const HOT_HEIGHT: u32 = 660;
+pub const HOT_BG: u32 = PAGE;
+
 /// Declared gap between rows.
 ///
 /// The one geometric constant in the demo, and a declaration rather than a measurement on

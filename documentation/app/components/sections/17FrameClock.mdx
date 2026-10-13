@@ -1,0 +1,25 @@
+import SectionShell from "../layout/SectionShell"
+import FrameClockDemo from "../demos/FrameClockDemo"
+
+export const code = `let time = use_frame_clock();
+let travel = time.map(|t| {
+    ((t as f32) * SWEEP_HZ).sin() * TRAVEL
+});
+
+// Periodic toggle
+let outward = use_interval_toggle(STEP_SECS);
+
+// Custom interval
+use_interval(RETARGET_SECS, {
+    let step = step.clone();
+    move || step.update(|n| *n += 1)
+});`
+
+<SectionShell
+      number="17"
+      title="Frame Clock"
+      description="use_frame_clock for time-driven animation. use_interval and use_interval_toggle for periodic updates."
+  code={code}
+>
+  <FrameClockDemo />
+</SectionShell>

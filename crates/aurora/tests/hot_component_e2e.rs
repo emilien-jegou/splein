@@ -101,6 +101,7 @@ fn foreign_image_binds_sentinel_elsewhere() {
 fn dev_loop_cycles_and_handshake_agrees() {
     let root = workspace_root();
     let mut dev = DevLoop::new(DevLoopConfig {
+        example: None,
         package: "aurora-hot-ui".to_string(),
         workspace_root: root.clone(),
         watch_dir: None,

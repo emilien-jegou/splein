@@ -1,0 +1,26 @@
+import SectionShell from "../layout/SectionShell"
+import VectorGraphicDemo from "../demos/VectorGraphicDemo"
+
+export const code = `let logo_graphic = VectorGraphic::from_str(DVD_SVG_RAW)
+    .expect("Valid SVG");
+
+view! {
+    <Group
+        width={LOGO_W}
+        height={LOGO_H}
+        overlay={true}
+        z_index={100}
+        fill={color_sig}
+    >
+        {svg(logo_graphic)}
+    </Group>
+}`
+
+<SectionShell
+      number="23"
+      title="Vector Graphic"
+      description="SVG rendering with VectorGraphic::from_str. Anti-aliased vector graphics via TinySkia or Vello."
+  code={code}
+>
+  <VectorGraphicDemo />
+</SectionShell>

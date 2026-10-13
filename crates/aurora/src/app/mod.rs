@@ -126,6 +126,7 @@ pub struct AppConfig {
     width: u32,
     height: u32,
     fullscreen: bool,
+    visible: bool,
     fonts: Vec<Vec<u8>>,
     background: Color,
     backend: RenderBackend,
@@ -147,6 +148,7 @@ impl App {
             width: 800,
             height: 600,
             fullscreen: false,
+            visible: true,
             fonts: Vec::new(),
             background: Color::WHITE,
             backend: RenderBackend::default(),
@@ -172,6 +174,13 @@ impl AppConfig {
     /// Borderless fullscreen on the current monitor (gallery launcher).
     pub fn fullscreen(mut self, on: bool) -> Self {
         self.fullscreen = on;
+        self
+    }
+    /// Whether the window starts visible. The hot-reload host builds the
+    /// first UI image before creating the window, so it opens once at final
+    /// chrome — no wrong-sized frame ever shows.
+    pub fn visible(mut self, on: bool) -> Self {
+        self.visible = on;
         self
     }
     pub fn font(mut self, _name: &str, bytes: &[u8]) -> Self {
@@ -225,6 +234,7 @@ impl AppConfig {
                         .then(|| winit::window::Fullscreen::Borderless(None)),
                 )
                 .with_resizable(true)
+                .with_visible(self.visible)
                 .build(&event_loop)
                 .unwrap(),
         );

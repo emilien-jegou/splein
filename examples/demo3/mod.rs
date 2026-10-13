@@ -1,5 +1,5 @@
-// Re-export shim so the demo3 UI crate (`examples/demo3-ui`) can mount the whole
-// directory with ONE top-level `#[path]`.
+// Re-export shim so the hot loop (`examples/demo3/hot.rs`, mounted by the
+// generative UI crate) can mount the whole directory with ONE top-level `#[path]`.
 //
 // The release binary (`demo3/main.rs`) declares its own `mod canvas/hud/...`
 // and never touches this file; adding it changes no release behavior. It exists

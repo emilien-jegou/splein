@@ -25,11 +25,9 @@ pub fn measure_group_intrinsic(
         node.style.layout.flow_wrap,
     );
     let children: Vec<NodeId> = arena
-        .children(group_id)
-        .iter()
-        .copied()
-        .filter(|&id| {
-            !arena.get(id).style.is_absolute && arena.get(id).state.core.presence.occupies_space()
+        .each_child(group_id)
+        .filter(|id| {
+            !arena.get(*id).style.is_absolute && arena.get(*id).state.core.presence.occupies_space()
         })
         .collect();
 

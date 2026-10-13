@@ -3,13 +3,20 @@
 // Bare module: no `extern crate` line here. Each host aliases its own runtime
 // to the name `aurora` before including this file, so the same code compiles
 // against the real `aurora` (release binary) and `aurora-shared` (dev cdylib):
-//   - release: `examples/demo1.rs` (aurora-examples)
-//   - dev:     `examples/demo1-ui/src/lib.rs` (dep: aurora-shared, cdylib)
+//   - release: `examples/demo1/main.rs` (aurora-examples)
+//   - dev:     generative `aurora-hot-gen-ui` (dep: aurora-shared, cdylib)
 // Keep this file free of `define_hot_ui!` / entry points; those live in the
 // dev dispatcher only. Pin component identity so hook state recalls across reloads.
 
 use aurora::dsl::IntoElement;
 use aurora::prelude::*;
+
+/// Window chrome shared by the release driver (`main.rs`) and the hot entry
+/// (`hot.rs`): declared once here, referenced by both — never mirrored.
+pub const HOT_TITLE: &str = "Aurora — Demo 1";
+pub const HOT_WIDTH: u32 = 500;
+pub const HOT_HEIGHT: u32 = 482;
+pub const HOT_BG: u32 = 0xFFFFFF;
 
 /// Stable root scope for the demo1 view.
 #[component(name = "demo1::Page")]

@@ -10,7 +10,10 @@
 
 extern crate aurora_shared as aurora;
 
-use aurora::hot_reload::{ComponentReloadExtension, DevLoopConfig};
+use aurora::hot_reload::{
+    blocking_hot_build, ComponentReloadExtension, DevLoopConfig, DylibReloader, HotTitleFn,
+    HotWindowFn, HotWindowInfo,
+};
 use aurora::prelude::*;
 use std::ffi::{c_char, CStr};
 
@@ -33,44 +36,69 @@ fn parse_engine_name(raw: &str) -> RenderBackend {
     }
 }
 
-/// Runs the hot-reload host: opens the window, loads the UI crate, and drives the
-/// watch → rebuild → swap loop until exit. Never returns until the window closes.
+/// Runs the hot-reload host: builds the first UI image, opens the window at
+/// its declared chrome, and drives the watch → rebuild → swap loop until
+/// exit. Never returns until the window closes.
 ///
-/// `background` is a `0xRRGGBB` clear color. `package` names the UI crate rebuilt on
-/// change; `workspace_root` anchors the build and default paths. `engine` selects
-/// the raster backend (see `parse_engine_name`).
+/// Load-first boot: the canonical build runs synchronously *before* the
+/// window exists, the fresh image's `aurora_hot_window` / `aurora_hot_title`
+/// symbols size and title the window up front — so it opens once at final
+/// chrome, never popping from a boot default. A failed boot build exits loud
+/// with the stderr tail (no UI exists to show a placeholder in). `engine`
+/// selects the raster backend (see `parse_engine_name`).
 #[no_mangle]
 pub extern "Rust" fn devkit_run(
-    title: *const c_char,
-    width: u32,
-    height: u32,
     package: *const c_char,
+    example: *const c_char,
     workspace_root: *const c_char,
-    background: u32,
     engine: *const c_char,
 ) {
     aurora::hot_reload::init_dev_logging();
     let debugger = aurora::app::VisualDebugger::new();
-    let ext = ComponentReloadExtension::new(DevLoopConfig {
-        package: arg(package).to_string(),
-        workspace_root: arg(workspace_root).into(),
-        watch_dir: None,
+    let example_raw = arg(example);
+    let example = (!example_raw.is_empty()).then(|| example_raw.to_string());
+    // The shared image co-builds with the UI in the same unit graph (see
+    // DevLoopConfig::companion_packages). The UI package is the generative
+    // `aurora-hot-gen-ui` crate (`--example <name>` selects the mounted
+    // example); shared is the constant companion.
+    let package_raw = arg(package);
+    let root = std::path::PathBuf::from(arg(workspace_root));
+    let loop_config = || DevLoopConfig {
+        package: package_raw.to_string(),
+        example: example.clone(),
+        workspace_root: root.clone(),
+        // Generative mode watches the example folder itself (its
+        // view.rs/hot.rs are the live sources); legacy mode keeps
+        // the package-src default probing.
+        watch_dir: example.as_deref().map(|name| root.join("examples").join(name)),
         lib_path: None,
         auto_build: true,
-        // The shared image co-builds with the UI in the same unit graph (see
-        // DevLoopConfig::companion_packages). The UI package itself varies per
-        // example (`--package <name>-ui`); shared is the constant companion.
-        companion_packages: vec!["aurora-shared".to_string(), arg(package).to_string()],
-    });
+        companion_packages: vec!["aurora-shared".to_string(), package_raw.to_string()],
+    };
+    // Blocking first build: the window cannot be sized until the image
+    // exists. Same canonical command the loop respawns (one unit family).
+    let build_log = std::env::temp_dir().join(format!("aurora-hot-boot-{}.log", std::process::id()));
+    if let Err(tail) = blocking_hot_build(&loop_config(), &build_log) {
+        eprintln!("aurora: hot-reload boot build failed; log: {}", build_log.display());
+        for line in &tail {
+            eprintln!("aurora: hot-reload build | {line}");
+        }
+        std::process::exit(1);
+    }
+    // Read the declared chrome out of the fresh image, then drop the handle:
+    // the loop re-loads the same image moments later through its own reloader.
+    let (info, title) = read_boot_chrome(&loop_config());
+    let ext = ComponentReloadExtension::new(loop_config());
     let backend = parse_engine_name(arg(engine));
+    // Final chrome up front: created once, visible, at the declared size.
     let mut config = aurora::app::App::config()
-        .title(arg(title))
-        .size(width.max(1), height.max(1))
+        .title(title)
+        .size(info.width.max(1), info.height.max(1))
         // Without a loaded font no text node can shape: hot UI text ("Hello",
         // counters, placeholders) would mount invisibly. Same Inter variable font
         // the examples bundle; baked in at compile time, no extra crate needed.
         .font("Inter", include_bytes!("../../aurora/assets/inter-var.ttf"))
-        .background(Color::hex(background))
+        .background(Color::hex(info.background))
         .backend(backend);
     config = match backend {
         RenderBackend::TinySkia => config.backend_factory(aurora_shared::tiny_skia::create_backend),
@@ -90,6 +118,41 @@ fn placeholder() -> impl IntoElement {
         .width(400.0)
         .height(300.0)
         .children([text("building hot-ui…").size(16.0)])
+}
+
+/// Reads the window chrome the fresh boot image declares. Version-handshake
+/// first (a skewed image must never size the window); window symbols are
+/// optional (predating images fall back to defaults, same as in-loop).
+fn read_boot_chrome(config: &DevLoopConfig) -> (HotWindowInfo, String) {
+    let fallback = (HotWindowInfo::fallback(), "Aurora Hot Reload".to_string());
+    let mut loader = DylibReloader::new(config.lib_path());
+    if !loader.refresh() {
+        eprintln!("aurora: hot-reload boot image not loadable; default chrome");
+        return fallback;
+    }
+    let skewed = unsafe {
+        match loader.get::<aurora::hot_reload::ComponentVersionFn>(b"aurora_hot_version") {
+            Ok(f) => f() != aurora::hot_reload::component_abi_fingerprint(),
+            Err(_) => true,
+        }
+    };
+    if skewed {
+        eprintln!("aurora: hot-reload boot image handshake failed; default chrome");
+        return fallback;
+    }
+    let info = unsafe {
+        match loader.get::<HotWindowFn>(b"aurora_hot_window") {
+            Ok(f) => f(),
+            Err(_) => HotWindowInfo::fallback(),
+        }
+    };
+    let title = unsafe {
+        match loader.get::<HotTitleFn>(b"aurora_hot_title") {
+            Ok(f) => f().to_string(),
+            Err(_) => fallback.1.clone(),
+        }
+    };
+    (info, title)
 }
 
 /// Headless self-test: mount, click, swap entry points, rebuild, verify — entirely inside

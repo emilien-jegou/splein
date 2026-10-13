@@ -33,6 +33,7 @@ fn main() {
     let cli = ExampleCli::parse(WIDTH, HEIGHT);
     cli.init_telemetry();
     let ext = RemoteReloadExtension::new(DevLoopConfig {
+        example: None,
         package: "aurora-hot-ui".to_string(),
         workspace_root: workspace_root(),
         watch_dir: None,

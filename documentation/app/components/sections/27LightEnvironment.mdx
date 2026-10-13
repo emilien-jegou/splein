@@ -1,0 +1,24 @@
+import SectionShell from "../layout/SectionShell"
+import LightEnvironmentDemo from "../demos/LightEnvironmentDemo"
+
+export const code = `view! {
+    <Group
+        light={LightEnvironment::from_angles(270.0, 45.0)}
+        width={110.0}
+        height={110.0}
+        radius={8.0}
+        fill={Color::WHITE}
+        shadow={12.0}
+    >
+        <Text size={12.0} color={0x483050}>"light az 270"</Text>
+    </Group>
+}`
+
+<SectionShell
+      number="27"
+      title="Light Environment"
+      description="Physical lighting with LightEnvironment::from_angles. Controls shadow direction and falloff for elevation shadows."
+  code={code}
+>
+  <LightEnvironmentDemo />
+</SectionShell>

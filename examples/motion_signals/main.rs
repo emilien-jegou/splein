@@ -9,22 +9,19 @@ mod motion_ui;
 use common::ExampleCli;
 use motion_ui::*;
 
-pub const WIDTH: u32 = 800;
-pub const HEIGHT: u32 = 520;
-
 mod view;
 
 pub use view::*;
 
 fn main() {
-    let cli = ExampleCli::parse(WIDTH, HEIGHT);
+    let cli = ExampleCli::parse(view::HOT_WIDTH, view::HOT_HEIGHT);
     cli.init_telemetry();
 
-    cli.app_config_multi("Aurora — Motion 05 · Signal-driven motion")
+    cli.app_config_multi(view::HOT_TITLE)
         .font(
             "Inter",
             include_bytes!("../../crates/aurora/assets/inter-var.ttf"),
         )
-        .background(PAGE)
+        .background(view::HOT_BG)
         .run(view::Page);
 }

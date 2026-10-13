@@ -52,7 +52,18 @@ pub struct TextContext {
     cache: ShapedTextCache,
     bitmaps: GlyphBitmapCache,
     pub(crate) font_blobs: Arc<Mutex<Vec<Arc<Vec<u8>>>>>,
+    /// Live-resize hint: frames remaining in the "resizing" window, set by
+    /// `Engine::resize`, ticked once per frame. While active, shaping misses
+    /// reuse nearby widths instead of cold-shaping every 1/16px bucket.
+    resize_hint: Arc<std::sync::atomic::AtomicU8>,
 }
+
+/// Frames a resize keeps nearby-width reuse alive. Covers drag bursts
+/// (resize() refreshes on every tick); expiry returns to exact shaping.
+const RESIZE_HINT_FRAMES: u8 = 6;
+
+/// Width tolerance for nearby reuse, in 1/16px quanta (±0.5px).
+const NEARBY_TOLERANCE_QUANTA: u32 = 8;
 
 /// Tag mixed into analytic cache keys so exact-coverage slots can never
 /// collide with phase-bitmap or scaled-bitmap slots sharing the cache.
@@ -81,7 +92,29 @@ impl TextContext {
             cache: ShapedTextCache::new(),
             bitmaps: GlyphBitmapCache::with_budget(budget),
             font_blobs,
+            resize_hint: Arc::new(std::sync::atomic::AtomicU8::new(0)),
         }
+    }
+
+    /// Marks a live resize in progress (called by `Engine::resize` when the
+    /// size actually changes). Refreshes on every tick of a drag.
+    pub(crate) fn set_resize_hint(&self) {
+        self.resize_hint
+            .store(RESIZE_HINT_FRAMES, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Ages the resize hint by one frame (called once per frame).
+    pub(crate) fn tick_resize_hint(&self) {
+        let _ = self.resize_hint.fetch_update(
+            std::sync::atomic::Ordering::Relaxed,
+            std::sync::atomic::Ordering::Relaxed,
+            |v| v.checked_sub(1),
+        );
+    }
+
+    /// Whether a resize drag is considered in flight.
+    pub(crate) fn resizing(&self) -> bool {
+        self.resize_hint.load(std::sync::atomic::Ordering::Relaxed) > 0
     }
 
     /// Overrides the glyph bitmap budget on an existing context.
@@ -146,6 +179,14 @@ impl TextContext {
         if let Some(cached) = self.cache.get(&params) {
             return cached;
         }
+        // Live resize: reuse a nearby width instead of cold-shaping every
+        // 1/16px bucket the drag crosses. Not stored (cache stays exact);
+        // on release the hint expires and misses shape precisely.
+        if self.resizing() {
+            if let Some(near) = self.cache.get_nearby(&params, NEARBY_TOLERANCE_QUANTA) {
+                return near;
+            }
+        }
         let layout = Arc::new(self.engine.shape(params));
         self.cache.store(&params, Arc::clone(&layout));
         layout
@@ -172,6 +213,23 @@ impl TextContext {
                 .into_iter()
                 .map(|o| o.expect("hits fill every slot"))
                 .collect();
+        }
+        // Live resize: drain misses through nearby-width reuse first (same
+        // contract as `shape`: not stored, settles exact on release).
+        if self.resizing() {
+            misses.retain(|&i| match self.cache.get_nearby(&params[i], NEARBY_TOLERANCE_QUANTA) {
+                Some(near) => {
+                    out[i] = Some(near);
+                    false
+                }
+                None => true,
+            });
+            if misses.is_empty() {
+                return out
+                    .into_iter()
+                    .map(|o| o.expect("nearby fills every slot"))
+                    .collect();
+            }
         }
         if misses.len() < PARALLEL_SHAPE_THRESHOLD {
             for i in misses {

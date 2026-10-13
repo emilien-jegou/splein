@@ -26,6 +26,10 @@ use std::time::SystemTime;
 pub struct DevLoopConfig {
     /// Cargo package whose `cdylib` holds the UI (rebuilt by the loop).
     pub package: String,
+    /// Generative-UI example name (`AURORA_HOT_EXAMPLE`): when set, the loop
+    /// rebuilds the shared generative crate for this example and watches its
+    /// folder. `None` keeps the legacy per-example-package behavior.
+    pub example: Option<String>,
     /// Workspace root: build working directory and anchor for default paths.
     pub workspace_root: PathBuf,
     /// Sources watched for changes. Defaults to `crates/<package>/src`.
@@ -65,11 +69,19 @@ impl DevLoopConfig {
     }
 
     /// Sources watched: explicit override or the package's `src` dir.
-    /// Probes `crates/<package>/src` first, then `examples/<package>/src`
+    /// With `example` set (generative UI crate), the example's own folder —
+    /// its `view.rs`/`hot.rs` are the live sources. Otherwise probes
+    /// `crates/<package>/src` first, then `examples/<package>/src`
     /// (all hot-reloadable demos live under `examples/`; the old
     /// crates-only default watched a nonexistent dir and silently
     /// never fired).
     pub fn watch_dir(&self) -> PathBuf {
+        if let Some(example) = self.example.as_deref() {
+            let dir = self.workspace_root.join("examples").join(example);
+            if dir.exists() {
+                return dir;
+            }
+        }
         self.watch_dir.clone().unwrap_or_else(|| {
             let crates = self
                 .workspace_root
@@ -503,60 +515,11 @@ impl DevLoop {
         // Canonical set, normalized: companions plus the UI package, sorted
         // and deduplicated, so every spawn — whichever loop runs it — resolves
         // the same unit family. Never narrow this per loop.
-        let mut roots: Vec<&str> = self
-            .config
-            .companion_packages
-            .iter()
-            .map(String::as_str)
-            .chain(std::iter::once(self.config.package.as_str()))
-            .collect();
-        roots.sort();
-        roots.dedup();
-        let mut command = std::process::Command::new("cargo");
-        // Single profile everywhere (see `HOT_PROFILE`): runtime speed matters
-        // for interactive demos, and one profile keeps one unit family.
-        command
-            .arg("build")
-            .arg("--profile")
-            .arg(super::HOT_PROFILE);
-        for root in &roots {
-            command.arg("-p").arg(root);
-        }
+        let mut command = hot_build_command(&self.config);
         command
             .current_dir(&self.config.workspace_root)
             .stdout(std::process::Stdio::null())
             .stderr(log_file);
-        // NOTE: do not set CARGO_INCREMENTAL (or any other flag) here. Toggling
-        // incremental state across builds of the same tree poisons dylib relinks
-        // ("only shows up once"): the flag does not version the unit graph, so
-        // mixed-state artifacts cross-contaminate. Loop builds inherit the
-        // environment, exactly like hand builds — keep them consistent.
-        //
-        // `-C prefer-dynamic` is unconditional: it must match the hand builds
-        // (`example.sh` builds every hot-loop crate with it). Only the
-        // `--sysroot` pin is conditional — split toolchains (Nix) expose the
-        // same sysroot crates twice when pinned, so it is skipped there.
-        // Bundling both behind one `if let` dropped `prefer-dynamic` on exactly
-        // those machines, rebuilding the UI statically against a dynamic
-        // shared image ("only shows up once" for gimli/object/memchr/...).
-        let mut rustflags = std::env::var("RUSTFLAGS").unwrap_or_default();
-        if !rustflags.is_empty() {
-            rustflags.push(' ');
-        }
-        rustflags.push_str("-C prefer-dynamic");
-        match rustc_sysroot() {
-            Some(sysroot) => {
-                rustflags.push_str(" --sysroot ");
-                rustflags.push_str(&sysroot.to_string_lossy());
-            }
-            None => {
-                tracing::info!(
-                    "aurora: hot-reload building without a --sysroot pin ({})",
-                    sysroot_skip_reason()
-                );
-            }
-        }
-        command.env("RUSTFLAGS", rustflags);
         match command.spawn() {
             Ok(child) => {
                 tracing::info!(
@@ -571,7 +534,93 @@ impl DevLoop {
             }
         }
     }
+}
 
+/// The one canonical hot-loop build command: `cargo build` over the shared
+/// image plus the UI package in a single unit graph (see the load-bearing note
+/// on `DevLoopConfig::companion_packages`). Script hand-builds, loop-spawned
+/// rebuilds, and the host's blocking boot build ALL go through here, so the
+/// shared image and its consumer can never resolve rival unit families.
+///
+/// Single profile everywhere (`HOT_PROFILE`): runtime speed for interactive
+/// demos, one unit family for dylib links. `-C prefer-dynamic` unconditional
+/// (matches the hand builds); `--sysroot` pin conditional (split toolchains
+/// expose every sysroot crate twice when pinned). No other per-build flags,
+/// ever — and never set `CARGO_INCREMENTAL`: toggling incremental state
+/// across builds of the same tree poisons dylib relinks ("only shows up
+/// once"), because the flag does not version the unit graph.
+fn hot_build_command(config: &DevLoopConfig) -> std::process::Command {
+    let mut roots: Vec<&str> = config
+        .companion_packages
+        .iter()
+        .map(String::as_str)
+        .chain(std::iter::once(config.package.as_str()))
+        .collect();
+    roots.sort();
+    roots.dedup();
+    let mut command = std::process::Command::new("cargo");
+    command
+        .arg("build")
+        .arg("--profile")
+        .arg(super::HOT_PROFILE);
+    for root in &roots {
+        command.arg("-p").arg(root);
+    }
+    let mut rustflags = std::env::var("RUSTFLAGS").unwrap_or_default();
+    if !rustflags.is_empty() {
+        rustflags.push(' ');
+    }
+    rustflags.push_str("-C prefer-dynamic");
+    match rustc_sysroot() {
+        Some(sysroot) => {
+            rustflags.push_str(" --sysroot ");
+            rustflags.push_str(&sysroot.to_string_lossy());
+        }
+        None => {
+            tracing::info!(
+                "aurora: hot-reload building without a --sysroot pin ({})",
+                sysroot_skip_reason()
+            );
+        }
+    }
+    command.env("RUSTFLAGS", rustflags);
+    // Generative UI crate: the example selects which `view.rs`/`hot.rs`
+    // the build script mounts. Forwarded explicitly (not merely inherited)
+    // so every build agrees even when the parent process env differs.
+    if let Some(example) = config.example.as_deref() {
+        command.env("AURORA_HOT_EXAMPLE", example);
+    }
+    command
+}
+
+/// Runs the canonical hot-loop build to completion in the calling process:
+/// the host's boot path builds the first UI image *before* creating the
+/// window, so the window opens once at its declared size instead of popping
+/// from a boot default. Returns the stderr tail on failure for a loud exit.
+pub fn blocking_hot_build(
+    config: &DevLoopConfig,
+    log_path: &std::path::Path,
+) -> Result<(), Vec<String>> {
+    let log_file = std::fs::File::create(log_path).map_err(|e| {
+        vec![format!(
+            "aurora: hot-reload cannot log boot build ({}): {e}",
+            log_path.display()
+        )]
+    })?;
+    let status = hot_build_command(config)
+        .current_dir(&config.workspace_root)
+        .stdout(std::process::Stdio::null())
+        .stderr(log_file)
+        .status()
+        .map_err(|e| vec![format!("aurora: hot-reload could not spawn boot build: {e}")])?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(read_tail(log_path, 20))
+    }
+}
+
+impl DevLoop {
     /// Polls the background build, refreshing the library on success.
     fn poll_build(&mut self) -> PollOutcome {
         let done = match self.build_child.as_mut() {
@@ -816,6 +865,7 @@ mod tests {
         std::fs::create_dir_all(&src).expect("temp workspace");
         std::fs::write(src.join("lib.rs"), "").expect("seed source");
         let mut dev = DevLoop::new(DevLoopConfig {
+        example: None,
             package: "pkg".to_string(),
             workspace_root: root.clone(),
             watch_dir: None,
@@ -890,6 +940,7 @@ mod tests {
             .join("..")
             .join("..");
         let mut dev = DevLoop::new(DevLoopConfig {
+        example: None,
             package: "aurora-hot-nonexistent-xyz".to_string(),
             workspace_root: root,
             watch_dir: None,
@@ -940,6 +991,7 @@ mod tests {
         std::fs::write(&manifest, "[package]\nname = \"pkg\"\n").expect("seed manifest");
 
         let mut dev = DevLoop::new(DevLoopConfig {
+        example: None,
             package: "pkg".to_string(),
             workspace_root: root.clone(),
             watch_dir: None,

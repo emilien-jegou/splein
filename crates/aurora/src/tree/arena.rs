@@ -56,6 +56,7 @@ pub struct TreeArena {
     /// removed mid-commit are skipped by validity checks downstream.
     pub dirty_outbox: SmallVec<[(NodeId, DirtyFlags); 8]>,
     /// Frame stamp for `LayoutNode::abs_tx` caching [STAGE1 #15].
+    /// See `bump_tx_frame` for the invalidation discipline.
     pub tx_frame: u64,
 }
 
@@ -70,13 +71,6 @@ impl TreeArena {
             dirty_outbox: SmallVec::new(),
             tx_frame: 1,
         }
-    }
-
-    /// Advances the absolute-transform cache epoch; call once per frame
-    /// before layout so stale `abs_tx` entries miss. Wrapping is harmless:
-    /// on wrap every entry misses exactly once.
-    pub fn bump_tx_frame(&mut self) {
-        self.tx_frame = self.tx_frame.wrapping_add(1).max(1);
     }
 
     /// Inserts a layout node and returns its generational identifier.
@@ -207,24 +201,26 @@ impl TreeArena {
     }
 
     /// Marks a node dirty and propagates invalidation up to containing layout boundaries.
+    ///
+    /// Epoch discipline (not walks): every mark bumps `tx_frame`, invalidating
+    /// all cached absolute transforms in O(1). A per-mark subtree walk would
+    /// cost O(K) plus an allocator hit on the hottest path in the engine
+    /// (animated text marks per leaf per frame); the memo re-fills during the
+    /// damage/compile passes that follow, where queries cluster and nothing
+    /// mutates geometry anymore. Paint-only marks bump too — one increment
+    /// is cheaper than proving paint didn't move anything, and a stale cache
+    /// is never worth the case analysis.
     pub fn mark_dirty(&mut self, node_id: NodeId, flags: DirtyFlags) {
-        // Geometry may move: drop this node's cached absolute transform so the
-        // next query re-walks (ancestors stay cached — they didn't move).
-        // Descendants cache their *own* full chain, so they must go too.
-        let mut stack = vec![node_id];
-        while let Some(cur) = stack.pop() {
-            if !self.is_valid(cur) {
-                continue;
-            }
-            self.slots[cur.index as usize].node.abs_tx_frame = 0;
-            // Sibling-chain walk (no allocation): extend the explicit stack.
-            let mut child = self.slots[cur.index as usize].first_child;
-            while let Some(c) = child {
-                child = self.slots[c.index as usize].next_sibling;
-                stack.push(c);
-            }
-        }
+        self.bump_tx_frame();
         mark_node_dirty(self, node_id, flags);
+    }
+
+    /// Advances the absolute-transform cache epoch, invalidating every cached
+    /// entry at once. Call after any geometry mutation (marks, placements,
+    /// reparenting): O(1), always safe, occasionally conservative. Never
+    /// worse than no cache — queries simply re-walk once per chain per epoch.
+    pub fn bump_tx_frame(&mut self) {
+        self.tx_frame = self.tx_frame.wrapping_add(1).max(1);
     }
 
     /// Records a node's reconciliation key and indexes it for stable lookup.
@@ -308,6 +304,8 @@ impl TreeArena {
         // Structure changed: ancestors' static proofs (which quantify over
         // children) are void. The children's own proofs stay valid.
         self.invalidate_static_up(parent);
+        // Reparenting rewrites absolute chains below: bump the epoch (O(1)).
+        self.bump_tx_frame();
     }
 
     /// Iterates immediate child node IDs in document order (no allocation).

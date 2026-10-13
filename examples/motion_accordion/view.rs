@@ -4,6 +4,13 @@ use aurora::prelude::*;
 
 use super::motion_ui::*;
 
+/// Window chrome shared by the release driver (`main.rs`) and the hot entry
+/// (`hot.rs`): declared once here, referenced by both — never mirrored.
+pub const HOT_TITLE: &str = "Aurora — Web 02 · Accordion";
+pub const HOT_WIDTH: u32 = 800;
+pub const HOT_HEIGHT: u32 = 760;
+pub const HOT_BG: u32 = PAGE;
+
 /// Height of an item's header row.
 pub const HEADER: f32 = 56.0;
 /// Line height of the revealed copy, matching the size set on it below.

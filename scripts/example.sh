@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# Generic example hot-reload loop (for-development): builds the launcher pieces,
+# then runs the component host against the generative UI crate built for the
+# example (`aurora-hot-gen-ui` with `AURORA_HOT_EXAMPLE=<name>`).
+# Edit `examples/<name>/view.rs` while it runs; the window rebuilds live.
+#
+# Usage: ./example.sh <name> [engine]  (e.g. ./example.sh motion_press wgpu; default: demo1)
+# Engines: tiny-skia (default), vello, vello-cpu, wgpu
+# Release (no hot-reload, statically linked):
+#   cargo run -p aurora-examples --example <name> --release
+# Hot-reloadable names (tree-only views):
+#   demo1 demo2 demo3 motion_accordion motion_playback
+#   motion_imperative motion_interruption motion_layout_split motion_press
+#   motion_reorder motion_signals motion_transitions motion_validate
+#   selectable_text shadow_lab scroll_demo text_demo text_smooth view_demo wrap_repro
+# Release-only (App-extension drivers the tree loop cannot host — extensions,
+# switcher menus, winit plumbing, headless engines):
+#   gallery moving showcase shadow_studio selection_showcase studio render_bench hot_demo
+set -euox pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$ROOT"
+
+NAME="${1:-demo1}"
+ENGINE="${2:-}"
+
+case "$NAME" in
+    gallery|moving|showcase|shadow_studio|selection_showcase|studio|render_bench|hot_demo)
+        echo "example.sh: '$NAME' is release-only (App-extension driver, not a hot-reloadable tree)." >&2
+        echo "example.sh: run: cargo run -p aurora-examples --example $NAME" >&2
+        exit 2 ;;
+    */*|*.*)
+        echo "example.sh: invalid example name '$NAME'." >&2
+        exit 2 ;;
+    *)
+        if [ ! -d "examples/$NAME" ]; then
+            echo "example.sh: unknown example '$NAME'." >&2
+            echo "example.sh: usage: ./example.sh <name>; release: cargo run -p aurora-examples --example <name>" >&2
+            exit 2
+        fi ;;
+esac
+
+# Build order (documented — do not reorder, do not merge):
+#   1. `aurora-cli` alone: static launcher binary. Built separately because
+#      its clap-derive proc-macro closure spawns rival unit variants that break
+#      the dylib links below when co-built (proven by same-hour with/without
+#      trials). Static links are immune, so it builds in isolation.
+#   2. Grouped `aurora-shared` + generative `aurora-hot-gen-ui` +
+#      `aurora-devkit-bin` (host): the dylib set resolves within a single unit
+#      graph. `AURORA_HOT_EXAMPLE` selects which example the generative crate
+#      mounts; the loop itself rebuilds shared + UI with the same shape (see
+#      DevLoopConfig::companion_packages).
+#   NOTE: `aurora-hot-ui` is deliberately NOT built here — it serves only
+#   `hot_demo`, `aurora selftest`, and the e2e harnesses, never the example loop.
+# Everything is `--release`: runtime speed matters for interactive demos, and a
+# single profile everywhere keeps one unit family (the loop spawns release too).
+cargo build --release -p aurora-cli
+RUSTFLAGS="-C prefer-dynamic" cargo build --release -p aurora-shared
+AURORA_HOT_EXAMPLE="$NAME" RUSTFLAGS="-C prefer-dynamic" cargo build --release -p aurora-hot-gen-ui -p aurora-devkit-bin
+
+if [ -n "$ENGINE" ]; then
+    exec ./target/release/aurora hot --example "$NAME" --root "$ROOT" \
+        --engine "$ENGINE"
+else
+    exec ./target/release/aurora hot --example "$NAME" --root "$ROOT"
+fi

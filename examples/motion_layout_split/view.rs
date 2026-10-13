@@ -3,6 +3,13 @@
 use super::motion_ui::*;
 use aurora::prelude::*;
 
+/// Window chrome shared by the release driver (`main.rs`) and the hot entry
+/// (`hot.rs`): declared once here, referenced by both — never mirrored.
+pub const HOT_TITLE: &str = "Aurora — Motion 01 · Layout vs compositor transform";
+pub const HOT_WIDTH: u32 = 760;
+pub const HOT_HEIGHT: u32 = 440;
+pub const HOT_BG: u32 = PAGE;
+
 /// Radians per second of the sweep, matching what the page copy claims.
 const SWEEP_HZ: f32 = 1.4;
 /// Peak travel in logical pixels.

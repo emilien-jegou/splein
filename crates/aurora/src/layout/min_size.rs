@@ -86,10 +86,9 @@ fn min_group_size(
     };
 
     // Out-of-flow children do not participate in intrinsic sizing, exactly as in CSS.
+    // Borrowed iteration: no child-list copy for the filter scan.
     let flow: SmallVec<[NodeId; 8]> = arena
-        .children(id)
-        .iter()
-        .copied()
+        .each_child(id)
         .filter(|child| {
             !arena.get(*child).style.is_absolute
                 && arena.get(*child).state.core.presence.occupies_space()

@@ -3,6 +3,13 @@
 use super::motion_ui::*;
 use aurora::prelude::*;
 
+/// Window chrome shared by the release driver (`main.rs`) and the hot entry
+/// (`hot.rs`): declared once here, referenced by both — never mirrored.
+pub const HOT_TITLE: &str = "Aurora — Motion 03 · Reactive targets";
+pub const HOT_WIDTH: u32 = 820;
+pub const HOT_HEIGHT: u32 = 460;
+pub const HOT_BG: u32 = PAGE;
+
 const STEP_SECS: f32 = 1.7;
 const TRAVEL: f32 = 180.0;
 /// Two views, one boolean, five independent streams.

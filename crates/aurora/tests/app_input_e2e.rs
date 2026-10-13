@@ -61,8 +61,8 @@ fn clicking_an_accordion_header_in_a_real_window_switches_the_open_panel() {
     let mut h = Harness::from_runtime(
         Rc::clone(&rt),
         Cx::new(Rc::clone(&rt)).enter(|| accordion::Page(open.clone())),
-        accordion::WIDTH,
-        accordion::HEIGHT,
+        accordion::view::HOT_WIDTH,
+        accordion::view::HOT_HEIGHT,
     );
     h.steps(10);
     let mut bridge = PointerBridge::new();
@@ -92,8 +92,8 @@ fn clicking_a_second_accordion_header_moves_the_open_panel() {
     let mut h = Harness::from_runtime(
         Rc::clone(&rt),
         Cx::new(Rc::clone(&rt)).enter(|| accordion::Page(open.clone())),
-        accordion::WIDTH,
-        accordion::HEIGHT,
+        accordion::view::HOT_WIDTH,
+        accordion::view::HOT_HEIGHT,
     );
     h.steps(10);
     let mut bridge = PointerBridge::new();
@@ -116,8 +116,8 @@ fn a_press_and_hold_on_the_demo_button_squeezes_it() {
     let mut h = Harness::from_runtime(
         Rc::clone(&rt),
         Cx::new(Rc::clone(&rt)).enter(press::Page),
-        press::WIDTH,
-        press::HEIGHT,
+        press::HOT_WIDTH,
+        press::HOT_HEIGHT,
     );
     h.steps(10);
     let mut bridge = PointerBridge::new();
@@ -153,8 +153,8 @@ fn dragging_a_reorder_row_by_pointer_reorders_the_list() {
     let mut h = Harness::from_runtime(
         Rc::clone(&rt),
         Cx::new(Rc::clone(&rt)).enter(reorder::Page),
-        reorder::WIDTH,
-        reorder::HEIGHT,
+        reorder::HOT_WIDTH,
+        reorder::HOT_HEIGHT,
     );
     assert!(h.settle(900), "the list must settle before it is aimed at");
 
@@ -212,8 +212,8 @@ fn leaving_the_window_mid_drag_does_not_pin_the_row_to_the_pointer() {
     let mut h = Harness::from_runtime(
         Rc::clone(&rt),
         Cx::new(Rc::clone(&rt)).enter(reorder::Page),
-        reorder::WIDTH,
-        reorder::HEIGHT,
+        reorder::HOT_WIDTH,
+        reorder::HOT_HEIGHT,
     );
     assert!(h.settle(900));
 

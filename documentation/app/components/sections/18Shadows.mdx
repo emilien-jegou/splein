@@ -1,0 +1,26 @@
+import SectionShell from "../layout/SectionShell"
+import ShadowsDemo from "../demos/ShadowsDemo"
+
+export const code = `// Web-like: offset_x, offset_y, blur, spread, color
+Shadow::web_like(3.0, 6.0, 6.0, 0.0,
+    Color::rgba(0.0, 0.0, 0.0, 0.35))
+
+// Layered: stacked drop shadows
+Shadow::layered(Color::rgba(122.0/255.0, 61.0/255.0, 143.0/255.0, 0.15))
+    .drop(8.0, 16.0, 16.0)
+    .drops(&[(0.5,1.0,1.0), (1.0,2.0,2.0), (2.0,4.0,4.0)])
+
+// Physical elevation
+Shadow::elevation(12.0)
+    .spread(spread)
+    .color(tinted)
+    .falloff(FalloffCurve::EaseOut)`
+
+<SectionShell
+      number="18"
+      title="Shadows"
+      description="Shadow::web_like for CSS parity, Shadow::layered for stacked drops, Shadow::elevation for physical lighting."
+  code={code}
+>
+  <ShadowsDemo />
+</SectionShell>

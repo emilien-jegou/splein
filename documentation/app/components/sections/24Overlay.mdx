@@ -1,0 +1,28 @@
+import SectionShell from "../layout/SectionShell"
+import OverlayDemo from "../demos/OverlayDemo"
+
+export const code = `view! {
+    <Group
+        width={LOGO_W}
+        height={LOGO_H}
+        overlay={true}
+        z_index={100}
+        anchor={Anchor::TopLeft}
+        fill={color_sig}
+        transform={move || {
+            let (x, y) = pos.get();
+            Transform::from_translation(x, y)
+        }}
+    >
+        {svg(logo_graphic)}
+    </Group>
+}`
+
+<SectionShell
+      number="24"
+      title="Overlay & Z-Index"
+      description="Overlay positioning with overlay={true} and z_index for stacking. Elements paint above normal flow."
+  code={code}
+>
+  <OverlayDemo />
+</SectionShell>

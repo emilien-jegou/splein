@@ -13,6 +13,13 @@
 
 use aurora::prelude::*;
 
+/// Window chrome shared by the release driver (`main.rs`) and the hot entry
+/// (`hot.rs`): declared once here, referenced by both — never mirrored.
+pub const HOT_TITLE: &str = "Aurora — Shadow Lab";
+pub const HOT_WIDTH: u32 = 1280;
+pub const HOT_HEIGHT: u32 = 640;
+pub const HOT_BG: u32 = PANEL_BG;
+
 pub(crate) const PANEL_BG: u32 = 0xF1CFFC;
 const LABEL_COLOR: u32 = 0x483050;
 

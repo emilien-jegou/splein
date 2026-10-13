@@ -1,0 +1,29 @@
+import SectionShell from "../layout/SectionShell"
+import SelectableTextDemo from "../demos/SelectableTextDemo"
+
+export const code = `view! {
+    <Group
+        direction="vertical"
+        width="fill"
+        fill={Color::WHITE}
+        alignment="center"
+        distribution="center"
+    >
+        <Text
+            selectable={true}
+            size={17.0}
+            line_height={26.0}
+            color={Color::BLACK}
+            width={Size::fixed(520.0)}
+        >{LOREM}</Text>
+    </Group>
+}`
+
+<SectionShell
+      number="22"
+      title="Selectable Text"
+      description="Native text selection with selectable={true}. Press-drag highlights, double-click selects word, triple-click selects paragraph."
+  code={code}
+>
+  <SelectableTextDemo />
+</SectionShell>

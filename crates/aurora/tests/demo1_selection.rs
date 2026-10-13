@@ -78,8 +78,8 @@ fn mount() -> (Harness, PointerBridge) {
     let h = Harness::from_runtime(
         Rc::clone(&rt),
         Cx::new(Rc::clone(&rt)).enter(demo1::build_ui),
-        demo1::WIDTH,
-        demo1::HEIGHT,
+        demo1::HOT_WIDTH,
+        demo1::HOT_HEIGHT,
     );
     (h, PointerBridge::new())
 }
@@ -167,7 +167,7 @@ fn hidpi_startup_size_keeps_physical_input_on_target() {
     let (mut h, mut bridge) = mount();
     h.steps(10);
     // Simulate the fixed startup: engine takes the window's physical size.
-    h.engine().resize(demo1::WIDTH * 2, demo1::HEIGHT * 2);
+    h.engine().resize(demo1::HOT_WIDTH * 2, demo1::HOT_HEIGHT * 2);
     h.steps(10);
     let r = hello_rect(&mut h);
     let at = Point::new(r.x + 4.0, r.y + r.height * 0.5);

@@ -1,0 +1,26 @@
+import SectionShell from "../layout/SectionShell"
+import ElementRefDemo from "../demos/ElementRefDemo"
+
+export const code = `let row_ref = use_ref();
+
+view! {
+    <Group
+        ref={row_ref}
+        direction="horizontal"
+        width="fill"
+    >
+        <Text size={14.0}>{label}</Text>
+    </Group>
+}
+
+// Read child boxes
+let slots: Vec<ResolvedRect> = list.child_rects().to_vec();`
+
+<SectionShell
+      number="32"
+      title="Element Ref"
+      description="use_ref and ElementRef for reading layout geometry. child_rects() measures all children for gesture targeting."
+  code={code}
+>
+  <ElementRefDemo />
+</SectionShell>

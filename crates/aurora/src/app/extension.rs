@@ -33,6 +33,11 @@ pub trait AppExtension {
     fn on_update(&mut self, _engine: &mut Engine) -> bool {
         false
     }
+    /// Observes the live window each frame with engine access. The hot-reload
+    /// host uses this to dress a hidden boot window (title/size/visibility)
+    /// once the first UI library loads; window-less embedders never call it.
+    #[cfg(feature = "desktop")]
+    fn on_window(&mut self, _window: &winit::window::Window, _engine: &mut Engine) {}
 
     /// Observes telemetry snapshot for an executed frame.
     fn on_frame(&mut self, _diagnostics: &FrameDiagnostics) {}

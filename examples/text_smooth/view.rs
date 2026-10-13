@@ -11,6 +11,13 @@
 use super::motion_ui::*;
 use aurora::prelude::*;
 
+/// Window chrome shared by the release driver (`main.rs`) and the hot entry
+/// (`hot.rs`): declared once here, referenced by both — never mirrored.
+pub const HOT_TITLE: &str = "Aurora — Text smooth drift repro";
+pub const HOT_WIDTH: u32 = 800;
+pub const HOT_HEIGHT: u32 = 620;
+pub const HOT_BG: u32 = PAGE;
+
 /// Travel in px per axis.
 const TRAVEL: f32 = 120.0;
 /// Three slow runs: horizontal, vertical, diagonal.

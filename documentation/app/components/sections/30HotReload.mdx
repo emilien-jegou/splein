@@ -1,0 +1,33 @@
+import SectionShell from "../layout/SectionShell"
+import HotReloadDemo from "../demos/HotReloadDemo"
+
+export const code = `// In examples/<name>/view.rs (single source for window chrome)
+pub const HOT_TITLE: &str = "<name>";
+pub const HOT_WIDTH: u32 = 800;
+pub const HOT_HEIGHT: u32 = 600;
+pub const HOT_BG: u32 = 0xF4F5F7;
+
+// In examples/<name>/hot.rs (one entry block, four symbols)
+aurora::define_hot_ui! {
+    root: view::Page,
+    title: view::HOT_TITLE,
+    size: (view::HOT_WIDTH, view::HOT_HEIGHT),
+    background: view::HOT_BG,
+};
+
+// In your main app
+let config = DevLoopConfig {
+    // package, example, watch paths, reload strategy
+};
+let reloader = RemoteReloadExtension::new(config);
+
+cli.extension(reloader).run(move || build_ui())`
+
+<SectionShell
+      number="30"
+      title="Hot Reload"
+      description="RemoteReloadExtension and define_hot_ui! for live editing. Rebuild the UI cdylib without restarting the app."
+  code={code}
+>
+  <HotReloadDemo />
+</SectionShell>

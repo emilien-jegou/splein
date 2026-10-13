@@ -1,0 +1,30 @@
+import SectionShell from "../layout/SectionShell"
+import TransformDemo from "../demos/TransformDemo"
+
+export const code = `view! {
+    <Group
+        width={280.0}
+        height="fill"
+        x={travel}
+        transform={move || {
+            Transform::from_translation(x, y)
+        }}
+    >
+        <Text size={17.0} color={Color::WHITE}>"card"</Text>
+    </Group>
+}
+
+// Rotation
+Transform::from_rotation_degrees(angle)
+
+// Combined
+Transform::from_translation(v * 380.0, (v * 6.28).sin() * 9.0)`
+
+<SectionShell
+      number="11"
+      title="Transform"
+      description="Compositor transforms: translation, rotation, scale. Runs per-frame without dirtying layout."
+  code={code}
+>
+  <TransformDemo />
+</SectionShell>

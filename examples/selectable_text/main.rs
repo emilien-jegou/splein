@@ -9,17 +9,14 @@ use aurora::prelude::*;
 use common::ExampleCli;
 pub use view::*;
 
-const WIDTH: u32 = 640;
-const HEIGHT: u32 = 360;
-
 fn main() {
-    let cli = ExampleCli::parse(WIDTH, HEIGHT);
+    let cli = ExampleCli::parse(view::HOT_WIDTH, view::HOT_HEIGHT);
     cli.init_telemetry();
-    cli.app_config_multi("Aurora — Selectable Text")
+    cli.app_config_multi(view::HOT_TITLE)
         .font(
             "Inter",
             include_bytes!("../../crates/aurora/assets/inter-var.ttf"),
         )
-        .background(Color::WHITE)
+        .background(view::HOT_BG)
         .run(view::build_ui);
 }

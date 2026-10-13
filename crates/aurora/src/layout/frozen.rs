@@ -195,7 +195,12 @@ impl FrozenLayout {
         for e in &self.entries {
             table.insert(e.path.as_str(), e);
         }
-        Self::apply_sub(arena, root, root_seg, Point::ZERO, &table)
+        let n = Self::apply_sub(arena, root, root_seg, Point::ZERO, &table);
+        if n > 0 {
+            // Replayed boxes rewrite geometry outside the mark path.
+            arena.bump_tx_frame();
+        }
+        n
     }
 
     /// Replays one subtree; 0 on any mismatch (caller falls back to layout).

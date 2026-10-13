@@ -1,0 +1,39 @@
+import SectionShell from "../layout/SectionShell"
+import DragReorderDemo from "../demos/DragReorderDemo"
+
+export const code = `let flip_sig = use_flip(
+    row_ref.clone(),
+    drag.revision.map(Trigger::from),
+    SETTLE,
+);
+
+view! {
+    <Group
+        transform={displayed}
+        z_index={elevation}
+        on:pointer-down={move |event| {
+            drag.held.set(Some(label.clone()));
+        }}
+        on:drag-step={move |info| {
+            drag.want_centre.set(Some(centre));
+            if let Some(to) = drag.target_slot(centre) {
+                drag.move_row(from, to);
+            }
+        }}
+        on:drag-end={move |info| {
+            follow_handle.resolve_now();
+            settle.set(displayed.get());
+        }}
+    >
+        <Text size={14.0} color={Color::WHITE}>{label}</Text>
+    </Group>
+}`
+
+<SectionShell
+      number="16"
+      title="Drag to Reorder"
+      description="FLIP-animated drag-to-reorder with use_flip, use_follow, on:drag-start/step/end, and keyed reconciliation."
+  code={code}
+>
+  <DragReorderDemo />
+</SectionShell>

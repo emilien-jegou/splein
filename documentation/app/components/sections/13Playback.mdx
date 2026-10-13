@@ -1,0 +1,28 @@
+import SectionShell from "../layout/SectionShell"
+import PlaybackDemo from "../demos/PlaybackDemo"
+
+export const code = `let (slide, control) = use_playback(
+    Transition::ease(SLIDE_SECS, Ease::InOutCubic)
+        .repeat(Repeat::PingPong),
+    0.0,
+    TRAVEL_PX,
+);
+
+view! {
+    <Group
+        x={slide}
+        on:pointer-enter={move |_| control.pause()}
+        on:pointer-leave={move |_| control.resume()}
+    >
+        <Text size={15.0} color={Color::WHITE}>"pause on hover"</Text>
+    </Group>
+}`
+
+<SectionShell
+      number="13"
+      title="Playback"
+      description="Self-driving animation with use_playback. Supports pause, resume, restart via ControllerHandle."
+  code={code}
+>
+  <PlaybackDemo />
+</SectionShell>

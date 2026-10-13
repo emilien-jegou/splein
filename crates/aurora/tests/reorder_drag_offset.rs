@@ -33,8 +33,8 @@ fn mount() -> Harness {
     let mut h = Harness::from_runtime(
         Rc::clone(&rt),
         Cx::new(Rc::clone(&rt)).enter(reorder::Page),
-        reorder::WIDTH,
-        reorder::HEIGHT,
+        reorder::HOT_WIDTH,
+        reorder::HOT_HEIGHT,
     )
     .with_background(Color::hex(0xF4F5F7));
     assert!(h.settle(900), "the list must settle before it is aimed at");
@@ -286,7 +286,7 @@ fn pitch(h: &aurora_tiny_skia::testing::Harness) -> f32 {
 fn a_drag_tracks_the_pointer_after_the_window_is_resized() {
     for height in [900u32, 560, 760] {
         let mut h = mount();
-        h.engine().resize(reorder::WIDTH, height);
+        h.engine().resize(reorder::HOT_WIDTH, height);
         h.step();
         h.step();
         h.step();

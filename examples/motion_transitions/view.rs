@@ -3,6 +3,13 @@
 use super::motion_ui::*;
 use aurora::prelude::*;
 
+/// Window chrome shared by the release driver (`main.rs`) and the hot entry
+/// (`hot.rs`): declared once here, referenced by both — never mirrored.
+pub const HOT_TITLE: &str = "Aurora — Motion 02 · Signal transitions";
+pub const HOT_WIDTH: u32 = 820;
+pub const HOT_HEIGHT: u32 = 460;
+pub const HOT_BG: u32 = PAGE;
+
 const TOGGLE_SECS: f32 = 1.4;
 /// One signal driving four independent streams, two of them on different curves.
 #[component]

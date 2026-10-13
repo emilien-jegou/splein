@@ -2,6 +2,13 @@
 
 use aurora::prelude::*;
 
+/// Window chrome shared by the release driver (`main.rs`) and the hot entry
+/// (`hot.rs`): declared once here, referenced by both — never mirrored.
+pub const HOT_TITLE: &str = "Aurora — Text Layout";
+pub const HOT_WIDTH: u32 = 760;
+pub const HOT_HEIGHT: u32 = 980;
+pub const HOT_BG: u32 = 0x0B1020;
+
 const WRAP: &str = "Aurora wraps this paragraph to the box width and measures the result once, so the box grows to fit every line. Line height is relative to the font size, keeping the typographic rhythm consistent as the type scales.";
 
 const JUSTIFY: &str = "Justification stretches the gaps between words so every line but the last one reaches the edge of the box, producing an even, magazine-style paragraph block instead of a ragged right margin.";

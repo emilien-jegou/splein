@@ -60,7 +60,7 @@ fn drawn_area(h: &mut Harness) -> usize {
 #[test]
 #[ntest::timeout(5_000)]
 fn imperative_moves_panel_and_badge_on_their_own_curves() {
-    let mut h = Harness::page(imperative::Page, imperative::WIDTH, imperative::HEIGHT)
+    let mut h = Harness::page(imperative::Page, imperative::HOT_WIDTH, imperative::HOT_HEIGHT)
         .with_background(Color::hex(0xF4F5F7));
     let panel_before = h.transform("panel");
     let badge_before = h.transform("badge");
@@ -105,7 +105,7 @@ fn row_index(h: &mut Harness, label: &str) -> usize {
 }
 
 fn reorder_ready() -> Harness {
-    let mut h = Harness::page(reorder::Page, reorder::WIDTH, reorder::HEIGHT)
+    let mut h = Harness::page(reorder::Page, reorder::HOT_WIDTH, reorder::HOT_HEIGHT)
         .with_background(Color::hex(0xF4F5F7));
     assert!(
         h.settle(900),

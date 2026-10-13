@@ -1,0 +1,27 @@
+import SectionShell from "../layout/SectionShell"
+import OpacityDemo from "../demos/OpacityDemo"
+
+export const code = `let opacity = Transition::from_str("out-cubic 180ms")
+    .on(is_open.map(move |open| {
+        if open { 1.0 } else { 0.0 }
+    }));
+
+view! {
+    <Group
+        direction="vertical"
+        width="fill"
+        height="fill"
+        opacity={opacity}
+    >
+        <Text size={13.0} color={BODY}>{copy}</Text>
+    </Group>
+}`
+
+<SectionShell
+      number="12"
+      title="Opacity"
+      description="Compositor opacity override. Animates without re-running layout — paint-only invalidation."
+  code={code}
+>
+  <OpacityDemo />
+</SectionShell>

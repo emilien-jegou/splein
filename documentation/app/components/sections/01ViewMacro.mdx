@@ -1,0 +1,33 @@
+import SectionShell from "../layout/SectionShell"
+import ViewMacroDemo from "../demos/ViewMacroDemo"
+
+export const code = `use aurora::prelude::*;
+
+#[component]
+pub fn CounterButton() -> impl IntoElement {
+    let count = use_signal(0);
+    let label = count.map(|c| format!("Count: {c}"));
+
+    view! {
+        <Group
+            direction="horizontal"
+            radius={4.0}
+            padding={12.0}
+            fill="#2563eb"
+            on:click={|_| count.update(|c| *c += 1)}
+        >
+            <Text size={14.0} weight={600u16} color={Color::WHITE}>
+                {label}
+            </Text>
+        </Group>
+    }
+}`
+
+<SectionShell
+      number="01"
+      title="view! Macro"
+      description="The fundamental building block of every Aurora component. Declarative RSX syntax with typed props."
+  code={code}
+>
+  <ViewMacroDemo />
+</SectionShell>

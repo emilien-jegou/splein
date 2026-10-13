@@ -14,10 +14,13 @@ pub fn clean_orphaned_children(
     router: &mut SubscriberRouter,
     id: NodeId,
 ) {
-    if arena.children(id).is_empty() {
+    // Borrowed emptiness check + single owned copy: the old code built (and
+    // for wide parents allocated) the child list twice — once to test empty,
+    // once to iterate.
+    if arena.each_child(id).next().is_none() {
         return;
     }
-    let old_children = arena.children(id).to_vec();
+    let old_children = arena.children(id);
     for child in old_children {
         purge_node(runtime, arena, router, child);
     }

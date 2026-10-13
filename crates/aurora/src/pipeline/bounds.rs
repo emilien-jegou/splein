@@ -61,9 +61,13 @@ fn commit_node_painted_bounds(
     node.state.paint.last_painted_bounds = Some(visual_bounds);
     node.state.paint.last_painted_flow = Some(flow_bounds);
 
-    let child_count = arena.children(id).len();
+    // Hoisted single copy: indexing `arena.children(id)[i]` per child would
+    // rebuild (and for wide parents reallocate) the whole child list N+1
+    // times. The local owns the ids; recursion borrows arena afresh.
+    let kids = arena.children(id);
+    let child_count = kids.len();
     for i in 0..child_count {
-        let child = arena.children(id)[i];
+        let child = kids[i];
         commit_node_painted_bounds(arena, child, tx, next_clip);
     }
 }

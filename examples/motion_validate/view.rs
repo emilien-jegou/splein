@@ -3,6 +3,13 @@
 use super::motion_ui::*;
 use aurora::prelude::*;
 
+/// Window chrome shared by the release driver (`main.rs`) and the hot entry
+/// (`hot.rs`): declared once here, referenced by both — never mirrored.
+pub const HOT_TITLE: &str = "Aurora — Web 03 · Growing action";
+pub const HOT_WIDTH: u32 = 780;
+pub const HOT_HEIGHT: u32 = 460;
+pub const HOT_BG: u32 = PAGE;
+
 /// Collapsed and expanded widths of the action button.
 const COLLAPSED: f32 = 52.0;
 const EXPANDED: f32 = 196.0;

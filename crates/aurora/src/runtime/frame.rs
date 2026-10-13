@@ -102,6 +102,11 @@ pub fn run_frame_passes(
 
     let t1 = std::time::Instant::now();
     let removed = scheduler.arena.drain_removed_damage();
+    // Epoch bump before damage: layout placements and post-layout paint
+    // drains may have moved geometry without invalidating per-node, so every
+    // absolute-transform query from here on re-walks once and memoizes for
+    // the rest of the frame (damage → compile → spatial queries). O(1).
+    scheduler.arena.bump_tx_frame();
     let _plan = {
         let _span = tracing::info_span!("Pass::Damage").entered();
         let plan = DamagePlan::compute(

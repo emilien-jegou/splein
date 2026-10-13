@@ -19,18 +19,15 @@ mod view;
 use common::ExampleCli;
 pub use view::*;
 
-const DEFAULT_WIDTH: u32 = 1280;
-const DEFAULT_HEIGHT: u32 = 640;
-
 fn main() {
-    let cli = ExampleCli::parse(DEFAULT_WIDTH, DEFAULT_HEIGHT);
+    let cli = ExampleCli::parse(view::HOT_WIDTH, view::HOT_HEIGHT);
     cli.init_telemetry();
 
-    cli.app_config_multi("Aurora — Shadow Lab")
+    cli.app_config_multi(view::HOT_TITLE)
         .font(
             "Inter",
             include_bytes!("../../crates/aurora/assets/inter-var.ttf"),
         )
-        .background(PANEL_BG)
+        .background(view::HOT_BG)
         .run(view::build_ui);
 }

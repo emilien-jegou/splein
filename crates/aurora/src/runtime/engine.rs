@@ -201,6 +201,10 @@ impl Engine {
         }
         let (ow, oh) = self.logical_size;
         self.logical_size = (nw, nh);
+        // A size change starts/refreshes the shaping resize window: text
+        // measures against moving widths for the next few frames, during
+        // which nearby-bucket reuse replaces cold shapes.
+        self.scheduler.text_ctx.set_resize_hint();
         self.pending_preserved_canvas_rect = Some(ResolvedRect::new(
             0.0,
             0.0,
@@ -510,6 +514,8 @@ impl Engine {
         let _ambient = crate::reactive::ambient_guard(&self.runtime());
         let (w, h) = self.logical_size;
         self.frame_counter = self.frame_counter.wrapping_add(1);
+        // Age the shaping resize window once per frame (see resize()).
+        self.scheduler.text_ctx.tick_resize_hint();
 
         // Hot-reload rebuilds land before anything else: the new tree is reconciled first,
         // so this frame's tick, input, react, and layout passes all see it at once. A
@@ -673,8 +679,9 @@ impl Engine {
         self.with_arena(|arena, root| {
             let mut out = Vec::new();
             let mut stack = vec![root];
-            // Preorder DFS with reversed pushes keeps document order without
-            // allocating a child list per node.
+            // Preorder DFS with reversed pushes keeps document order. The
+            // per-node child collect below is the one owned copy the reverse
+            // walk needs (CSR links are forward-only).
             while let Some(id) = stack.pop() {
                 if !arena.is_valid(id) {
                     continue;

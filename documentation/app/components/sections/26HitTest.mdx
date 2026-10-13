@@ -1,0 +1,26 @@
+import SectionShell from "../layout/SectionShell"
+import HitTestDemo from "../demos/HitTestDemo"
+
+export const code = `view! {
+    <Group
+        width={TRACK_W}
+        height={TRACK_H}
+        hit_test={HitTest::Opaque}
+        on:drag-start={move |info| { /* ... */ }}
+        on:drag-step={move |info| { /* ... */ }}
+    >
+        <Group
+            hit_test={HitTest::Passthrough}
+            // Events pass through to parent
+        />
+    </Group>
+}`
+
+<SectionShell
+      number="26"
+      title="Hit Test"
+      description="Control pointer event handling with HitTest::Opaque and HitTest::Passthrough. Opaque captures events, Passthrough lets them through."
+  code={code}
+>
+  <HitTestDemo />
+</SectionShell>

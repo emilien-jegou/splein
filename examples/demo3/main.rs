@@ -13,20 +13,17 @@ mod common;
 use aurora::prelude::*;
 use common::ExampleCli;
 
-const DEFAULT_WIDTH: u32 = 1720;
-const DEFAULT_HEIGHT: u32 = 1020;
-
 fn main() {
     // 1. Parse CLI arguments (--gpu, --cpu, --width, --height, --no-hud)
-    let cli = ExampleCli::parse(DEFAULT_WIDTH, DEFAULT_HEIGHT);
+    let cli = ExampleCli::parse(view::HOT_WIDTH, view::HOT_HEIGHT);
     cli.init_telemetry();
 
     // 2. Launch with configured backend (TinySkia or Vello)
-    cli.app_config("Aurora — Demo 3 (Optype Font Manager)")
+    cli.app_config(view::HOT_TITLE)
         .font(
             "Inter",
             include_bytes!("../../crates/aurora/assets/inter-var.ttf"),
         )
-        .background(Color::WHITE)
+        .background(view::HOT_BG)
         .run(view::build_ui);
 }

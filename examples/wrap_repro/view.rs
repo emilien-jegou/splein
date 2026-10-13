@@ -5,6 +5,13 @@
 
 use aurora::prelude::*;
 
+/// Window chrome shared by the release driver (`main.rs`) and the hot entry
+/// (`hot.rs`): declared once here, referenced by both — never mirrored.
+pub const HOT_TITLE: &str = "Aurora — Wrap repro";
+pub const HOT_WIDTH: u32 = 800;
+pub const HOT_HEIGHT: u32 = 900;
+pub const HOT_BG: u32 = 0x10151D;
+
 const LONG: &str = "Pack my box with five dozen liquor jugs and a few extra words to force wrapping inside fit containers";
 
 #[component]

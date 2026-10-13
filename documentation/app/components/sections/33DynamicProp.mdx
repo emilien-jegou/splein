@@ -1,0 +1,26 @@
+import SectionShell from "../layout/SectionShell"
+import DynamicPropDemo from "../demos/DynamicPropDemo"
+
+export const code = `let thumb_x = computed(move || {
+    let frac = ((value.get() - min) / (max - min)).clamp(0.0, 1.0);
+    frac * (TRACK_W - THUMB_W)
+});
+
+view! {
+    <Group
+        width={THUMB_W}
+        height={20.0}
+        radius={7.0}
+        fill={0x483050}
+        x={thumb_x}
+    />
+}`
+
+<SectionShell
+      number="33"
+      title="Dynamic Prop"
+      description="DynamicProp and computed() for reactive property values. Values update automatically when signals change."
+  code={code}
+>
+  <DynamicPropDemo />
+</SectionShell>

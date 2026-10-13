@@ -48,7 +48,13 @@ fn place_child(arena: &mut TreeArena, child: NodeId, rect: ResolvedRect) {
     if prev.width != rect.width || prev.height != rect.height {
         arena.mark_dirty(child, DirtyFlags::MEASURE | DirtyFlags::LAYOUT);
     }
-    arena.get_mut(child).resolved_rect = rect;
+    if prev != rect {
+        // Any placement change (including pure translation, which schedules
+        // nothing) invalidates cached absolute transforms: descendant chains
+        // derive from this box. O(1) epoch bump, not a walk.
+        arena.get_mut(child).resolved_rect = rect;
+        arena.bump_tx_frame();
+    }
 }
 
 #[inline(always)]
@@ -77,7 +83,10 @@ pub fn layout_node_with_text(
         if let Some(cached) = arena.get(node_id).state.core.cache.get_layout(&constraints) {
             let prev = arena.get(node_id).resolved_rect;
             let final_rect = ResolvedRect::new(prev.x, prev.y, cached.width, cached.height);
-            arena.get_mut(node_id).resolved_rect = final_rect;
+            if final_rect != prev {
+                arena.get_mut(node_id).resolved_rect = final_rect;
+                arena.bump_tx_frame();
+            }
             if arena.parent(node_id).is_some() {
                 let abs_rect = ResolvedRect::new(
                     parent_abs.x + prev.x,
@@ -116,12 +125,13 @@ fn perform_node_layout(
     let content_w = (w - pad.horizontal()).max(0.0);
     let content_h = (h - pad.vertical()).max(0.0);
 
-    let children = arena.children(node_id);
     let mut normal: SmallVec<[NodeId; 8]> = SmallVec::new();
     let mut absolute: SmallVec<[NodeId; 2]> = SmallVec::new();
     let mut collapsed: SmallVec<[NodeId; 2]> = SmallVec::new();
 
-    for child in children {
+    // Borrowed iteration: `children()` would copy the whole child list
+    // first (heap past 8 children) for what is a pure classification scan.
+    for child in arena.each_child(node_id) {
         if arena.get(child).style.is_absolute {
             absolute.push(child);
         } else if arena.get(child).state.core.presence.occupies_space() {
@@ -436,8 +446,11 @@ fn perform_node_layout(
 
     let abs_rect = ResolvedRect::new(node_abs.x, node_abs.y, w, h);
 
+    if arena.get(node_id).resolved_rect != final_rect {
+        arena.get_mut(node_id).resolved_rect = final_rect;
+        arena.bump_tx_frame();
+    }
     let root = arena.get_mut(node_id);
-    root.resolved_rect = final_rect;
     root.absolute_rect = abs_rect;
     tracing::debug!(
         "aurora: layout computed {:?} rect={:?}",

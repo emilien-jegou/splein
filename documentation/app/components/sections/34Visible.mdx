@@ -1,0 +1,23 @@
+import SectionShell from "../layout/SectionShell"
+import VisibleDemo from "../demos/VisibleDemo"
+
+export const code = `view! {
+    <Group direction="vertical" gap={12.0}>
+        <Group visible={in_web.clone()}>
+            {slider("offset X", ox.clone(), -40.0, 40.0)}
+            {slider("offset Y", oy.clone(), -40.0, 40.0)}
+        </Group>
+        <Group visible={in_elev.clone()}>
+            {slider("elevation", elevation.clone(), 0.0, 32.0)}
+        </Group>
+    </Group>
+}`
+
+<SectionShell
+      number="34"
+      title="Visible"
+      description="The visible prop controls rendering. When false, the element is skipped entirely — no layout, no paint."
+  code={code}
+>
+  <VisibleDemo />
+</SectionShell>

@@ -2,6 +2,13 @@
 
 use aurora::prelude::*;
 
+/// Window chrome shared by the release driver (`main.rs`) and the hot entry
+/// (`hot.rs`): declared once here, referenced by both — never mirrored.
+pub const HOT_TITLE: &str = "Aurora — Selectable Text";
+pub const HOT_WIDTH: u32 = 640;
+pub const HOT_HEIGHT: u32 = 360;
+pub const HOT_BG: u32 = 0xFFFFFF;
+
 const LOREM: &str = "Drag across this paragraph to select it. \
     Double-click selects a word, triple-click the whole paragraph. \
     A plain click focuses a caret; arrows move it, Shift extends, \

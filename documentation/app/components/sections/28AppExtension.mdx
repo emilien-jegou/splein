@@ -1,0 +1,31 @@
+import SectionShell from "../layout/SectionShell"
+import AppExtensionDemo from "../demos/AppExtensionDemo"
+
+export const code = `impl AppExtension for Ticker {
+    fn on_frame(&mut self, _diagnostics: &FrameDiagnostics) {
+        let elapsed = self.start.elapsed().as_secs_f32();
+        self.time_sig.set(elapsed);
+    }
+
+    fn on_event(&mut self, event: &WindowEvent) -> bool {
+        if let WindowEvent::Resized(size) = event {
+            self.win_w = size.width as f32;
+            return true;
+        }
+        false
+    }
+
+    fn on_update(&mut self, engine: &mut Engine) -> bool {
+        let text = engine.combined_selected_text();
+        // ...
+    }
+}`
+
+<SectionShell
+      number="28"
+      title="App Extension"
+      description="Engine lifecycle hooks with AppExtension trait. on_frame for per-frame updates, on_event for window events, on_update for polling."
+  code={code}
+>
+  <AppExtensionDemo />
+</SectionShell>

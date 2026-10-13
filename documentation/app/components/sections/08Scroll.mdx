@@ -1,0 +1,31 @@
+import SectionShell from "../layout/SectionShell"
+import ScrollDemo from "../demos/ScrollDemo"
+
+export const code = `let sc = use_scroll(0.0);
+
+view! {
+    <ScrollView
+        width={Size::fill()}
+        height={Size::fill()}
+        handle={sc}
+    >
+        {scroll_content}
+    </ScrollView>
+}
+
+// Virtualized: only visible rows mounted
+<VirtualScrollView
+    len={100_000usize}
+    row_height={36.0}
+    handle={handle}
+    row={vrow}
+/>`
+
+<SectionShell
+      number="08"
+      title="Scroll"
+      description="ScrollView and VirtualScrollView with use_scroll, scroll_offset, and scroll_by. Supports 100k+ row virtualization."
+  code={code}
+>
+  <ScrollDemo />
+</SectionShell>

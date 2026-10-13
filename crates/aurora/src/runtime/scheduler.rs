@@ -80,7 +80,11 @@ impl FrameScheduler {
         window_constraints: Constraints,
         layout_result: &mut LayoutResult,
     ) -> FrameStats {
-        self.arena.bump_tx_frame();
+        // No epoch bump here by design: the abs-tx memo stays valid across
+        // frames until something actually mutates geometry (every mutation
+        // path bumps — marks, placements, reparenting). A per-frame bump
+        // would throw away cross-frame reuse on static frames, which is the
+        // common case the cache exists for.
         self.dirty_nodes_this_frame.clear();
         let mut external_flags = DirtyFlags::NONE;
         // Every mark since the last commit — reactive bindings and direct

@@ -335,8 +335,8 @@ fn accordion_harness(open_index: usize) -> Harness {
     Harness::from_runtime(
         rt,
         cx.enter(|| accordion::Page(open.clone())),
-        accordion::WIDTH,
-        accordion::HEIGHT,
+        accordion::view::HOT_WIDTH,
+        accordion::view::HOT_HEIGHT,
     )
     .with_background(Color::hex(0xF4F5F7))
 }
@@ -981,8 +981,8 @@ fn header_click_does_not_feed_the_copy_burst() {
     let mut engine = Engine::with_runtime(
         rt,
         cx.enter(|| accordion::Page(open.clone())),
-        accordion::WIDTH,
-        accordion::HEIGHT,
+        accordion::view::HOT_WIDTH,
+        accordion::view::HOT_HEIGHT,
     );
     engine.load_font(include_bytes!("../assets/inter-var.ttf"));
     engine.advance(1.0 / 60.0);

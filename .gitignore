@@ -89,6 +89,7 @@
 !documentation/package.json
 !documentation/postcss.config.mjs
 !documentation/tsconfig.json
+!documentation/mdx-components.tsx
 
 
 # To fix:

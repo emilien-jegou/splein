@@ -1,11 +1,10 @@
 { pkgs, ... }:
 
 let
-  make = import ./scripts/make-cli.nix { inherit pkgs; };
   tracy = pkgs.callPackage ./tracy.nix { };
 in {
   packages = [
-    (make.mkCli (import ./make.nix))
+    pkgs.just
     pkgs.bacon
     pkgs.bun
     pkgs.wtype
@@ -13,10 +12,11 @@ in {
     pkgs.pkg-config
     pkgs.fontconfig
     pkgs.wayland
+    pkgs.pnpm
     pkgs.libxkbcommon
     pkgs.libGL
     pkgs.vulkan-loader
-  #  tracy
+   # tracy
   ];
 
   env.LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [
@@ -39,7 +39,7 @@ in {
 
   enterShell = ''
     [ -f .localrc ] && source .localrc
-    dev
+    just --list
   '';
 
   dotenv.enable = true;

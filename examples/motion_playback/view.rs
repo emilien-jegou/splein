@@ -4,7 +4,19 @@ use aurora::prelude::*;
 use aurora::reactive::Signal;
 
 use super::motion_ui::*;
-use super::{SLIDE_SECS, TRAVEL_PX};
+
+/// Peak travel of the sliding card. Single source: `main.rs` and `hot.rs`
+/// reference these; nothing mirrors them.
+pub const TRAVEL_PX: f32 = 180.0;
+/// Seconds for one end-to-end slide. Single source (see above).
+pub const SLIDE_SECS: f32 = 2.4;
+
+/// Window chrome shared by the release driver (`main.rs`) and the hot entry
+/// (`hot.rs`): declared once here, referenced by both — never mirrored.
+pub const HOT_TITLE: &str = "Aurora — Motion 03d · Hover to pause, click to restart";
+pub const HOT_WIDTH: u32 = 780;
+pub const HOT_HEIGHT: u32 = 440;
+pub const HOT_BG: u32 = PAGE;
 
 /// Builds the page shown for this concept.
 ///

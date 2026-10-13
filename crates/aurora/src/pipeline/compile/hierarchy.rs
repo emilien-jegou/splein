@@ -64,13 +64,16 @@ pub fn compile_node_hierarchy(
     );
     emit_node_content(node, chunk, text_ctx, caret_visible);
 
-    let child_count = arena.children(id).len();
+    // Hoisted single copy (see bounds.rs): per-index `children()` calls
+    // rebuild the whole child list N+1 times per node per frame.
+    let kids = arena.children(id);
+    let child_count = kids.len();
     // Children that live in their own chunks — real stacking contexts, or
     // isolated children of an `isolate_children` parent — are compiled by the
     // context loops, never inline here. Emitting both would double-paint.
     let isolates = arena.get(id).style.isolate_children;
     for i in 0..child_count {
-        let child_id = arena.children(id)[i];
+        let child_id = kids[i];
         let child = arena.get(child_id);
         let creates_context = child.creates_stacking_context();
         if !creates_context && !isolates {

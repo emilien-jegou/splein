@@ -425,9 +425,12 @@ fn resolve_spatial_and_damage(
         scroll_viewport
     };
 
-    let child_count = arena.children(id).len();
+    // Hoisted single copy (see bounds.rs): per-index `children()` calls
+    // rebuild the whole child list N+1 times per node per frame.
+    let kids = arena.children(id);
+    let child_count = kids.len();
     for i in 0..child_count {
-        let child = arena.children(id)[i];
+        let child = kids[i];
         let child_subtree = resolve_spatial_and_damage(
             arena,
             child,

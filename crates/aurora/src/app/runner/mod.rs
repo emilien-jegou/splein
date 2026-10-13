@@ -110,6 +110,9 @@ pub fn run_event_loop(
                         for ext in extensions.iter_mut() {
                             wants_redraw |= ext.on_update(&mut engine);
                         }
+                        for ext in extensions.iter_mut() {
+                            ext.on_window(&window, &mut engine);
+                        }
                         let compute_dur = present_one(
                             &mut engine,
                             &mut *backend,

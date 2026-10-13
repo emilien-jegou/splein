@@ -1,0 +1,21 @@
+import SectionShell from "../layout/SectionShell"
+import AnchorsDemo from "../demos/AnchorsDemo"
+
+export const code = `view! {
+    <Group width={116.0} height={45.0} fill={0xFFFFFF}>
+        <Text
+            size={12.0}
+            color={Color::BLACK}
+            anchor={Anchor::BottomRight}
+        >"bottom-right"</Text>
+    </Group>
+}`
+
+<SectionShell
+      number="06"
+      title="Anchors"
+      description="Position elements within their parent using Anchor::TopRight, Anchor::BottomRight, Anchor::Center, etc."
+  code={code}
+>
+  <AnchorsDemo />
+</SectionShell>

@@ -14,8 +14,12 @@ Five stages, same for both flavors below:
    watcher missed (before startup, during restarts) still converge instead of serving
    stale pixels.
 2. **Rebuild** — `DevLoop` runs one vanilla `cargo build` over the shared image
-  plus the UI crate (`-p aurora-shared -p <name>-ui`) in the background; the
-  static launcher binary (`aurora-cli`) builds separately in the main target.
+   plus the generative UI crate (`-p aurora-shared -p aurora-hot-gen-ui` with
+   `AURORA_HOT_EXAMPLE=<name>`) in the background; the
+   static launcher binary (`aurora-cli`) builds separately in the main target.
+   The host's boot path runs the same canonical build synchronously *before*
+   creating the window (see `blocking_hot_build`: script, loop, and boot all
+   share one command constructor, so the unit family can never diverge).
   The only flag the loop
   ever adds is a
    command per cycle so fingerprints agree; the only flag it ever adds is a
@@ -53,12 +57,13 @@ bus commands, or the `queue_*` API.
 ## Running it
 
 The component loop is hosted by the `aurora` launcher + `aurora-devkit-bin` (shared-instance
-land — see Constraints). `--package` selects the UI crate; `./example.sh` wraps
-the whole flow per example:
+land — see Constraints). `--example` selects the example (the generative UI
+crate mounts its `view.rs`/`hot.rs`); `just example` wraps
+the whole flow:
 
 ```bash
-# Terminal 1: run the component host against the demo1 UI
-./example.sh demo1
+# Terminal 1: run the component host against an example (generative UI)
+just example demo1
 
 # Terminal 2: edit examples/demo1/view.rs (try the outer fill), save.
 # Watch the log: `rebuilding …` → `components reloaded` → `rebuilt`. A failing build
@@ -76,15 +81,21 @@ All demos live in top-level `examples/` as static release binaries:
 cargo run -p aurora-examples --example motion_press --release
 ```
 
-Every tree-only view is additionally hot-reloadable through its own boxed UI
-crate (`examples/<name>-ui`, single dynamic edge against `aurora-shared`):
+Every tree-only view is additionally hot-reloadable through the generative UI
+crate (`aurora-hot-gen-ui`, single dynamic edge against `aurora-shared`):
 each `examples/<name>/main.rs` keeps only its App chrome, the tree lives in
-`examples/<name>/view.rs`, and the tiny `examples/<name>-ui/src/lib.rs` shim
-re-exports it with the two entry points the host resolves
-(`aurora_hot_version`, `aurora_component_root`). Same loop, any example:
+`examples/<name>/view.rs` alongside `HOT_TITLE`/`HOT_WIDTH`/`HOT_HEIGHT`/`HOT_BG`
+consts (single source — `main.rs` references them too), and
+`examples/<name>/hot.rs` wires the modules plus a single
+`define_hot_ui! { root, title, size, background }` block emitting all four
+entry points (`aurora_hot_version`, `aurora_component_root`,
+`aurora_hot_window`, `aurora_hot_title`). The host builds the first image
+synchronously, reads the window symbols, and creates the window once at final
+chrome — no wrong-sized frame ever shows, and the clock stays frozen until
+reveal. Const edits live-resize through the rebuild path. Same loop, any example:
 
 ```bash
-./example.sh motion_press
+just example motion_press
 # Terminal 2: edit examples/motion_press/view.rs, save → rebuilding → reloaded.
 ```
 
@@ -96,7 +107,7 @@ selectable_text, shadow_lab, text_demo, text_smooth, view_demo.
 Release-only (App-extension drivers the tree loop cannot host — extensions,
 switcher menus, winit plumbing, headless engines): gallery, moving, showcase,
 shadow_studio, selection_showcase, studio, render_bench, hot_demo.
-`./example.sh <that-name>` refuses with the release command; it never half-boots.
+`just example <that-name>` refuses with the release command; it never half-boots.
 
 Headless verification without a window:
 
@@ -128,10 +139,11 @@ Headless verification without a window:
   exactly one flag of its own — a `--sysroot` pin, skipped on split-toolchain
   installations where the pin itself duplicates sysroot crates; keep hand builds
   vanilla otherwise or fingerprints skew across invocations.
-- **One cargo process, one canonical root set.** `example.sh` and every
-  loop-spawned rebuild run `cargo build` over the shared image plus the
-  example's own UI crate (`-p aurora-shared -p <name>-ui`) — the UI package
-  varies per example, shared is the constant companion — so the shared image
+- **One cargo process, one canonical root set.** `scripts/example.sh` and every
+   loop-spawned rebuild run `cargo build` over the shared image plus the
+   generative UI crate (`-p aurora-shared -p aurora-hot-gen-ui` with
+   `AURORA_HOT_EXAMPLE=<name>` set) — the example varies per run via env,
+   shared is the constant companion — so the shared image
   and its consumer resolve within a single unit graph. (The static
   `aurora-cli` launcher builds separately in the main target; it links
   nothing aurora-flavored so it can't disturb the dylib graph.) DevLoop

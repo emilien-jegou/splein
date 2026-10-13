@@ -90,11 +90,11 @@ fn collect(
         };
         // Only stacking-context children are partitioned by z; the rest paint in document
         // order, so they stay in one list and are simply walked backwards.
-        let children = arena.children(id);
+        // Borrowed iteration: no child-list copy for the partition scan.
         let mut above = Vec::new();
         let mut below = Vec::new();
         let mut flow = Vec::new();
-        for child_id in children {
+        for child_id in arena.each_child(id) {
             if !arena.get(child_id).creates_stacking_context() {
                 flow.push(child_id);
                 continue;

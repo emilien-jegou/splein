@@ -3,6 +3,13 @@
 use super::motion_ui::*;
 use aurora::prelude::*;
 
+/// Window chrome shared by the release driver (`main.rs`) and the hot entry
+/// (`hot.rs`): declared once here, referenced by both — never mirrored.
+pub const HOT_TITLE: &str = "Aurora — Motion 05 · Signal-driven motion";
+pub const HOT_WIDTH: u32 = 800;
+pub const HOT_HEIGHT: u32 = 520;
+pub const HOT_BG: u32 = PAGE;
+
 /// Seconds between reversals of the driver signal.
 const SWING_SECS: f32 = 1.5;
 /// One spring, published as one signal, with everything else derived from it.

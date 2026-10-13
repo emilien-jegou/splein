@@ -1,0 +1,21 @@
+import SectionShell from "../layout/SectionShell"
+import HeadlessEngineDemo from "../demos/HeadlessEngineDemo"
+
+export const code = `let engine = Engine::headless();
+let raster = HeadlessRaster::new(&engine);
+
+// Benchmark: time draw_engine vs engine.frame()
+for _ in 0..300 {
+    raster.draw_engine(&engine);
+    // or
+    engine.frame();
+}`
+
+<SectionShell
+      number="29"
+      title="Headless Engine"
+      description="Engine::headless and HeadlessRaster for server-side rendering. Draw to pixel buffers without a window."
+  code={code}
+>
+  <HeadlessEngineDemo />
+</SectionShell>

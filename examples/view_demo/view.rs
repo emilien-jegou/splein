@@ -7,6 +7,13 @@
 use super::motion_ui::*;
 use aurora::prelude::*;
 
+/// Window chrome shared by the release driver (`main.rs`) and the hot entry
+/// (`hot.rs`): declared once here, referenced by both — never mirrored.
+pub const HOT_TITLE: &str = "Aurora — view! demo";
+pub const HOT_WIDTH: u32 = 800;
+pub const HOT_HEIGHT: u32 = 620;
+pub const HOT_BG: u32 = PAGE;
+
 const TRAVEL: f32 = 120.0;
 const SWEEP_HZ: f64 = 0.5;
 /// The user's sketch: a pure function of time, no driver, no engine handle.

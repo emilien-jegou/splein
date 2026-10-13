@@ -1,0 +1,32 @@
+import SectionShell from "../layout/SectionShell"
+import GroupDemo from "../demos/GroupDemo"
+
+export const code = `view! {
+    <Group
+        direction="vertical"
+        width="fill"
+        height="fill"
+        fill={Color::WHITE}
+        alignment="center"
+        distribution="center"
+    >
+        <Group
+            direction="horizontal"
+            width={500.0}
+            height={204.0}
+            fill={0x336133}
+            gap={16.0}
+        >
+            <Text size={16.0} color={Color::WHITE}>"Hello"</Text>
+        </Group>
+    </Group>
+}`
+
+<SectionShell
+      number="02"
+      title="Group"
+      description="The core layout container. Stacks children vertically or horizontally with direction, width, height, and fill."
+  code={code}
+>
+  <GroupDemo />
+</SectionShell>

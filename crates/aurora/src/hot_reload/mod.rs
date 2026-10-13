@@ -70,8 +70,9 @@ pub mod watcher;
 
 pub use component::{
     component_abi_fingerprint, ComponentReloadExtension, ComponentRootFn, ComponentVersionFn,
+    HotTitleFn, HotWindowFn, HotWindowInfo,
 };
-pub use dev_loop::{DevLoop, DevLoopConfig, DevLoopState, PollOutcome};
+pub use dev_loop::{blocking_hot_build, DevLoop, DevLoopConfig, DevLoopState, PollOutcome};
 pub use dylib::DylibReloader;
 pub use extension::RemoteReloadExtension;
 pub use progress_bar::ReloadProgressBar;

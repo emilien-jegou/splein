@@ -5,9 +5,14 @@
 // UI images) resolve aurora symbols to this one instance — then calls the host entry
 // point. All configuration crosses as C strings the host reads on entry.
 //
+// The window boots hidden at neutral chrome; the host's reload extension dresses
+// it (title/size/background from the UI image's `aurora_hot_window` /
+// `aurora_hot_title` symbols) once the first UI library installs.
+// No geometry is passed anywhere pre-build.
+//
 // Usage:
-//   aurora hot --package motion_press-ui
-//   aurora hot --package aurora-hot-ui --title "Hot" --background 0xFFFFFF
+//   aurora hot --example motion_press [--engine vello]
+//   aurora hot --package aurora-hot-ui
 //   aurora selftest --ui target/release/libaurora_hot_ui.so
 
 use std::ffi::{c_char, CString};
@@ -26,30 +31,26 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Run the component host against a UI crate, rebuilding live on save.
+    /// Run the component host against an example, rebuilding live on save.
     ///
-    /// Edit the UI crate's sources while the window runs; the loop rebuilds and the
+    /// Edit the example's sources while the window runs; the loop rebuilds and the
     /// window rebuilds from the fresh library with signals, springs, and tickers
-    /// intact. Paths default under `--root` (default: current directory).
+    /// intact. The window boots hidden and is dressed (title/size/background
+    /// from the UI image's window symbols) on first load. Paths default
+    /// under `--root` (default: current directory).
     Hot {
         /// Cargo package whose `cdylib` holds the UI (rebuilt on change).
-        #[arg(long)]
+        /// Legacy per-example packages; prefer `--example` (generative UI).
+        #[arg(long, default_value = "aurora-hot-gen-ui")]
         package: String,
+        /// Generative-UI example name (`examples/<name>/`): the shared UI
+        /// crate builds that example's `view.rs`/`hot.rs`. Replaces the
+        /// per-example `-ui` packages entirely.
+        #[arg(long)]
+        example: Option<String>,
         /// Workspace root: build working directory and anchor for default paths.
         #[arg(long, default_value = ".")]
         root: PathBuf,
-        /// Window title.
-        #[arg(long, default_value = "Aurora Hot Reload")]
-        title: String,
-        /// Window width in pixels.
-        #[arg(long, default_value_t = 500)]
-        width: u32,
-        /// Window height in pixels.
-        #[arg(long, default_value_t = 560)]
-        height: u32,
-        /// Clear color as 0xRRGGBB.
-        #[arg(long, default_value = "0xFFFFFF")]
-        background: String,
         /// Shared runtime image (default: next to this launcher binary).
         #[arg(long)]
         shared: Option<PathBuf>,
@@ -79,7 +80,7 @@ enum Command {
 }
 
 type HostRunFn =
-    unsafe extern "Rust" fn(*const c_char, u32, u32, *const c_char, *const c_char, u32, *const c_char);
+    unsafe extern "Rust" fn(*const c_char, *const c_char, *const c_char, *const c_char);
 
 /// Headless self-test driver: forwards resolved UI entry points as opaque pointers.
 /// The host owns execution (it alone may call into component code); this side only
@@ -111,24 +112,13 @@ fn resolve_image(explicit: Option<PathBuf>, file: &str) -> Result<PathBuf, ExitC
     Err(ExitCode::FAILURE)
 }
 
-fn parse_hex(raw: &str) -> u32 {
-    let raw = raw
-        .strip_prefix("0x")
-        .or_else(|| raw.strip_prefix("0X"))
-        .unwrap_or(raw);
-    u32::from_str_radix(raw, 16).unwrap_or(0xFFFFFF)
-}
-
 fn main() -> ExitCode {
     let cli = Cli::parse();
     match cli.command {
         Command::Hot {
             package,
+            example,
             root,
-            title,
-            width,
-            height,
-            background,
             shared,
             host,
             engine,
@@ -144,12 +134,9 @@ fn main() -> ExitCode {
             run_host(
                 &shared,
                 &host,
-                &title,
-                width,
-                height,
                 &package,
+                example.as_deref().unwrap_or(""),
                 &root,
-                parse_hex(&background),
                 engine.as_deref(),
             )
         }
@@ -212,12 +199,9 @@ fn load_host(host: &std::path::Path) -> Result<libloading::Library, ExitCode> {
 fn run_host(
     shared: &std::path::Path,
     host: &std::path::Path,
-    title: &str,
-    width: u32,
-    height: u32,
     package: &str,
+    example: &str,
     root: &std::path::Path,
-    background: u32,
     engine: Option<&str>,
 ) -> ExitCode {
     if preload_shared(shared).is_err() {
@@ -236,18 +220,15 @@ fn run_host(
             }
         }
     };
-    let title = CString::new(title).unwrap_or_default();
     let package = CString::new(package).unwrap_or_default();
+    let example = CString::new(example).unwrap_or_default();
     let root = CString::new(root.to_string_lossy().as_ref()).unwrap_or_default();
     let engine = CString::new(engine.unwrap_or("")).unwrap_or_default();
     unsafe {
         run(
-            title.as_ptr(),
-            width.max(1),
-            height.max(1),
             package.as_ptr(),
+            example.as_ptr(),
             root.as_ptr(),
-            background,
             engine.as_ptr(),
         )
     };

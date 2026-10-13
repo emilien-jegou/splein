@@ -50,7 +50,7 @@ fn a_resize_in_the_middle_of_a_drag_does_not_detach_the_row_from_the_pointer() {
     let mut h = {
         let rt = Rc::new(RefCell::new(ReactiveRuntime::new()));
         let tree = Cx::new(Rc::clone(&rt)).enter(reorder::Page);
-        let mut h = Harness::from_runtime(Rc::clone(&rt), tree, reorder::WIDTH, 760)
+        let mut h = Harness::from_runtime(Rc::clone(&rt), tree, reorder::HOT_WIDTH, 760)
             .with_background(Color::hex(0xF4F5F7));
         assert!(h.settle(900), "the list must settle before it is aimed at");
         h
@@ -67,7 +67,7 @@ fn a_resize_in_the_middle_of_a_drag_does_not_detach_the_row_from_the_pointer() {
     // Four heights, each held for a few pointer samples, so the gesture spans three resizes.
     let mut y = start.y;
     for height in [760u32, 420, 900, 300] {
-        h.engine().resize(reorder::WIDTH, height);
+        h.engine().resize(reorder::HOT_WIDTH, height);
         h.step();
         for _ in 0..4 {
             y -= stride / 5.0;
@@ -104,13 +104,13 @@ fn rows_stay_usable_when_a_squashed_window_makes_them_unequal() {
     let mut h = {
         let rt = Rc::new(RefCell::new(ReactiveRuntime::new()));
         let tree = Cx::new(Rc::clone(&rt)).enter(reorder::Page);
-        let mut h = Harness::from_runtime(Rc::clone(&rt), tree, reorder::WIDTH, 760);
+        let mut h = Harness::from_runtime(Rc::clone(&rt), tree, reorder::HOT_WIDTH, 760);
         assert!(h.settle(900));
         h
     };
 
     for height in [760u32, 300, 200] {
-        h.engine().resize(reorder::WIDTH, height);
+        h.engine().resize(reorder::HOT_WIDTH, height);
         h.step();
         h.step();
 
@@ -148,13 +148,13 @@ fn a_squashed_list_still_reorders_by_measured_slot() {
     let mut h = {
         let rt = Rc::new(RefCell::new(ReactiveRuntime::new()));
         let tree = Cx::new(Rc::clone(&rt)).enter(reorder::Page);
-        let mut h = Harness::from_runtime(Rc::clone(&rt), tree, reorder::WIDTH, 760);
+        let mut h = Harness::from_runtime(Rc::clone(&rt), tree, reorder::HOT_WIDTH, 760);
         assert!(h.settle(900));
         h
     };
 
     // Short enough that the rows cannot all be the same size.
-    h.engine().resize(reorder::WIDTH, 220);
+    h.engine().resize(reorder::HOT_WIDTH, 220);
     h.step();
     h.step();
 
@@ -208,7 +208,7 @@ fn a_squashed_list_still_reorders_by_measured_slot() {
 fn repeated_reorders_do_not_accumulate_animation_work() {
     let rt = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let tree = Cx::new(Rc::clone(&rt)).enter(reorder::Page);
-    let mut h = Harness::from_runtime(Rc::clone(&rt), tree, reorder::WIDTH, 760);
+    let mut h = Harness::from_runtime(Rc::clone(&rt), tree, reorder::HOT_WIDTH, 760);
     assert!(h.settle(900));
 
     let before = rt.borrow().post_layout_count();
@@ -246,7 +246,7 @@ fn a_reorder_moves_exactly_the_rows_the_drag_passed() {
     let mut h = {
         let rt = Rc::new(RefCell::new(ReactiveRuntime::new()));
         let tree = Cx::new(Rc::clone(&rt)).enter(reorder::Page);
-        let mut h = Harness::from_runtime(Rc::clone(&rt), tree, reorder::WIDTH, 760);
+        let mut h = Harness::from_runtime(Rc::clone(&rt), tree, reorder::HOT_WIDTH, 760);
         assert!(h.settle(900));
         h
     };
@@ -306,13 +306,13 @@ fn the_rows_divide_the_space_the_list_was_given() {
     let mut h = {
         let rt = Rc::new(RefCell::new(ReactiveRuntime::new()));
         let tree = Cx::new(Rc::clone(&rt)).enter(reorder::Page);
-        let mut h = Harness::from_runtime(Rc::clone(&rt), tree, reorder::WIDTH, 760);
+        let mut h = Harness::from_runtime(Rc::clone(&rt), tree, reorder::HOT_WIDTH, 760);
         assert!(h.settle(900));
         h
     };
 
     for height in [900u32, 760, 560, 420] {
-        h.engine().resize(reorder::WIDTH, height);
+        h.engine().resize(reorder::HOT_WIDTH, height);
         h.step();
         h.step();
 

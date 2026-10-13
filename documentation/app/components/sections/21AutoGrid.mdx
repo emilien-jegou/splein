@@ -1,0 +1,22 @@
+import SectionShell from "../layout/SectionShell"
+import AutoGridDemo from "../demos/AutoGridDemo"
+
+export const code = `let width = use_signal(420.0f32);
+let (cols, child_w) = aurora::dsl::auto_grid::columns_for(
+    width.get(), min_child, gap
+);
+
+view! {
+    <Group direction="vertical" width="fill" gap={8.0}>
+        <AutoGrid width={width} min_child={150.0} gap={8.0} />
+    </Group>
+}`
+
+<SectionShell
+      number="21"
+      title="Auto Grid"
+      description="Client-side auto grid with auto_grid::columns_for. Dynamically computes columns and child widths."
+  code={code}
+>
+  <AutoGridDemo />
+</SectionShell>

@@ -5,22 +5,19 @@ mod common;
 
 use common::ExampleCli;
 
-pub const WIDTH: u32 = 800;
-pub const HEIGHT: u32 = 900;
-
 mod view;
 
 pub use view::*;
 
 fn main() {
-    let cli = ExampleCli::parse(WIDTH, HEIGHT);
+    let cli = ExampleCli::parse(view::HOT_WIDTH, view::HOT_HEIGHT);
     cli.init_telemetry();
 
-    cli.app_config_multi("Aurora — Wrap repro")
+    cli.app_config_multi(view::HOT_TITLE)
         .font(
             "Inter",
             include_bytes!("../../crates/aurora/assets/inter-var.ttf"),
         )
-        .background(0x10151D)
+        .background(view::HOT_BG)
         .run(view::Page);
 }
