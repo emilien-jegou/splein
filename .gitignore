@@ -10,7 +10,8 @@
 !Cargo.toml
 !README.md
 !devenv.nix
-!make.nix
+!justfile
+!AGENTS.md
 
 !scripts
 !scripts/*
@@ -63,6 +64,9 @@
 
 !crates/aurora-hot-ui/
 !crates/aurora-hot-ui/**/*
+
+!crates/aurora-hot-gen/
+!crates/aurora-hot-gen/**/*
 
 !crates/aurora-shared/
 !crates/aurora-shared/**/*
