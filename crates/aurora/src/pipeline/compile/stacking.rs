@@ -13,9 +13,11 @@ pub struct StackingContext {
     pub abs_origin: Point,
     /// Ancestor clips to re-assert at the top of this context's chunk.
     pub inherited_clips: crate::scene::chunk::InheritedClips,
-    pub negative_z: Vec<StackingContext>,
+    /// Boxed: z-children are rare (most contexts have 0-2), so inline
+    /// SmallVec storage avoids a heap trip per list per frame (N6).
+    pub negative_z: SmallVec<[Box<StackingContext>; 2]>,
     pub normal_flow: SmallVec<[NodeId; 8]>,
-    pub positive_z: Vec<StackingContext>,
+    pub positive_z: SmallVec<[Box<StackingContext>; 2]>,
 }
 
 impl StackingContext {
@@ -26,9 +28,9 @@ impl StackingContext {
             z_index,
             abs_origin,
             inherited_clips: crate::scene::chunk::InheritedClips::new(),
-            negative_z: Vec::new(),
+            negative_z: SmallVec::new(),
             normal_flow: SmallVec::new(),
-            positive_z: Vec::new(),
+            positive_z: SmallVec::new(),
         }
     }
 }
@@ -108,9 +110,9 @@ pub fn build_stacking_tree(
             );
 
             if child.paint_layer() == crate::tree::node::PaintLayer::Below(effective_z) {
-                current_ctx.negative_z.push(child_ctx);
+                current_ctx.negative_z.push(Box::new(child_ctx));
             } else {
-                current_ctx.positive_z.push(child_ctx);
+                current_ctx.positive_z.push(Box::new(child_ctx));
             }
         } else {
             current_ctx.normal_flow.push(child_id);

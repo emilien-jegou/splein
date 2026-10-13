@@ -7,6 +7,7 @@ pub mod patch;
 mod tests;
 
 use rustc_hash::FxHashMap;
+use smallvec::SmallVec;
 use tiny_skia::{Mask, PixmapMut, Transform};
 
 use aurora::foundation::{LightEnvironment, Radius, ResolvedRect, Shadow};
@@ -96,7 +97,8 @@ impl ShadowRasterizer {
         };
 
         // Largest extent first so tighter layers paint over softer ones.
-        let mut order: Vec<usize> = (0..shadow.layers().len()).collect();
+        // Stack-inline: 1-3 layers typical, heap only past 4 (M8).
+        let mut order: SmallVec<[usize; 4]> = (0..shadow.layers().len()).collect();
         order.sort_by(|&a, &b| {
             shadow.layers()[b]
                 .extent

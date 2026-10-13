@@ -396,19 +396,18 @@ impl Batch {
             return;
         }
         let c = [color.r, color.g, color.b, a];
-        let corners = [
+        // Stack array, not a collected Vec: this runs per rect (thousands
+        // per frame) and the heap trip dwarfs the transform math (N3).
+        let p = [
             (rect.x, rect.y),
             (rect.x + rect.width, rect.y),
             (rect.x, rect.y + rect.height),
             (rect.x + rect.width, rect.y + rect.height),
-        ];
-        let p: Vec<[f32; 2]> = corners
-            .iter()
-            .map(|(x, y)| {
-                let pt = t.transform_point(Point::new(*x, *y));
-                [pt.x, pt.y]
-            })
-            .collect();
+        ]
+        .map(|(x, y)| {
+            let pt = t.transform_point(Point::new(x, y));
+            [pt.x, pt.y]
+        });
         for i in [0usize, 1, 2, 1, 3, 2] {
             self.rect_verts.push(RectVertex {
                 pos: p[i],
@@ -513,13 +512,11 @@ impl Batch {
                     (lx0, ly0 + bh, u0, v1),
                     (lx0 + bw, ly0 + bh, u1, v1),
                 ];
-                let q: Vec<([f32; 2], [f32; 2])> = corners
-                    .iter()
-                    .map(|(x, y, u, v)| {
-                        let pt = t.transform_point(Point::new(*x, *y));
-                        ([pt.x, pt.y], [*u, *v])
-                    })
-                    .collect();
+                // Stack array, not a collected Vec: per glyph (N3).
+                let q: [([f32; 2], [f32; 2]); 4] = corners.map(|(x, y, u, v)| {
+                    let pt = t.transform_point(Point::new(x, y));
+                    ([pt.x, pt.y], [u, v])
+                });
                 for i in [0usize, 1, 2, 1, 3, 2] {
                     self.glyph_verts.push(GlyphVertex {
                         pos: q[i].0,

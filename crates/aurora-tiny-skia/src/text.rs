@@ -90,26 +90,20 @@ impl LineCompositeCache {
         }
     }
 
-    /// Marks a composited line most-recently-used; true on hit.
+    /// Marks a composited line most-recently-used and returns its pixmap.
     ///
-    /// Split from [`Self::pixmap`] so the draw below never borrows the cache:
-    /// touch first, release, then read the resident pixmap.
-    fn touch(&mut self, key: &LineKey) -> bool {
+    /// Single lookup where the call site previously did `touch` + `pixmap`
+    /// (two hashes per line per tile). The returned borrow ends before the
+    /// caller mutates the cache again.
+    fn hit(&mut self, key: &LineKey) -> Option<&Pixmap> {
         self.clock += 1;
         let clock = self.clock;
-        let Some(entry) = self.entries.get_mut(key) else {
-            return false;
-        };
+        let entry = self.entries.get_mut(key)?;
         // The key carries the pointer and the entry holds the `Arc`: a hit
         // is the same object, never a recycled address.
         debug_assert_eq!(Arc::as_ptr(&entry.layout) as usize, key.ptr);
         entry.used = clock;
-        true
-    }
-
-    /// Accesses the resident pixmap for a key just returned by [`Self::get`].
-    fn pixmap(&self, key: &LineKey) -> Option<&Pixmap> {
-        self.entries.get(key).map(|e| &e.pixmap)
+        Some(&entry.pixmap)
     }
 
     /// Stores a freshly composited line, evicting oldest-used past the budget.
@@ -135,9 +129,12 @@ impl LineCompositeCache {
             },
         );
         while self.bytes > self.cap || self.entries.len() > LINE_CACHE_MAX_ENTRIES {
+            // Sampled oldest-used (Redis-style, like the glyph cache): a full
+            // scan per eviction costs O(2048) on exactly the pressured path.
             let victim = self
                 .entries
                 .iter()
+                .take(64)
                 .min_by_key(|(_, e)| e.used)
                 .map(|(k, _)| *k);
             match victim {
@@ -385,8 +382,7 @@ fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: T
                     ox,
                     oy,
                 };
-                if cache.touch(&key) {
-                    let entry = cache.pixmap(&key).expect("key just hit");
+                if let Some(entry) = cache.hit(&key) {
                     let (ew, eh) = (entry.width(), entry.height());
                     debug_assert_eq!((ew, eh), (lsw, lsh));
                     if (ew, eh) == (lsw, lsh) {
@@ -473,6 +469,11 @@ fn render_text_transformed(
     // font-system locks like the aligned path does.
     let mut coverage = Vec::with_capacity(256);
 
+    // One-entry tint pixmap reuse (M7): same-size glyphs (the common case
+    // within one run) skip malloc+zero per glyph. Exact-size match only —
+    // a wider buffer would corrupt row stride in the tint loop below.
+    let mut scratch: Option<(u32, u32, Pixmap)> = None;
+
     for line in &params.layout.lines {
         for g in &line.glyphs {
             // Quarter-quantized analytic coverage on both axes; placement
@@ -509,8 +510,19 @@ fn render_text_transformed(
             if w == 0 || h == 0 || coverage.len() < (w * h) as usize {
                 continue;
             }
-            let Some(mut glyph) = Pixmap::new(w, h) else {
-                continue;
+            let mut glyph = match scratch.take() {
+                Some((sw, sh, mut p)) if sw == w && sh == h => {
+                    p.fill(tiny_skia::Color::TRANSPARENT);
+                    p
+                }
+                // Size differs (or first glyph): fresh alloc; the old buffer
+                // drops here, which is rare vs same-size runs.
+                _ => {
+                    let Some(p) = Pixmap::new(w, h) else {
+                        continue;
+                    };
+                    p
+                }
             };
             for (dst, &cov) in glyph.pixels_mut().iter_mut().zip(coverage.iter()) {
                 if cov == 0 {
@@ -531,6 +543,7 @@ fn render_text_transformed(
                 params.transform.pre_translate(gx, gy),
                 params.clip,
             );
+            scratch = Some((w, h, glyph));
         }
     }
 }

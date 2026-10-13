@@ -212,6 +212,11 @@ fn repair_scroll_overlays(
 /// frame); the outer box repaint is always correct. Single shifts — the
 /// common case — keep the fast strip path untouched.
 fn expand_nested_shifts(plan: &mut DamagePlan) {
+    // Common case first: 0-1 shifts need no pairwise scan and no
+    // allocation (the to_vec below exists only to end the borrow).
+    if plan.region.scroll_shifts().len() < 2 {
+        return;
+    }
     let shifts = plan.region.scroll_shifts().to_vec();
     for (i, a) in shifts.iter().enumerate() {
         for (j, b) in shifts.iter().enumerate() {
