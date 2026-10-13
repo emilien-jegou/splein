@@ -20,6 +20,9 @@ const MAX_CACHED_SVGS: usize = 128;
 #[derive(Default)]
 pub struct VelloSvgCache {
     cache: FxHashMap<usize, Arc<VelloScene>>,
+    /// Last-use clock per entry (stalest evicted, never arbitrary).
+    used: FxHashMap<usize, u64>,
+    clock: u64,
 }
 
 #[cfg(feature = "svg-runtime")]
@@ -43,9 +46,16 @@ impl VelloSvgCache {
         }
         let ptr_key = Arc::as_ptr(&graphic.tree) as usize;
 
-        if !self.cache.contains_key(&ptr_key) && self.cache.len() >= MAX_CACHED_SVGS {
-            if let Some(&first) = self.cache.keys().next() {
-                self.cache.remove(&first);
+        if !self.cache.contains_key(&ptr_key) {
+            while self.cache.len() >= MAX_CACHED_SVGS {
+                let victim = self.used.iter().min_by_key(|(_, t)| **t).map(|(k, _)| *k);
+                match victim {
+                    Some(k) => {
+                        self.cache.remove(&k);
+                        self.used.remove(&k);
+                    }
+                    None => break,
+                }
             }
         }
 
@@ -54,6 +64,8 @@ impl VelloSvgCache {
             compile_usvg_group(&graphic.tree.root(), &mut sub_scene, Affine::IDENTITY);
             Arc::new(sub_scene)
         });
+        self.clock += 1;
+        self.used.insert(ptr_key, self.clock);
 
         let sx = rect.width as f64 / graphic.width as f64;
         let sy = rect.height as f64 / graphic.height as f64;

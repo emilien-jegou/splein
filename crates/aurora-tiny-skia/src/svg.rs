@@ -9,10 +9,18 @@ use tiny_skia::{Pixmap, PixmapPaint, Transform as SkiaTransform};
 
 const MAX_CACHED_SVGS: usize = 128;
 
+/// Byte budget for rasterized SVGs: size-keyed entries (same SVG at many
+/// sizes) can dwarf a count cap.
+const MAX_SVG_BYTES: usize = 16 << 20;
+
 #[cfg(feature = "svg-runtime")]
 #[derive(Default)]
 pub struct SvgCache {
     cache: FxHashMap<u64, Pixmap>,
+    /// Last-use clock per entry (stalest evicted, never arbitrary).
+    used: FxHashMap<u64, u64>,
+    clock: u64,
+    bytes: usize,
 }
 
 #[cfg(feature = "svg-runtime")]
@@ -20,6 +28,9 @@ impl SvgCache {
     pub fn new() -> Self {
         Self {
             cache: FxHashMap::default(),
+            used: FxHashMap::default(),
+            clock: 0,
+            bytes: 0,
         }
     }
 
@@ -40,13 +51,24 @@ impl SvgCache {
         let ptr_key = (Arc::as_ptr(&graphic.tree) as usize as u64) & 0x0000_FFFF_FFFF;
         let key = (ptr_key << 32) | ((rw as u64) << 16) | (rh as u64);
 
-        if !self.cache.contains_key(&key) && self.cache.len() >= MAX_CACHED_SVGS {
-            if let Some(&first) = self.cache.keys().next() {
-                self.cache.remove(&first);
+        if !self.cache.contains_key(&key) {
+            while self.cache.len() >= MAX_CACHED_SVGS || self.bytes >= MAX_SVG_BYTES {
+                let victim = self.used.iter().min_by_key(|(_, t)| **t).map(|(k, _)| *k);
+                match victim {
+                    Some(k) => {
+                        if let Some(old) = self.cache.remove(&k) {
+                            self.bytes = self.bytes.saturating_sub(
+                                old.width() as usize * old.height() as usize * 4,
+                            );
+                        }
+                        self.used.remove(&k);
+                    }
+                    None => break,
+                }
             }
         }
 
-        let cached = self.cache.entry(key).or_insert_with(|| {
+        if !self.cache.contains_key(&key) {
             let _span = tracing::trace_span!("rasterize_svg", w = rw, h = rh).entered();
             let mut p = Pixmap::new(rw, rh).unwrap();
             let sx = rw as f32 / graphic.width;
@@ -56,8 +78,12 @@ impl SvgCache {
                 SkiaTransform::from_scale(sx, sy),
                 &mut p.as_mut(),
             );
-            p
-        });
+            self.bytes += rw as usize * rh as usize * 4;
+            self.cache.insert(key, p);
+        }
+        self.clock += 1;
+        self.used.insert(key, self.clock);
+        let cached = self.cache.get(&key).expect("just inserted");
 
         target.draw_pixmap(
             0,

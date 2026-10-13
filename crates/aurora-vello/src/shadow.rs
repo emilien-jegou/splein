@@ -38,6 +38,9 @@ struct ShadowPatch {
 #[derive(Default)]
 pub struct VelloShadowCache {
     cache: FxHashMap<ShadowKey, ShadowPatch>,
+    /// Last-use clock per entry (stalest evicted, never arbitrary).
+    used: FxHashMap<ShadowKey, u64>,
+    clock: u64,
 }
 
 impl VelloShadowCache {
@@ -45,6 +48,8 @@ impl VelloShadowCache {
     pub fn new() -> Self {
         Self {
             cache: FxHashMap::default(),
+            used: FxHashMap::default(),
+            clock: 0,
         }
     }
 
@@ -114,9 +119,14 @@ impl VelloShadowCache {
             };
 
             if !self.cache.contains_key(&key) {
-                if self.cache.len() >= MAX_CACHED_SHADOWS {
-                    if let Some(&first) = self.cache.keys().next() {
-                        self.cache.remove(&first);
+                while self.cache.len() >= MAX_CACHED_SHADOWS {
+                    let victim = self.used.iter().min_by_key(|(_, t)| **t).map(|(k, _)| *k);
+                    match victim {
+                        Some(k) => {
+                            self.cache.remove(&k);
+                            self.used.remove(&k);
+                        }
+                        None => break,
                     }
                 }
                 let mut tinted = shadow.color;
@@ -126,6 +136,8 @@ impl VelloShadowCache {
                     Self::generate_patch(r_scalar, blur_r, pad, shadow.spread, &lut, &tinted);
                 self.cache.insert(key, patch);
             }
+            self.clock += 1;
+            self.used.insert(key, self.clock);
 
             let p = self.cache.get(&key).unwrap();
             let (ox, oy) = (

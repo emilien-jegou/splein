@@ -9,10 +9,17 @@ use aurora::scene::image::ImageSource;
 
 const MAX_CACHED_IMAGES: usize = 64;
 
+/// Byte budget for retained pixmaps: count caps alone admit 64×4K images.
+const MAX_IMAGE_BYTES: usize = 32 << 20;
+
 /// Retained pixmap cache keyed by source buffer, avoiding per-draw reallocation.
 #[derive(Default)]
 pub struct ImageCache {
     cache: FxHashMap<usize, CachedImage>,
+    /// Last-use clock per entry (stalest evicted, never arbitrary).
+    used: FxHashMap<usize, u64>,
+    clock: u64,
+    bytes: usize,
 }
 
 /// A cached pixmap plus the source handle keeping its key address unique.
@@ -47,16 +54,34 @@ impl ImageCache {
         }
 
         let key = Arc::as_ptr(&image.data) as usize;
-        if !self.cache.contains_key(&key) && self.cache.len() >= MAX_CACHED_IMAGES {
-            if let Some(&first) = self.cache.keys().next() {
-                self.cache.remove(&first);
+        if !self.cache.contains_key(&key) {
+            while self.cache.len() >= MAX_CACHED_IMAGES || self.bytes >= MAX_IMAGE_BYTES {
+                let victim = self.used.iter().min_by_key(|(_, t)| **t).map(|(k, _)| *k);
+                match victim {
+                    Some(k) => {
+                        if let Some(old) = self.cache.remove(&k) {
+                            self.bytes = self.bytes.saturating_sub(
+                                old.pixmap.width() as usize * old.pixmap.height() as usize * 4,
+                            );
+                        }
+                        self.used.remove(&k);
+                    }
+                    None => break,
+                }
             }
+            let pixmap = build_pixmap(image);
+            self.bytes += pixmap.width() as usize * pixmap.height() as usize * 4;
+            self.cache.insert(
+                key,
+                CachedImage {
+                    _source: Arc::clone(&image.data),
+                    pixmap,
+                },
+            );
         }
-
-        let cached = self.cache.entry(key).or_insert_with(|| CachedImage {
-            _source: Arc::clone(&image.data),
-            pixmap: build_pixmap(image),
-        });
+        self.clock += 1;
+        self.used.insert(key, self.clock);
+        let cached = self.cache.get(&key).expect("just inserted");
 
         let paint = PixmapPaint {
             opacity,

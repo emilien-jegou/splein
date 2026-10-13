@@ -49,6 +49,14 @@ pub(crate) struct ResolvedStyleKey {
 #[derive(Clone)]
 pub struct ParleyEngine {
     pub(crate) font_ctx: Arc<Mutex<FontContext>>,
+    /// Glyph raster identity side table. Deliberately insert-only: raster
+    /// paths (`raster_glyph_exact`, `raster_inner`) skip glyphs whose key is
+    /// absent, and shaped-layout cache hits never re-populate, so evicting
+    /// here would drop glyphs until content reshapes. Entries are small
+    /// (~1 Arc + 8 B + coords vec, typically <100 B); cardinality is bounded
+    /// in practice by distinct glyphs ever shaped, watched by the 64k
+    /// tripwire in `glyph_coords`. Do NOT add eviction without also
+    /// invalidating the layouts that reference the keys.
     pub(crate) key_map: Arc<Mutex<HashMap<GlyphKey, RasterKey>>>,
     pub(crate) blob_families: Arc<Mutex<Vec<Vec<String>>>>,
     /// Registration blob id → blob index: O(1) font resolution without memcmp.
@@ -136,6 +144,17 @@ impl ParleyEngine {
         let mut cache = self.resolved_styles.lock().unwrap();
         if cache.len() < 256 {
             cache.insert(style_key, resolved.clone());
+        } else {
+            // Tripwire: >256 distinct font/family styles means the style
+            // identity is varying per string (e.g. generated family names) —
+            // every miss pays a full collection scan. Warn once, keep working.
+            static WARNED: std::sync::atomic::AtomicBool =
+                std::sync::atomic::AtomicBool::new(false);
+            if !WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                tracing::warn!(
+                    "resolved_styles past 256 entries: style identity varying per string, audit family/font inputs (further warnings silent)"
+                );
+            }
         }
         resolved
     }

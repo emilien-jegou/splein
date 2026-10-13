@@ -14,6 +14,7 @@ pub struct FrameDiagnostics {
     pub layout: LayoutDiagnostics,
     pub spatial: SpatialDiagnostics,
     pub compile: CompileDiagnostics,
+    pub cache: CacheDiagnostics,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -58,6 +59,27 @@ pub struct CompileDiagnostics {
     pub stacking_contexts: usize,
     pub commands_emitted: usize,
     pub context_bounds: Vec<ResolvedRect>,
+}
+
+/// Cache-pressure gauge: per-frame snapshot of the text shaping caches.
+///
+/// Caps without gauges are blind — a healthy cap and a thrashing cap look
+/// identical until frames drop. This rides `FrameDiagnostics` so it reaches
+/// the HUD, Tracy, external panel, and benches for free. Today it covers
+/// the glyph bitmap cache (the only cache with counters); backend caches
+/// gain fields here as they grow stats of their own.
+#[derive(Copy, Clone, Debug, Default)]
+pub struct CacheDiagnostics {
+    /// Resident glyph bitmap bytes.
+    pub glyph_bytes: usize,
+    /// Current adaptive glyph cap.
+    pub glyph_cap_bytes: usize,
+    /// Resident glyph entries.
+    pub glyph_entries: usize,
+    /// Cumulative glyph hits / misses / evictions.
+    pub glyph_hits: u64,
+    pub glyph_misses: u64,
+    pub glyph_evictions: u64,
 }
 
 /// A read-only snapshot of the engine's internal counters.

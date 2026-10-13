@@ -5,7 +5,8 @@ use crate::layout::LayoutResult;
 use crate::pipeline::{commit_painted_bounds, CompileResult, DamagePlan};
 use crate::runtime::scheduler::FrameScheduler;
 use crate::runtime::{
-    CompileDiagnostics, FrameDiagnostics, FrameTimings, InvalidationDiagnostics, LayoutDiagnostics,
+    CacheDiagnostics, CompileDiagnostics, FrameDiagnostics, FrameTimings, InvalidationDiagnostics,
+    LayoutDiagnostics,
     SpatialDiagnostics,
 };
 use crate::scene::Scene;
@@ -197,6 +198,17 @@ pub fn run_frame_passes(
             stacking_contexts: comp.stacking_contexts_count,
             commands_emitted: comp.new_commands_emitted,
             context_bounds: comp.context_bounds,
+        },
+        cache: {
+            let s = scheduler.text_ctx.glyph_cache_stats();
+            CacheDiagnostics {
+                glyph_bytes: s.bytes,
+                glyph_cap_bytes: s.cap_bytes,
+                glyph_entries: s.entries,
+                glyph_hits: s.hits,
+                glyph_misses: s.misses,
+                glyph_evictions: s.evictions,
+            }
         },
     };
 

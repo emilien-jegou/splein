@@ -64,8 +64,8 @@
 //!   `TreeArena` methods instead of reaching through it.
 
 pub use diagnostics::{
-    CompileDiagnostics, EngineDiagnostics, FrameDiagnostics, FrameTimings, InvalidationDiagnostics,
-    LayoutDiagnostics, SpatialDiagnostics,
+    CacheDiagnostics, CompileDiagnostics, EngineDiagnostics, FrameDiagnostics, FrameTimings,
+    InvalidationDiagnostics, LayoutDiagnostics, SpatialDiagnostics,
 };
 pub use engine::Engine;
 pub use report::FrameReport;

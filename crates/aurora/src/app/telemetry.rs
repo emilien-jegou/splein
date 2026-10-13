@@ -105,6 +105,8 @@ impl TelemetryWorker {
                 tracy_client::plot!("Frame p95 (ms)", stats.p95_total());
                 tracy_client::plot!("Layout Avg (ms)", stats.avg_layout);
                 tracy_client::plot!("Raster Avg (ms)", stats.avg_raster);
+                tracy_client::plot!("Glyph Cache (MiB)", diag.cache.glyph_bytes as f64 / 1048576.0);
+                tracy_client::plot!("Glyph Evictions", diag.cache.glyph_evictions as f64);
             }
         }
 
@@ -119,6 +121,10 @@ impl TelemetryWorker {
             throughput_fps = fps_of(phases.total_ms),
             frame_avg_ms = stats.avg_total,
             frame_p95_ms = stats.p95_total(),
+            glyph_cache_mib = diag.cache.glyph_bytes as f64 / 1048576.0,
+            glyph_cache_cap_mib = diag.cache.glyph_cap_bytes as f64 / 1048576.0,
+            glyph_entries = diag.cache.glyph_entries,
+            glyph_evictions = diag.cache.glyph_evictions,
             "worker_frame"
         );
     }

@@ -24,6 +24,10 @@ pub struct ShadowRasterizer {
     scratch_b: Vec<u8>,
     scratch_temp: Vec<u8>,
     patch_cache: FxHashMap<ShadowPatchKey, ShadowPatch>,
+    /// Last-use clock per patch: eviction drops the stalest entry, not an
+    /// arbitrary one (hash-order drops thrashed hot patches under pressure).
+    patch_used: FxHashMap<ShadowPatchKey, u64>,
+    patch_clock: u64,
 }
 
 impl ShadowRasterizer {
@@ -34,6 +38,25 @@ impl ShadowRasterizer {
             scratch_b: Vec::with_capacity(128 * 128),
             scratch_temp: Vec::with_capacity(128 * 128),
             patch_cache: FxHashMap::default(),
+            patch_used: FxHashMap::default(),
+            patch_clock: 0,
+        }
+    }
+
+    fn touch_patch(&mut self, key: ShadowPatchKey) {
+        self.patch_clock += 1;
+        self.patch_used.insert(key, self.patch_clock);
+    }
+
+    fn evict_oldest_patch(&mut self) {
+        let victim = self
+            .patch_used
+            .iter()
+            .min_by_key(|(_, t)| **t)
+            .map(|(k, _)| *k);
+        if let Some(k) = victim {
+            self.patch_cache.remove(&k);
+            self.patch_used.remove(&k);
         }
     }
 
@@ -131,9 +154,11 @@ impl ShadowRasterizer {
             };
 
             if !self.patch_cache.contains_key(&key) {
-                if self.patch_cache.len() >= MAX_SHADOW_PATCHES {
-                    if let Some(&oldest) = self.patch_cache.keys().next() {
-                        self.patch_cache.remove(&oldest);
+                while self.patch_cache.len() >= MAX_SHADOW_PATCHES {
+                    let before = self.patch_cache.len();
+                    self.evict_oldest_patch();
+                    if self.patch_cache.len() == before {
+                        break;
                     }
                 }
                 let patch = generate_patch(
@@ -150,6 +175,7 @@ impl ShadowRasterizer {
                 );
                 self.patch_cache.insert(key, patch);
             }
+            self.touch_patch(key);
 
             let patch = self.patch_cache.get(&key).unwrap();
             blit_9patch(

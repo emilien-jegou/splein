@@ -163,6 +163,28 @@ pub fn emit_hud_overlay(
         text_ctx,
     );
     emit_label(chunk, &ms_str, Point::new(300.0, 20.0), ms_color, text_ctx);
+    // Cache-pressure gauge: glyph MiB resident/cap + eviction count. Amber
+    // past half the cap, red past 90% — the human-visible form of the
+    // CacheDiagnostics field, so pressure is seen live while reproing.
+    {
+        let mib = diag.cache.glyph_bytes as f32 / 1048576.0;
+        let cap = diag.cache.glyph_cap_bytes as f32 / 1048576.0;
+        let frac = if cap > 0.0 { mib / cap } else { 0.0 };
+        let color = if frac >= 0.9 {
+            0xEF4444
+        } else if frac >= 0.5 {
+            0xF59E0B
+        } else {
+            0x475569
+        };
+        emit_label(
+            chunk,
+            &format!("GLYPH {mib:.1}/{cap:.0}M E{}", diag.cache.glyph_evictions),
+            Point::new(380.0, 20.0),
+            Color::hex(color),
+            text_ctx,
+        );
+    }
     // Only drawn when time is not running normally, so its presence is the whole message.
     if let Some(label) = time_scale_label(time_scale) {
         let color = if time_scale <= 1e-4 {

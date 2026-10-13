@@ -124,12 +124,21 @@ impl TextContext {
     /// alone always resolves to the default instance, so weight/width
     /// variations would silently render as Regular without it.
     pub fn glyph_coords(&self, key: GlyphKey) -> Option<Vec<i16>> {
-        self.engine
-            .key_map
-            .lock()
-            .unwrap()
-            .get(&key)
-            .map(|rk| rk.coords.clone())
+        let map = self.engine.key_map.lock().unwrap();
+        // Tripwire: key_map is insert-only (shaping proof, never invalidated).
+        // Past 64k distinct glyphs something is generating unbounded identity
+        // (e.g. per-frame variation coordinates) — warn once, keep working.
+        if map.len() > 65536 {
+            static WARNED: std::sync::atomic::AtomicBool =
+                std::sync::atomic::AtomicBool::new(false);
+            if !WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                tracing::warn!(
+                    glyph_keys = map.len(),
+                    "key_map past 64k entries: unbounded growth, audit shaping inputs (further warnings silent)"
+                );
+            }
+        }
+        map.get(&key).map(|rk| rk.coords.clone())
     }
 
     /// Shapes a text string into multi-line glyph runs under given constraints.
