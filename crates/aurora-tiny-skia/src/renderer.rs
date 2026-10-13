@@ -146,21 +146,13 @@ impl TinySkiaRenderer {
                     // more than 4x the needed area, shrink it back to the tile size.
                     let (pw, ph) = (p.width() as u64, p.height() as u64);
                     if pw * ph > (rw as u64) * (rh as u64) * 4 {
-                        Pixmap::new(
-                            rw.next_power_of_two().max(64),
-                            rh.next_power_of_two().max(64),
-                        )
-                        .unwrap()
+                        Pixmap::new(tile_quantum(rw), tile_quantum(rh)).unwrap()
                     } else {
                         p.fill(tiny_skia::Color::TRANSPARENT);
                         p
                     }
                 }
-                _ => Pixmap::new(
-                    rw.next_power_of_two().max(64),
-                    rh.next_power_of_two().max(64),
-                )
-                .unwrap(),
+                _ => Pixmap::new(tile_quantum(rw), tile_quantum(rh)).unwrap(),
             };
 
             // Each tile starts from a clean clip and transform stack. Anything a previous
@@ -308,4 +300,13 @@ impl Default for TinySkiaRenderer {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Tile scratch quantum (M2): sizes cluster on 64px steps so retained
+/// pixmaps reuse across frames, while waste stays under one 64px strip per
+/// edge (~2 MB worst case at 4K) instead of next-pow2 padding (a fullscreen
+/// tile pinned 4096×4096×4 = 64 MiB for a 31.6 MiB canvas).
+#[inline(always)]
+fn tile_quantum(n: u32) -> u32 {
+    n.next_multiple_of(64).max(64)
 }

@@ -48,9 +48,7 @@ pub fn generate_patch(
     spread: f32,
 ) -> ShadowPatch {
     let buf_len = patch_dim * patch_dim;
-    scratch_a.resize(buf_len, 0);
-    scratch_b.resize(buf_len, 0);
-    scratch_temp.resize(buf_len, 0);
+    super::fit_scratch_buffers([scratch_a, scratch_b, scratch_temp], buf_len, 0);
     scratch_a.fill(0);
     scratch_b.fill(0);
 

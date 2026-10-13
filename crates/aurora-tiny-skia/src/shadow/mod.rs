@@ -8,13 +8,18 @@ mod tests;
 
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
-use tiny_skia::{Mask, PixmapMut, Transform};
+use tiny_skia::{Mask, Pixmap, PixmapMut, Transform};
 
 use aurora::foundation::{LightEnvironment, Radius, ResolvedRect, Shadow};
 use direct::render_direct_blur;
 use patch::{blit_9patch, generate_patch, layer_geometry, ShadowPatch, ShadowPatchKey};
 
 const MAX_SHADOW_PATCHES: usize = 64;
+
+/// Byte budget for patch masks: count caps alone admit 64 adversarial
+/// patches (~2 MB each at huge softness → ~128 MB). Typical entries are
+/// ~10 KB; oversize singles bypass like everywhere else.
+const MAX_SHADOW_BYTES: usize = 8 << 20;
 
 /// Software shadow rasterizer caching 9-patch blurred corner templates.
 ///
@@ -29,6 +34,27 @@ pub struct ShadowRasterizer {
     /// arbitrary one (hash-order drops thrashed hot patches under pressure).
     patch_used: FxHashMap<ShadowPatchKey, u64>,
     patch_clock: u64,
+    patch_bytes: usize,
+    /// Reused direct-path temp pixmap (M4): exact-size match only, since
+    /// `draw_pixmap` blits the whole buffer.
+    direct_scratch: Option<Pixmap>,
+}
+
+/// Grow-only scratch would pin a once-huge frame forever (M6): shrink back
+/// when retained buffers exceed 4x the need, mirroring the tile guard.
+/// Shared by the patch and direct paths (different size regimes).
+pub(crate) fn fit_scratch_buffers(
+    bufs: [&mut Vec<u8>; 3],
+    need: usize,
+    fill: u8,
+) {
+    for buf in bufs {
+        if buf.len() > need.saturating_mul(4) {
+            buf.clear();
+            buf.reserve_exact(need);
+        }
+        buf.resize(need, fill);
+    }
 }
 
 impl ShadowRasterizer {
@@ -41,6 +67,8 @@ impl ShadowRasterizer {
             patch_cache: FxHashMap::default(),
             patch_used: FxHashMap::default(),
             patch_clock: 0,
+            patch_bytes: 0,
+            direct_scratch: None,
         }
     }
 
@@ -49,14 +77,15 @@ impl ShadowRasterizer {
         self.patch_used.insert(key, self.patch_clock);
     }
 
-    fn evict_oldest_patch(&mut self) {
-        let victim = self
+    fn evict_oldest_patch(&mut self) {        let victim = self
             .patch_used
             .iter()
             .min_by_key(|(_, t)| **t)
             .map(|(k, _)| *k);
         if let Some(k) = victim {
-            self.patch_cache.remove(&k);
+            if let Some(old) = self.patch_cache.remove(&k) {
+                self.patch_bytes = self.patch_bytes.saturating_sub(old.mask.len());
+            }
             self.patch_used.remove(&k);
         }
     }
@@ -129,6 +158,7 @@ impl ShadowRasterizer {
                     &mut self.scratch_a,
                     &mut self.scratch_b,
                     &mut self.scratch_temp,
+                    &mut self.direct_scratch,
                     pixmap,
                     rect,
                     r_scalar,
@@ -156,7 +186,9 @@ impl ShadowRasterizer {
             };
 
             if !self.patch_cache.contains_key(&key) {
-                while self.patch_cache.len() >= MAX_SHADOW_PATCHES {
+                while self.patch_cache.len() >= MAX_SHADOW_PATCHES
+                    || self.patch_bytes >= MAX_SHADOW_BYTES
+                {
                     let before = self.patch_cache.len();
                     self.evict_oldest_patch();
                     if self.patch_cache.len() == before {
@@ -175,6 +207,7 @@ impl ShadowRasterizer {
                     patch_dim,
                     shadow.spread,
                 );
+                self.patch_bytes += patch.mask.len();
                 self.patch_cache.insert(key, patch);
             }
             self.touch_patch(key);

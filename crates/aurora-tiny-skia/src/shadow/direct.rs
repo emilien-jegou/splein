@@ -10,6 +10,7 @@ pub fn render_direct_blur(
     scratch_a: &mut Vec<u8>,
     scratch_b: &mut Vec<u8>,
     scratch_temp: &mut Vec<u8>,
+    scratch_pixmap: &mut Option<Pixmap>,
     pixmap: &mut PixmapMut,
     rect: &ResolvedRect,
     radius: f32,
@@ -39,9 +40,7 @@ pub fn render_direct_blur(
         (bounds.height.ceil() as u32).max(1),
     );
     let buf_len = (bw * bh) as usize;
-    scratch_a.resize(buf_len, 0);
-    scratch_b.resize(buf_len, 0);
-    scratch_temp.resize(buf_len, 0);
+    super::fit_scratch_buffers([scratch_a, scratch_b, scratch_temp], buf_len, 0);
     scratch_a.fill(0);
     scratch_b.fill(0);
 
@@ -59,7 +58,16 @@ pub fn render_direct_blur(
         &scaled_rect,
         Radius::Scalar((radius + spread).max(0.0) * scale),
     );
-    let Some(mut temp_pixmap) = Pixmap::new(bw, bh) else {
+    let Some(mut temp_pixmap) = (match scratch_pixmap.take() {
+        // Exact-size reuse only (M4): draw_pixmap blits the whole buffer,
+        // so a larger retained pixmap would overdraw stale pixels.
+        Some(p) if p.width() == bw && p.height() == bh => {
+            let mut p = p;
+            p.fill(tiny_skia::Color::TRANSPARENT);
+            Some(p)
+        }
+        _ => Pixmap::new(bw, bh),
+    }) else {
         return;
     };
 
@@ -193,6 +201,7 @@ pub fn render_direct_blur(
                     (a + ((dst_data[idx + 3] as u32 * inv_a + 128) >> 8)).min(255) as u8;
             }
         }
+        *scratch_pixmap = Some(temp_pixmap);
         return;
     }
     pixmap.draw_pixmap(
@@ -206,4 +215,5 @@ pub fn render_direct_blur(
         final_tx,
         clip,
     );
+    *scratch_pixmap = Some(temp_pixmap);
 }
