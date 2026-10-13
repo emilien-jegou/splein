@@ -389,12 +389,11 @@ impl WgpuRenderer {
                             batch.rect_verts.extend_from_slice(&hit.rects);
                             batch.glyph_verts.extend_from_slice(&hit.glyphs);
                             batch.rrect_verts.extend_from_slice(&hit.rrects);
-                            let ops: Vec<Op> = hit
-                                .ops
-                                .iter()
-                                .map(|op| ChunkCache::rebased(op, rb, gb, qb))
-                                .collect();
-                            batch.ops.extend(ops);
+                            // Extend in place (N2): the temp Vec was a per-chunk
+                            // alloc on the replay path.
+                            batch.ops.extend(
+                                hit.ops.iter().map(|op| ChunkCache::rebased(op, rb, gb, qb)),
+                            );
                             true
                         }
                         Some((dx, dy)) => {
@@ -408,12 +407,11 @@ impl WgpuRenderer {
                                 &mut batch.glyph_verts,
                                 &mut batch.rrect_verts,
                             );
-                            let ops: Vec<Op> = hit
-                                .ops
-                                .iter()
-                                .map(|op| ChunkCache::rebased(op, rb, gb, qb))
-                                .collect();
-                            batch.ops.extend(ops);
+                            // Extend in place (N2): the temp Vec was a per-chunk
+                            // alloc on the replay path.
+                            batch.ops.extend(
+                                hit.ops.iter().map(|op| ChunkCache::rebased(op, rb, gb, qb)),
+                            );
                             true
                         }
                         None => false,
