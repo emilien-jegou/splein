@@ -42,7 +42,6 @@ fn commit_node_painted_bounds(
     // Stored unclipped: a node that leaves its clip must still remember where it last
     // painted. Same union the damage pass used, so the two compare symmetrically.
     let visual_bounds = node.compute_visual_bounds(&tx, None);
-
     let next_clip = if node.style.clip {
         let box_rect = ResolvedRect::new(node_abs.x, node_abs.y, painted.width, painted.height);
         Some(active_clip.map_or(box_rect, |c| c.intersect(&box_rect)))
@@ -52,7 +51,12 @@ fn commit_node_painted_bounds(
 
     // Both records are needed: the union drives vacated-pixel damage, and the flow-only
     // record detects an interior re-flow that happens without the box moving.
-    let flow_bounds = node.compute_flow_bounds(&tx, active_clip);
+    // Flow is computed from the same render box with the same pads, so it
+    // equals the clipped visual box (N1) — intersect instead of re-projecting.
+    let flow_bounds = match active_clip {
+        Some(clip) => visual_bounds.intersect(&clip),
+        None => visual_bounds,
+    };
     let node = arena.get_mut(id);
     node.state.paint.last_painted_bounds = Some(visual_bounds);
     node.state.paint.last_painted_flow = Some(flow_bounds);

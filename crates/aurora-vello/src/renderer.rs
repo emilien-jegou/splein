@@ -385,7 +385,9 @@ impl VelloRenderer {
             // Snapshot identity without holding the borrow across compile.
             let identity_matches = {
                 let frag = &self.fragments[i];
-                let hash = hash_commands(&chunk.commands);
+                let hash = chunk
+                    .content_hash
+                    .unwrap_or_else(|| hash_commands(&chunk.commands));
                 let bits = transform_bits(&chunk.placement);
                 frag.content_hash == hash && frag.placement_bits == bits
             };
@@ -413,7 +415,9 @@ impl VelloRenderer {
             encoded += 1;
             let frag = &mut self.fragments[i];
             frag.scene = frag_scene;
-            frag.content_hash = hash_commands(&chunk.commands);
+            frag.content_hash = chunk
+                .content_hash
+                .unwrap_or_else(|| hash_commands(&chunk.commands));
             frag.placement_bits = transform_bits(&chunk.placement);
             self.assemble_chunk(i, &chunk.inherited_clips, &placement_affine);
         }

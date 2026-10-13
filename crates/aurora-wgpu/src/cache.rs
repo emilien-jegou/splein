@@ -55,7 +55,12 @@ fn rect_key<H: Hasher>(r: &ResolvedRect, h: &mut H) {
 /// re-tessellating. Origin travels in the replay translation, never in identity.
 pub fn chunk_key(chunk: &SceneChunk, scale_q16: u16) -> u64 {
     let mut h = rustc_hash::FxHasher::default();
-    hash_commands(&chunk.commands).hash(&mut h);
+    // Memoized at chunk finalization (N4); the fallback covers hand-built
+    // chunks that bypassed `push_chunk` (tests, ad-hoc scenes).
+    chunk
+        .content_hash
+        .unwrap_or_else(|| hash_commands(&chunk.commands))
+        .hash(&mut h);
     transform_bits(&chunk.placement).hash(&mut h);
     scale_q16.hash(&mut h);
     chunk.inherited_clips.len().hash(&mut h);

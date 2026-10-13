@@ -176,13 +176,18 @@ impl LayoutNode {
     /// This is what changes when layout re-flows the interior while the render box is
     /// stationary, so damage must compare it separately. `tx` is the node's own transform,
     /// so the node's motion (scale, rotation) is included exactly once.
+    ///
+    /// Implemented as [`Self::compute_visual_bounds`]: both size from
+    /// `resolved_rect` with identical stroke/shadow pads, so a separate
+    /// projection would recompute the same box (N1). Kept as a named alias
+    /// so call sites keep reading intent; if flow and render boxes ever
+    /// diverge again, this is the single place to re-split them.
     pub fn compute_flow_bounds(
         &self,
         tx: &Transform,
         active_clip: Option<ResolvedRect>,
     ) -> ResolvedRect {
-        let flow = self.resolved_rect;
-        self.bounds_sized(tx, flow.width, flow.height, active_clip)
+        self.compute_visual_bounds(tx, active_clip)
     }
 
     /// Box that must be repainted when this node's geometry changes.
@@ -192,55 +197,6 @@ impl LayoutNode {
     /// has not moved yet, and visual bounds alone would look unchanged while the content
     /// has already shrunk. Nodes with no render box take the plain visual path, so the
     /// common case is unaffected.
-    /// Bounds of a box of `size` at this node's own origin, padded for stroke and shadow.
-    fn bounds_sized(
-        &self,
-        tx: &Transform,
-        width: f32,
-        height: f32,
-        active_clip: Option<ResolvedRect>,
-    ) -> ResolvedRect {
-        let pad = self.stroke_pad();
-        let local = ResolvedRect::new(0.0, 0.0, width, height);
-        let mut bounds = Self::project(tx, -pad, -pad, width + 2.0 * pad, height + 2.0 * pad);
-        bounds = bounds.union(&self.shadow_bounds(tx, local));
-        if let Some(clip) = active_clip {
-            bounds.intersect(&clip)
-        } else {
-            bounds
-        }
-    }
-
-    /// Extra pixels a stroke adds on each side of the box.
-    fn stroke_pad(&self) -> f32 {
-        match &self.style.appearance.stroke {
-            Some(stroke) => match stroke.align {
-                StrokeAlign::Outside => stroke.width,
-                StrokeAlign::Center => stroke.width * 0.5,
-                StrokeAlign::Inside => 0.0,
-            },
-            None => 0.0,
-        }
-    }
-
-    /// Bounds contributed by the shadow around a box at this node's own origin.
-    fn shadow_bounds(&self, tx: &Transform, box_rect: ResolvedRect) -> ResolvedRect {
-        let mut bounds = ResolvedRect::ZERO;
-        if let Some(shadow) = &self.style.appearance.shadow {
-            for layer in shadow.layers() {
-                let (ox, oy) = shadow.layer_offset(&self.state.core.resolved_light, layer);
-                let pad = shadow.layer_pad(layer);
-                bounds = bounds.union(&Self::project(
-                    tx,
-                    box_rect.x + ox - pad,
-                    box_rect.y + oy - pad,
-                    box_rect.width + 2.0 * pad,
-                    box_rect.height + 2.0 * pad,
-                ));
-            }
-        }
-        bounds
-    }
 
     /// Computes the laid-out box projected through `tx`, with no coverage pad.
     ///

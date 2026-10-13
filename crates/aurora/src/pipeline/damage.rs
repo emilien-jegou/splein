@@ -298,10 +298,20 @@ fn resolve_spatial_and_damage(
     let node_abs = node_tx.transform_point(Point::new(0.0, 0.0));
     // Unclipped occupancy drives damage: a node leaving its clip must still clear its old pixels.
     let full_bounds = arena.get(id).compute_visual_bounds(&node_tx, None);
-    // Visible extent under the active clip: bounds the subtree work a chunk has to rasterize.
-    let visual_bounds = arena.get(id).compute_visual_bounds(&node_tx, active_clip);
+    // Visible extent under the active clip: the unclipped box intersected.
+    // A second full projection (transform + shadow loop) for the same box
+    // is pure waste (N1) — intersect is a few comparisons.
+    let visual_bounds = match active_clip {
+        Some(clip) => full_bounds.intersect(&clip),
+        None => full_bounds,
+    };
     let mut subtree_bounds = visual_bounds;
-    let flow_bounds = arena.get(id).compute_flow_bounds(&node_tx, active_clip);
+    // Flow bounds are computed from the same render box with the same pads
+    // (`bounds_sized` over `resolved_rect` == `compute_visual_bounds`
+    // inputs): provably identical to `visual_bounds`, so copy instead of
+    // re-projecting a third time (N1). The stored/compared flow history
+    // keeps working — both sides of every comparison change together.
+    let flow_bounds = visual_bounds;
 
     // [S2-2] Static-subtree freeze: a proven-static, clean subtree whose own
     // occupancy, flow, and resolved light are all identical to last frame

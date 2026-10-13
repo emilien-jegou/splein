@@ -38,10 +38,18 @@ impl Scene {
         SceneChunk::with_commands(bounds, origin, self.alloc_commands())
     }
 
-    pub fn push_chunk(&mut self, chunk: SceneChunk) {
-        if !chunk.is_empty() {
-            self.chunks.push(chunk);
+    pub fn push_chunk(&mut self, mut chunk: SceneChunk) {
+        if chunk.is_empty() {
+            return;
         }
+        // Memoize the content hash exactly once (N4): fresh chunks finalized
+        // through `rebase_to_local` already carry it; ad-hoc chunks (built
+        // via `Scene::push`, never rebased) get hashed here; replays carry
+        // the retained hash. Backends then read instead of re-walking.
+        if chunk.content_hash.is_none() {
+            chunk.content_hash = Some(super::command::hash_commands(&chunk.commands));
+        }
+        self.chunks.push(chunk);
     }
 
     /// Appends a command to the active chunk, creating one if empty.

@@ -53,6 +53,11 @@ pub struct SceneChunk {
     pub placement: Transform,
     /// Whether commands were recompiled this frame (vs replayed from cache).
     pub fresh: bool,
+    /// Content hash memoized at finalization (N4): backends read this
+    /// instead of re-walking the stream per frame per tile. `None` means
+    /// unhashed (hand-built chunks); `push_chunk` fills it exactly once,
+    /// clones carry it, and any `push` clears it.
+    pub content_hash: Option<u64>,
 }
 
 impl SceneChunk {
@@ -65,6 +70,7 @@ impl SceneChunk {
             inherited_clips: InheritedClips::new(),
             placement: Transform::IDENTITY,
             fresh: true,
+            content_hash: None,
         }
     }
 
@@ -81,6 +87,7 @@ impl SceneChunk {
             inherited_clips: InheritedClips::new(),
             placement: Transform::IDENTITY,
             fresh: true,
+            content_hash: None,
         }
     }
 
@@ -92,6 +99,7 @@ impl SceneChunk {
             inherited_clips: InheritedClips::new(),
             placement: Transform::IDENTITY,
             fresh: true,
+            content_hash: None,
         }
     }
 
@@ -99,21 +107,26 @@ impl SceneChunk {
     ///
     /// The first `PushOffset` in the stream is the stacking root's absolute
     /// origin by construction; nested offsets are already parent-relative.
-    /// Called once at chunk finalization, before caching.
+    /// Called once at chunk finalization, before caching. Memoizes the
+    /// content hash: the stream is complete here, so backends never re-walk
+    /// it for an unchanged chunk.
     pub fn rebase_to_local(&mut self) {
         let (ox, oy) = (self.abs_origin.x, self.abs_origin.y);
         for cmd in Rc::make_mut(&mut self.commands).iter_mut() {
             if let SceneCommand::PushOffset(p) = cmd {
                 p.x -= ox;
                 p.y -= oy;
-                return;
+                break;
             }
         }
+        self.content_hash = Some(super::command::hash_commands(&self.commands));
     }
 
     #[inline(always)]
     pub fn push(&mut self, cmd: SceneCommand) {
         Rc::make_mut(&mut self.commands).push(cmd);
+        // Any mutation voids the memoized hash (recomputed at finalization).
+        self.content_hash = None;
     }
 
     #[inline(always)]
