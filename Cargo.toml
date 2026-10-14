@@ -1,7 +1,38 @@
 [workspace]
 resolver = "2"
-members = ["apps/splein", "crates/riode-android", "crates/riode", "crates/riode-skia", "crates/riode/macros", "crates/riode-tiny-skia", "crates/riode-vello", "crates/riode-wayland", "crates/riode-wgpu", "crates/riode-quad", "crates/riode/benches/bench_suite", "crates/riode-shared", "crates/riode-cli", "crates/riode-hot-gen", "examples", "crates/probe-min"]
-default-members = ["apps/splein", "crates/riode-android", "crates/riode", "crates/riode/macros", "crates/riode-tiny-skia", "crates/riode-vello", "crates/riode-wayland", "crates/riode-wgpu", "crates/riode-cli", "examples"]
+members = [
+  "apps/splein",
+  "crates/core/riode",
+  "crates/core/riode-shared",
+  "crates/core/riode-hot-gen",
+  "crates/core/riode/benches/bench_suite",
+  "crates/engines/riode-engine-tiny-skia",
+  "crates/engines/riode-vello",
+  "crates/engines/riode-skia",
+  "crates/engines/riode-wgpu",
+  "crates/platforms/riode-platform-wayland",
+  "crates/platforms/riode-platform-wayland",
+  "crates/tools/riode-cli",
+  "examples",
+  "crates/links/riode-wayland",
+  "crates/links/riode-tiny-skia",
+  "crates/links/riode-android-link",
+  "crates/links/riode-quad-link",
+  "crates/links/riode-skia-link",
+  "crates/links/riode-vello-link",
+  "crates/links/riode-wgpu-link",
+]
+default-members = [
+  "apps/splein",
+  "crates/core/riode",
+  "crates/core/riode/macros",
+  "crates/engines/riode-engine-tiny-skia",
+  "crates/engines/riode-vello",
+  "crates/platforms/riode-platform-wayland",
+  "crates/engines/riode-wgpu",
+  "crates/tools/riode-cli",
+  "examples"
+]
 
 [workspace.dependencies]
 smithay-client-toolkit = { version = "0.19", default-features = false }

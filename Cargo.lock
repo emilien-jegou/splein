@@ -229,7 +229,7 @@ version = "0.0.1"
 dependencies = [
  "criterion",
  "riode",
- "riode-tiny-skia",
+ "riode-engine-tiny-skia",
  "taffy",
 ]
 
@@ -2501,13 +2501,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "probe-min"
-version = "0.0.1"
-dependencies = [
- "riode-shared",
-]
-
-[[package]]
 name = "proc-macro-crate"
 version = "3.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2792,6 +2785,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "riode-android-link"
+version = "0.0.1-rc.1"
+dependencies = [
+ "riode-android",
+]
+
+[[package]]
 name = "riode-cli"
 version = "0.0.1-rc.1"
 dependencies = [
@@ -2801,12 +2801,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "riode-engine-tiny-skia"
+version = "0.0.1-rc.1"
+dependencies = [
+ "bon",
+ "bytemuck",
+ "ntest",
+ "rayon",
+ "resvg",
+ "riode",
+ "rustc-hash 2.1.3",
+ "smallvec",
+ "softbuffer",
+ "tiny-skia",
+ "tracing",
+ "tracy-client",
+ "winit",
+]
+
+[[package]]
 name = "riode-examples"
 version = "0.0.1-rc.1"
 dependencies = [
  "riode",
+ "riode-engine-tiny-skia",
  "riode-skia",
- "riode-tiny-skia",
  "riode-vello",
  "riode-wgpu",
  "tracing",
@@ -2836,13 +2855,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "riode-platform-wayland"
+version = "0.0.1-rc.1"
+dependencies = [
+ "bytemuck",
+ "ntest",
+ "riode",
+ "riode-engine-tiny-skia",
+ "smithay-client-toolkit 0.19.2",
+ "tracing",
+ "wayland-client",
+]
+
+[[package]]
 name = "riode-quad"
 version = "0.0.1-rc.1"
 dependencies = [
  "bytemuck",
  "pollster",
  "riode",
- "riode-tiny-skia",
+ "riode-engine-tiny-skia",
  "riode-vello",
  "riode-wgpu",
  "softbuffer",
@@ -2852,12 +2884,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "riode-quad-link"
+version = "0.0.1-rc.1"
+dependencies = [
+ "riode-quad",
+]
+
+[[package]]
 name = "riode-shared"
 version = "0.0.1-rc.1"
 dependencies = [
  "riode",
+ "riode-engine-tiny-skia",
  "riode-skia",
- "riode-tiny-skia",
  "riode-vello",
  "riode-wgpu",
 ]
@@ -2867,28 +2906,23 @@ name = "riode-skia"
 version = "0.0.1-rc.1"
 dependencies = [
  "riode",
- "riode-tiny-skia",
+ "riode-engine-tiny-skia",
  "softbuffer",
  "winit",
+]
+
+[[package]]
+name = "riode-skia-link"
+version = "0.0.1-rc.1"
+dependencies = [
+ "riode-skia",
 ]
 
 [[package]]
 name = "riode-tiny-skia"
 version = "0.0.1-rc.1"
 dependencies = [
- "bon",
- "bytemuck",
- "ntest",
- "rayon",
- "resvg",
- "riode",
- "rustc-hash 2.1.3",
- "smallvec",
- "softbuffer",
- "tiny-skia",
- "tracing",
- "tracy-client",
- "winit",
+ "riode-engine-tiny-skia",
 ]
 
 [[package]]
@@ -2900,8 +2934,8 @@ dependencies = [
  "pollster",
  "resvg",
  "riode",
+ "riode-engine-tiny-skia",
  "riode-quad",
- "riode-tiny-skia",
  "riode-wgpu",
  "rustc-hash 2.1.3",
  "tracing",
@@ -2912,16 +2946,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "riode-vello-link"
+version = "0.0.1-rc.1"
+dependencies = [
+ "riode-vello",
+]
+
+[[package]]
 name = "riode-wayland"
 version = "0.0.1-rc.1"
 dependencies = [
- "bytemuck",
- "ntest",
- "riode",
- "riode-tiny-skia",
- "smithay-client-toolkit 0.19.2",
- "tracing",
- "wayland-client",
+ "riode-platform-wayland",
 ]
 
 [[package]]
@@ -2936,6 +2971,13 @@ dependencies = [
  "tracing",
  "wgpu",
  "winit",
+]
+
+[[package]]
+name = "riode-wgpu-link"
+version = "0.0.1-rc.1"
+dependencies = [
+ "riode-wgpu",
 ]
 
 [[package]]

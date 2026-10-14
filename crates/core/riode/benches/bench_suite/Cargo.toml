@@ -12,7 +12,7 @@ taffy = "0.5"
 
 [target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]
 criterion = "0.5"
-riode-tiny-skia = { path = "../../../riode-tiny-skia" }
+riode-engine-tiny-skia = { path = "../../../../engines/riode-engine-tiny-skia" }
 
 [lib]
 bench = false

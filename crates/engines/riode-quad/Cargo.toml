@@ -7,8 +7,8 @@ description = "Single-window 2x2 combine backend for Aurora UI engine (all raste
 license = "MIT"
 
 [dependencies]
-riode = { path = "../riode", version = "0.0.1-rc.1" }
-riode-tiny-skia = { path = "../riode-tiny-skia", version = "0.0.1-rc.1" }
+riode = { path = "../../core/riode", version = "0.0.1-rc.1" }
+riode-engine-tiny-skia = { path = "../riode-engine-tiny-skia", version = "0.0.1-rc.1" }
 riode-vello = { path = "../riode-vello", version = "0.0.1-rc.1" }
 riode-wgpu = { path = "../riode-wgpu", version = "0.0.1-rc.1" }
 softbuffer = "0.4"

@@ -54,9 +54,9 @@ libloading = "0.8"
 [dev-dependencies]
 ntest = "0.9"
 libc = "0.2"
-riode-vello = { path = "../riode-vello", version = "0.0.1-rc.1" }
-riode-wgpu = { path = "../riode-wgpu", version = "0.0.1-rc.1" }
-riode-quad = { path = "../riode-quad", version = "0.0.1-rc.1" }
+riode-vello = { path = "../../engines/riode-vello", version = "0.0.1-rc.1" }
+riode-wgpu = { path = "../../engines/riode-wgpu", version = "0.0.1-rc.1" }
+riode-quad = { path = "../../engines/riode-quad", version = "0.0.1-rc.1" }
 
 [profile.release]
 debug = true

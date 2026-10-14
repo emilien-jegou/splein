@@ -11,7 +11,7 @@ default = ["svg-runtime"]
 svg-runtime = ["dep:resvg", "riode/svg-runtime"]
 
 [dependencies]
-riode = { path = "../riode", version = "0.0.1-rc.1" }
+riode = { path = "../../core/riode", version = "0.0.1-rc.1" }
 wgpu = "0.20"
 pollster = "0.3"
 resvg = { version = "0.42", optional = true }

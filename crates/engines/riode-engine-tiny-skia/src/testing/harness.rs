@@ -115,7 +115,7 @@ impl Harness {
     /// Loads the bundled test font, so text pages render instead of panicking.
     pub fn load_test_font(&mut self) {
         self.engine
-            .load_font(include_bytes!("../../../riode/assets/inter-var.ttf"));
+            .load_font(include_bytes!("../../../../core/riode/assets/inter-var.ttf"));
     }
 
     /// Sets the page colour captures are composited against.

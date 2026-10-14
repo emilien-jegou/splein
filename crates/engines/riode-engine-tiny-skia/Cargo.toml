@@ -1,5 +1,5 @@
 [package]
-name = "riode-tiny-skia"
+name = "riode-engine-tiny-skia"
 version = "0.0.1-rc.1"
 edition = "2021"
 publish = true
@@ -13,7 +13,7 @@ svg-runtime = ["dep:resvg", "riode/svg-runtime"]
 parallel = ["dep:rayon"]
 
 [dependencies]
-riode = { path = "../riode", version = "0.0.1-rc.1" }
+riode = { path = "../../core/riode", version = "0.0.1-rc.1" }
 tiny-skia = "0.11"
 resvg = { version = "0.42", optional = true }
 softbuffer = "0.4"
@@ -28,3 +28,6 @@ rayon = { version = "1", optional = true }
 
 [dev-dependencies]
 ntest = "0.9"
+
+[lib]
+name = "riode_tiny_skia"

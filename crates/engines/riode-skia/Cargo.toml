@@ -1,0 +1,15 @@
+[package]
+name = "riode-skia"
+version = "0.0.1-rc.1"
+publish = true
+edition = "2021"
+
+[features]
+default = ["desktop"]
+desktop = ["riode/desktop", "dep:winit", "dep:softbuffer", "dep:riode-engine-tiny-skia"]
+
+[dependencies]
+riode = { path = "../../core/riode", version = "0.0.1-rc.1", default-features = false, features = ["desktop"] }
+riode-engine-tiny-skia = { path = "../riode-engine-tiny-skia", version = "0.0.1-rc.1", optional = true }
+softbuffer = { version = "0.4", optional = true }
+winit = { version = "0.29", default-features = false, features = ["rwh_06", "x11", "wayland"], optional = true }
