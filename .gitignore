@@ -68,6 +68,14 @@
 
 !crates/riode-shared/
 !crates/riode-shared/**/*
+!crates/riode-android/
+!crates/riode-android/**/*
+!crates/riode-windows/
+!crates/riode-windows/**/*
+!crates/riode-macos/
+!crates/riode-macos/**/*
+!crates/riode-ios/
+!crates/riode-ios/**/*
 
 
 !crates/hot-stub/
