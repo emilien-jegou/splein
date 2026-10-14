@@ -240,7 +240,7 @@ impl DevLoop {
         );
         let build_log =
             std::env::temp_dir().join(format!("aurora-hot-build-{}.log", std::process::id()));
-        Self {
+        let mut dev = Self {
             loader: DylibReloader::new(lib_path),
             watcher,
             build_child: None,
@@ -258,6 +258,66 @@ impl DevLoop {
             pending_fast: None,
             last_changed_rs: Vec::new(),
             config,
+        };
+        // Prime snapshots so the FIRST edit classifies like any other: with an
+        // empty map the first watcher hit only snapshots (no old text to diff)
+        // and can never fast-path, sending one guaranteed full rebuild per
+        // process lifetime. Bounded walk (`.rs`, ≤1MB each).
+        dev.prime_snapshots();
+        dev
+    }
+
+    /// Reads every `.rs` file under the watch dir into the snapshot map.
+    ///
+    /// Keys match watcher output (canonicalized best-effort) so the first
+    /// real save diffs instead of merely priming. Missing dirs, unreadable
+    /// files, and oversized files are skipped silently — worst case the first
+    /// edit of an unprimed file rebuilds once, exactly the old behavior.
+    fn prime_snapshots(&mut self) {
+        const MAX_PRIME_BYTES: u64 = 1024 * 1024;
+        fn walk(dir: &std::path::Path, out: &mut Vec<PathBuf>) {
+            let Ok(entries) = std::fs::read_dir(dir) else {
+                return;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    // Skip build-cache-looking dirs even inside the watch root.
+                    if path
+                        .file_name()
+                        .is_some_and(|n| n == "target" || n == ".git")
+                    {
+                        continue;
+                    }
+                    walk(&path, out);
+                } else if path.extension().is_some_and(|e| e == "rs") {
+                    out.push(path);
+                }
+            }
+        }
+        let mut files = Vec::new();
+        walk(&self.config.watch_dir(), &mut files);
+        let mut primed = 0;
+        for file in files {
+            let Ok(meta) = std::fs::metadata(&file) else {
+                continue;
+            };
+            if meta.len() > MAX_PRIME_BYTES {
+                continue;
+            }
+            let Ok(text) = std::fs::read_to_string(&file) else {
+                continue;
+            };
+            self.file_snapshots
+                .insert(crate::hot_reload::watcher::canonicalize_for_match(&file), text);
+            primed += 1;
+        }
+        if primed > 0 {
+            tracing::debug!(
+                "aurora: hot-reload primed {} source snapshots under {}",
+                primed,
+                self.config.watch_dir().display()
+            );
         }
     }
 
@@ -429,6 +489,24 @@ impl DevLoop {
     /// before startup or while restarting, which no watcher ever saw.
     pub fn poll(&mut self) -> PollOutcome {
         let changed = self.watcher.poll_changed();
+        // Editor droppings (swap files, backups, lockfiles) in the recursively
+        // watched dir must never cost a 20s rebuild: filter before anything
+        // else. Unknown files still trigger (conservative) — only known-temp
+        // patterns are dropped.
+        let changed: Vec<PathBuf> = changed
+            .into_iter()
+            .filter(|p| {
+                if Self::is_temp_noise(p) {
+                    tracing::debug!(
+                        "aurora: hot-reload ignoring editor noise {}",
+                        p.display()
+                    );
+                    false
+                } else {
+                    true
+                }
+            })
+            .collect();
         let watcher_hit = !changed.is_empty();
         if !changed.is_empty() {
             self.classify_changed(&changed);
@@ -570,6 +648,39 @@ impl DevLoop {
         );
         self.pending_fast = Some(all);
         true
+    }
+
+    /// Whether a watcher path is editor/build noise that must never trigger a
+    /// rebuild: dotfiles (`.swp` lives beside the file, `.#lock` emacs links),
+    /// `*~` / `*.bak` backups, `*.tmp`/`*.temp` scratch, `#...#` autosaves.
+    ///
+    /// Conservative by omission: anything not matching triggers as before (new
+    /// asset kinds, shaders, manifests). Unit-tested below.
+    fn is_temp_noise(path: &std::path::Path) -> bool {
+        let name = path
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        if name.is_empty() {
+            return false;
+        }
+        if name.starts_with('.') {
+            return true;
+        }
+        if name.starts_with('#') || name.starts_with(".#") {
+            return true;
+        }
+        if name.ends_with('~') || name.ends_with(".tmp") || name.ends_with(".temp") {
+            return true;
+        }
+        if name.ends_with(".swp") || name.ends_with(".swo") || name.ends_with(".bak") {
+            return true;
+        }
+        // Emacs-style `#name#` autosaves (leading `#` already covered; trailing).
+        if name.ends_with('#') {
+            return true;
+        }
+        false
     }
 
     /// Whether the throttled freshness walk is due.
@@ -1193,6 +1304,74 @@ mod tests {
             PollOutcome::Idle,
             "manifest edit must wake the loop"
         );
+    }
+
+    /// Editor noise never triggers; real sources and manifests always do.
+    #[test]
+    fn temp_noise_filter_keeps_sources() {
+        for noise in [
+            ".row.rs.swp",
+            "row.rs.swp",
+            "row.rs.swo",
+            "row.rs~",
+            ".#row.rs",
+            "#row.rs#",
+            "row.rs.tmp",
+            "row.rs.temp",
+            "row.rs.bak",
+            ".DS_Store",
+        ] {
+            assert!(
+                DevLoop::is_temp_noise(std::path::Path::new(noise)),
+                "{noise} must be noise"
+            );
+        }
+        for source in ["row.rs", "view.rs", "Cargo.toml", "icon.svg", "main.rs"] {
+            assert!(
+                !DevLoop::is_temp_noise(std::path::Path::new(source)),
+                "{source} must trigger"
+            );
+        }
+    }
+
+    /// Snapshots prime at construction, so the FIRST edit of a session already
+    /// diffs (previously it only primed and unconditionally rebuilt once).
+    #[test]
+    fn primed_first_edit_classifies() {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let root = std::env::temp_dir().join(format!("aurora-hot-prime-{stamp}"));
+        let dir = root.join("examples").join("pkg");
+        std::fs::create_dir_all(&dir).expect("temp workspace");
+        let view = dir.join("view.rs");
+        std::fs::write(&view, "fn p() { view! { <Group radius={12.0}></Group> } }")
+            .expect("seed view");
+        let mut dev = DevLoop::new(DevLoopConfig {
+            example: Some("pkg".to_string()),
+            package: "pkg".to_string(),
+            workspace_root: root.clone(),
+            watch_dir: None,
+            lib_path: None,
+            auto_build: false,
+            companion_packages: vec![],
+        });
+        assert!(
+            !dev.file_snapshots.is_empty(),
+            "watch dir sources prime at construction"
+        );
+        // The radius edit the user actually made: template-only on first sight.
+        std::fs::write(&view, "fn p() { view! { <Group radius={10.0}></Group> } }")
+            .expect("edit view");
+        let canon = crate::hot_reload::watcher::canonicalize_for_match(&view);
+        dev.classify_changed(std::slice::from_ref(&canon));
+        assert_eq!(
+            dev.last_edit_kind(),
+            Some(crate::hot_reload::template::EditKind::TemplateOnly),
+            "primed first edit must classify, not merely snapshot"
+        );
+        let _ = std::fs::remove_dir_all(&root);
     }
 }
 

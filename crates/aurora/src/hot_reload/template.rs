@@ -266,7 +266,7 @@ fn extract_body_slots(body: &str, line: usize) -> Option<Vec<TemplateSlot>> {
     let mut idx = 0usize;
     let bytes = body.as_bytes();
     let mut p = 0;
-    let mut push_string = |s: String, idx: &mut usize, slots: &mut Vec<TemplateSlot>| {
+    let push_string = |s: String, idx: &mut usize, slots: &mut Vec<TemplateSlot>| {
         slots.push(TemplateSlot {
             key: format!("{line}:{idx}"),
             string: Some(s),
@@ -274,7 +274,7 @@ fn extract_body_slots(body: &str, line: usize) -> Option<Vec<TemplateSlot>> {
         });
         *idx += 1;
     };
-    let mut push_number = |v: f32, idx: &mut usize, slots: &mut Vec<TemplateSlot>| {
+    let push_number = |v: f32, idx: &mut usize, slots: &mut Vec<TemplateSlot>| {
         slots.push(TemplateSlot {
             key: format!("{line}:{idx}"),
             string: None,

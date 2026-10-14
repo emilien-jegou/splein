@@ -122,6 +122,11 @@ fn canonicalize_best_effort(path: &Path) -> PathBuf {
     std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
+/// Canonicalize for snapshot/watcher key agreement across modules.
+pub(crate) fn canonicalize_for_match(path: &Path) -> PathBuf {
+    canonicalize_best_effort(path)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

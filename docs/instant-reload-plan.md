@@ -39,6 +39,14 @@ above a `view!` shifts the new source's lines while the registry holds old ones,
 so the first such edit misses and rebuilds once, then re-registers and fast-path
 resumes. A shape+order key would remove this; not worth it yet.
 
+**First-edit behavior:** `DevLoop` primes `.rs` snapshots at construction, so the
+first save of a session classifies like any other (previously it only primed and
+unconditionally rebuilt once per process lifetime).
+
+**Trigger hygiene:** editor droppings in the watched dir (dotfiles, `*~`,
+`*.swp`/`*.swo`, `*.tmp`, `#…#`) are drained-and-ignored with a debug log and
+never cost a rebuild. Unknown files still trigger conservatively.
+
 1. **Macro emits template.** `view!` keeps current builder expansion; adds
    `#[cfg(debug_assertions)]` const template: node tree + source location + slots for
    literals/`{expr}` splices. Pure data, `serde`-able.
