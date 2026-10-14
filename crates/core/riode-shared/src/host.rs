@@ -70,7 +70,7 @@ pub extern "Rust" fn devkit_run(
     ])
     .title(format!("{title} [1-5 engine | Tab/F7 cycle]"))
     .size(info.width.max(1), info.height.max(1))
-    .font("Inter", include_bytes!("../riode/assets/inter-var.ttf"))
+    .font("Inter", include_bytes!("../../riode/assets/inter-var.ttf"))
     .background(Color::hex(info.background))
     .initial(backend)
     .extension(debugger)

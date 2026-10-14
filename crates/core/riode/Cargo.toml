@@ -5,6 +5,7 @@ edition = "2021"
 publish = true
 description = "Layout Engine"
 license = "GPL-3.0"
+readme = "README.md"
 
 [features]
 default = ["os-clipboard", "text-runtime", "svg-runtime", "desktop"]

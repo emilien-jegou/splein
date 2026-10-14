@@ -1,3 +1,5 @@
-# riode-windows
+# riode-platform-windows
 
-Reserved platform crate. Not implemented yet.
+Windows platform backend for the Aurora UI engine
+
+Licensed under GPL-3.0.

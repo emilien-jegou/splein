@@ -1,6 +1,8 @@
 [package]
 name = "bench_suite"
 version = "0.2.0"
+license = "GPL-3.0"
+readme = "README.md"
 edition = "2021"
 description = "Criterion benchmark suite for Aurora core performance gates (ported from Martensite bench_suite)."
 publish = false

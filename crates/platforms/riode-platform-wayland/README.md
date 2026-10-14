@@ -1,11 +1,5 @@
-# riode-wayland — Wayland layer-shell SHM presentation backend
+# riode-platform-wayland
 
-Presents `riode` frames on Wayland via the layer-shell protocol with shared-memory
-(SHM) buffers, compositing the core engine with the CPU (`riode-tiny-skia`)
-rasterizer.
+Wayland layer-shell SHM presentation backend for the Aurora UI engine
 
-## Dependencies
-
-Depends on `riode` + `riode-tiny-skia` — never the reverse. Compositor-side
-concerns only (surfaces, buffers, layer-shell); all layout/paint logic stays in
-the engine crates.
+Licensed under GPL-3.0.

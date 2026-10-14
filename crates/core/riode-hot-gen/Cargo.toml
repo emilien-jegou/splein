@@ -5,6 +5,7 @@ edition = "2021"
 publish = true
 description = "Generative hot-reload UI (cdylib, dev only): one crate serving every example via AURORA_HOT_EXAMPLE"
 license = "GPL-3.0"
+readme = "README.md"
 
 [lib]
 crate-type = ["cdylib"]

@@ -5,6 +5,7 @@ edition = "2021"
 publish = true
 description = "Aurora dev launcher: runs UI crates in hot-reload mode through the shared runtime"
 license = "GPL-3.0"
+readme = "README.md"
 
 [[bin]]
 name = "riode"

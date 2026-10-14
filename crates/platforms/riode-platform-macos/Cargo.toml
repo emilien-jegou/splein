@@ -3,5 +3,8 @@ name = "riode-platform-macos"
 version = "0.2.0"
 edition = "2021"
 publish = true
+description = "macOS platform backend for the Aurora UI engine"
+license = "GPL-3.0"
+readme = "README.md"
 
 [lib]

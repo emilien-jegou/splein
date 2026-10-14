@@ -1,3 +1,5 @@
-# riode-ios
+# riode-platform-ios
 
-Reserved platform crate. Not implemented yet.
+iOS platform backend for the Aurora UI engine
+
+Licensed under GPL-3.0.

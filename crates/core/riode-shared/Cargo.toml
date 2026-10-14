@@ -5,6 +5,7 @@ edition = "2021"
 publish = true
 description = "Single shared riode runtime image for hot-reload hosts and UI libraries (dylib, dev only)"
 license = "GPL-3.0"
+readme = "README.md"
 
 [lib]
 # Dynamic only: this image is the *only* riode code in hot-loop processes. The host

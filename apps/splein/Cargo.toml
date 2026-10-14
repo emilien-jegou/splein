@@ -5,6 +5,7 @@ edition = "2021"
 publish = true
 description = "Draw screen overlay"
 license = "GPL-3.0"
+readme = "README.md"
 
 [dependencies]
 clap = { workspace = true }

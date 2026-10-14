@@ -3,6 +3,8 @@ name = "riode-engine-vello-link"
 version = "0.2.0"
 edition = "2021"
 publish = true
+license = "GPL-3.0"
+readme = "README.md"
 
 [lib]
 name = "riode_engine_vello_link"

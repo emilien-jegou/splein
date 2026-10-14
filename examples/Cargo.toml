@@ -1,6 +1,8 @@
 [package]
 name = "riode-examples"
 version = "0.2.0"
+license = "GPL-3.0"
+readme = "README.md"
 edition = "2021"
 publish = false
 description = "Aurora interactive demos and showcases (release-style static binaries)"

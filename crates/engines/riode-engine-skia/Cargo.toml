@@ -2,6 +2,8 @@
 name = "riode-engine-skia"
 version = "0.2.0"
 publish = true
+license = "GPL-3.0"
+readme = "README.md"
 edition = "2021"
 
 [features]

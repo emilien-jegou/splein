@@ -5,6 +5,7 @@ edition = "2021"
 publish = true
 description = "Vello GPU rasterization backend for the Aurora UI engine"
 license = "GPL-3.0"
+readme = "README.md"
 
 [features]
 default = ["svg-runtime"]

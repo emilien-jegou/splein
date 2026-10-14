@@ -22,12 +22,15 @@ fn fail(msg: String) -> ! {
 fn main() {
     println!("cargo:rerun-if-env-changed=AURORA_HOT_EXAMPLE");
     let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
-    // crates/riode-hot-gen -> workspace root.
     let ws = manifest_dir
-        .parent()
-        .and_then(|p| p.parent())
+        .ancestors()
+        .find(|p| {
+            std::fs::read_to_string(p.join("Cargo.toml"))
+                .map(|s| s.contains("[workspace]"))
+                .unwrap_or(false)
+        })
         .map(|p| p.to_path_buf())
-        .unwrap();
+        .unwrap_or_else(|| fail("could not locate workspace root (no ancestor Cargo.toml with [workspace])".into()));
     let out = PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("_gen.rs");
     let name = std::env::var("AURORA_HOT_EXAMPLE").unwrap_or_default();
     if name.is_empty() {

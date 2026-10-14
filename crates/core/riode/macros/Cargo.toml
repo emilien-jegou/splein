@@ -5,6 +5,7 @@ edition = "2021"
 publish = true
 description = "Attribute macros for the Aurora UI engine"
 license = "GPL-3.0"
+readme = "README.md"
 
 [lib]
 proc-macro = true
