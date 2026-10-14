@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 
 use smallvec::SmallVec;
 use winit::event::{ElementState, Event, WindowEvent};
-use winit::event_loop::EventLoopBuilder;
+use winit::event_loop::{ControlFlow, EventLoopBuilder};
 use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowBuilder};
 
@@ -595,10 +595,11 @@ fn run_multi<E: IntoElement, F: Fn() -> E + 'static>(config: MultiBackendConfig,
             }
             Event::AboutToWait => {
                 // Idle extension lap (hot-reload lives here): request a frame
-                // when an extension has work, else the loop sleeps unthrottled
-                // and `ControlFlow` defaults keep it waking. Mirrors the
-                // single-window runner's idle pacing; without this a resting
-                // demo never notices source edits.
+                // when an extension has work, then ALWAYS schedule the next
+                // wake. winit's default `ControlFlow::Wait` suspends the thread
+                // until an OS event arrives — without an explicit `WaitUntil`
+                // an idle window sleeps through source edits and only reloads
+                // when the mouse (CursorMoved events) wakes it.
                 if last_idle_poll.elapsed() >= Duration::from_millis(500) {
                     last_idle_poll = Instant::now();
                     if extensions.iter_mut().any(|ext| ext.on_idle()) {
@@ -607,6 +608,9 @@ fn run_multi<E: IntoElement, F: Fn() -> E + 'static>(config: MultiBackendConfig,
                         }
                     }
                 }
+                elwt.set_control_flow(ControlFlow::WaitUntil(
+                    Instant::now() + Duration::from_millis(500),
+                ));
                 let _ = last_present;
             }
             _ => {}

@@ -943,6 +943,11 @@ fn run_switchable_loop(
                         dbg.window.request_redraw();
                     }
                 } else {
+                    // Idle extension lap: an idle gallery still polls
+                    // hot-reload extensions (edits apply without the mouse).
+                    if extensions.iter_mut().any(|ext| ext.on_idle()) {
+                        window.request_redraw();
+                    }
                     elwt.set_control_flow(ControlFlow::WaitUntil(
                         Instant::now() + Duration::from_millis(500),
                     ));
