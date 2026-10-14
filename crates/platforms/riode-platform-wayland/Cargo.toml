@@ -1,14 +1,14 @@
 [package]
 name = "riode-platform-wayland"
-version = "0.0.1-rc.1"
+version = "0.2.0"
 edition = "2021"
 publish = true
 description = "Wayland layer-shell SHM presentation backend for the Aurora UI engine"
 license = "GPL-3.0"
 
 [dependencies]
-riode = { path = "../../core/riode", version = "0.0.1-rc.1" }
-riode-engine-tiny-skia = { path = "../../engines/riode-engine-tiny-skia", version = "0.0.1-rc.1" }
+riode = { path = "../../core/riode", version = "0.2.0" }
+riode-engine-tiny-skia = { path = "../../engines/riode-engine-tiny-skia", version = "0.2.0" }
 smithay-client-toolkit = { workspace = true }
 wayland-client = { workspace = true }
 bytemuck = "1"

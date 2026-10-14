@@ -187,7 +187,7 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "bench_suite"
-version = "0.0.1"
+version = "0.2.0"
 dependencies = [
  "criterion",
  "riode",
@@ -2668,7 +2668,7 @@ dependencies = [
 
 [[package]]
 name = "riode"
-version = "0.0.1-rc.1"
+version = "0.2.0"
 dependencies = [
  "arboard",
  "bon",
@@ -2696,7 +2696,7 @@ dependencies = [
 
 [[package]]
 name = "riode-cli"
-version = "0.0.1-rc.1"
+version = "0.2.0"
 dependencies = [
  "clap",
  "libc",
@@ -2705,7 +2705,7 @@ dependencies = [
 
 [[package]]
 name = "riode-engine-skia"
-version = "0.0.1-rc.1"
+version = "0.2.0"
 dependencies = [
  "riode",
  "riode-engine-tiny-skia",
@@ -2715,14 +2715,14 @@ dependencies = [
 
 [[package]]
 name = "riode-engine-skia-link"
-version = "0.0.1-rc.1"
+version = "0.2.0"
 dependencies = [
  "riode-engine-skia",
 ]
 
 [[package]]
 name = "riode-engine-tiny-skia"
-version = "0.0.1-rc.1"
+version = "0.2.0"
 dependencies = [
  "bon",
  "bytemuck",
@@ -2741,7 +2741,7 @@ dependencies = [
 
 [[package]]
 name = "riode-engine-vello"
-version = "0.0.1-rc.1"
+version = "0.2.0"
 dependencies = [
  "bon",
  "ntest",
@@ -2760,14 +2760,14 @@ dependencies = [
 
 [[package]]
 name = "riode-engine-vello-link"
-version = "0.0.1-rc.1"
+version = "0.2.0"
 dependencies = [
  "riode-engine-vello",
 ]
 
 [[package]]
 name = "riode-engine-wgpu"
-version = "0.0.1-rc.1"
+version = "0.2.0"
 dependencies = [
  "bytemuck",
  "pollster",
@@ -2781,14 +2781,14 @@ dependencies = [
 
 [[package]]
 name = "riode-engine-wgpu-link"
-version = "0.0.1-rc.1"
+version = "0.2.0"
 dependencies = [
  "riode-engine-wgpu",
 ]
 
 [[package]]
 name = "riode-examples"
-version = "0.0.1-rc.1"
+version = "0.2.0"
 dependencies = [
  "riode",
  "riode-engine-skia",
@@ -2802,14 +2802,14 @@ dependencies = [
 
 [[package]]
 name = "riode-hot-gen-ui"
-version = "0.0.1-rc.1"
+version = "0.2.0"
 dependencies = [
  "riode-shared",
 ]
 
 [[package]]
 name = "riode-macros"
-version = "0.0.1-rc.1"
+version = "0.2.0"
 dependencies = [
  "parley",
  "proc-macro2",
@@ -2823,40 +2823,40 @@ dependencies = [
 
 [[package]]
 name = "riode-platform-android"
-version = "0.0.1-rc.1"
+version = "0.2.0"
 
 [[package]]
 name = "riode-platform-android-link"
-version = "0.0.1-rc.1"
+version = "0.2.0"
 dependencies = [
  "riode-platform-android",
 ]
 
 [[package]]
 name = "riode-platform-ios"
-version = "0.0.1-rc.1"
+version = "0.2.0"
 
 [[package]]
 name = "riode-platform-ios-link"
-version = "0.0.1-rc.1"
+version = "0.2.0"
 dependencies = [
  "riode-platform-ios",
 ]
 
 [[package]]
 name = "riode-platform-macos"
-version = "0.0.1-rc.1"
+version = "0.2.0"
 
 [[package]]
 name = "riode-platform-macos-link"
-version = "0.0.1-rc.1"
+version = "0.2.0"
 dependencies = [
  "riode-platform-macos",
 ]
 
 [[package]]
 name = "riode-platform-wayland"
-version = "0.0.1-rc.1"
+version = "0.2.0"
 dependencies = [
  "bytemuck",
  "ntest",
@@ -2869,18 +2869,18 @@ dependencies = [
 
 [[package]]
 name = "riode-platform-windows"
-version = "0.0.1-rc.1"
+version = "0.2.0"
 
 [[package]]
 name = "riode-platform-windows-link"
-version = "0.0.1-rc.1"
+version = "0.2.0"
 dependencies = [
  "riode-platform-windows",
 ]
 
 [[package]]
 name = "riode-shared"
-version = "0.0.1-rc.1"
+version = "0.2.0"
 dependencies = [
  "riode",
  "riode-engine-skia",
@@ -2891,14 +2891,14 @@ dependencies = [
 
 [[package]]
 name = "riode-tiny-skia"
-version = "0.0.1-rc.1"
+version = "0.2.0"
 dependencies = [
  "riode-engine-tiny-skia",
 ]
 
 [[package]]
 name = "riode-wayland"
-version = "0.0.1-rc.1"
+version = "0.2.0"
 dependencies = [
  "riode-platform-wayland",
 ]
@@ -3262,7 +3262,7 @@ dependencies = [
 
 [[package]]
 name = "splein"
-version = "0.0.1-rc.1"
+version = "0.2.0"
 dependencies = [
  "calloop 0.13.0",
  "clap",

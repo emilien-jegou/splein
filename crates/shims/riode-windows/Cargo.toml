@@ -1,6 +1,6 @@
 [package]
 name = "riode-platform-windows-link"
-version = "0.0.1-rc.1"
+version = "0.2.0"
 edition = "2021"
 publish = true
 
@@ -8,4 +8,4 @@ publish = true
 name = "riode_platform_windows_link"
 
 [dependencies]
-riode-platform-windows = { path = "../../platforms/riode-platform-windows", package = "riode-platform-windows" }
+riode-platform-windows = { path = "../../platforms/riode-platform-windows", package = "riode-platform-windows", version = "0.2.0" }

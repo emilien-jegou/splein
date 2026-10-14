@@ -1,6 +1,6 @@
 [package]
 name = "riode-engine-wgpu-link"
-version = "0.0.1-rc.1"
+version = "0.2.0"
 edition = "2021"
 publish = true
 
@@ -8,4 +8,4 @@ publish = true
 name = "riode_engine_wgpu_link"
 
 [dependencies]
-riode-engine-wgpu = { path = "../../engines/riode-engine-wgpu", package = "riode-engine-wgpu" }
+riode-engine-wgpu = { path = "../../engines/riode-engine-wgpu", package = "riode-engine-wgpu", version = "0.2.0" }

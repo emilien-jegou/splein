@@ -1,6 +1,6 @@
 [package]
 name = "riode-macros"
-version = "0.0.1-rc.1"
+version = "0.2.0"
 edition = "2021"
 publish = true
 description = "Attribute macros for the Aurora UI engine"

@@ -1,6 +1,6 @@
 [package]
 name = "riode-shared"
-version = "0.0.1-rc.1"
+version = "0.2.0"
 edition = "2021"
 publish = true
 description = "Single shared riode runtime image for hot-reload hosts and UI libraries (dylib, dev only)"
@@ -14,8 +14,8 @@ license = "GPL-3.0"
 crate-type = ["dylib"]
 
 [dependencies]
-riode = { path = "../riode", version = "0.0.1-rc.1" }
-riode-engine-tiny-skia = { path = "../../engines/riode-engine-tiny-skia", version = "0.0.1-rc.1" }
-riode-engine-skia = { path = "../../engines/riode-engine-skia", version = "0.0.1-rc.1" }
-riode-engine-vello = { path = "../../engines/riode-engine-vello", version = "0.0.1-rc.1" }
-riode-engine-wgpu = { path = "../../engines/riode-engine-wgpu", version = "0.0.1-rc.1" }
+riode = { path = "../riode", version = "0.2.0" }
+riode-engine-tiny-skia = { path = "../../engines/riode-engine-tiny-skia", version = "0.2.0" }
+riode-engine-skia = { path = "../../engines/riode-engine-skia", version = "0.2.0" }
+riode-engine-vello = { path = "../../engines/riode-engine-vello", version = "0.2.0" }
+riode-engine-wgpu = { path = "../../engines/riode-engine-wgpu", version = "0.2.0" }

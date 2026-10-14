@@ -1,6 +1,6 @@
 [package]
 name = "bench_suite"
-version = "0.0.1"
+version = "0.2.0"
 edition = "2021"
 description = "Criterion benchmark suite for Aurora core performance gates (ported from Martensite bench_suite)."
 publish = false

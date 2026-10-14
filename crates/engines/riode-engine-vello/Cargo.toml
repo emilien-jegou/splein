@@ -1,6 +1,6 @@
 [package]
 name = "riode-engine-vello"
-version = "0.0.1-rc.1"
+version = "0.2.0"
 edition = "2021"
 publish = true
 description = "Vello GPU rasterization backend for the Aurora UI engine"
@@ -11,7 +11,7 @@ default = ["svg-runtime"]
 svg-runtime = ["dep:resvg", "riode/svg-runtime"]
 
 [dependencies]
-riode = { path = "../../core/riode", version = "0.0.1-rc.1" }
+riode = { path = "../../core/riode", version = "0.2.0" }
 vello = "0.2"
 wgpu = "0.20"
 pollster = "0.3"
@@ -23,6 +23,6 @@ tracing = "0.1"
 
 [dev-dependencies]
 ntest = "0.9"
-riode-engine-tiny-skia = { path = "../riode-engine-tiny-skia", version = "0.0.1-rc.1" }
-riode-engine-wgpu = { path = "../riode-engine-wgpu", version = "0.0.1-rc.1" }
+riode-engine-tiny-skia = { path = "../riode-engine-tiny-skia", version = "0.2.0" }
+riode-engine-wgpu = { path = "../riode-engine-wgpu", version = "0.2.0" }
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
