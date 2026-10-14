@@ -200,6 +200,13 @@ pub struct DevLoop {
     /// Without this, saves landing in the (long) link window are drained from the watcher
     /// and forgotten — the window shows stale UI until the *next* save for no reason.
     dirty_during_build: bool,
+    /// Last-seen text per watched `.rs` file, for the Tier-1 template gate.
+    /// Populated lazily on first observation; compared on each watcher hit so
+    /// `last_edit_kind` reports whether the save was template-only. Advisory
+    /// only — the loop still rebuilds either way until the IPC fast path lands.
+    file_snapshots: std::collections::HashMap<PathBuf, String>,
+    /// Classification of the most recent observed save, if any `.rs` file changed.
+    last_edit_kind: Option<crate::hot_reload::template::EditKind>,
 }
 
 impl DevLoop {
@@ -235,7 +242,59 @@ impl DevLoop {
             // waiting out the throttle.
             last_freshness_check: std::time::Instant::now() - FRESHNESS_WALK_INTERVAL,
             dirty_during_build: false,
+            file_snapshots: std::collections::HashMap::new(),
+            last_edit_kind: None,
             config,
+        }
+    }
+
+    /// Classification of the most recent observed `.rs` save, if any.
+    ///
+    /// Tier-1 gate probe (advisory): `Some(TemplateOnly)` means the save touched
+    /// only `view!` bodies textually and would be IPC-fast-path eligible once
+    /// the transport lands. The loop still rebuilds either way.
+    pub fn last_edit_kind(&self) -> Option<crate::hot_reload::template::EditKind> {
+        self.last_edit_kind
+    }
+
+    /// Classifies changed `.rs` files against last-seen snapshots, updating them.
+    ///
+    /// First observation of a file only snapshots (returns `None`: nothing to
+    /// diff against). Later saves compare and fold to the most conservative
+    /// kind (`NeedsRebuild` wins over `TemplateOnly`).
+    fn classify_changed(&mut self, changed: &[PathBuf]) {
+        use crate::hot_reload::template::{classify_edit, EditKind};
+        let mut kind: Option<EditKind> = None;
+        for path in changed {
+            if path.extension().is_none_or(|e| e != "rs") {
+                continue;
+            }
+            let Ok(text) = std::fs::read_to_string(path) else {
+                continue;
+            };
+            match self.file_snapshots.get(path) {
+                None => {
+                    self.file_snapshots.insert(path.clone(), text);
+                }
+                Some(old) => {
+                    if old != &text {
+                        let k = classify_edit(old, &text);
+                        kind = Some(match (kind, k) {
+                            (_, EditKind::NeedsRebuild)
+                            | (Some(EditKind::NeedsRebuild), _) => EditKind::NeedsRebuild,
+                            _ => EditKind::TemplateOnly,
+                        });
+                        self.file_snapshots.insert(path.clone(), text);
+                    }
+                }
+            }
+        }
+        if kind.is_some() {
+            self.last_edit_kind = kind;
+            tracing::info!(
+                "aurora: hot-reload save classified as {:?} (still rebuilding: IPC fast path not yet wired)",
+                kind.unwrap()
+            );
         }
     }
 
@@ -337,7 +396,11 @@ impl DevLoop {
     /// whenever sources are newer than the loaded image — including saves that landed
     /// before startup or while restarting, which no watcher ever saw.
     pub fn poll(&mut self) -> PollOutcome {
-        let watcher_hit = !self.watcher.poll_changed().is_empty();
+        let changed = self.watcher.poll_changed();
+        let watcher_hit = !changed.is_empty();
+        if !changed.is_empty() {
+            self.classify_changed(&changed);
+        }
         if self.build_child.is_some() {
             if watcher_hit {
                 self.dirty_during_build = true;
