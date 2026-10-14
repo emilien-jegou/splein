@@ -44,7 +44,7 @@ pub fn Page() -> impl IntoElement {
             <Content>
                 <Panel head={<Strip
                     left={<Eyebrow label="CONTROLLER" />}
-                    right={Controls(status.clone(), control.clone())}
+                    right={Controls(status, control.clone())}
                 />}
                 >
                     <Card control={control} slide={slide} />
@@ -60,7 +60,7 @@ fn Controls(status: Signal<String>, control: ControllerHandle) -> impl IntoEleme
     view! {
         <Group direction="horizontal" gap={10.0} alignment="center">
             <StatusChip>
-                <Text size={11.0} weight={700u16} color={Color::white_alpha(0.85)}>{status.clone()}</Text>
+                <Text size={11.0} weight={700u16} color={Color::white_alpha(0.85)}>{status}</Text>
             </StatusChip>
             <RestartPill control={control} status={status} />
         </Group>
@@ -71,7 +71,7 @@ fn Controls(status: Signal<String>, control: ControllerHandle) -> impl IntoEleme
 #[component]
 fn RestartPill(control: ControllerHandle, status: Signal<String>) -> impl IntoElement {
     let handler = control.clone();
-    let reporter = status.clone();
+    let reporter = status;
     view! {
         <Group
             key="restart"
@@ -99,7 +99,7 @@ fn Card(control: ControllerHandle, slide: Signal<f32>) -> impl IntoElement {
     let on_enter = control.clone();
     let on_leave = control.clone();
     let reporter = use_signal(String::from("playing"));
-    let (say_paused, say_playing) = (reporter.clone(), reporter.clone());
+    let (say_paused, say_playing) = (reporter, reporter);
 
     view! {
         <Group

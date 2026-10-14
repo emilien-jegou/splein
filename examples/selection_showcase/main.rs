@@ -114,11 +114,11 @@ pub(crate) fn boot(ctx: &BootCtx) -> BootedDemo {
     let runtime = Rc::clone(&ctx.runtime);
     let status = Signal::new(Rc::clone(&runtime), String::new());
     let clipboard = Signal::new(Rc::clone(&runtime), String::new());
-    let monitor = SelectionMonitor::new(status.clone(), clipboard.clone());
+    let monitor = SelectionMonitor::new(status, clipboard);
 
     let cx = Cx::new(runtime);
     let root = cx
-        .enter_keyed("root", move || Page(status.clone(), clipboard.clone()))
+        .enter_keyed("root", move || Page(status, clipboard))
         .into_element();
     BootedDemo {
         root,
@@ -134,7 +134,7 @@ fn main() {
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let status = Signal::new(Rc::clone(&runtime), String::new());
     let clipboard = Signal::new(Rc::clone(&runtime), String::new());
-    let monitor = SelectionMonitor::new(status.clone(), clipboard.clone());
+    let monitor = SelectionMonitor::new(status, clipboard);
     let mut debugger = VisualDebugger::new();
     debugger.show_hud = cli.show_hud;
 
@@ -147,7 +147,7 @@ fn main() {
         .runtime(runtime)
         .extension(debugger)
         .extension(monitor)
-        .run(move || Page(status.clone(), clipboard.clone()));
+        .run(move || Page(status, clipboard));
 }
 
 /// Page body: selectable copy, a live status card, and the gesture cheat sheet.

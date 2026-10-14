@@ -47,12 +47,12 @@ pub(crate) fn boot(ctx: &BootCtx) -> BootedDemo {
     let time_sig = Signal::new(Rc::clone(&runtime), 0.0f32);
     let counter_sig = Signal::new(Rc::clone(&runtime), 0u64);
 
-    let ticker = MissionControlTicker::new(time_sig.clone(), counter_sig.clone());
+    let ticker = MissionControlTicker::new(time_sig, counter_sig);
 
     let cx = Cx::new(runtime);
     let root = cx
         .enter_keyed("root", move || {
-            build_ui(time_sig.clone(), counter_sig.clone())
+            build_ui(time_sig, counter_sig)
         })
         .into_element();
     BootedDemo {
@@ -70,7 +70,7 @@ fn main() {
     let time_sig = Signal::new(Rc::clone(&runtime), 0.0f32);
     let counter_sig = Signal::new(Rc::clone(&runtime), 0u64);
 
-    let ticker = MissionControlTicker::new(time_sig.clone(), counter_sig.clone());
+    let ticker = MissionControlTicker::new(time_sig, counter_sig);
 
     cli.app_config_multi("Aurora — Mission Control Engine Showcase")
         .font(
@@ -80,7 +80,7 @@ fn main() {
         .background(0x06090F)
         .runtime(runtime)
         .extension(ticker)
-        .run(move || build_ui(time_sig.clone(), counter_sig.clone()));
+        .run(move || build_ui(time_sig, counter_sig));
 }
 
 fn build_ui(time_sig: Signal<f32>, counter_sig: Signal<u64>) -> impl IntoElement {
@@ -207,7 +207,7 @@ fn build_ui(time_sig: Signal<f32>, counter_sig: Signal<u64>) -> impl IntoElement
                                 alignment="center"
                                 distribution="space-between"
                             >
-                                {build_equalizer_bars(time_sig.clone())}
+                                {build_equalizer_bars(time_sig)}
                             </Group>
                         </Group>
                     </Group>
@@ -275,7 +275,7 @@ fn build_ui(time_sig: Signal<f32>, counter_sig: Signal<u64>) -> impl IntoElement
                                     shadow="0 0 8 0 #38BDF8"
                                     anchor={Anchor::Center}
                                     transform={{
-                                        let t = time_sig.clone();
+                                        let t = time_sig;
                                         move || {
                                             let angle = t.get() * 90.0; // 90 deg/sec
                                             Transform::from_rotation_degrees(angle)
@@ -291,7 +291,7 @@ fn build_ui(time_sig: Signal<f32>, counter_sig: Signal<u64>) -> impl IntoElement
                                     shadow="0 0 10 0 #EC4899"
                                     anchor={Anchor::Center}
                                     transform={{
-                                        let t = time_sig.clone();
+                                        let t = time_sig;
                                         move || {
                                             let elapsed = t.get() * 1.5;
                                             let ox = elapsed.cos() * 85.0;
@@ -333,7 +333,7 @@ fn build_ui(time_sig: Signal<f32>, counter_sig: Signal<u64>) -> impl IntoElement
                             </Group>
                             <Text size={24.0} weight={700u16} color={0x22C55E}>
                                 {{
-                                    let c = counter_sig.clone();
+                                    let c = counter_sig;
                                     move || format!("{:09} PKTS", c.get())
                                 }}
                             </Text>
@@ -460,7 +460,7 @@ fn status_badge(
 fn build_equalizer_bars(t_sig: Signal<f32>) -> Vec<Element> {
     let mut bars = Vec::with_capacity(16);
     for i in 0..16 {
-        let t = t_sig.clone();
+        let t = t_sig;
         let phase = i as f32 * 0.45;
         let speed = 2.5 + (i % 4) as f32 * 0.8;
 

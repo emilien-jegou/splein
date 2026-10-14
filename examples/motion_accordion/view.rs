@@ -77,19 +77,19 @@ fn List(open: Signal<Option<usize>>) -> impl IntoElement {
                 index={0usize}
                 title="What is Aurora?"
                 copy="A retained layout and compositor engine for Wayland overlays, with a reactive DSL on top."
-                open={open.clone()}
+                open={open}
             />
             <Item
                 index={1usize}
                 title="Why does motion not reflow?"
                 copy="Transforms and opacity are compositor overrides, so they invalidate paint only and never reach the layout pass."
-                open={open.clone()}
+                open={open}
             />
             <Item
                 index={2usize}
                 title="Where does the motion live?"
                 copy="In the component. A spring drives a signal, layout reads that signal, and the engine only lays out and paints what it is given."
-                open={open.clone()}
+                open={open}
             />
             <Item
                 index={3usize}
@@ -149,7 +149,7 @@ fn Header(
     is_open: Derived<bool>,
     open: Signal<Option<usize>>,
 ) -> impl IntoElement {
-    let toggle_open = open.clone();
+    let toggle_open = open;
     let toggle_state = is_open.clone();
     let degrees = is_open.map(move |open| if open { 180.0 } else { 0.0 });
 

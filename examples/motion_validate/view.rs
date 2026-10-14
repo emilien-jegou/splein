@@ -27,7 +27,7 @@ pub fn Page() -> impl IntoElement {
     // cannot disagree. The previous version bound both to the raw `expanded` flag and let the
     // engine spring the box alone, so the label swapped to "Validate" on frame one while the box
     // was still 52px wide -- a long word laid out in a box that had not grown yet.
-    let width = Transition::from_str("spring").on(expanded.clone().map(|is_open| {
+    let width = Transition::from_str("spring").on(expanded.map(|is_open| {
         if is_open {
             EXPANDED
         } else {
@@ -93,7 +93,7 @@ fn Action(width: Signal<f32>, expanded: Signal<bool>) -> impl IntoElement {
     // The label reads the animated width, not the target. Crossing the midpoint therefore
     // happens partway through the spring, exactly when the box is actually wide enough for the
     // longer word.
-    let label = width.clone();
+    let label = width;
 
     view! {
         <Group

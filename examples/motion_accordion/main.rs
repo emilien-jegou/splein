@@ -32,5 +32,5 @@ fn main() {
         .runtime(runtime)
         // The click lives on each header. There is no driver extension and nothing
         // polls the pointer, so an idle frame costs no interaction work at all.
-        .run(move || Page(open.clone()));
+        .run(move || Page(open));
 }

@@ -42,7 +42,7 @@ pub fn Page() -> impl IntoElement {
     let dir = use_signal(1.0f32);
     {
         let sc = sc.clone();
-        let dir = dir.clone();
+        let dir = dir;
         use_interval(1.0 / 120.0, move || {
             let (cur, max) = (sc.offset.get(), sc.max.get());
             if cur >= max {

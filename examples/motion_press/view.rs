@@ -24,7 +24,7 @@ pub fn Page() -> impl IntoElement {
     let presses = use_signal(0u32);
 
     let down =
-        Transition::from_str("out-cubic 90ms").on(pressed.clone().map(
+        Transition::from_str("out-cubic 90ms").on(pressed.map(
             |p| {
                 if p {
                     HELD
@@ -35,13 +35,13 @@ pub fn Page() -> impl IntoElement {
         ));
     let up =
         Transition::from_str("spring:bouncy")
-            .on(pressed.clone().map(|p| if p { 1.0 } else { 1.0 }));
+            .on(pressed.map(|p| if p { 1.0 } else { 1.0 }));
 
     // Whichever stream owns the current state drives the view; the other sits at 1.0.
     // Plain closure: reads three signals, subscribes to all three, no .map()/.combine().
     let active = {
-        let down = down.clone();
-        let up = up.clone();
+        let down = down;
+        let up = up;
         derived!(move || if pressed.get() { down.get() } else { up.get() })
     };
 
@@ -66,7 +66,7 @@ pub fn Page() -> impl IntoElement {
                         distribution="center"
                         gap={18.0}
                     >
-                        <Button pressed={pressed.clone()} presses={presses.clone()} scale={active} />
+                        <Button pressed={pressed} presses={presses} scale={active} />
                         <Text size={13.0} color={BODY}>
                             {presses.map(|n| format!("pressed {n} time{}", if n == 1 { "" } else { "s" }))}
                         </Text>
@@ -84,8 +84,8 @@ pub fn Page() -> impl IntoElement {
 /// leave the button stuck in its pressed state.
 #[component]
 fn Button(pressed: Signal<bool>, presses: Signal<u32>, scale: Derived<f32>) -> impl IntoElement {
-    let down = pressed.clone();
-    let up = pressed.clone();
+    let down = pressed;
+    let up = pressed;
     let drop = pressed;
     let counted = presses;
 

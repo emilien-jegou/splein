@@ -154,7 +154,7 @@ fn main() {
         Rc::clone(&runtime),
         "↑↓ navigate · Enter/click launches · Esc exits".to_string(),
     );
-    let nav = GalleryNav::new(selected.clone(), status.clone(), child_args.clone());
+    let nav = GalleryNav::new(selected, status, child_args.clone());
 
     cli.app_config_multi("Aurora — Demo Gallery")
         .fullscreen(true)
@@ -165,7 +165,7 @@ fn main() {
         .background(PAGE)
         .runtime(runtime)
         .extension(nav)
-        .run(move || GalleryPage(selected.clone(), status.clone(), child_args.clone()));
+        .run(move || GalleryPage(selected, status, child_args.clone()));
 }
 
 /// Spawns a sibling example binary, detached. Gallery stays open as the panel.

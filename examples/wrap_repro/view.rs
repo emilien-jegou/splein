@@ -90,8 +90,8 @@ fn Chip(label: &'static str) -> impl IntoElement {
 #[component]
 fn AutoGridDemo() -> impl IntoElement {
     let width = use_signal(420.0f32);
-    let narrow = width.clone();
-    let widen = width.clone();
+    let narrow = width;
+    let widen = width;
     view! {
         <Group direction="vertical" width="fill" height="fit" gap={8.0}>
             <Group direction="horizontal" width="fit" height="fit" gap={8.0}>

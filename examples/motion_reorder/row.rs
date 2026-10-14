@@ -34,8 +34,8 @@ pub fn Row(index: usize, spec: RowSpec) -> impl IntoElement {
     // than accumulated from the grab.
     let (follow_sig, follow_handle) = use_follow(
         row_ref.clone(),
-        drag.want_centre.clone(),
-        drag.grab_dy.clone(),
+        drag.want_centre,
+        drag.grab_dy,
     );
 
     // A held row is already being told where to go — by the pointer — so it must not also carry
@@ -49,7 +49,7 @@ pub fn Row(index: usize, spec: RowSpec) -> impl IntoElement {
     // Plain closures with automatic dependency tracking: each `derived!` subscribes to
     // every signal its body reads — no `.map()`/`.combine()` chains.
     let is_held = derived!({
-        let held = drag.held.clone();
+        let held = drag.held;
         let label = label.clone();
         move || held.get().as_deref() == Some(label.as_str())
     });
@@ -63,11 +63,11 @@ pub fn Row(index: usize, spec: RowSpec) -> impl IntoElement {
     // Keyed by label (overwritten per rebuild, so exactly one entry per row).
     drag.settlers.borrow_mut().insert(
         label.clone(),
-        (settling.clone(), settle.clone()),
+        (settling, settle),
     );
     let flip = derived!({
         let is_held = is_held.clone();
-        let settling = settling.clone();
+        let settling = settling;
         move || {
             // Kept shut while settling for the same reason as while held: the raw FLIP
             // still holds decaying offsets from the drag's reorders, and letting them in
@@ -97,7 +97,7 @@ pub fn Row(index: usize, spec: RowSpec) -> impl IntoElement {
     // node repaints, layout never runs.
     let elevation = derived!({
         let is_held = is_held.clone();
-        let settling = settling.clone();
+        let settling = settling;
         // Stay above while gliding home, for the same reason as while held.
         move || {
             if is_held.get() || settling.get() {
@@ -108,7 +108,7 @@ pub fn Row(index: usize, spec: RowSpec) -> impl IntoElement {
         }
     });
 
-    let displayed = offset(offset(flip, follow), settle.clone());
+    let displayed = offset(offset(flip, follow), settle);
 
     // The transform the node actually binds: a plain signal mirroring the composed
     // value, refreshed in the post-layout phase like `FollowCell::resolve`. Going
@@ -118,7 +118,7 @@ pub fn Row(index: usize, spec: RowSpec) -> impl IntoElement {
     let displayed_sig = use_signal(Transform::IDENTITY);
     {
         let displayed = displayed.clone();
-        let displayed_sig = displayed_sig.clone();
+        let displayed_sig = displayed_sig;
         let mirrored = use_signal(false);
         if !mirrored.get() {
             mirrored.set(true);
@@ -141,13 +141,13 @@ pub fn Row(index: usize, spec: RowSpec) -> impl IntoElement {
             width="fill"
             height="fill"
             padding={Padding::symmetric(PAD, 0.0)}
-            transform={displayed_sig.clone()}
+            transform={displayed_sig}
             z_index={elevation}
             on:pointer-down={{
                 let drag = drag.clone();
                 let label = label.clone();
-                let settle = settle.clone();
-                let settling = settling.clone();
+                let settle = settle;
+                let settling = settling;
                 move |event: &PointerEvent| {
                     // A fresh gesture obsoletes every release-glide still running:
                     // see Drag::cancel_stale_glides.
@@ -185,10 +185,10 @@ pub fn Row(index: usize, spec: RowSpec) -> impl IntoElement {
             }}
             on:drag-end={{
                 let drag = drag.clone();
-                let settle = settle.clone();
-                let settling = settling.clone();
+                let settle = settle;
+                let settling = settling;
                 let displayed = displayed.clone();
-                let flip = flip_sig.clone();
+                let flip = flip_sig;
                 let follow_handle = follow_handle.clone();
                 move |info: &DragInfo| {
                     // Resolve the follow offset NOW, before reading anything.
@@ -207,9 +207,9 @@ pub fn Row(index: usize, spec: RowSpec) -> impl IntoElement {
                         || flip.get() != Transform::IDENTITY
                     {
                         settle.register_ticker(Box::new(GlideTicker {
-                            out: settle.clone(),
-                            settling: settling.clone(),
-                            flip: flip.clone(),
+                            out: settle,
+                            settling,
+                            flip,
                             from,
                             t: 0.0,
                         }));

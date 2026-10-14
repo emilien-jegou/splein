@@ -18,7 +18,7 @@ use super::row::RowProps;
 /// a reorder would hand each row the animation of whichever item moved into
 /// its index.
 pub fn list(drag: Rc<Drag>) -> impl IntoElement {
-    let rows = drag.order.clone();
+    let rows = drag.order;
     let items = rows.map({
         let drag = drag.clone();
         move |labels| {

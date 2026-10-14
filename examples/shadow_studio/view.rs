@@ -61,10 +61,10 @@ fn slider(
         let fmt = Rc::clone(&fmt);
         move || fmt(value.get())
     });
-    let track_value = value.clone();
-    let step_value = value.clone();
-    let start = start_val.clone();
-    let start_x_handle = start_x.clone();
+    let track_value = value;
+    let step_value = value;
+    let start = start_val;
+    let start_x_handle = start_x;
     view! {
         <Group direction="vertical" gap={4.0}>
             <Group direction="horizontal" gap={8.0} alignment="center">
@@ -191,19 +191,19 @@ fn ui(p: Params, rt: Rc<RefCell<ReactiveRuntime>>) -> Element {
     };
     let shadow = {
         let (ox, oy, blur, spread, opacity, elevation, tint) = (
-            ox.clone(),
-            oy.clone(),
-            blur.clone(),
-            spread.clone(),
-            opacity.clone(),
-            elevation.clone(),
-            tint.clone(),
+            ox,
+            oy,
+            blur,
+            spread,
+            opacity,
+            elevation,
+            tint,
         );
         let (mode, falloff_idx, multiply, alpha_shape) = (
-            mode.clone(),
-            falloff_idx.clone(),
-            multiply.clone(),
-            alpha_shape.clone(),
+            mode,
+            falloff_idx,
+            multiply,
+            alpha_shape,
         );
         computed(move || {
             let tinted = tint.get().with_alpha(opacity.get());
@@ -228,7 +228,7 @@ fn ui(p: Params, rt: Rc<RefCell<ReactiveRuntime>>) -> Element {
         })
     };
     let mode_name = {
-        let mode = mode.clone();
+        let mode = mode;
         computed(move || match mode.get() {
             0 => "mode: web".to_string(),
             1 => "mode: elevation".to_string(),
@@ -237,15 +237,15 @@ fn ui(p: Params, rt: Rc<RefCell<ReactiveRuntime>>) -> Element {
     };
     let css = {
         let (ox, oy, blur, spread, opacity, elevation, tint) = (
-            ox.clone(),
-            oy.clone(),
-            blur.clone(),
-            spread.clone(),
-            opacity.clone(),
-            elevation.clone(),
-            tint.clone(),
+            ox,
+            oy,
+            blur,
+            spread,
+            opacity,
+            elevation,
+            tint,
         );
-        let (mode, falloff_idx) = (mode.clone(), falloff_idx.clone());
+        let (mode, falloff_idx) = (mode, falloff_idx);
         computed(move || match mode.get() {
             0 => format!(
                 "box-shadow: {:.1}px {:.1}px {:.1}px {:.1}px rgba(0, 0, 0, {:.2});",
@@ -273,11 +273,11 @@ fn ui(p: Params, rt: Rc<RefCell<ReactiveRuntime>>) -> Element {
     let fpx: Rc<dyn Fn(f32) -> String> = Rc::new(|v| format!("{v:.1}px"));
     let fop: Rc<dyn Fn(f32) -> String> = Rc::new(|v| format!("{v:.2}"));
     let in_web = computed({
-        let mode = mode.clone();
+        let mode = mode;
         move || mode.get() == 0
     });
     let in_elev = computed({
-        let mode = mode.clone();
+        let mode = mode;
         move || mode.get() == 1
     });
     view! {
@@ -291,34 +291,34 @@ fn ui(p: Params, rt: Rc<RefCell<ReactiveRuntime>>) -> Element {
             // Control panel.
             <Group direction="vertical" gap={12.0} margin={28.0}>
                 {button(mode_name.clone(), {
-                    let mode = mode.clone();
+                    let mode = mode;
                     move || mode.set((mode.get() + 1) % 3)
                 })}
                 <Group direction="vertical" gap={12.0} visible={in_web.clone()}>
-                    {slider(&rt, "offset X", ox.clone(), -40.0, 40.0, fpx.clone())}
-                    {slider(&rt, "offset Y", oy.clone(), -40.0, 40.0, fpx.clone())}
-                    {slider(&rt, "blur", blur.clone(), 0.0, 40.0, fpx.clone())}
+                    {slider(&rt, "offset X", ox, -40.0, 40.0, fpx.clone())}
+                    {slider(&rt, "offset Y", oy, -40.0, 40.0, fpx.clone())}
+                    {slider(&rt, "blur", blur, 0.0, 40.0, fpx.clone())}
                 </Group>
                 <Group direction="vertical" gap={12.0} visible={in_elev.clone()}>
                     {slider(
                         &rt,
                         "elevation",
-                        elevation.clone(),
+                        elevation,
                         0.0,
                         32.0,
                         fpx.clone(),
                     )}
                 </Group>
-                {slider(&rt, "spread", spread.clone(), -12.0, 24.0, fpx.clone())}
-                {slider(&rt, "opacity", opacity.clone(), 0.0, 1.0, fop.clone())}
+                {slider(&rt, "spread", spread, -12.0, 24.0, fpx.clone())}
+                {slider(&rt, "opacity", opacity, 0.0, 1.0, fop.clone())}
                 <Group direction="horizontal" gap={8.0}>
-                    {swatch(tint.clone(), Color::BLACK)}
-                    {swatch(tint.clone(), 0x7A3D8F)}
-                    {swatch(tint.clone(), 0x2563EB)}
+                    {swatch(tint, Color::BLACK)}
+                    {swatch(tint, 0x7A3D8F)}
+                    {swatch(tint, 0x2563EB)}
                 </Group>
                 {button(
                     {
-                        let falloff_idx = falloff_idx.clone();
+                        let falloff_idx = falloff_idx;
                         computed(move || {
                             format!(
                                 "falloff: {}",
@@ -327,13 +327,13 @@ fn ui(p: Params, rt: Rc<RefCell<ReactiveRuntime>>) -> Element {
                         })
                     },
                     {
-                        let falloff_idx = falloff_idx.clone();
+                        let falloff_idx = falloff_idx;
                         move || falloff_idx.set((falloff_idx.get() + 1) % 3)
                     },
                 )}
                 {button(
                     {
-                        let multiply = multiply.clone();
+                        let multiply = multiply;
                         computed(move || {
                             if multiply.get() {
                                 "blend: multiply".to_string()
@@ -343,13 +343,13 @@ fn ui(p: Params, rt: Rc<RefCell<ReactiveRuntime>>) -> Element {
                         })
                     },
                     {
-                        let multiply = multiply.clone();
+                        let multiply = multiply;
                         move || multiply.set(!multiply.get())
                     },
                 )}
                 {button(
                     {
-                        let alpha_shape = alpha_shape.clone();
+                        let alpha_shape = alpha_shape;
                         computed(move || {
                             if alpha_shape.get() {
                                 "shape: alpha".to_string()
@@ -359,7 +359,7 @@ fn ui(p: Params, rt: Rc<RefCell<ReactiveRuntime>>) -> Element {
                         })
                     },
                     {
-                        let alpha_shape = alpha_shape.clone();
+                        let alpha_shape = alpha_shape;
                         move || alpha_shape.set(!alpha_shape.get())
                     },
                 )}

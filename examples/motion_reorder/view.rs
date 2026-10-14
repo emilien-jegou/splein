@@ -95,11 +95,11 @@ pub fn Page() -> impl IntoElement {
     let want_centre = use_signal(None::<f32>);
 
     let drag = Rc::new(Drag {
-        order: order.clone(),
-        revision: revision.clone(),
-        held: held.clone(),
-        grab_dy: grab_dy.clone(),
-        want_centre: want_centre.clone(),
+        order,
+        revision,
+        held,
+        grab_dy,
+        want_centre,
         // One handle for the list, which is how the gesture learns where the rows are.
         list: use_ref(),
         settlers: RefCell::new(HashMap::new()),

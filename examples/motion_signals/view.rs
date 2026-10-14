@@ -47,9 +47,9 @@ pub fn Page() -> impl IntoElement {
                         gap={16.0}
                         margin={24.0}
                     >
-                        <Row label="TRAVEL" element={travel(p.clone())} />
-                        <Row label="PATH" element={path(p.clone())} />
-                        <Row label="SCALE" element={scale(p.clone())} />
+                        <Row label="TRAVEL" element={travel(p)} />
+                        <Row label="PATH" element={path(p)} />
+                        <Row label="SCALE" element={scale(p)} />
                         <Row label="COLOUR" element={swatch(p)} />
                     </Group>
                 </Group>

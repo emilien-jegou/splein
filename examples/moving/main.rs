@@ -129,14 +129,14 @@ pub(crate) fn boot(ctx: &BootCtx) -> BootedDemo {
     let driver = DvdPhysicsDriver::new(
         ctx.engine_w as f32,
         ctx.engine_h as f32,
-        pos_signal.clone(),
-        color_signal.clone(),
+        pos_signal,
+        color_signal,
     );
 
     let cx = Cx::new(runtime);
     let root = cx
         .enter_keyed("root", move || {
-            build_ui(pos_signal.clone(), color_signal.clone())
+            build_ui(pos_signal, color_signal)
         })
         .into_element();
     BootedDemo {
@@ -157,8 +157,8 @@ fn main() {
     let driver = DvdPhysicsDriver::new(
         cli.width as f32,
         cli.height as f32,
-        pos_signal.clone(),
-        color_signal.clone(),
+        pos_signal,
+        color_signal,
     );
 
     cli.app_config_multi("Aurora — DVD Bounce Screensaver")
@@ -168,12 +168,12 @@ fn main() {
         )
         .runtime(runtime)
         .extension(driver)
-        .run(move || build_ui(pos_signal.clone(), color_signal.clone()));
+        .run(move || build_ui(pos_signal, color_signal));
 }
 
 fn build_ui(pos_sig: Signal<(f32, f32)>, color_sig: Signal<Color>) -> impl IntoElement {
     let logo_graphic = VectorGraphic::from_str(DVD_SVG_RAW).expect("Valid SVG");
-    let pos = pos_sig.clone();
+    let pos = pos_sig;
 
     view! {
         <Group direction="vertical" width="fill" height="fill" fill={0x090D16}>

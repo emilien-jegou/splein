@@ -24,7 +24,7 @@ pub fn Page() -> impl IntoElement {
     let step = use_signal(0u32);
     let target = step.map(|n| if n % 2 == 0 { RIGHT } else { LEFT });
     use_interval(RETARGET_SECS, {
-        let step = step.clone();
+        let step = step;
         move || step.update(|n| *n += 1)
     });
 

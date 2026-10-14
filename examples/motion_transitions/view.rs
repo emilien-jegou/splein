@@ -21,8 +21,8 @@ pub fn Page() -> impl IntoElement {
     // One declaration, three independent streams: the target says where, the
     // transition says how, and the frame loop supplies the time.
     let tween = Transition::from_str("out-cubic 200ms");
-    let opacity = tween.on(enabled.clone().map(|on| if on { 1.0 } else { 0.35 }));
-    let slide_x = tween.on(enabled.clone().map(|on| if on { 0.0 } else { 48.0 }));
+    let opacity = tween.on(enabled.map(|on| if on { 1.0 } else { 0.35 }));
+    let slide_x = tween.on(enabled.map(|on| if on { 0.0 } else { 48.0 }));
     let spring = Transition::from_str("spring");
     let scale = spring.on(enabled.map(|on| if on { 1.18 } else { 1.0 }));
 

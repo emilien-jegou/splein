@@ -373,7 +373,7 @@ pub fn MenuPage(demos: Vec<DemoMeta>, state: MenuState) -> impl IntoElement {
         .enumerate()
         .map(|(idx, demo)| menu_row(demo.title, idx, &state))
         .collect();
-    let pend = state.pending.clone();
+    let pend = state.pending;
     view! {
         <Group
             direction="vertical"
@@ -414,15 +414,14 @@ pub fn MenuPage(demos: Vec<DemoMeta>, state: MenuState) -> impl IntoElement {
 /// Text ink is not a reactive prop, so the row carries twin labels and
 /// flips visibility (the same pattern as conditional panels elsewhere).
 fn menu_row(title: &'static str, idx: usize, state: &MenuState) -> Element {
-    let hov = state.selected.clone();
-    let pend = state.pending.clone();
+    let hov = state.selected;
+    let pend = state.pending;
     let bg =
         state
             .selected
-            .clone()
             .map(move |s| if s == idx { Color::WHITE } else { Color::BLACK });
-    let is_sel = state.selected.clone().map(move |s| s == idx);
-    let is_dim = state.selected.clone().map(move |s| s != idx);
+    let is_sel = state.selected.map(move |s| s == idx);
+    let is_dim = state.selected.map(move |s| s != idx);
     let launch = move |_: &ClickInfo| {
         pend.set(Some(MenuAction::Launch(idx)));
     };
