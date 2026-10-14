@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
-members = ["crates/splein", "crates/riode-android", "crates/riode", "crates/riode-skia", "crates/riode/macros", "crates/riode-tiny-skia", "crates/riode-vello", "crates/riode-wayland", "crates/riode-wgpu", "crates/riode-quad", "crates/riode/benches/bench_suite", "crates/riode-shared", "crates/riode-cli", "crates/riode-hot-gen", "examples", "crates/probe-min"]
-default-members = ["crates/splein", "crates/riode-android", "crates/riode", "crates/riode/macros", "crates/riode-tiny-skia", "crates/riode-vello", "crates/riode-wayland", "crates/riode-wgpu", "crates/riode-cli", "examples"]
+members = ["apps/splein", "crates/riode-android", "crates/riode", "crates/riode-skia", "crates/riode/macros", "crates/riode-tiny-skia", "crates/riode-vello", "crates/riode-wayland", "crates/riode-wgpu", "crates/riode-quad", "crates/riode/benches/bench_suite", "crates/riode-shared", "crates/riode-cli", "crates/riode-hot-gen", "examples", "crates/probe-min"]
+default-members = ["apps/splein", "crates/riode-android", "crates/riode", "crates/riode/macros", "crates/riode-tiny-skia", "crates/riode-vello", "crates/riode-wayland", "crates/riode-wgpu", "crates/riode-cli", "examples"]
 
 [workspace.dependencies]
 smithay-client-toolkit = { version = "0.19", default-features = false }
