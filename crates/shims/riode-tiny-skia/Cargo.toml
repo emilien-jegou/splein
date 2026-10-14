@@ -1,0 +1,13 @@
+[package]
+name = "riode-tiny-skia"
+version = "0.0.1-rc.1"
+edition = "2021"
+publish = true
+
+[lib]
+name = "riode_tiny_skia"
+
+[dependencies]
+riode-engine-tiny-skia = { path = "../../engines/riode-engine-tiny-skia", package = "riode-engine-tiny-skia" }
+
+[build-dependencies]

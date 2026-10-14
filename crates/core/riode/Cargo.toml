@@ -56,7 +56,6 @@ ntest = "0.9"
 libc = "0.2"
 riode-engine-vello = { path = "../../engines/riode-engine-vello", version = "0.0.1-rc.1" }
 riode-engine-wgpu = { path = "../../engines/riode-engine-wgpu", version = "0.0.1-rc.1" }
-riode-engine-quad = { path = "../../engines/riode-engine-quad", version = "0.0.1-rc.1" }
 
 [profile.release]
 debug = true

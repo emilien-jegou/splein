@@ -25,5 +25,4 @@ tracing = "0.1"
 ntest = "0.9"
 riode-engine-tiny-skia = { path = "../riode-engine-tiny-skia", version = "0.0.1-rc.1" }
 riode-engine-wgpu = { path = "../riode-engine-wgpu", version = "0.0.1-rc.1" }
-riode-engine-quad = { path = "../riode-engine-quad", version = "0.0.1-rc.1" }
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }

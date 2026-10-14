@@ -1,0 +1,13 @@
+[package]
+name = "riode-wayland"
+version = "0.0.1-rc.1"
+edition = "2021"
+publish = true
+
+[lib]
+name = "riode_wayland"
+
+[dependencies]
+riode-platform-wayland = { path = "../../platforms/riode-platform-wayland", package = "riode-platform-wayland" }
+
+[build-dependencies]

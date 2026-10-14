@@ -1,0 +1,11 @@
+[package]
+name = "riode-engine-skia-link"
+version = "0.0.1-rc.1"
+edition = "2021"
+publish = true
+
+[lib]
+name = "riode_engine_skia_link"
+
+[dependencies]
+riode-engine-skia = { path = "../../engines/riode-engine-skia", package = "riode-engine-skia" }

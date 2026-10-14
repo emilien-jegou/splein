@@ -1,0 +1,11 @@
+[package]
+name = "riode-platform-macos-link"
+version = "0.0.1-rc.1"
+edition = "2021"
+publish = true
+
+[lib]
+name = "riode_platform_macos_link"
+
+[dependencies]
+riode-platform-macos = { path = "../../platforms/riode-platform-macos", package = "riode-platform-macos" }

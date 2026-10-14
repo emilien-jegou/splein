@@ -1,0 +1,13 @@
+[package]
+name = "riode-platform-android-link"
+version = "0.0.1-rc.1"
+edition = "2021"
+publish = true
+
+[lib]
+name = "riode_android_link"
+
+[dependencies]
+riode-platform-android = { path = "../../platforms/riode-platform-android", package = "riode-platform-android" }
+
+[build-dependencies]

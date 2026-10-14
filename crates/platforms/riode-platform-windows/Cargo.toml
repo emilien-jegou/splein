@@ -1,0 +1,7 @@
+[package]
+name = "riode-platform-windows"
+version = "0.0.1-rc.1"
+edition = "2021"
+publish = true
+
+[lib]

@@ -1,0 +1,11 @@
+[package]
+name = "riode-platform-ios-link"
+version = "0.0.1-rc.1"
+edition = "2021"
+publish = true
+
+[lib]
+name = "riode_platform_ios_link"
+
+[dependencies]
+riode-platform-ios = { path = "../../platforms/riode-platform-ios", package = "riode-platform-ios" }

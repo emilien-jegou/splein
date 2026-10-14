@@ -2679,7 +2679,6 @@ dependencies = [
  "parley",
  "rayon",
  "resvg",
- "riode-engine-quad",
  "riode-engine-vello",
  "riode-engine-wgpu",
  "riode-macros",
@@ -2705,22 +2704,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "riode-engine-quad"
-version = "0.0.1-rc.1"
-dependencies = [
- "bytemuck",
- "pollster",
- "riode",
- "riode-engine-tiny-skia",
- "riode-engine-vello",
- "riode-engine-wgpu",
- "softbuffer",
- "tiny-skia",
- "tracing",
- "winit",
-]
-
-[[package]]
 name = "riode-engine-skia"
 version = "0.0.1-rc.1"
 dependencies = [
@@ -2728,6 +2711,13 @@ dependencies = [
  "riode-engine-tiny-skia",
  "softbuffer",
  "winit",
+]
+
+[[package]]
+name = "riode-engine-skia-link"
+version = "0.0.1-rc.1"
+dependencies = [
+ "riode-engine-skia",
 ]
 
 [[package]]
@@ -2758,7 +2748,6 @@ dependencies = [
  "pollster",
  "resvg",
  "riode",
- "riode-engine-quad",
  "riode-engine-tiny-skia",
  "riode-engine-wgpu",
  "rustc-hash 2.1.3",
@@ -2767,6 +2756,13 @@ dependencies = [
  "vello",
  "wgpu",
  "winit",
+]
+
+[[package]]
+name = "riode-engine-vello-link"
+version = "0.0.1-rc.1"
+dependencies = [
+ "riode-engine-vello",
 ]
 
 [[package]]
@@ -2781,6 +2777,13 @@ dependencies = [
  "tracing",
  "wgpu",
  "winit",
+]
+
+[[package]]
+name = "riode-engine-wgpu-link"
+version = "0.0.1-rc.1"
+dependencies = [
+ "riode-engine-wgpu",
 ]
 
 [[package]]
@@ -2819,6 +2822,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "riode-platform-android"
+version = "0.0.1-rc.1"
+
+[[package]]
+name = "riode-platform-android-link"
+version = "0.0.1-rc.1"
+dependencies = [
+ "riode-platform-android",
+]
+
+[[package]]
+name = "riode-platform-ios"
+version = "0.0.1-rc.1"
+
+[[package]]
+name = "riode-platform-ios-link"
+version = "0.0.1-rc.1"
+dependencies = [
+ "riode-platform-ios",
+]
+
+[[package]]
+name = "riode-platform-macos"
+version = "0.0.1-rc.1"
+
+[[package]]
+name = "riode-platform-macos-link"
+version = "0.0.1-rc.1"
+dependencies = [
+ "riode-platform-macos",
+]
+
+[[package]]
 name = "riode-platform-wayland"
 version = "0.0.1-rc.1"
 dependencies = [
@@ -2832,6 +2868,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "riode-platform-windows"
+version = "0.0.1-rc.1"
+
+[[package]]
+name = "riode-platform-windows-link"
+version = "0.0.1-rc.1"
+dependencies = [
+ "riode-platform-windows",
+]
+
+[[package]]
 name = "riode-shared"
 version = "0.0.1-rc.1"
 dependencies = [
@@ -2840,6 +2887,20 @@ dependencies = [
  "riode-engine-tiny-skia",
  "riode-engine-vello",
  "riode-engine-wgpu",
+]
+
+[[package]]
+name = "riode-tiny-skia"
+version = "0.0.1-rc.1"
+dependencies = [
+ "riode-engine-tiny-skia",
+]
+
+[[package]]
+name = "riode-wayland"
+version = "0.0.1-rc.1"
+dependencies = [
+ "riode-platform-wayland",
 ]
 
 [[package]]
