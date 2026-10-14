@@ -24,6 +24,10 @@
 !examples/
 !examples/*
 !examples/**/*
+
+!apps/
+!apps/*
+!apps/**/*
 !crates/riode/
 !crates/riode/macros/
 !crates/riode/macros/**/*
