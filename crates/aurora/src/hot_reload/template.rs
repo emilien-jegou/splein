@@ -414,8 +414,11 @@ pub fn strip_view_bodies(src: &str) -> String {
             }
             i = k;
         } else {
-            out.push(bytes[i] as char);
-            i += 1;
+            // Step one full char: byte stepping would land mid-codepoint on
+            // multibyte text (e.g. `—`) and panic the next `&src[i..]` slice.
+            let len = src[i..].chars().next().map(|c| c.len_utf8()).unwrap_or(1);
+            out.push_str(&src[i..i + len]);
+            i += len;
         }
     }
     out
@@ -504,6 +507,24 @@ mod tests {
     fn extractor_ignores_expr_children() {
         let src = "fn p() {\n view! { <Group><Text>{name}</Text></Group> }\n}";
         assert!(extract_view_literals(src).is_empty());
+    }
+
+    #[test]
+    fn multibyte_text_never_panics_the_gate() {
+        // Regression: byte stepping landed inside `—` and aborted the process.
+        let old = "fn p() {\n view! { <Group><Text>\"a — b\"</Text></Group> }\n}";
+        let new = "fn p() {\n view! { <Group><Text>\"a — c\"</Text></Group> }\n}";
+        assert_eq!(classify_edit(old, new), EditKind::TemplateOnly);
+        let slots = extract_view_literals(new);
+        assert_eq!(slots.len(), 1);
+        assert_eq!(slots[0].string.as_deref(), Some("a — c"));
+        // Multibyte outside any macro body is equally safe.
+        let outside_old = "// café — déjà\nfn p() { view! { <Group/> } }";
+        let outside_new = "// café — vu\nfn p() { view! { <Group/> } }";
+        assert_eq!(
+            classify_edit(outside_old, outside_new),
+            EditKind::NeedsRebuild
+        );
     }
 
     #[test]

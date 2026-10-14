@@ -461,7 +461,14 @@ impl DevLoop {
             }
             // Tier-1 fast path: a fully-resolving template-only save applies
             // live values with no build. Anything else rebuilds as before.
-            if reason == "sources changed" && self.try_template_fast_path() {
+            // Isolated: a gate bug must degrade to a rebuild, never abort
+            // the loop (a panic here once took the process down via SIGABRT).
+            if reason == "sources changed"
+                && std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    self.try_template_fast_path()
+                }))
+                .unwrap_or(false)
+            {
                 return PollOutcome::Settled;
             }
             self.spawn_build(reason);
