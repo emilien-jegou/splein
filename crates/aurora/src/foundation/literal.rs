@@ -155,12 +155,13 @@ fn parse_px(s: &str) -> Option<f32> {
     s.strip_suffix("px")?.trim().parse::<f32>().ok()
 }
 
-/// Parses `fill` / `fit` / `50%` / `12px` / `12`.
+/// Parses `fill` / `fit` / `fold` / `50%` / `12px` / `12`.
 pub fn parse_size(s: &str) -> Option<Size> {
     let s = s.trim().to_lowercase();
     match s.as_str() {
         "fill" | "stretch" | "100%" => Some(Size::Fill),
         "fit" | "auto" => Some(Size::Fit),
+        "fold" => Some(Size::Fold),
         _ => {
             if let Some(pct) = s.strip_suffix('%') {
                 return pct
@@ -675,6 +676,7 @@ mod tests {
     fn size_radius_gap_margin() {
         assert_eq!(parse_size("fill").unwrap(), Size::Fill);
         assert_eq!(parse_size("fit").unwrap(), Size::Fit);
+        assert_eq!(parse_size("fold").unwrap(), Size::Fold);
         assert_eq!(parse_size("50%").unwrap(), Size::Percent(0.5));
         assert_eq!(parse_size("12px").unwrap(), Size::Fixed(12.0));
         assert_eq!(parse_size("12").unwrap(), Size::Fixed(12.0));

@@ -5,20 +5,20 @@ export const code = `static STATUS: Context<String> = initContext!();
 static CLIPBOARD: Context<String> = initContext!();
 
 view! {
-    <Provider grant={STATUS.provide(status)}>
-        <Provider grant={CLIPBOARD.provide(clipboard)}>
-            <Page />
-        </Provider>
-    </Provider>
+    <Group .provided={STATUS.provided(status)}>
+        <Group .provided={CLIPBOARD.provided(clipboard)}>
+            // ... children
+        </Group>
+    </Group>
 }
 
 // Consume anywhere in the tree
-<Text size={12.0} color={INK}>{STATUS.get()}</Text>`
+<Text size={12.0} color={INK}>{STATUS.get().get()}</Text>`
 
 <SectionShell
       number="25"
       title="Context"
-      description="Dependency injection with Context<T>, initContext!, and Provider. Share state without prop drilling."
+      description="Dependency injection with Context<T> and initContext!. Share state without prop drilling."
   code={code}
 >
   <ContextDemo />

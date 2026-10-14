@@ -215,6 +215,14 @@ impl FrameScheduler {
 
                 if layout_changed || text_changed || presence_changed {
                     effective.insert(flags & (DirtyFlags::MEASURE | DirtyFlags::LAYOUT));
+                    if text_changed {
+                        // Glyph repaint is not implied by geometry: a same-box
+                        // edit (a Fold run whose min-content is stable across
+                        // digit changes) clears MEASURE|LAYOUT in layout with
+                        // identical bounds, and damage would never repaint the
+                        // new glyphs. A content change always warrants PAINT.
+                        effective.insert(DirtyFlags::PAINT);
+                    }
                 }
 
                 // Segments carrying reactive builders re-merge here, inside the

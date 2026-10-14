@@ -1,10 +1,9 @@
 // Single responsibility: Multi-backend demo runner — one shared Engine presented
-// through up to four raster backends (switch + combine modes).
+// through one of five raster backends (1-5 select, Tab/F7 cycle).
 //
 // One `Engine` (one reactive runtime, one `Scene`) frames once; each live
 // backend presents that same scene into its own OS window. Backend switching
-// reuses cached backends (lazy init, fail-soft per backend). Combine mode
-// presents one frame to all backends for side-by-side perf comparison.
+// reuses cached backends (lazy init, fail-soft per backend).
 
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
@@ -34,29 +33,14 @@ use crate::reactive::{Cx, ReactiveRuntime};
 use crate::render::RenderBackend;
 use crate::runtime::Engine;
 
-/// Ordered backend slots: index selects, combine runs all live ones.
-pub const BACKEND_ORDER: [RenderBackend; 4] = [
+/// Ordered backend slots: index selects, Tab/F7 cycles.
+pub const BACKEND_ORDER: [RenderBackend; 5] = [
     RenderBackend::TinySkia,
     RenderBackend::Vello,
     RenderBackend::VelloCpu,
     RenderBackend::Wgpu,
+    RenderBackend::Skia,
 ];
-
-/// Surface key for the single-window quad-combine surface.
-pub const QUAD_SLOT: usize = 4;
-
-/// Height of the quad legend strip. Must match `aurora_quad::QUAD_STRIP`;
-/// duplicated here so `aurora` keeps its one-way dependency (backend crates
-/// depend on aurora, never the reverse).
-pub const QUAD_STRIP: u32 = 120;
-
-/// Quadrant size for a quad window: two columns, strip + two rows.
-pub fn quad_layout(full_w: u32, full_h: u32) -> (u32, u32) {
-    (
-        (full_w / 2).max(1),
-        ((full_h.saturating_sub(QUAD_STRIP)) / 2).max(1),
-    )
-}
 
 /// Descriptive display name per backend slot.
 pub fn backend_display_name(backend: RenderBackend) -> &'static str {
@@ -65,23 +49,16 @@ pub fn backend_display_name(backend: RenderBackend) -> &'static str {
         RenderBackend::Vello => "vello-gpu",
         RenderBackend::VelloCpu => "vello-cpu",
         RenderBackend::Wgpu => "wgpu",
+        RenderBackend::Skia => "skia",
     }
 }
 
-/// Which surfaces are live: one focused backend, or all of them at once.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum DisplayMode {
-    Single(usize),
-    Combine,
-}
+/// Focused backend slot: `1-5` select, Tab/F7 cycles round-robin.
+pub type BackendSlot = usize;
 
-impl DisplayMode {
-    fn cycle_next(self) -> Self {
-        match self {
-            Self::Single(i) => Self::Single((i + 1) % BACKEND_ORDER.len()),
-            Self::Combine => Self::Single(0),
-        }
-    }
+/// Next slot in Tab/F7 cycle order.
+pub fn cycle_slot(slot: BackendSlot) -> BackendSlot {
+    (slot + 1) % BACKEND_ORDER.len()
 }
 
 /// Trailing-5s per-backend present stats for single-mode surfaces.
@@ -141,10 +118,20 @@ impl BackendStats {
             _ => 0.0,
         }
     }
+
+    /// Last frame's raster time.
+    pub fn last_raster(&self) -> Duration {
+        self.last_raster
+    }
+
+    /// Last frame's present time.
+    pub fn last_present(&self) -> Duration {
+        self.last_present
+    }
 }
 
 /// Factories supplied by the caller (concrete backend crates), one per slot.
-pub type MultiBackendFactories = [Option<BackendFactory>; 4];
+pub type MultiBackendFactories = [Option<BackendFactory>; 5];
 
 /// Builder for a multi-backend demo window set.
 pub struct MultiBackendConfig {
@@ -155,13 +142,11 @@ pub struct MultiBackendConfig {
     pub(crate) fonts: Vec<Vec<u8>>,
     pub(crate) background: Color,
     pub(crate) initial: RenderBackend,
-    pub(crate) combine_on_boot: bool,
     pub(crate) show_hud: bool,
     pub(crate) fps_limit: FpsLimit,
     pub(crate) extensions: Vec<Box<dyn AppExtension>>,
     pub(crate) runtime: Option<Rc<RefCell<ReactiveRuntime>>>,
     pub(crate) factories: MultiBackendFactories,
-    pub(crate) quad_factory: Option<BackendFactory>,
 }
 
 impl MultiBackendConfig {
@@ -191,10 +176,6 @@ impl MultiBackendConfig {
         self.initial = backend;
         self
     }
-    pub fn combine(mut self, on: bool) -> Self {
-        self.combine_on_boot = on;
-        self
-    }
     pub fn show_hud(mut self, on: bool) -> Self {
         self.show_hud = on;
         self
@@ -215,12 +196,6 @@ impl MultiBackendConfig {
         self.factories = factories;
         self
     }
-    /// Factory for the single-window quad-combine surface (`C` / `--combine`).
-    pub fn quad_factory(mut self, factory: BackendFactory) -> Self {
-        self.quad_factory = Some(factory);
-        self
-    }
-
     pub fn run<E: IntoElement, F: Fn() -> E + 'static>(self, root_fn: F) {
         run_multi(self, root_fn);
     }
@@ -239,13 +214,11 @@ impl MultiBackend {
             fonts: Vec::new(),
             background: Color::WHITE,
             initial: RenderBackend::TinySkia,
-            combine_on_boot: false,
             show_hud: true,
             fps_limit: FpsLimit::Auto,
             extensions: Vec::new(),
             runtime: None,
             factories,
-            quad_factory: None,
         }
     }
 }
@@ -341,15 +314,6 @@ fn ensure_surface(
     }
 }
 
-/// Window + engine sizes for a mode: the engine is always demo-sized; only
-/// the combine window grows (2x demo + legend strip, quadrants = demo size).
-fn sizes_for(mode: DisplayMode, demo_w: u32, demo_h: u32) -> (u32, u32, u32, u32) {
-    match mode {
-        DisplayMode::Single(_) => (demo_w, demo_h, demo_w, demo_h),
-        DisplayMode::Combine => (demo_w * 2, demo_h * 2 + QUAD_STRIP, demo_w, demo_h),
-    }
-}
-
 fn run_multi<E: IntoElement, F: Fn() -> E + 'static>(config: MultiBackendConfig, root_fn: F) {
     let event_loop = EventLoopBuilder::with_user_event()
         .build()
@@ -363,15 +327,10 @@ fn run_multi<E: IntoElement, F: Fn() -> E + 'static>(config: MultiBackendConfig,
     runtime.borrow_mut().begin_build_window();
     let root = cx.enter_keyed("root", || root_factory()).into_element();
 
-    let initial_slot = BACKEND_ORDER
+    let mut single = BACKEND_ORDER
         .iter()
         .position(|b| *b == config.initial)
         .unwrap_or(0);
-    let mut mode = if config.combine_on_boot {
-        DisplayMode::Combine
-    } else {
-        DisplayMode::Single(initial_slot)
-    };
 
     let mut debugger = VisualDebugger::new();
     debugger.show_hud = config.show_hud;
@@ -380,10 +339,8 @@ fn run_multi<E: IntoElement, F: Fn() -> E + 'static>(config: MultiBackendConfig,
     let mut stats: HashMap<usize, BackendStats> = HashMap::new();
     let mut failed: HashMap<usize, String> = HashMap::new();
 
-    // Combine boots the engine at quadrant size; single at demo size.
-    let (boot_win_w, boot_win_h, boot_eng_w, boot_eng_h) =
-        sizes_for(mode, config.width, config.height);
-    let mut engine = Engine::with_runtime(Rc::clone(&runtime), root, boot_eng_w, boot_eng_h);
+    // The engine is always demo-sized; windows track it 1:1.
+    let mut engine = Engine::with_runtime(Rc::clone(&runtime), root, config.width, config.height);
     engine.set_background(config.background);
     engine.set_root_factory(Rc::clone(&root_factory));
     runtime.borrow_mut().end_build_window(true);
@@ -395,38 +352,19 @@ fn run_multi<E: IntoElement, F: Fn() -> E + 'static>(config: MultiBackendConfig,
     });
     let text_ctx = engine.text_context();
 
-    match mode {
-        DisplayMode::Single(i) => {
-            ensure_surface(
-                i,
-                backend_display_name(BACKEND_ORDER[i]),
-                &config.title,
-                boot_win_w,
-                boot_win_h,
-                config.fullscreen,
-                &event_loop,
-                config.factories[i],
-                &text_ctx,
-                &mut surfaces,
-                &mut failed,
-            );
-        }
-        DisplayMode::Combine => {
-            ensure_surface(
-                QUAD_SLOT,
-                "quad",
-                &config.title,
-                boot_win_w,
-                boot_win_h,
-                config.fullscreen,
-                &event_loop,
-                config.quad_factory,
-                &text_ctx,
-                &mut surfaces,
-                &mut failed,
-            );
-        }
-    }
+    ensure_surface(
+        single,
+        backend_display_name(BACKEND_ORDER[single]),
+        &config.title,
+        config.width,
+        config.height,
+        config.fullscreen,
+        &event_loop,
+        config.factories[single],
+        &text_ctx,
+        &mut surfaces,
+        &mut failed,
+    );
     if surfaces.is_empty() {
         panic!("no backend could be created: {failed:?}");
     }
@@ -446,11 +384,14 @@ fn run_multi<E: IntoElement, F: Fn() -> E + 'static>(config: MultiBackendConfig,
     let mut last_presented_slot: Option<usize> = None;
     let mut extensions = config.extensions;
     let factories = config.factories;
-    let quad_factory = config.quad_factory;
     let title = config.title.clone();
     let (cfg_w, cfg_h) = (config.width, config.height);
     let fullscreen = config.fullscreen;
     let _fps_limit = config.fps_limit;
+    // Last idle extension lap: at rest no frames are drawn, so without this
+    // `DevLoop::poll` (hot-reload watch → build → refresh) never runs and
+    // source edits go unnoticed. Throttled — the lap itself walks mtimes.
+    let mut last_idle_poll = Instant::now();
 
     event_loop
         .run(move |event, elwt| match event {
@@ -468,56 +409,32 @@ fn run_multi<E: IntoElement, F: Fn() -> E + 'static>(config: MultiBackendConfig,
                         return;
                     }
                     let switch = key.state == ElementState::Pressed
-                        && handle_switch_key(&key.logical_key, mode).is_some();
+                        && handle_switch_key(&key.logical_key, single).is_some();
                     if switch {
-                        let next = handle_switch_key(&key.logical_key, mode).unwrap();
-                        mode = next;
-                        match mode {
-                            DisplayMode::Single(i) => {
-                                let tc = engine.text_context();
-                                ensure_surface(
-                                    i,
-                                    backend_display_name(BACKEND_ORDER[i]),
-                                    &title,
-                                    cfg_w,
-                                    cfg_h,
-                                    fullscreen,
-                                    elwt,
-                                    factories[i],
-                                    &tc,
-                                    &mut surfaces,
-                                    &mut failed,
-                                );
-                                if let Some(s) = surfaces.get(&i) {
-                                    s.window.request_redraw();
-                                    s.window.focus_window();
-                                }
-                                tracing::info!(
-                                    engine = backend_display_name(BACKEND_ORDER[i]),
-                                    "switch: single"
-                                );
-                            }
-                            DisplayMode::Combine => {
-                                let tc = engine.text_context();
-                                ensure_surface(
-                                    QUAD_SLOT,
-                                    "quad",
-                                    &title,
-                                    cfg_w * 2,
-                                    cfg_h * 2 + QUAD_STRIP,
-                                    fullscreen,
-                                    elwt,
-                                    quad_factory,
-                                    &tc,
-                                    &mut surfaces,
-                                    &mut failed,
-                                );
-                                if let Some(s) = surfaces.get(&QUAD_SLOT) {
-                                    s.window.request_redraw();
-                                }
-                                tracing::info!("switch: combine (quad window)");
-                            }
+                        let next = handle_switch_key(&key.logical_key, single).unwrap();
+                        single = next;
+                        let tc = engine.text_context();
+                        ensure_surface(
+                            single,
+                            backend_display_name(BACKEND_ORDER[single]),
+                            &title,
+                            cfg_w,
+                            cfg_h,
+                            fullscreen,
+                            elwt,
+                            factories[single],
+                            &tc,
+                            &mut surfaces,
+                            &mut failed,
+                        );
+                        if let Some(s) = surfaces.get(&single) {
+                            s.window.request_redraw();
+                            s.window.focus_window();
                         }
+                        tracing::info!(
+                            engine = backend_display_name(BACKEND_ORDER[single]),
+                            "switch: single"
+                        );
                         return;
                     }
                 }
@@ -549,10 +466,8 @@ fn run_multi<E: IntoElement, F: Fn() -> E + 'static>(config: MultiBackendConfig,
                         }
                     }
                     WindowEvent::RedrawRequested => {
-                        // Frame the shared engine ONCE, then present the same
-                        // scene to the requesting surface. Combine mode is one
-                        // quad window now, so there is no fan-out: one frame,
-                        // four quarter-size rasters, one present.
+                        // Frame the shared engine ONCE, then present the
+                        // scene to the requesting surface.
                         if last_presented_slot != Some(slot) {
                             engine.request_full_repaint();
                             last_presented_slot = Some(slot);
@@ -568,33 +483,17 @@ fn run_multi<E: IntoElement, F: Fn() -> E + 'static>(config: MultiBackendConfig,
                             ext.on_frame(&diag_full);
                         }
                         let text_ctx = engine.text_context();
-                        let mut quad = None;
                         {
                             let resize = pending_resize.remove(&slot);
                             let Some(surf) = surfaces.get_mut(&slot) else {
                                 return;
                             };
-                            // Quad windows carry the engine at quadrant size;
-                            // single windows track the engine 1:1.
-                            let (w, h) = if slot == QUAD_SLOT {
-                                let (ww, wh) = resize.unwrap_or_else(|| {
-                                    let (ew, eh) = engine.logical_size();
-                                    (ew * 2, eh * 2 + QUAD_STRIP)
-                                });
-                                surf.backend.resize(ww, wh);
-                                let (qw, qh) = quad_layout(ww, wh);
-                                if (qw, qh) != engine.logical_size() {
-                                    engine.resize(qw, qh);
-                                }
-                                (ww, wh)
-                            } else {
-                                let (w, h) = resize.unwrap_or_else(|| engine.logical_size());
-                                if (w, h) != engine.logical_size() {
-                                    surf.backend.resize(w, h);
-                                    engine.resize(w, h);
-                                }
-                                (w, h)
-                            };
+                            // Windows track the engine 1:1.
+                            let (w, h) = resize.unwrap_or_else(|| engine.logical_size());
+                            if (w, h) != engine.logical_size() {
+                                surf.backend.resize(w, h);
+                                engine.resize(w, h);
+                            }
                             let (lw, lh) = engine.logical_size();
                             let caps = OverlayCaps {
                                 backend: surf.backend.tag(),
@@ -649,6 +548,7 @@ fn run_multi<E: IntoElement, F: Fn() -> E + 'static>(config: MultiBackendConfig,
                             };
                             match report {
                                 Ok(r) => {
+                                    // Stash per-slot stats for the 1/s perf log below.
                                     stats
                                         .entry(slot)
                                         .or_insert_with(BackendStats::new)
@@ -658,44 +558,25 @@ fn run_multi<E: IntoElement, F: Fn() -> E + 'static>(config: MultiBackendConfig,
                                     tracing::error!(slot, %e, "frame presentation failed");
                                 }
                             }
-                            // Stash quad per-engine stats for the 1/s perf log below.
-                            if slot == QUAD_SLOT {
-                                quad = surf.backend.quad_stats();
-                            }
                         }
                         last_present = Instant::now();
                         os_clipboard.sync(&engine);
                         if wants_redraw || engine.has_active_motion() {
-                            match mode {
-                                DisplayMode::Single(_) => {
-                                    if let Some(s) = surfaces.get(&slot) {
-                                        s.window.request_redraw();
-                                    }
-                                }
-                                DisplayMode::Combine => {
-                                    for s in surfaces.values() {
-                                        s.window.request_redraw();
-                                    }
-                                }
+                            if let Some(s) = surfaces.get(&slot) {
+                                s.window.request_redraw();
                             }
                         }
-                        if mode == DisplayMode::Combine
-                            && last_stats_log.elapsed() >= Duration::from_secs(1)
-                        {
+                        if last_stats_log.elapsed() >= Duration::from_secs(1) {
                             last_stats_log = Instant::now();
-                            let mut line = String::from("perf |");
-                            match &quad {
-                                Some(qs) => {
-                                    for q in qs {
-                                        line.push_str(&format!(
-                                            " {} {:.0}fps r{:.1}ms |",
-                                            q.name, q.fps_avg5, q.raster_ms
-                                        ));
-                                    }
-                                }
-                                None => line.push_str(" quad stats unavailable |"),
+                            if let Some(st) = stats.get(&slot) {
+                                tracing::info!(
+                                    engine = backend_display_name(BACKEND_ORDER[slot]),
+                                    fps = st.avg_fps_5s(),
+                                    raster_ms = st.last_raster().as_secs_f32() * 1000.0,
+                                    present_ms = st.last_present().as_secs_f32() * 1000.0,
+                                    "perf"
+                                );
                             }
-                            tracing::info!("{line}");
                         }
                     }
                     _ => {
@@ -707,19 +588,25 @@ fn run_multi<E: IntoElement, F: Fn() -> E + 'static>(config: MultiBackendConfig,
                     }
                 }
             }
-            Event::UserEvent(()) => match mode {
-                DisplayMode::Single(i) => {
-                    if let Some(s) = surfaces.get(&i) {
-                        s.window.request_redraw();
-                    }
+            Event::UserEvent(()) => {
+                if let Some(s) = surfaces.get(&single) {
+                    s.window.request_redraw();
                 }
-                DisplayMode::Combine => {
-                    for s in surfaces.values() {
-                        s.window.request_redraw();
-                    }
-                }
-            },
+            }
             Event::AboutToWait => {
+                // Idle extension lap (hot-reload lives here): request a frame
+                // when an extension has work, else the loop sleeps unthrottled
+                // and `ControlFlow` defaults keep it waking. Mirrors the
+                // single-window runner's idle pacing; without this a resting
+                // demo never notices source edits.
+                if last_idle_poll.elapsed() >= Duration::from_millis(500) {
+                    last_idle_poll = Instant::now();
+                    if extensions.iter_mut().any(|ext| ext.on_idle()) {
+                        if let Some(s) = surfaces.get(&single) {
+                            s.window.request_redraw();
+                        }
+                    }
+                }
                 let _ = last_present;
             }
             _ => {}
@@ -727,24 +614,19 @@ fn run_multi<E: IntoElement, F: Fn() -> E + 'static>(config: MultiBackendConfig,
         .expect("Event loop execution failed");
 }
 
-/// Switch/combine keys. Returns the new mode when handled.
-fn handle_switch_key(key: &Key, mode: DisplayMode) -> Option<DisplayMode> {
+/// Engine switch keys. Returns the newly focused slot when handled.
+///
+/// `1-5` select directly; Tab and F7 cycle round-robin.
+fn handle_switch_key(key: &Key, single: BackendSlot) -> Option<BackendSlot> {
     match key {
         Key::Character(c) => match c.as_str() {
-            "1" | "2" | "3" | "4" => {
+            "1" | "2" | "3" | "4" | "5" => {
                 let idx = c.chars().next()?.to_digit(10)? as usize - 1;
-                Some(DisplayMode::Single(idx))
+                (idx < BACKEND_ORDER.len()).then_some(idx)
             }
-            "c" | "C" => Some(match mode {
-                DisplayMode::Combine => DisplayMode::Single(0),
-                DisplayMode::Single(_) => DisplayMode::Combine,
-            }),
             _ => None,
         },
-        Key::Named(NamedKey::Tab) => Some(match mode {
-            DisplayMode::Single(_) => mode.cycle_next(),
-            DisplayMode::Combine => DisplayMode::Single(0),
-        }),
+        Key::Named(NamedKey::Tab) | Key::Named(NamedKey::F7) => Some(cycle_slot(single)),
         _ => None,
     }
 }

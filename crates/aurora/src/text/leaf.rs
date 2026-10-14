@@ -19,20 +19,13 @@ impl TextConfig {
     /// Inline width text wraps against, from the node's width intent and offered space.
     ///
     /// Moved out of layout measurement so the wrapping policy is defined wherever
-    /// shaping is defined. Two roles share this query:
-    ///
-    /// - Item sizing (`for_height = false`): a `Fit` leaf inside a row keeps its
-    ///   max-content width (unbounded). The row may shrink its box to the
-    ///   min-content floor or let it overflow; narrowing re-wraps through the
-    ///   tight follow-up pass, exactly as before this rewrite.
-    /// - Container-height sizing (`for_height = true`): a `Fit` box (or a
-    ///   wrapping column band) must wrap *before* reporting, i.e. the
-    ///   intrinsic-sizing clamp `max(min-content, min(max-content, available))`.
-    ///   Without this, every fit container reports single-line height no matter
-    ///   how narrow its capped width is (the fit-vs-wrap bug).
-    ///
-    /// Both probes shape the unbounded layout, which is shared through the
-    /// shaping cache — one cached shape, not two cold ones.
+    /// shaping is defined. `Fit` means CSS `fit-content` on both probes:
+    /// `max(min-content, min(max-content, available))`. A bounded offer folds
+    /// the text instead of reporting max-content, so a fit container is capped
+    /// by its parent rather than stretched by its longest line; an unbounded
+    /// offer still shapes max-content. Both probes shape the unbounded layout
+    /// only when nothing bounds them, which is shared through the shaping
+    /// cache — one cached shape, not two cold ones.
     pub fn wrap_width(
         config: &TextConfig,
         style_width: Size,
@@ -61,8 +54,15 @@ impl TextConfig {
             return f32::INFINITY;
         }
         match style_width {
+            Size::Fold => {
+                // Fold never stretches a parent: intrinsic is min-content on
+                // both probes, and the fold itself happens at the assigned
+                // box (forced refit). Unbounded offers degrade to Fit only
+                // downstream, where min(max-content, infinity) is max-content.
+                ctx.min_inline_width(config).max(0.0)
+            }
             Size::Fit => {
-                if !for_height || !available.is_finite() {
+                if !available.is_finite() {
                     return f32::INFINITY;
                 }
                 let min = ctx.min_inline_width(config);

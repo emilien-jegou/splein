@@ -14,14 +14,16 @@ pub fn resolve_desired_dimension(size: Size, intrinsic: f32, parent_dim: Option<
         0.0
     };
     match size {
-        Size::Fixed(px) => {
-            if px.is_finite() {
+        Size::Fixed(px) => {            if px.is_finite() {
                 px.max(0.0)
             } else {
                 0.0
             }
         }
         Size::Fit => safe_intrinsic,
+        // Fold sizes like Fit off its (min-content) intrinsic; the fold
+        // itself happens at the assigned box via the forced refit.
+        Size::Fold => safe_intrinsic,
         Size::Fill => 0.0,
         Size::Percent(pct) => parent_dim
             .filter(|p| p.is_finite() && *p >= 0.0)
@@ -216,11 +218,14 @@ pub(crate) fn aspect_fit_height(
 
 /// Re-shapes a text run when its cached layout is wider than the inline size it finally received.
 ///
-/// A `Fit` item keeps max-content width for row allocation, so a sibling can
-/// still shrink its box below the cached run; the run then re-shapes at the
-/// assigned width and paints wrapped inside its own box. Shaping is memoized
-/// by content and width, so the common case costs one cache lookup and no
-/// shaping.
+/// A `Fit` run already folds at a bounded offer, but a sibling can still
+/// shrink its box below the cached run (below the offer it shaped against);
+/// the run then re-shapes at the assigned width and paints wrapped inside
+/// its own box. A `Fold` run always re-shapes: its intrinsic is min-content
+/// by design, so the cached layout is narrower than the assigned box and
+/// `needs_refit` alone would leave it painting a one-word column. Shaping is
+/// memoized by content and width, so the common case costs one cache lookup
+/// and no shaping.
 pub fn fit_text_run_to_width(
     arena: &mut TreeArena,
     id: NodeId,
@@ -229,8 +234,9 @@ pub fn fit_text_run_to_width(
 ) {
     let config = match &arena.get(id).kind {
         NodeKind::Text(config) => {
+            let force = arena.get(id).style.width.is_fold();
             let cached = arena.get(id).state.text.cached_text_layout.as_deref();
-            if !crate::text::TextConfig::needs_refit(cached, width) {
+            if !force && !crate::text::TextConfig::needs_refit(cached, width) {
                 return;
             }
             config.clone()

@@ -24,7 +24,7 @@ export const code = `impl AppExtension for Ticker {
 <SectionShell
       number="28"
       title="App Extension"
-      description="Engine lifecycle hooks with AppExtension trait. on_frame for per-frame updates, on_event for window events, on_update for polling."
+      description="Engine lifecycle hooks with AppExtension trait. on_frame for post-frame telemetry, on_event for window events, on_update for pre-frame engine access, on_idle for polling."
   code={code}
 >
   <AppExtensionDemo />

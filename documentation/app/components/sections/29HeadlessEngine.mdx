@@ -1,8 +1,8 @@
 import SectionShell from "../layout/SectionShell"
 import HeadlessEngineDemo from "../demos/HeadlessEngineDemo"
 
-export const code = `let engine = Engine::headless();
-let raster = HeadlessRaster::new(&engine);
+export const code = `let engine = Engine::headless(400, 400);
+let raster = HeadlessRaster::new();
 
 // Benchmark: time draw_engine vs engine.frame()
 for _ in 0..300 {

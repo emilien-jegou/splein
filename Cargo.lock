@@ -216,7 +216,7 @@ name = "aurora-examples"
 version = "0.0.1-rc.1"
 dependencies = [
  "aurora",
- "aurora-quad",
+ "aurora-skia",
  "aurora-tiny-skia",
  "aurora-vello",
  "aurora-wgpu",
@@ -267,9 +267,20 @@ name = "aurora-shared"
 version = "0.0.1-rc.1"
 dependencies = [
  "aurora",
+ "aurora-skia",
  "aurora-tiny-skia",
  "aurora-vello",
  "aurora-wgpu",
+]
+
+[[package]]
+name = "aurora-skia"
+version = "0.0.1-rc.1"
+dependencies = [
+ "aurora",
+ "aurora-tiny-skia",
+ "softbuffer",
+ "winit",
 ]
 
 [[package]]

@@ -16,5 +16,6 @@ crate-type = ["dylib"]
 [dependencies]
 aurora = { path = "../aurora", version = "0.0.1-rc.1" }
 aurora-tiny-skia = { path = "../aurora-tiny-skia", version = "0.0.1-rc.1" }
+aurora-skia = { path = "../aurora-skia", version = "0.0.1-rc.1" }
 aurora-vello = { path = "../aurora-vello", version = "0.0.1-rc.1" }
 aurora-wgpu = { path = "../aurora-wgpu", version = "0.0.1-rc.1" }

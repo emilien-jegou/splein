@@ -93,7 +93,7 @@ pub use debug_bus::{DebugBus, DebugCommand, NodeBrief, Snapshot};
 pub use extension::{AppExtension, OverlayCaps};
 #[cfg(feature = "desktop")]
 pub use multibackend::{
-    backend_display_name, BackendStats, DisplayMode, MultiBackend, BACKEND_ORDER,
+    backend_display_name, BackendSlot, BackendStats, MultiBackend, BACKEND_ORDER,
 };
 pub use painter::OverlayPainter;
 pub use runner::FpsLimit;
@@ -302,10 +302,10 @@ impl AppConfig {
                 factory(Arc::clone(&window), pw, ph, engine.text_context())
                     .unwrap_or_else(|e| panic!("{want} backend init failed: {e:?}"))
             }
-            RenderBackend::TinySkia => {
+            RenderBackend::TinySkia | RenderBackend::Skia => {
                 let factory = self.backend_factory.expect(
                     "no CPU backend factory: pass `aurora_tiny_skia::create_backend` \
-                     via `AppConfig::backend_factory`",
+                     or `aurora_skia::create_backend` via `AppConfig::backend_factory`",
                 );
                 factory(window.clone(), pw, ph, engine.text_context())
                     .expect("CPU backend init failed")

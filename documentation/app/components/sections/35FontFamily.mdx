@@ -2,8 +2,7 @@ import SectionShell from "../layout/SectionShell"
 import FontFamilyDemo from "../demos/FontFamilyDemo"
 
 export const code = `// Register at startup
-cli.app_config("Aurora")
-    .font("Inter", include_bytes!("../assets/inter-var.ttf"))
+cli.font("Inter", include_bytes!("../assets/inter-var.ttf"))
     .run(move || build_ui());
 
 // Use in any Text

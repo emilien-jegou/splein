@@ -12,9 +12,9 @@ autoexamples = false
 [dependencies]
 aurora = { path = "../crates/aurora", version = "0.0.1-rc.1" }
 aurora-tiny-skia = { path = "../crates/aurora-tiny-skia", version = "0.0.1-rc.1" }
+aurora-skia = { path = "../crates/aurora-skia", version = "0.0.1-rc.1" }
 aurora-vello = { path = "../crates/aurora-vello", version = "0.0.1-rc.1" }
 aurora-wgpu = { path = "../crates/aurora-wgpu", version = "0.0.1-rc.1" }
-aurora-quad = { path = "../crates/aurora-quad", version = "0.0.1-rc.1" }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 winit = { version = "0.29", default-features = false, features = ["rwh_06", "x11", "wayland"] }

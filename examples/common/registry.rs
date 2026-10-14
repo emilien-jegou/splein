@@ -353,8 +353,8 @@ pub fn run_demo(cli: ExampleCli, id: &'static str) {
         Some(aurora_vello::create_backend),
         Some(aurora_vello::create_cpu_backend),
         Some(aurora_wgpu::create_backend),
+        Some(aurora_skia::create_backend),
     ])
-    .quad_factory(aurora_quad::create_backend)
     .title("Aurora")
     .size(cli.width, cli.height)
     .initial(cli.backend)

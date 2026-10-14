@@ -6,6 +6,14 @@ pub enum Size {
     Fit,
     Fill,
     Percent(f32),
+    /// Take whatever width the siblings decide, and fold into it.
+    ///
+    /// Intrinsic sizing reports min-content (longest word), so a `Fold` child
+    /// never stretches a fit parent past its siblings; once the parent
+    /// assigns a box, the content re-shapes (folds) at the assigned width.
+    /// Against an unbounded offer it degrades to `Fit`. Opt-in only: bare
+    /// nodes keep CSS `fit-content`.
+    Fold,
 }
 
 impl Size {
@@ -25,12 +33,20 @@ impl Size {
         Self::Percent(ratio)
     }
 
+    pub const fn fold() -> Self {
+        Self::Fold
+    }
+
     pub fn is_fill(&self) -> bool {
         matches!(self, Self::Fill)
     }
 
     pub fn is_fit(&self) -> bool {
         matches!(self, Self::Fit)
+    }
+
+    pub fn is_fold(&self) -> bool {
+        matches!(self, Self::Fold)
     }
 }
 

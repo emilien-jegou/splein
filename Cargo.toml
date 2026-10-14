@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/splein", "crates/aurora", "crates/aurora/macros", "crates/aurora-tiny-skia", "crates/aurora-vello", "crates/aurora-wayland", "crates/aurora-wgpu", "crates/aurora-quad", "crates/aurora/benches/bench_suite", "crates/aurora-shared", "crates/aurora-cli", "crates/aurora-hot-gen", "examples", "crates/probe-min"]
+members = ["crates/splein", "crates/aurora", "crates/aurora-skia", "crates/aurora/macros", "crates/aurora-tiny-skia", "crates/aurora-vello", "crates/aurora-wayland", "crates/aurora-wgpu", "crates/aurora-quad", "crates/aurora/benches/bench_suite", "crates/aurora-shared", "crates/aurora-cli", "crates/aurora-hot-gen", "examples", "crates/probe-min"]
 default-members = ["crates/splein", "crates/aurora", "crates/aurora/macros", "crates/aurora-tiny-skia", "crates/aurora-vello", "crates/aurora-wayland", "crates/aurora-wgpu", "crates/aurora-cli", "examples"]
 
 [workspace.dependencies]

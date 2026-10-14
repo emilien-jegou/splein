@@ -73,4 +73,6 @@ pub enum RenderBackend {
     /// Vello's compute rasterizer. Shadows evaluate blur analytically in
     /// the fragment shader (zero CPU pixel work, zero cache thrash).
     Wgpu,
+    /// Skia backend (CPU raster first)
+    Skia,
 }

@@ -1,10 +1,15 @@
 import SectionShell from "../layout/SectionShell"
 import AutoGridDemo from "../demos/AutoGridDemo"
 
-export const code = `let width = use_signal(420.0f32);
-let (cols, child_w) = aurora::dsl::auto_grid::columns_for(
-    width.get(), min_child, gap
-);
+export const code = `// AutoGrid is a user-defined component, not a DSL built-in.
+// See examples/wrap_repro/view.rs for the full pattern.
+#[component]
+fn AutoGrid(width: Signal<f32>, min_child: f32, gap: f32) -> Element {
+    let (cols, child_w) = aurora::dsl::auto_grid::columns_for(
+        width.get(), min_child, gap
+    );
+    // ... render columns
+}
 
 view! {
     <Group direction="vertical" width="fill" gap={8.0}>

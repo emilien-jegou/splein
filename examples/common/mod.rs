@@ -38,8 +38,6 @@ pub struct ExampleCli {
     pub show_hud: bool,
     /// Frame rate pacing limit policy.
     pub fps_limit: FpsLimit,
-    /// Boot with all backends live side-by-side.
-    pub combine: bool,
 }
 
 /// Maps a user-supplied engine name to a [`RenderBackend`].
@@ -50,7 +48,8 @@ pub struct ExampleCli {
 /// positionals never silently switch the rasterizer.
 fn parse_engine_name(raw: &str) -> Option<RenderBackend> {
     match raw.to_lowercase().replace('_', "-").as_str() {
-        "tiny-skia" | "tinyskia" | "skia" | "cpu" => Some(RenderBackend::TinySkia),
+        "tiny-skia" | "tinyskia" | "cpu" => Some(RenderBackend::TinySkia),
+        "skia" => Some(RenderBackend::Skia),
         "vello" | "vello-gpu" | "gpu" => Some(RenderBackend::Vello),
         "vello-cpu" | "cpu-vello" | "vellocpu" => Some(RenderBackend::VelloCpu),
         "wgpu" | "raw-wgpu" | "rawgpu" => Some(RenderBackend::Wgpu),
@@ -73,13 +72,12 @@ impl ExampleCli {
             println!("│                AURORA EXAMPLE RUNNER                   │");
             println!("├────────────────────────────────────────────────────────┤");
             println!("│ [engine]             tiny-skia (default) | vello |     │");
-            println!("│                      vello-cpu | wgpu                 │");
+            println!("│                      vello-cpu | wgpu | skia          │");
             println!("│ --gpu / --vello    Use Vello GPU Compute (Metal/VK/D3D)│");
             println!("│ --vello-cpu        Use Vello with CPU-staged coarse    │");
-            println!("│ --cpu / --skia     Use TinySkia CPU Rasterizer (Def.)  │");
+            println!("│ --cpu              Use TinySkia CPU Rasterizer (Def.)  │");
             println!("│ --fps <N>          Cap target FPS (e.g. 144, 240, 360) │");
             println!("│ --uncapped         Disable frame pacer (max benchmark) │");
-            println!("│ --combine          Boot all 4 backends side-by-side   │");
             println!("│ --no-hud           Disable the on-screen HUD panel     │");
             println!("│ --width <pixels>   Set custom window width             │");
             println!("│ --height <pixels>  Set custom window height            │");
@@ -144,10 +142,10 @@ impl ExampleCli {
         }
 
         let show_hud = !args.iter().any(|a| a == "--no-hud");
-        let combine = args.iter().any(|a| a == "--combine");
 
         let engine_name = match backend {
             RenderBackend::TinySkia => "tiny-skia",
+            RenderBackend::Skia => "skia",
             RenderBackend::Vello => "vello",
             RenderBackend::VelloCpu => "vello-cpu",
             RenderBackend::Wgpu => "wgpu",
@@ -163,7 +161,6 @@ impl ExampleCli {
             height,
             show_hud,
             fps_limit,
-            combine,
         }
     }
     /// Initializes Tracy profiling layer and stdout logger.
@@ -203,12 +200,11 @@ impl ExampleCli {
         }
     }
 
-    /// Pre-configures a `MultiBackendConfig` with all four raster backends.
+    /// Pre-configures a `MultiBackendConfig` with all five raster backends.
     ///
-    /// One shared engine/reactive state. `1-4` select a single backend
-    /// window, `Tab` cycles, `C` toggles the single-window quad combine
-    /// (2x2 quadrants + legend strip, one scene, one present). The CLI
-    /// positional/flags pick the focused backend; `--combine` boots quad.
+    /// One shared engine/reactive state. `1-5` select a single backend
+    /// window, `Tab`/`F7` cycles. The CLI positional/flags pick the focused
+    /// backend.
     pub fn app_config_multi(&self, title: &str) -> aurora::app::multibackend::MultiBackendConfig {
         use aurora::app::multibackend::MultiBackend;
         let mut debugger = VisualDebugger::new();
@@ -219,12 +215,13 @@ impl ExampleCli {
             Some(aurora_vello::create_backend),
             Some(aurora_vello::create_cpu_backend),
             Some(aurora_wgpu::create_backend),
+            Some(aurora_skia::create_backend),
         ])
-        .quad_factory(aurora_quad::create_backend)
         .title(format!(
-            "{title} [1-4 engine | Tab cycle | C combine | {}]",
+            "{title} [1-5 engine | Tab/F7 cycle | {}]",
             match self.backend {
                 RenderBackend::TinySkia => "tiny-skia",
+                RenderBackend::Skia => "skia",
                 RenderBackend::Vello => "vello-gpu",
                 RenderBackend::VelloCpu => "vello-cpu",
                 RenderBackend::Wgpu => "wgpu",
@@ -232,7 +229,6 @@ impl ExampleCli {
         ))
         .size(self.width, self.height)
         .initial(self.backend)
-        .combine(self.combine)
         .show_hud(self.show_hud)
         .fps_limit(self.fps_limit)
         .extension(debugger)
@@ -251,6 +247,7 @@ impl ExampleCli {
             .extension(debugger);
         match self.backend {
             RenderBackend::TinySkia => config.backend_factory(aurora_tiny_skia::create_backend),
+            RenderBackend::Skia => config.backend_factory(aurora_skia::create_backend),
             RenderBackend::Vello => config.backend_factory(aurora_vello::create_backend),
             RenderBackend::VelloCpu => config.backend_factory(aurora_vello::create_cpu_backend),
             RenderBackend::Wgpu => config.backend_factory(aurora_wgpu::create_backend),

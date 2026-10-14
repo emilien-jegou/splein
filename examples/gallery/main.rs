@@ -2,7 +2,7 @@
 //
 // Each demo stays its own process (exact setup, own windows, multi-backend
 // keys included): selecting a row spawns the sibling example binary
-// fire-and-forget with the gallery's backend/combine args forwarded.
+// fire-and-forget with the gallery's backend arg forwarded.
 // Keyboard: Up/Down/Home/End move, Enter/Space launches, Esc exits.
 // Mouse: hover highlights, click launches. Esc inside any child demo
 // exits it (bound in both runners) and drops you back here.
@@ -141,14 +141,12 @@ fn main() {
 
     let backend_name = match cli.backend {
         RenderBackend::TinySkia => "tiny-skia",
+        RenderBackend::Skia => "skia",
         RenderBackend::Vello => "vello-gpu",
         RenderBackend::VelloCpu => "vello-cpu",
         RenderBackend::Wgpu => "wgpu",
     };
-    let mut child_args = vec![backend_name.to_string()];
-    if cli.combine {
-        child_args.push("--combine".to_string());
-    }
+    let child_args = vec![backend_name.to_string()];
 
     let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let selected = Signal::new(Rc::clone(&runtime), 0usize);
@@ -267,7 +265,7 @@ pub fn GalleryPage(
         <Shell
             eyebrow_label="GALLERY · ALL DEMOS"
             title="One door, every demo."
-            copy="↑↓ moves · Enter launches · hover + click works too · Esc exits a demo back here, Esc here quits. 1-4 / Tab / C inside each demo still switch engines."
+            copy="↑↓ moves · Enter launches · hover + click works too · Esc exits a demo back here, Esc here quits. 1-5 / Tab / F7 inside each demo still switch engines."
         >
             <Content>
                 <Group direction="vertical" width="fill" height="fill" gap={12.0}>

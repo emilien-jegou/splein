@@ -140,12 +140,16 @@ fn replace_backend(
     text_ctx: crate::text::TextContext,
     what: &str,
 ) {
-    drop(backend.take());
-    if let Some(f) = factory {
-        match f(Arc::clone(window), w, h, text_ctx) {
-            Ok(b) => *backend = Some(b),
-            Err(e) => tracing::error!(error = ?e, what, "backend rebuild failed"),
-        }
+    // Build-then-swap: the live backend keeps presenting until the
+    // replacement exists. Dropping first would leave `None` behind on a
+    // missing factory or failed init (black screen after F7).
+    let Some(f) = factory else {
+        tracing::warn!(what, "no factory for engine slot; keeping current backend");
+        return;
+    };
+    match f(Arc::clone(window), w, h, text_ctx) {
+        Ok(b) => *backend = Some(b),
+        Err(e) => tracing::error!(error = ?e, what, "backend rebuild failed; keeping current"),
     }
 }
 
@@ -494,7 +498,7 @@ fn run_switchable_loop(
     let mut pointer = PointerBridge::new();
     let mut cursor = CursorIcon::Default;
     let mut os_clipboard = OsClipboardSync::new();
-    let factories: [Option<BackendFactory>; 4] = config.factories;
+    let factories: [Option<BackendFactory>; 5] = config.factories;
     // Frame pacing (mirrors the single-window runner): without it the loop
     // spins unthrottled whenever motion is active and the FPS readout
     // counts empty frames.

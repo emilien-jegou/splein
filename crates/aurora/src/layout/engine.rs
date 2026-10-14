@@ -183,11 +183,13 @@ fn perform_node_layout(
                     let n = arena.get(child);
                     (n.style.margin, n.style.width)
                 };
-                let intrinsic_cross = if width_intent.is_fit() {
+                let intrinsic_cross = if width_intent.is_fit() || width_intent.is_fold() {
                     // Fit cross clamps to the content box: an ancestor boundary
                     // reaches every descendant, so fit children wrap lines
                     // instead of widening past the parent (unbounded parents
                     // probe unbounded, which is max-content by definition).
+                    // Fold reports min-content here for the same reason: it
+                    // must never widen the parent, only fold at its box.
                     let probe = Constraints::loose(content_w, f32::INFINITY);
                     compute_intrinsic_with_constraints(arena, child, probe, text_ctx, false).width
                 } else {
@@ -211,7 +213,10 @@ fn perform_node_layout(
                     + arena.get(child).style.margin.vertical();
                 let n = arena.get(child);
                 desired_main.push(d.height + n.style.margin.vertical());
-                is_fills.push(n.style.height.is_fill());
+                // Fold absorbs leftover like Fill on the main axis: it folds
+                // at whatever share it is given instead of sitting at
+                // min-content.
+                is_fills.push(n.style.height.is_fill() || n.style.height.is_fold());
                 shrinks.push(n.style.shrink);
                 margins.push(n.style.margin.vertical());
                 min_mains.push(block_floor);
@@ -232,7 +237,8 @@ fn perform_node_layout(
                     + arena.get(child).style.margin.horizontal();
                 let n = arena.get(child);
                 desired_main.push(d.width + n.style.margin.horizontal());
-                is_fills.push(n.style.width.is_fill());
+                // Fold absorbs leftover like Fill (see the vertical branch).
+                is_fills.push(n.style.width.is_fill() || n.style.width.is_fold());
                 shrinks.push(n.style.shrink);
                 margins.push(n.style.margin.horizontal());
                 min_mains.push(inline_floor);
@@ -574,6 +580,6 @@ fn resolve_axis(size: Size, bound: f32, is_tight: bool) -> f32 {
                 bound
             }
         }
-        Size::Fill | Size::Fit => bound,
+        Size::Fill | Size::Fit | Size::Fold => bound,
     }
 }

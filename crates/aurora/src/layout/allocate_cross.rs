@@ -18,9 +18,12 @@ pub fn resolve_child_cross(
     let m_total = m_start + m_end;
     let is_fill = cross_size.is_fill();
     let is_fixed = matches!(cross_size, Size::Fixed(_) | Size::Percent(_));
+    // Fold assigns like Fill (take the parent's content width, then fold
+    // into it) while reporting min-content upstream.
+    let stretches = is_fill || cross_size.is_fold();
 
     let content = match cross_size {
-        Size::Fill => (parent_cross - m_total).max(0.0),
+        Size::Fill | Size::Fold => (parent_cross - m_total).max(0.0),
         Size::Percent(ratio) if parent_cross.is_finite() => {
             (parent_cross * ratio - m_total).max(0.0)
         }
@@ -35,7 +38,7 @@ pub fn resolve_child_cross(
         m_start,
         m_end,
         is_fixed,
-        is_fill,
+        stretches,
     );
     ((alloc - m_total).max(0.0), offset)
 }

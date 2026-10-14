@@ -1,7 +1,7 @@
 // Single responsibility: Switchable master binary hosting every demo in one window.
 //
 // F5 opens the grub-style demo menu, Enter/click switches live in the
-// current window, F6 toggles quad combine, F7 cycles raster engines,
+// current window, F7 cycles raster engines,
 // Esc goes back / exits. Optional positional demo id selects the start
 // demo: `cargo run --example studio -- motion-press`.
 

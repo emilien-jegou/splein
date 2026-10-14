@@ -17,6 +17,7 @@
 
 pub use aurora::*;
 pub use aurora_tiny_skia as tiny_skia;
+pub use aurora_skia as skia;
 pub use aurora_vello as vello;
 pub use aurora_wgpu as wgpu;
 
