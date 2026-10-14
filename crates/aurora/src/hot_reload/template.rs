@@ -8,6 +8,46 @@
 // full cdylib rebuild. Pure string functions, unit-tested; never decides pixels.
 
 use std::path::Path;
+use std::sync::Mutex;
+
+/// Registered template shapes per `view!` call site (`file:line` → shape).
+///
+/// `view!` emits a debug-only `note_view_template(file!(), line!(), SHAPE)` call
+/// alongside its builder expansion. Shapes describe structure only (tags, attr
+/// names, child kinds) — literal values are excluded, so a text/color edit
+/// keeps the shape while adding a node changes it. The host compares shapes
+/// across reloads: same shape + `TemplateOnly` gate = IPC fast path eligible.
+static VIEW_SHAPES: Mutex<Option<std::collections::HashMap<String, String>>> =
+    Mutex::new(None);
+
+/// Records one `view!` site's structure shape. Debug-only by convention: the
+/// macro emits the call under `#[cfg(debug_assertions)]` semantics via
+/// `debug_assertions`-gated body (release call compiles to a flag check that
+/// optimizes to nothing when the map is empty — kept cheap, never hot).
+pub fn note_view_template(file: &str, line: u32, shape: &str) {
+    if !cfg!(debug_assertions) {
+        return;
+    }
+    let key = format!("{file}:{line}");
+    let mut guard = VIEW_SHAPES.lock().unwrap_or_else(|e| e.into_inner());
+    let map = guard.get_or_insert_with(Default::default);
+    map.insert(key, shape.to_string());
+}
+
+/// Looks up the last registered shape for a call site, if any.
+pub fn view_shape(file: &str, line: u32) -> Option<String> {
+    let guard = VIEW_SHAPES.lock().unwrap_or_else(|e| e.into_inner());
+    guard.as_ref()?.get(&format!("{file}:{line}")).cloned()
+}
+
+/// Clears all registered shapes (tests).
+pub fn clear_view_templates() {
+    if let Ok(mut guard) = VIEW_SHAPES.lock() {
+        if let Some(map) = guard.as_mut() {
+            map.clear();
+        }
+    }
+}
 
 /// What a file edit needs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

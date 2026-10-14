@@ -585,6 +585,47 @@ impl FlowTables {
     }
 }
 
+/// Structure shape of parsed nodes: tags, sorted attr names, child shapes.
+/// Literals and `{expr}` contents are excluded, so value-only edits keep the
+/// shape while added/removed/reordered nodes change it. Emitted as a string
+/// literal into the debug-only `note_view_template` call.
+fn shape_of_nodes(nodes: &[ViewNode]) -> String {
+    let mut out = String::from("[");
+    for (i, n) in nodes.iter().enumerate() {
+        if i > 0 {
+            out.push(',');
+        }
+        out.push_str(&shape_of_node(n));
+    }
+    out.push(']');
+    out
+}
+
+fn shape_of_node(node: &ViewNode) -> String {
+    match node {
+        Node::Element(el) => {
+            let tag = node_name_string(el.name());
+            let mut attrs: Vec<String> = el
+                .attributes()
+                .iter()
+                .filter_map(|a| match a {
+                    NodeAttribute::Attribute(attr) => Some(node_name_string(&attr.key)),
+                    NodeAttribute::Block(_) => Some("*spread*".to_string()),
+                })
+                .collect();
+            attrs.sort();
+            format!("{tag}{{{}}}({})", attrs.join(","), shape_of_nodes(&el.children))
+        }
+        Node::Text(_) => "text".to_string(),
+        Node::Block(_) => "{expr}".to_string(),
+        Node::Fragment(f) => format!("frag{}", shape_of_nodes(&f.children)),
+        Node::Comment(_) => "comment".to_string(),
+        Node::Doctype(_) => "doctype".to_string(),
+        Node::RawText(_) => "raw".to_string(),
+        Node::Custom(_) => "custom".to_string(),
+    }
+}
+
 fn expand_inner(tokens: TokenStream2) -> syn::Result<TokenStream2> {
     let mut flow = FlowTables::default();
     let rewritten = flow.extract(tokens);
@@ -614,7 +655,19 @@ fn expand_inner(tokens: TokenStream2) -> syn::Result<TokenStream2> {
             let e = child_expr(single, &flow)?;
             let body = quote! { ::aurora::dsl::IntoElement::into_element(#e) };
             let body = flow.splice(body)?;
-            Ok(quote! { #out #body })
+            // Debug-only shape registration: structure fingerprint for the
+            // Tier-1 IPC gate (literals excluded, so value edits keep it).
+            // Emitted inline (no extra const: expression position forbids
+            // items, and `file!()+line!()` keys the call site instead).
+            let shape = shape_of_nodes(std::slice::from_ref(single));
+            Ok(quote! {
+                {
+                    ::aurora::hot_reload::template::note_view_template(
+                        ::std::file!(), ::std::line!(), #shape
+                    );
+                    #out #body
+                }
+            })
         }
         _ => Err(syn::Error::new(
             proc_macro2::Span::call_site(),
