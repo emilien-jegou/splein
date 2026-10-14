@@ -300,7 +300,7 @@ pub(crate) fn element_expr(el: &Element, flow: &FlowTables) -> syn::Result<Token
         ));
     }
     if tag == "Text" {
-        return text_expr(el);
+        return text_expr(el, flow);
     }
     if tag == "Custom" {
         return Err(syn::Error::new_spanned(
@@ -364,7 +364,13 @@ pub(crate) fn element_expr(el: &Element, flow: &FlowTables) -> syn::Result<Token
 }
 
 /// `<Text …>children</Text>`: content is a constructor argument, not an attr.
-fn text_expr(el: &Element) -> syn::Result<TokenStream2> {
+///
+/// Single string-literal content becomes a template slot
+/// (`tpl_string("{file}:{line}:{idx}", "lit")`, debug builds): literal edits
+/// then apply via IPC with no rebuild. Every other content form (`{expr}`,
+/// signals, `content={…}` non-literals) passes through untouched and forces
+/// the rebuild path on change.
+fn text_expr(el: &Element, flow: &FlowTables) -> syn::Result<TokenStream2> {
     // Optional `content=` attr plus at most single-child content; mixing both is an error.
     let mut content_attr: Option<TokenStream2> = None;
     let mut base = quote! { ::aurora::dsl::text };
@@ -381,7 +387,17 @@ fn text_expr(el: &Element) -> syn::Result<TokenStream2> {
                 let key = node_name_string(&attr.key);
                 let val = attr_value_tokens(&attr.clone());
                 if key == "content" {
-                    content_attr = Some(val);
+                    // Slotted literal when the attr is a plain `"..."`.
+                    let lit: Result<syn::LitStr, _> = syn::parse2(val.clone());
+                    if let Ok(s) = lit {
+                        let idx = flow.slots.get();
+                        flow.slots.set(idx + 1);
+                        content_attr = Some(
+                            quote! { ::aurora::hot_reload::template::tpl_string(::std::concat!(::std::file!(), ":", ::std::line!(), ":", #idx), #s) },
+                        );
+                    } else {
+                        content_attr = Some(val);
+                    }
                 } else {
                     let method = format_ident!("{}", attr_method(&key));
                     modifiers.push(quote! { .#method(#val) });
@@ -393,8 +409,15 @@ fn text_expr(el: &Element) -> syn::Result<TokenStream2> {
         [] => None,
         [single] => match single {
             Node::Text(t) => {
+                // Slotted literal: keyed by invocation site + ordinal.
+                // `file!()/line!()` carry call_site span, so they resolve to
+                // the `view!` invocation, matching the extractor's line.
                 let s = t.value_string();
-                Some(quote! { #s })
+                let idx = flow.slots.get();
+                flow.slots.set(idx + 1);
+                Some(
+                    quote! { ::aurora::hot_reload::template::tpl_string(::std::concat!(::std::file!(), ":", ::std::line!(), ":", #idx), #s) },
+                )
             }
             Node::Block(b) => {
                 if is_control_child(single) {
@@ -501,6 +524,10 @@ pub(crate) struct FlowTables {
     pub match_nodes: Vec<crate::match_node::MatchNode>,
     /// Stashed raw attr-nested RSX (`attr_node`), expanded at splice time.
     pub attr_raw: Vec<TokenStream2>,
+    /// Template-slot ordinal: bumped once per slotted literal, so macro-side
+    /// keys (`{file}:{line}:{idx}`) match the textual extractor's order.
+    /// `Cell` so the shared `&FlowTables` plumbing stays untouched.
+    pub slots: ::std::cell::Cell<usize>,
 }
 
 impl FlowTables {

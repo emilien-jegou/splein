@@ -205,8 +205,15 @@ pub struct DevLoop {
     /// `last_edit_kind` reports whether the save was template-only. Advisory
     /// only — the loop still rebuilds either way until the IPC fast path lands.
     file_snapshots: std::collections::HashMap<PathBuf, String>,
-    /// Classification of the most recent observed save, if any `.rs` file changed.
+    /// Classification of the most recent observed `.rs` save, if any.
     last_edit_kind: Option<crate::hot_reload::template::EditKind>,
+    /// Template fast-path patch awaiting application: `(key, value)` pairs the
+    /// extension applies via `apply_template_delta`, then reloads from the
+    /// *existing* factory with no rebuild. Set when a `TemplateOnly` save
+    /// fully resolves against registered shapes; `None` means rebuild as usual.
+    pending_fast: Option<Vec<(String, String)>>,
+    /// `.rs` files the last watcher hit touched (for fast-path extraction).
+    last_changed_rs: Vec<PathBuf>,
 }
 
 impl DevLoop {
@@ -244,8 +251,24 @@ impl DevLoop {
             dirty_during_build: false,
             file_snapshots: std::collections::HashMap::new(),
             last_edit_kind: None,
+            pending_fast: None,
+            last_changed_rs: Vec::new(),
             config,
         }
+    }
+
+    /// Takes a pending template fast-path patch, if one is waiting.
+    ///
+    /// The extension applies it (`apply_template_delta`) and re-runs the
+    /// existing factory — no cargo, no dlopen. Consumed once.
+    pub fn take_pending_fast(&mut self) -> Option<Vec<(String, String)>> {
+        self.pending_fast.take()
+    }
+
+    /// Requests a build now (fast-path fallback when application finds nothing
+    /// to update — e.g. shapes shifted under a textually template-only edit).
+    pub fn request_build(&mut self, reason: &str) {
+        self.spawn_build(reason);
     }
 
     /// Classification of the most recent observed `.rs` save, if any.
@@ -265,6 +288,7 @@ impl DevLoop {
     fn classify_changed(&mut self, changed: &[PathBuf]) {
         use crate::hot_reload::template::{classify_edit, EditKind};
         let mut kind: Option<EditKind> = None;
+        self.last_changed_rs.clear();
         for path in changed {
             if path.extension().is_none_or(|e| e != "rs") {
                 continue;
@@ -272,6 +296,7 @@ impl DevLoop {
             let Ok(text) = std::fs::read_to_string(path) else {
                 continue;
             };
+            self.last_changed_rs.push(path.clone());
             match self.file_snapshots.get(path) {
                 None => {
                     self.file_snapshots.insert(path.clone(), text);
@@ -434,6 +459,11 @@ impl DevLoop {
             if self.max_source_mtime().is_some() {
                 self.last_trigger_sources = self.max_source_mtime();
             }
+            // Tier-1 fast path: a fully-resolving template-only save applies
+            // live values with no build. Anything else rebuilds as before.
+            if reason == "sources changed" && self.try_template_fast_path() {
+                return PollOutcome::Settled;
+            }
             self.spawn_build(reason);
             if self.build_child.is_some() {
                 return PollOutcome::Building;
@@ -460,6 +490,58 @@ impl DevLoop {
             }
         }
         PollOutcome::Idle
+    }
+
+    /// Tries the Tier-1 template fast path for the last watcher hit.
+    ///
+    /// When the save classified `TemplateOnly`, extracts fresh literals from
+    /// each changed `.rs` file and resolves them against registered view
+    /// shapes. Success stages `pending_fast` (the extension applies + reloads
+    /// with no build) and returns `true`. Any miss — non-template edit, no
+    /// slots, unresolvable keys — returns `false` and the caller rebuilds.
+    fn try_template_fast_path(&mut self) -> bool {
+        use crate::hot_reload::template::{
+            extract_view_literals, resolve_slot_keys, EditKind,
+        };
+        if self.last_edit_kind != Some(EditKind::TemplateOnly) {
+            return false;
+        }
+        if self.last_changed_rs.is_empty() {
+            return false;
+        }
+        let mut all: Vec<(String, String)> = Vec::new();
+        for path in std::mem::take(&mut self.last_changed_rs) {
+            let Ok(text) = std::fs::read_to_string(&path) else {
+                return false;
+            };
+            let slots = extract_view_literals(&text);
+            if slots.is_empty() {
+                return false;
+            }
+            let suffix = path
+                .file_name()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            let (resolved, unresolved) = resolve_slot_keys(&suffix, &slots);
+            if unresolved > 0 || resolved.is_empty() {
+                tracing::info!(
+                    "aurora: hot-reload template fast path miss ({} unresolved in {}); rebuilding",
+                    unresolved,
+                    path.display()
+                );
+                return false;
+            }
+            all.extend(resolved);
+        }
+        if all.is_empty() {
+            return false;
+        }
+        tracing::info!(
+            "aurora: hot-reload template fast path ({} slots, no build)",
+            all.len()
+        );
+        self.pending_fast = Some(all);
+        true
     }
 
     /// Whether the throttled freshness walk is due.

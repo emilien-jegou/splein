@@ -381,6 +381,23 @@ impl AppExtension for ComponentReloadExtension {
             },
             &mut || false,
         );
+        // Tier-1 template fast path: live values staged by the dev loop apply
+        // against the *existing* factory — no cargo, no dlopen. A zero-apply
+        // (shapes shifted under a textually template-only edit) falls back to
+        // a real rebuild rather than showing stale UI.
+        let mut fast_redraw = false;
+        if let Some(pairs) = self.dev.take_pending_fast() {
+            let n = crate::hot_reload::template::apply_template_delta(&pairs, &[]);
+            if n > 0 {
+                engine.queue_full_reload();
+                fast_redraw = true;
+                tracing::info!(
+                    "aurora: hot-ui template values applied ({n} slots, no rebuild)"
+                );
+            } else {
+                self.dev.request_build("template fast-path miss");
+            }
+        }
         // The loop state was just published to stats; advance the loading bar
         // from it (simulated time, so freeze/slow-motion apply to the bar too).
         // NOTE: update the bar unconditionally — `||` would short-circuit and
@@ -390,7 +407,7 @@ impl AppExtension for ComponentReloadExtension {
         let sim = engine.diagnostics().simulated;
         let w = engine.logical_size().0 as f32;
         let bar_needs_frames = self.bar.update(stats.dev_state, sim, w);
-        redraw || bar_needs_frames
+        redraw || bar_needs_frames || fast_redraw
     }
 
     fn render_overlay(
