@@ -233,8 +233,19 @@ fn perform_node_layout(
                     Some(content_h),
                     text_ctx,
                 );
-                let inline_floor = compute_min_size(arena, child, Direction::Horizontal, text_ctx)
-                    + arena.get(child).style.margin.horizontal();
+                let is_fold = arena.get(child).style.width.is_fold();
+                let margin_h = arena.get(child).style.margin.horizontal();
+                // Fold yields to its siblings unconditionally: it can always
+                // fold (emergency mid-word breaks), so no content floor may
+                // inflate it past its assigned share. Without this the floor
+                // (longest word) wins over the share via `max(per_fill,
+                // floor)` and unspaced text never folds — it overflows on
+                // one line instead.
+                let inline_floor = if is_fold {
+                    margin_h
+                } else {
+                    compute_min_size(arena, child, Direction::Horizontal, text_ctx) + margin_h
+                };
                 let n = arena.get(child);
                 desired_main.push(d.width + n.style.margin.horizontal());
                 // Fold absorbs leftover like Fill (see the vertical branch).
