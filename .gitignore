@@ -16,7 +16,6 @@
 !scripts/*
 !scripts/**/*
 
-
 !examples/
 !examples/*
 !examples/**/*
@@ -43,7 +42,6 @@
 !documentation/postcss.config.mjs
 !documentation/tsconfig.json
 !documentation/mdx-components.tsx
-
 
 # To fix:
 !flake.nix

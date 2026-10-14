@@ -86,7 +86,7 @@ they may never declare a fix correct.
     `riode::define_hot_ui! { root, title, size, background }` block emitting
     all four entry points (root + `riode_hot_window`/`riode_hot_title`,
     read from the same `view::HOT_*` consts). The generative
-    `crates/riode-hot-gen/` crate (`riode-hot-gen-ui`, `crate-type =
+    `examples/riode-hot-gen/` crate (`riode-hot-gen-ui`, `crate-type =
     ["cdylib"]`, depending **only** on `riode-shared` — never `riode`
     directly) mounts it per `AURORA_HOT_EXAMPLE`.
 - **New example checklist:** copy an existing folder (e.g. `text_smooth`),

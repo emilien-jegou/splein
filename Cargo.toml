@@ -5,7 +5,7 @@ members = [
   "crates/core/riode",
   "crates/core/riode/benches/bench_suite",
   "crates/core/riode/macros",
-  "crates/core/riode-hot-gen",
+  "examples/riode-hot-gen",
   "crates/core/riode-shared",
   "crates/engines/riode-engine-skia",
   "crates/engines/riode-engine-tiny-skia",
