@@ -79,8 +79,9 @@ pub use extension::RemoteReloadExtension;
 pub use progress_bar::ReloadProgressBar;
 pub use template::{
     apply_template_delta, classify_edit, classify_files, clear_template_values,
-    clear_view_templates, extract_view_literals, note_view_template, resolve_slot_keys,
-    strip_view_bodies, tpl_f32, tpl_string, view_shape, EditKind, ResolvedSlots, TemplateSlot,
+    clear_view_templates, extract_view_literals, is_template_live, note_view_template,
+    registered_shape_count, resolve_slot_keys, set_template_live, strip_view_bodies, tpl_f32,
+    tpl_string, view_shape, EditKind, ResolvedSlots, TemplateSlot,
 };
 
 /// Cargo profile the whole hot loop builds under: script builds, loop-spawned

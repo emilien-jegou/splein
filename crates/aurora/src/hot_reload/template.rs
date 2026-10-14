@@ -8,24 +8,46 @@
 // full cdylib rebuild. Pure string functions, unit-tested; never decides pixels.
 
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
+
+/// Whether the template fast-path machinery is live in this process.
+///
+/// The switch is *process role*, never build profile: the hot dev loop builds
+/// at `--profile release`, so `debug_assertions` gating left the tables dead
+/// exactly where they were needed. `DevLoop::new` arms it; shipped apps never
+/// construct a dev loop, so prod pays one predictable `Relaxed` load per
+/// literal (returns the compiled default, no lock, no map) — no profile split,
+/// no per-frame cost that matters.
+static TEMPLATE_LIVE: AtomicBool = AtomicBool::new(false);
+
+/// Arms (`true`) or disarms (`false`) the template fast path for this process.
+/// Idempotent. Called by [`crate::hot_reload::DevLoop::new`]; tests toggle it
+/// directly to simulate prod (off) vs dev-loop (on) runtimes.
+pub fn set_template_live(enabled: bool) {
+    TEMPLATE_LIVE.store(enabled, Ordering::Relaxed);
+}
+
+/// Whether the fast path is armed. Unit-tested alongside the table behavior.
+pub fn is_template_live() -> bool {
+    TEMPLATE_LIVE.load(Ordering::Relaxed)
+}
 
 /// Registered template shapes per `view!` call site (`file:line` → shape).
 ///
-/// `view!` emits a debug-only `note_view_template(file!(), line!(), SHAPE)` call
-/// alongside its builder expansion. Shapes describe structure only (tags, attr
+/// `view!` emits a `note_view_template(file!(), line!(), SHAPE)` call
+/// alongside its builder expansion (compiled in every profile; a no-op unless
+/// the fast path is armed). Shapes describe structure only (tags, attr
 /// names, child kinds) — literal values are excluded, so a text/color edit
 /// keeps the shape while adding a node changes it. The host compares shapes
 /// across reloads: same shape + `TemplateOnly` gate = IPC fast path eligible.
 static VIEW_SHAPES: Mutex<Option<std::collections::HashMap<String, String>>> =
     Mutex::new(None);
 
-/// Records one `view!` site's structure shape. Debug-only by convention: the
-/// macro emits the call under `#[cfg(debug_assertions)]` semantics via
-/// `debug_assertions`-gated body (release call compiles to a flag check that
-/// optimizes to nothing when the map is empty — kept cheap, never hot).
+/// Records one `view!` site's structure shape. No-op unless armed (see
+/// [`set_template_live`]): shipped apps record nothing and allocate nothing.
 pub fn note_view_template(file: &str, line: u32, shape: &str) {
-    if !cfg!(debug_assertions) {
+    if !is_template_live() {
         return;
     }
     let key = format!("{file}:{line}");
@@ -40,6 +62,17 @@ pub fn view_shape(file: &str, line: u32) -> Option<String> {
     guard.as_ref()?.get(&format!("{file}:{line}")).cloned()
 }
 
+/// Number of registered shapes, for fast-path-miss diagnostics ("N unresolved
+/// against M registered" tells you instantly which side is empty).
+pub fn registered_shape_count() -> usize {
+    VIEW_SHAPES
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .map(|m| m.len())
+        .unwrap_or(0)
+}
+
 /// Clears all registered shapes (tests).
 pub fn clear_view_templates() {
     if let Ok(mut guard) = VIEW_SHAPES.lock() {
@@ -52,10 +85,11 @@ pub fn clear_view_templates() {
 /// Live template values (Tier-1 IPC fast path).
 ///
 /// `view!` emits `tpl_string(key, default)` / `tpl_f32(key, default)` lookups
-/// for literal slots (debug builds only; release returns `default` with no
-/// lookup). The dev loop extracts fresh literals from the edited file and
-/// pushes them here via [`apply_template_delta`]; the next reload re-runs the
-/// *existing* factory, which reads the new values — no rebuild, no dlopen.
+/// for literal slots (compiled in every profile; without arming they return
+/// `default` after one atomic load — see [`set_template_live`]). The dev loop
+/// extracts fresh literals from the edited file and pushes them here via
+/// [`apply_template_delta`]; the next reload re-runs the *existing* factory,
+/// which reads the new values — no rebuild, no dlopen.
 ///
 /// Keys are `{line}:{idx}`: the `view!` invocation's source line plus the
 /// literal's ordinal within that expansion. File scoping is handled by the
@@ -71,9 +105,11 @@ static TPL_F32: Mutex<Option<std::collections::HashMap<String, f32>>> =
     Mutex::new(None);
 
 /// Reads a template string slot, falling back to the compiled default.
+///
+/// Unarmed (prod): one atomic load, no lock, returns `default`.
 #[inline]
 pub fn tpl_string(key: &str, default: &'static str) -> &'static str {
-    if !cfg!(debug_assertions) {
+    if !is_template_live() {
         return default;
     }
     let guard = TPL_STRINGS.lock().unwrap_or_else(|e| e.into_inner());
@@ -85,9 +121,11 @@ pub fn tpl_string(key: &str, default: &'static str) -> &'static str {
 }
 
 /// Reads a template f32 slot, falling back to the compiled default.
+///
+/// Unarmed (prod): one atomic load, no lock, returns `default`.
 #[inline]
 pub fn tpl_f32(key: &str, default: f32) -> f32 {
-    if !cfg!(debug_assertions) {
+    if !is_template_live() {
         return default;
     }
     let guard = TPL_F32.lock().unwrap_or_else(|e| e.into_inner());
@@ -680,6 +718,53 @@ pub fn classify_files(old_path: &Path, new_path: &Path) -> EditKind {
 mod tests {
     use super::*;
 
+    /// Arms the fast path the way `DevLoop::new` does (tests simulate the
+    /// dev-loop runtime; prod stays unarmed — see `gating_keeps_prod_clean`).
+    fn arm() {
+        set_template_live(true);
+    }
+
+    #[test]
+    fn gating_keeps_prod_clean() {
+        // Unarmed (shipped-app role): notes record nothing, lookups return
+        // compiled defaults without touching the tables.
+        set_template_live(false);
+        assert!(!is_template_live());
+        note_view_template("prod.rs", 1, "[Group]");
+        assert_eq!(registered_shape_count(), 0);
+        apply_template_delta(&[("1:0".to_string(), "live".to_string())], &[]);
+        assert_eq!(tpl_string("1:0", "dflt"), "dflt");
+        assert_eq!(tpl_f32("1:0", 9.0), 9.0);
+        // Armed (dev-loop role): tables consult normally.
+        set_template_live(true);
+        assert!(is_template_live());
+        assert_eq!(tpl_string("1:0", "dflt"), "live");
+        clear_template_values();
+        clear_view_templates();
+    }
+
+    #[test]
+    fn armed_pipeline_registers_resolves_applies() {
+        // The end-to-end path the release-gating bug broke: register (as the
+        // running UI does), extract (as the dev loop does), resolve, apply,
+        // read back through the slot. Would have failed unarmed.
+        arm();
+        clear_view_templates();
+        clear_template_values();
+        note_view_template("examples/row.rs", 5, "[Group]");
+        let src = "a\nb\nc\nd\n view! { <Group radius={10.0}><Text>\"hi\"</Text></Group> }\n";
+        let slots = extract_view_literals(src).expect("scannable");
+        assert_eq!(slots.len(), 2);
+        let (resolved, unresolved) = resolve_slot_keys("row.rs", &slots);
+        assert_eq!(unresolved, 0);
+        let n = apply_template_delta(&resolved.strings, &resolved.numbers);
+        assert_eq!(n, 2);
+        assert_eq!(tpl_string("examples/row.rs:5:1", "hi"), "hi");
+        assert_eq!(tpl_f32("examples/row.rs:5:0", 0.0), 10.0);
+        clear_template_values();
+        clear_view_templates();
+    }
+
     #[test]
     fn literal_text_change_is_template_only() {
         let old = r#"fn p() { view! { <Group><Text>"hi"</Text></Group> } }"#;
@@ -796,6 +881,7 @@ mod tests {
 
     #[test]
     fn value_table_round_trips_with_default_fallback() {
+        arm();
         clear_template_values();
         assert_eq!(tpl_string("9:0", "dflt"), "dflt");
         assert_eq!(tpl_f32("9:1", 1.5), 1.5);
@@ -815,6 +901,7 @@ mod tests {
 
     #[test]
     fn resolve_matches_registry_by_basename_and_line() {
+        arm();
         clear_view_templates();
         note_view_template("examples/text_smooth/view.rs", 10, "[Group]");
         let slots = vec![TemplateSlot {

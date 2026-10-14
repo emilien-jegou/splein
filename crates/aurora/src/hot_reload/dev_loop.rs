@@ -229,6 +229,10 @@ impl DevLoop {
         // Manifest edits (deps, features) rebuild like source edits; a missing manifest
         // is inert (watch logs and ignores unwatched paths).
         watcher.watch(config.manifest_path());
+        // Arm the template fast path for this process: shipped apps never build
+        // a DevLoop, so they keep the unarmed (single-atomic-load) behavior.
+        // Role-gated, never profile-gated — the dev loop builds release.
+        crate::hot_reload::template::set_template_live(true);
         tracing::info!(
             "aurora: hot-reload watching {} (package `{}`)",
             watch_dir.display(),
@@ -275,9 +279,9 @@ impl DevLoop {
 
     /// Classification of the most recent observed `.rs` save, if any.
     ///
-    /// Tier-1 gate probe (advisory): `Some(TemplateOnly)` means the save touched
-    /// only `view!` bodies textually and would be IPC-fast-path eligible once
-    /// the transport lands. The loop still rebuilds either way.
+    /// `Some(TemplateOnly)` means the save touched only `view!` bodies
+    /// textually and is fast-path eligible (applied with no build when slots
+    /// resolve); `Some(NeedsRebuild)` rebuilds as before.
     pub fn last_edit_kind(&self) -> Option<crate::hot_reload::template::EditKind> {
         self.last_edit_kind
     }
@@ -319,8 +323,9 @@ impl DevLoop {
         if kind.is_some() {
             self.last_edit_kind = kind;
             tracing::info!(
-                "aurora: hot-reload save classified as {:?} (still rebuilding: IPC fast path not yet wired)",
-                kind.unwrap()
+                "aurora: hot-reload save classified as {:?} ({} shapes registered)",
+                kind.unwrap(),
+                crate::hot_reload::template::registered_shape_count()
             );
         }
     }
@@ -545,9 +550,10 @@ impl DevLoop {
                 || (resolved.strings.is_empty() && resolved.numbers.is_empty())
             {
                 tracing::info!(
-                    "aurora: hot-reload template fast path miss ({} unresolved in {}); rebuilding",
+                    "aurora: hot-reload template fast path miss ({} unresolved in {}, {} shapes registered); rebuilding",
                     unresolved,
-                    path.display()
+                    path.display(),
+                    crate::hot_reload::template::registered_shape_count()
                 );
                 return false;
             }

@@ -26,6 +26,19 @@ Model: Dioxus dual system — RSX template IPC for literal edits + full cdylib r
 
 Goal: `view!` text/color/size/literal-prop edits apply in ms with zero compile.
 
+**Gating (load-bearing): the switch is process role, never build profile.**
+The hot loop builds at `--profile release`, so `debug_assertions` gating would
+leave the tables dead exactly where needed. `DevLoop::new` arms a process-wide
+live flag (`set_template_live(true)`); shipped apps never construct a dev loop
+and keep the unarmed behavior (one predictable atomic load per literal, compiled
+default returned, no lock, no allocation). No profile split, no per-frame cost
+that matters in prod.
+
+**Line-shift behavior:** slot keys are `{file}:{line}:{idx}`. Inserting lines
+above a `view!` shifts the new source's lines while the registry holds old ones,
+so the first such edit misses and rebuilds once, then re-registers and fast-path
+resumes. A shape+order key would remove this; not worth it yet.
+
 1. **Macro emits template.** `view!` keeps current builder expansion; adds
    `#[cfg(debug_assertions)]` const template: node tree + source location + slots for
    literals/`{expr}` splices. Pure data, `serde`-able.

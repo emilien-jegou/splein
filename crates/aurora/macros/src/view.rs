@@ -644,7 +644,8 @@ impl FlowTables {
 /// Structure shape of parsed nodes: tags, sorted attr names, child shapes.
 /// Literals and `{expr}` contents are excluded, so value-only edits keep the
 /// shape while added/removed/reordered nodes change it. Emitted as a string
-/// literal into the debug-only `note_view_template` call.
+/// literal into the `note_view_template` call (live only when the template
+/// fast path is armed by a dev loop; a no-op single atomic load otherwise).
 fn shape_of_nodes(nodes: &[ViewNode]) -> String {
     let mut out = String::from("[");
     for (i, n) in nodes.iter().enumerate() {
@@ -711,8 +712,9 @@ fn expand_inner(tokens: TokenStream2) -> syn::Result<TokenStream2> {
             let e = child_expr(single, &flow)?;
             let body = quote! { ::aurora::dsl::IntoElement::into_element(#e) };
             let body = flow.splice(body)?;
-            // Debug-only shape registration: structure fingerprint for the
-            // Tier-1 IPC gate (literals excluded, so value edits keep it).
+            // Shape registration: structure fingerprint for the Tier-1 gate
+            // (literals excluded, so value edits keep it). No-op unless a dev
+            // loop armed the fast path; shipped apps pay one atomic load.
             // Emitted inline (no extra const: expression position forbids
             // items, and `file!()+line!()` keys the call site instead).
             let shape = shape_of_nodes(std::slice::from_ref(single));
