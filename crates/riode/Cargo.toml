@@ -1,0 +1,63 @@
+[package]
+name = "riode"
+version = "0.0.1-rc.1"
+edition = "2021"
+publish = true
+description = "Layout Engine"
+license = "GPL-3.0"
+
+[features]
+default = ["os-clipboard", "text-runtime", "svg-runtime", "desktop"]
+tracy = ["dep:tracy-client", "dep:tracing-tracy"]
+# Pushes Ctrl+C selections to the OS clipboard in real windows (arboard).
+# Opt out (`--no-default-features`) for display-less builds; the engine keeps
+# its internal clipboard either way and headless use never touches the OS.
+os-clipboard = ["dep:arboard"]
+# Runtime text shaping (parley) + rasterization (swash). Off = stub engine:
+# text measures empty, glyphs don't rasterize. Pre-shaped text (S2 #2) is the
+# long-term no-runtime path; this flag is the kill-switch meanwhile.
+text-runtime = ["dep:parley", "dep:swash"]
+# Runtime SVG parsing (resvg/usvg). Off = VectorGraphic stub (dims only,
+# from_str errors). Pre-rasterized images (S2 #3) are the replacement.
+svg-runtime = ["dep:resvg"]
+desktop = ["dep:winit"]
+parallel = ["dep:rayon"]
+
+[dependencies]
+parley = { version = "0.11", default-features = false, features = ["std"], optional = true }
+swash = { version = "0.2", optional = true }
+tiny-skia = "0.11"
+winit = { version = "0.29", default-features = false, features = ["rwh_06", "x11", "wayland"], optional = true }
+rustc-hash = "2.1.3"
+smallvec = "1.16.1"
+bon = "3.3"
+unicode-segmentation = "1.12"
+# Optional: OS clipboard push for real windows only (see `os-clipboard`
+# feature). Text-only, no image handling; Wayland via data-control.
+arboard = { version = "3", default-features = false, features = ["wayland-data-control"], optional = true }
+
+# Attribute macros (#[component])
+riode-macros = { path = "./macros", version = "0.0.1-rc.1" }
+resvg = { version = "0.42", optional = true }
+
+# Tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "registry", "env-filter"] }
+tracy-client = { version = "0.19", features = ["enable"], optional = true }
+tracing-tracy = { version = "0.12", features = ["enable"], optional = true }
+
+# Hot-reload: file watching + dynamic library code-swap (dev loop only).
+notify = "8"
+rayon = { version = "1", optional = true }
+libloading = "0.8"
+
+[dev-dependencies]
+ntest = "0.9"
+libc = "0.2"
+riode-vello = { path = "../riode-vello", version = "0.0.1-rc.1" }
+riode-wgpu = { path = "../riode-wgpu", version = "0.0.1-rc.1" }
+riode-quad = { path = "../riode-quad", version = "0.0.1-rc.1" }
+
+[profile.release]
+debug = true
+opt-level = 3

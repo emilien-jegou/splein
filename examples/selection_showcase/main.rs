@@ -9,13 +9,13 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use aurora::app::switcher::{BootCtx, BootedDemo};
-use aurora::app::{AppExtension, VisualDebugger};
-use aurora::dsl::component::ProviderProps;
-use aurora::initContext;
-use aurora::prelude::*;
-use aurora::reactive::{ReactiveRuntime, Signal};
-use aurora::runtime::Engine;
+use riode::app::switcher::{BootCtx, BootedDemo};
+use riode::app::{AppExtension, VisualDebugger};
+use riode::dsl::component::ProviderProps;
+use riode::initContext;
+use riode::prelude::*;
+use riode::reactive::{ReactiveRuntime, Signal};
+use riode::runtime::Engine;
 
 /// Live selection readout, provided by [`Page`] and consumed by [`status_card`].
 /// A separate object from [`CLIPBOARD`] over the same value type — identity is
@@ -141,7 +141,7 @@ fn main() {
     cli.app_config_multi("Aurora — Text · Selection showcase")
         .font(
             "Inter",
-            include_bytes!("../../crates/aurora/assets/inter-var.ttf"),
+            include_bytes!("../../crates/riode/assets/inter-var.ttf"),
         )
         .background(PAGE)
         .runtime(runtime)

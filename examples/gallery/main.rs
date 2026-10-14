@@ -15,9 +15,9 @@ mod motion_ui;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use aurora::app::{AppExtension, VisualDebugger};
-use aurora::prelude::*;
-use aurora::reactive::ReactiveRuntime;
+use riode::app::{AppExtension, VisualDebugger};
+use riode::prelude::*;
+use riode::reactive::ReactiveRuntime;
 use common::ExampleCli;
 use motion_ui::*;
 use winit::event::{ElementState, WindowEvent};
@@ -160,7 +160,7 @@ fn main() {
         .fullscreen(true)
         .font(
             "Inter",
-            include_bytes!("../../crates/aurora/assets/inter-var.ttf"),
+            include_bytes!("../../crates/riode/assets/inter-var.ttf"),
         )
         .background(PAGE)
         .runtime(runtime)

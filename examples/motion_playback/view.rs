@@ -1,7 +1,7 @@
 // Single responsibility: Playback page: a controllable ping-pong slide with hover and click.
 
-use aurora::prelude::*;
-use aurora::reactive::Signal;
+use riode::prelude::*;
+use riode::reactive::Signal;
 
 use super::motion_ui::*;
 

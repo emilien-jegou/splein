@@ -1,6 +1,6 @@
 // Single responsibility: Showcases Aurora text layout: wrap, alignment, tracking, decoration, ellipsis.
 
-use aurora::prelude::*;
+use riode::prelude::*;
 
 /// Window chrome shared by the release driver (`main.rs`) and the hot entry
 /// (`hot.rs`): declared once here, referenced by both — never mirrored.

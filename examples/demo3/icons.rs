@@ -1,6 +1,6 @@
 // Single responsibility: Vector icon constants and SVG document loaders for the Optype showcase.
 
-use aurora::prelude::VectorGraphic;
+use riode::prelude::VectorGraphic;
 use std::sync::Arc;
 
 pub struct AppIcons {

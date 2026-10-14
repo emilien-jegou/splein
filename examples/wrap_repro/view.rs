@@ -3,7 +3,7 @@
 //
 // Human verdict only; no test asserts on appearance.
 
-use aurora::prelude::*;
+use riode::prelude::*;
 
 /// Window chrome shared by the release driver (`main.rs`) and the hot entry
 /// (`hot.rs`): declared once here, referenced by both — never mirrored.
@@ -110,7 +110,7 @@ fn AutoGridDemo() -> impl IntoElement {
 #[component]
 fn AutoGrid(width: Signal<f32>, min_child: f32, gap: f32) -> impl IntoElement {
     let items = ["One", "Two", "Three", "Four", "Five", "Six"];
-    let (cols, child_w) = aurora::dsl::auto_grid::columns_for(width.get(), min_child, gap);
+    let (cols, child_w) = riode::dsl::auto_grid::columns_for(width.get(), min_child, gap);
     let mut rows: Vec<Element> = Vec::new();
     for chunk in items.chunks(cols as usize) {
         let mut cells: Vec<Element> = Vec::new();

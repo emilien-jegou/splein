@@ -1,6 +1,6 @@
 // Single responsibility: Floating bottom interactive HUD dock for font inspection and styling.
 
-use aurora::prelude::*;
+use riode::prelude::*;
 
 pub fn render_floating_hud() -> impl IntoElement {
     view! {

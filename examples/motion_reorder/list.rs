@@ -6,7 +6,7 @@
 
 use std::rc::Rc;
 
-use aurora::prelude::*;
+use riode::prelude::*;
 
 use super::drag::{Drag, RowSpec};
 use super::row::RowProps;

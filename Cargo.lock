@@ -174,14 +174,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
-name = "aurora"
+name = "riode"
 version = "0.0.1-rc.1"
 dependencies = [
  "arboard",
- "aurora-macros",
- "aurora-quad",
- "aurora-vello",
- "aurora-wgpu",
+ "riode-macros",
+ "riode-quad",
+ "riode-vello",
+ "riode-wgpu",
  "bon",
  "libc",
  "libloading 0.8.9",
@@ -203,7 +203,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "aurora-cli"
+name = "riode-cli"
 version = "0.0.1-rc.1"
 dependencies = [
  "clap",
@@ -212,28 +212,28 @@ dependencies = [
 ]
 
 [[package]]
-name = "aurora-examples"
+name = "riode-examples"
 version = "0.0.1-rc.1"
 dependencies = [
- "aurora",
- "aurora-skia",
- "aurora-tiny-skia",
- "aurora-vello",
- "aurora-wgpu",
+ "riode",
+ "riode-skia",
+ "riode-tiny-skia",
+ "riode-vello",
+ "riode-wgpu",
  "tracing",
  "tracing-subscriber",
  "winit",
 ]
 
 [[package]]
-name = "aurora-hot-gen-ui"
+name = "riode-hot-gen-ui"
 version = "0.0.1-rc.1"
 dependencies = [
- "aurora-shared",
+ "riode-shared",
 ]
 
 [[package]]
-name = "aurora-macros"
+name = "riode-macros"
 version = "0.0.1-rc.1"
 dependencies = [
  "parley",
@@ -247,13 +247,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "aurora-quad"
+name = "riode-quad"
 version = "0.0.1-rc.1"
 dependencies = [
- "aurora",
- "aurora-tiny-skia",
- "aurora-vello",
- "aurora-wgpu",
+ "riode",
+ "riode-tiny-skia",
+ "riode-vello",
+ "riode-wgpu",
  "bytemuck",
  "pollster",
  "softbuffer",
@@ -263,31 +263,31 @@ dependencies = [
 ]
 
 [[package]]
-name = "aurora-shared"
+name = "riode-shared"
 version = "0.0.1-rc.1"
 dependencies = [
- "aurora",
- "aurora-skia",
- "aurora-tiny-skia",
- "aurora-vello",
- "aurora-wgpu",
+ "riode",
+ "riode-skia",
+ "riode-tiny-skia",
+ "riode-vello",
+ "riode-wgpu",
 ]
 
 [[package]]
-name = "aurora-skia"
+name = "riode-skia"
 version = "0.0.1-rc.1"
 dependencies = [
- "aurora",
- "aurora-tiny-skia",
+ "riode",
+ "riode-tiny-skia",
  "softbuffer",
  "winit",
 ]
 
 [[package]]
-name = "aurora-tiny-skia"
+name = "riode-tiny-skia"
 version = "0.0.1-rc.1"
 dependencies = [
- "aurora",
+ "riode",
  "bon",
  "bytemuck",
  "ntest",
@@ -303,13 +303,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "aurora-vello"
+name = "riode-vello"
 version = "0.0.1-rc.1"
 dependencies = [
- "aurora",
- "aurora-quad",
- "aurora-tiny-skia",
- "aurora-wgpu",
+ "riode",
+ "riode-quad",
+ "riode-tiny-skia",
+ "riode-wgpu",
  "bon",
  "ntest",
  "pollster",
@@ -323,11 +323,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "aurora-wayland"
+name = "riode-wayland"
 version = "0.0.1-rc.1"
 dependencies = [
- "aurora",
- "aurora-tiny-skia",
+ "riode",
+ "riode-tiny-skia",
  "bytemuck",
  "ntest",
  "smithay-client-toolkit 0.19.2",
@@ -336,10 +336,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "aurora-wgpu"
+name = "riode-wgpu"
 version = "0.0.1-rc.1"
 dependencies = [
- "aurora",
+ "riode",
  "bytemuck",
  "pollster",
  "resvg",
@@ -365,8 +365,8 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 name = "bench_suite"
 version = "0.0.1"
 dependencies = [
- "aurora",
- "aurora-tiny-skia",
+ "riode",
+ "riode-tiny-skia",
  "criterion",
  "taffy",
 ]
@@ -2602,7 +2602,7 @@ dependencies = [
 name = "probe-min"
 version = "0.0.1"
 dependencies = [
- "aurora-shared",
+ "riode-shared",
 ]
 
 [[package]]

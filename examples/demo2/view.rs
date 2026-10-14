@@ -1,6 +1,6 @@
 // Single responsibility: Self-contained interactive runner for the Paper HUD Dock design.
 
-use aurora::prelude::*;
+use riode::prelude::*;
 use std::sync::Arc;
 
 /// Window chrome shared by the release driver (`main.rs`) and the hot entry

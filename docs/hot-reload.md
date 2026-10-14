@@ -1,6 +1,6 @@
 # Aurora hot-reload
 
-State-preserving live rebuilds for UI developed against `aurora`. Edit a component,
+State-preserving live rebuilds for UI developed against `riode`. Edit a component,
 save, and the running window rebuilds from the fresh library with signals, springs,
 and tickers intact.
 
@@ -14,9 +14,9 @@ Five stages, same for both flavors below:
    watcher missed (before startup, during restarts) still converge instead of serving
    stale pixels.
 2. **Rebuild** — `DevLoop` runs one vanilla `cargo build` over the shared image
-   plus the generative UI crate (`-p aurora-shared -p aurora-hot-gen-ui` with
+   plus the generative UI crate (`-p riode-shared -p riode-hot-gen-ui` with
    `AURORA_HOT_EXAMPLE=<name>`) in the background; the
-   static launcher binary (`aurora-cli`) builds separately in the main target.
+   static launcher binary (`riode-cli`) builds separately in the main target.
    The host's boot path runs the same canonical build synchronously *before*
    creating the window (see `blocking_hot_build`: script, loop, and boot all
    share one command constructor, so the unit family can never diverge).
@@ -45,18 +45,18 @@ bus commands, or the `queue_*` API.
 ## Two flavors
 
 - **Component loop** (real `#[component]` bodies re-executed): UI crate links the
-  *single shared runtime image* (`aurora-shared`) dynamically and nothing else, so
-   hooks resolve against the host's live graph. Entry points: `aurora_hot_version`,
-   `aurora_component_root`. Driven by `ComponentReloadExtension`; hosted by `aurora`
-   (`hot` command) + `aurora-devkit-bin`.
+  *single shared runtime image* (`riode-shared`) dynamically and nothing else, so
+   hooks resolve against the host's live graph. Entry points: `riode_hot_version`,
+   `riode_component_root`. Driven by `ComponentReloadExtension`; hosted by `riode`
+   (`hot` command) + `riode-devkit-bin`.
 - **Remote loop** (data descriptions interpreted host-side): UI returns plain data,
   host owns every signal. No shared instance needed. Driven by
-  `RemoteReloadExtension`; entry points: `aurora_remote_version`, `aurora_remote_state`,
-  `aurora_remote_build`, `aurora_remote_event`.
+  `RemoteReloadExtension`; entry points: `riode_remote_version`, `riode_remote_state`,
+  `riode_remote_build`, `riode_remote_event`.
 
 ## Running it
 
-The component loop is hosted by the `aurora` launcher + `aurora-devkit-bin` (shared-instance
+The component loop is hosted by the `riode` launcher + `riode-devkit-bin` (shared-instance
 land — see Constraints). `--example` selects the example (the generative UI
 crate mounts its `view.rs`/`hot.rs`); `nu scripts/toolbox.nu example` wraps
 the whole flow:
@@ -75,18 +75,18 @@ nu scripts/toolbox.nu example demo1
 All demos live in top-level `examples/` as static release binaries:
 
 ```bash
-cargo run -p aurora-examples --example motion_press --release
+cargo run -p riode-examples --example motion_press --release
 ```
 
 Every tree-only view is additionally hot-reloadable through the generative UI
-crate (`aurora-hot-gen-ui`, single dynamic edge against `aurora-shared`):
+crate (`riode-hot-gen-ui`, single dynamic edge against `riode-shared`):
 each `examples/<name>/main.rs` keeps only its App chrome, the tree lives in
 `examples/<name>/view.rs` alongside `HOT_TITLE`/`HOT_WIDTH`/`HOT_HEIGHT`/`HOT_BG`
 consts (single source — `main.rs` references them too), and
 `examples/<name>/hot.rs` wires the modules plus a single
 `define_hot_ui! { root, title, size, background }` block emitting all four
-entry points (`aurora_hot_version`, `aurora_component_root`,
-`aurora_hot_window`, `aurora_hot_title`). The host builds the first image
+entry points (`riode_hot_version`, `riode_component_root`,
+`riode_hot_window`, `riode_hot_title`). The host builds the first image
 synchronously, reads the window symbols, and creates the window once at final
 chrome — no wrong-sized frame ever shows, and the clock stays frozen until
 reveal. Const edits live-resize through the rebuild path. Same loop, any example:
@@ -109,7 +109,7 @@ shadow_studio, selection_showcase, studio, render_bench, hot_demo.
 Headless verification without a window:
 
 ```bash
-./target/release/aurora selftest --ui target/release/libaurora_hot_ui.so; echo $?
+./target/release/riode selftest --ui target/release/libriode_hot_ui.so; echo $?
 ```
 
 ## State model (the contract)
@@ -129,21 +129,21 @@ Headless verification without a window:
 
 - **Linux-first.** Library paths default to `target/debug/*.so`; same toolchain both
   sides (Rust has no stable ABI) — now machine-checked, see below.
-- **One dynamic edge.** Hot-loop crates link exactly one aurora-flavored image; extra
+- **One dynamic edge.** Hot-loop crates link exactly one riode-flavored image; extra
   rlib co-deps break linking (observed, not theorized). A driver that embeds its own
-  aurora copy is refused at activation with a message (sentinel check), never a
-  midpoint panic. Drive via `aurora hot` + `libaurora_shared.so`. DevLoop appends
+  riode copy is refused at activation with a message (sentinel check), never a
+  midpoint panic. Drive via `riode hot` + `libriode_shared.so`. DevLoop appends
   exactly one flag of its own — a `--sysroot` pin, skipped on split-toolchain
   installations where the pin itself duplicates sysroot crates; keep hand builds
   vanilla otherwise or fingerprints skew across invocations.
 - **One cargo process, one canonical root set.** `scripts/example.sh` and every
    loop-spawned rebuild run `cargo build` over the shared image plus the
-   generative UI crate (`-p aurora-shared -p aurora-hot-gen-ui` with
+   generative UI crate (`-p riode-shared -p riode-hot-gen-ui` with
    `AURORA_HOT_EXAMPLE=<name>` set) — the example varies per run via env,
    shared is the constant companion — so the shared image
   and its consumer resolve within a single unit graph. (The static
-  `aurora-cli` launcher builds separately in the main target; it links
-  nothing aurora-flavored so it can't disturb the dylib graph.) DevLoop
+  `riode-cli` launcher builds separately in the main target; it links
+  nothing riode-flavored so it can't disturb the dylib graph.) DevLoop
   appends exactly one flag of its own — a `--sysroot` pin, skipped on
   split-toolchain installations where the pin itself duplicates sysroot
   crates; keep hand builds vanilla otherwise or fingerprints skew across
@@ -154,7 +154,7 @@ Headless verification without a window:
   also compares source freshness (cargo depinfo closure) against the loaded image —
   saves from before startup or during restarts still rebuild. Edits can no longer be
   silently lost.
-- **Machine-checked handshake.** `aurora_hot_version` / `aurora_remote_version` return
+- **Machine-checked handshake.** `riode_hot_version` / `riode_remote_version` return
   an ABI fingerprint (protocol generation + boundary-type layouts + toolchain id),
   not a hand-bumped integer. Signature drift and toolchain skew fail closed with a
   message.
@@ -165,12 +165,12 @@ Headless verification without a window:
 
 | What | Where | How |
 |---|---|---|
-| Rebuild preserves state; panics keep old tree; impact stats | `crates/aurora/tests/hot_reload.rs` (10 tests) | `cargo test -p aurora --test hot_reload` |
+| Rebuild preserves state; panics keep old tree; impact stats | `crates/riode/tests/hot_reload.rs` (10 tests) | `cargo test -p riode --test hot_reload` |
 | Dev cycle (watch→build→swap) + handshake | `hot_component_e2e.rs` (component), `hot_remote_e2e.rs` (remote) | headless, real cargo builds |
-| Freshness convergence, depinfo parse, loop-state display | `hot_reload::dev_loop` unit tests | `cargo test -p aurora --lib hot_reload::` |
+| Freshness convergence, depinfo parse, loop-state display | `hot_reload::dev_loop` unit tests | `cargo test -p riode --lib hot_reload::` |
 | Two-runtime refusal (sentinel mismatch from a static-linked test binary) | `hot_component_e2e.rs::foreign_image_binds_sentinel_elsewhere` | headless, real image |
-| Full component execution incl. clicks | `devkit_selftest` via `aurora selftest` | headless, in shared-instance land (a cargo test binary *cannot* do this — it links its own static aurora and panics `hook called outside a component body`, then SIGABRT on unwind) |
+| Full component execution incl. clicks | `devkit_selftest` via `riode selftest` | headless, in shared-instance land (a cargo test binary *cannot* do this — it links its own static riode and panics `hook called outside a component body`, then SIGABRT on unwind) |
 | Reactive-rebuild non-accumulation, abort hygiene, `name=` | `hot_reload.rs` (ticker/abort/named tests) | headless |
 | Pixels on screen | Xvfb run of the stub + save + observe logs (screenshots don't capture uncomposited X11 reliably; scene contents are asserted headlessly instead) | manual |
 
-API detail lives in rustdoc: `aurora::hot_reload::{HotReload, DevLoop, DylibReloader, ComponentReloadExtension, RemoteReloadExtension, RemoteHost}`.
+API detail lives in rustdoc: `riode::hot_reload::{HotReload, DevLoop, DylibReloader, ComponentReloadExtension, RemoteReloadExtension, RemoteHost}`.

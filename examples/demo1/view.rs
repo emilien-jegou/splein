@@ -1,15 +1,15 @@
 // Single responsibility: the demo1 view itself, shared by both modes.
 //
 // Bare module: no `extern crate` line here. Each host aliases its own runtime
-// to the name `aurora` before including this file, so the same code compiles
-// against the real `aurora` (release binary) and `aurora-shared` (dev cdylib):
-//   - release: `examples/demo1/main.rs` (aurora-examples)
-//   - dev:     generative `aurora-hot-gen-ui` (dep: aurora-shared, cdylib)
+// to the name `riode` before including this file, so the same code compiles
+// against the real `riode` (release binary) and `riode-shared` (dev cdylib):
+//   - release: `examples/demo1/main.rs` (riode-examples)
+//   - dev:     generative `riode-hot-gen-ui` (dep: riode-shared, cdylib)
 // Keep this file free of `define_hot_ui!` / entry points; those live in the
 // dev dispatcher only. Pin component identity so hook state recalls across reloads.
 
-use aurora::dsl::IntoElement;
-use aurora::prelude::*;
+use riode::dsl::IntoElement;
+use riode::prelude::*;
 
 /// Window chrome shared by the release driver (`main.rs`) and the hot entry
 /// (`hot.rs`): declared once here, referenced by both — never mirrored.

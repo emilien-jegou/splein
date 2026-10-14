@@ -1,0 +1,30 @@
+[package]
+name = "riode-tiny-skia"
+version = "0.0.1-rc.1"
+edition = "2021"
+publish = true
+description = "Tiny-Skia CPU rasterization backend for the Aurora UI engine"
+license = "GPL-3.0"
+
+[features]
+default = ["svg-runtime", "parallel"]
+tracy = ["dep:tracy-client"]
+svg-runtime = ["dep:resvg", "riode/svg-runtime"]
+parallel = ["dep:rayon"]
+
+[dependencies]
+riode = { path = "../riode", version = "0.0.1-rc.1" }
+tiny-skia = "0.11"
+resvg = { version = "0.42", optional = true }
+softbuffer = "0.4"
+winit = { version = "0.29", default-features = false, features = ["rwh_06"] }
+rustc-hash = "2.1.3"
+smallvec = "1.16.1"
+bytemuck = { version = "1.25.2", features = ["derive"] }
+bon = "3.3"
+tracing = "0.1"
+tracy-client = { version = "0.19", features = ["enable"], optional = true }
+rayon = { version = "1", optional = true }
+
+[dev-dependencies]
+ntest = "0.9"

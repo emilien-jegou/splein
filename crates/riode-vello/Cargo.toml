@@ -1,0 +1,29 @@
+[package]
+name = "riode-vello"
+version = "0.0.1-rc.1"
+edition = "2021"
+publish = true
+description = "Vello GPU rasterization backend for the Aurora UI engine"
+license = "GPL-3.0"
+
+[features]
+default = ["svg-runtime"]
+svg-runtime = ["dep:resvg", "riode/svg-runtime"]
+
+[dependencies]
+riode = { path = "../riode", version = "0.0.1-rc.1" }
+vello = "0.2"
+wgpu = "0.20"
+pollster = "0.3"
+resvg = { version = "0.42", optional = true }
+winit = { version = "0.29", default-features = false, features = ["rwh_06"] }
+rustc-hash = "2.1.3"
+bon = "3.3"
+tracing = "0.1"
+
+[dev-dependencies]
+ntest = "0.9"
+riode-tiny-skia = { path = "../riode-tiny-skia", version = "0.0.1-rc.1" }
+riode-wgpu = { path = "../riode-wgpu", version = "0.0.1-rc.1" }
+riode-quad = { path = "../riode-quad", version = "0.0.1-rc.1" }
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }

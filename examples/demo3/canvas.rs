@@ -2,7 +2,7 @@
 
 use super::hud::render_floating_hud;
 use super::icons::AppIcons;
-use aurora::prelude::*;
+use riode::prelude::*;
 
 pub fn render_canvas(icons: &AppIcons) -> impl IntoElement {
     view! {

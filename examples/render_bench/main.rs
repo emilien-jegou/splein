@@ -4,11 +4,11 @@
 // compared across runs on the same machine; use it to gate raster changes.
 use std::time::Instant;
 
-use aurora::dsl::*;
-use aurora::foundation::*;
-use aurora::prelude::view;
-use aurora::runtime::Engine;
-use aurora_tiny_skia::HeadlessRaster;
+use riode::dsl::*;
+use riode::foundation::*;
+use riode::prelude::view;
+use riode::runtime::Engine;
+use riode_tiny_skia::HeadlessRaster;
 
 fn page() -> impl IntoElement {
     view! {
@@ -51,7 +51,7 @@ fn row(label: &str) -> Element {
 
 fn main() {
     let mut engine = Engine::headless(760, 660);
-    engine.load_font(include_bytes!("../../crates/aurora/assets/inter-var.ttf"));
+    engine.load_font(include_bytes!("../../crates/riode/assets/inter-var.ttf"));
     engine.mount(page());
     engine.frame();
     let mut raster = HeadlessRaster::new();

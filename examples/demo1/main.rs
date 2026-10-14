@@ -1,6 +1,6 @@
 // Single responsibility: Native OS window presenting the live Paper 1 showcase design.
 
-use aurora::prelude::*;
+use riode::prelude::*;
 use common::ExampleCli;
 
 #[path = "../common/mod.rs"]
@@ -16,7 +16,7 @@ fn main() {
     cli.app_config_multi(view::HOT_TITLE)
         .font(
             "Inter",
-            include_bytes!("../../crates/aurora/assets/inter-var.ttf"),
+            include_bytes!("../../crates/riode/assets/inter-var.ttf"),
         )
         .background(view::HOT_BG)
         .run(view::build_ui);

@@ -16,7 +16,7 @@ they may never declare a fix correct.
 ## The Loop
 
 1. **Reproduce minimal.** Build or extend the smallest demo that isolates
-   the symptom (e.g. `crates/aurora/examples/text_smooth.rs`: identical
+   the symptom (e.g. `crates/riode/examples/text_smooth.rs`: identical
    content drifting on X, Y, and diagonal at subpixel velocity). One
    variable per row. If the symptom needs motion, drive it from the frame
    clock so it moves from the first frame.
@@ -52,7 +52,7 @@ they may never declare a fix correct.
 - **Debug tooling the human operates**: `F8` freeze/unfreeze the clock,
   `.` advance exactly one animation quantum (1/120 s) while frozen,
   `[` / `]` slow-motion time scale, `s` write presented pixels to
-  `$AURORA_CAPTURE_DIR/aurora-frame-N.png` for zoomed pixel-diffing.
+  `$AURORA_CAPTURE_DIR/riode-frame-N.png` for zoomed pixel-diffing.
   Point the human at these instead of inventing new ones.
 - **External debug window**: `F5` opens the demo menu, `F7` cycles raster
   engines, `F10` toggles the separate debug panel window (telemetry,
@@ -66,7 +66,7 @@ they may never declare a fix correct.
 ## Examples
 
 - **Run:** `nu scripts/toolbox.nu example <name>` (e.g. `nu scripts/toolbox.nu example text_smooth`).
-  Release (no hot-reload): `cargo run -p aurora-examples --example <name> --release`.
+  Release (no hot-reload): `cargo run -p riode-examples --example <name> --release`.
   Window chrome comes from `view::HOT_*` consts, read out of the freshly
   built UI image before the window is created — pass no geometry.
 - **Toolbox:** `nu scripts/toolbox.nu` lists dev commands (`build`, `test`,
@@ -83,11 +83,11 @@ they may never declare a fix correct.
     (+ shared `common/` helpers), registers fonts, calls `.run(...)` with
     `view::HOT_*` for size/title/background.
   - `examples/<name>/hot.rs` — hot entry: `#[path]`-wiring plus one
-    `aurora::define_hot_ui! { root, title, size, background }` block emitting
-    all four entry points (root + `aurora_hot_window`/`aurora_hot_title`,
+    `riode::define_hot_ui! { root, title, size, background }` block emitting
+    all four entry points (root + `riode_hot_window`/`riode_hot_title`,
     read from the same `view::HOT_*` consts). The generative
-    `crates/aurora-hot-gen/` crate (`aurora-hot-gen-ui`, `crate-type =
-    ["cdylib"]`, depending **only** on `aurora-shared` — never `aurora`
+    `crates/riode-hot-gen/` crate (`riode-hot-gen-ui`, `crate-type =
+    ["cdylib"]`, depending **only** on `riode-shared` — never `riode`
     directly) mounts it per `AURORA_HOT_EXAMPLE`.
 - **New example checklist:** copy an existing folder (e.g. `text_smooth`),
   rename, write `hot.rs` (wiring + one `define_hot_ui! { ... }` block, see

@@ -1,0 +1,46 @@
+// Single responsibility: Analytical border outline alignment and rasterization.
+
+use crate::path::build_rounded_path;
+use crate::shader::build_paint;
+use riode::foundation::{Radius, ResolvedRect, Stroke};
+use riode::render::stroke_geometry::adjust_stroke_geometry;
+use tiny_skia::{Mask, PixmapMut, Stroke as SkiaStroke, Transform};
+
+/// Renders analytical inside, outside, or centered borders without anti-aliasing seams.
+pub fn render_stroke(
+    pixmap: &mut PixmapMut,
+    rect: &ResolvedRect,
+    radius: Radius,
+    stroke: &Stroke,
+    opacity: f32,
+    transform: Transform,
+    clip: Option<&Mask>,
+) {
+    if stroke.width <= 0.0 || !stroke.width.is_finite() {
+        return;
+    }
+    if !rect.width.is_finite()
+        || !rect.height.is_finite()
+        || rect.width <= 0.0
+        || rect.height <= 0.0
+    {
+        return;
+    }
+
+    let safe_opacity = if opacity.is_finite() {
+        opacity.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let paint = match build_paint(&stroke.fill, safe_opacity) {
+        Some(p) => p,
+        None => return,
+    };
+
+    let mut skia_stroke = SkiaStroke::default();
+    skia_stroke.width = stroke.width;
+
+    let (adjusted_rect, adjusted_radius) = adjust_stroke_geometry(rect, radius, stroke);
+    let path = build_rounded_path(&adjusted_rect, adjusted_radius);
+    pixmap.stroke_path(&path, &paint, &skia_stroke, transform, clip);
+}

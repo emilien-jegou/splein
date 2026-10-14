@@ -6,9 +6,9 @@
 // composed transform is mirrored into a plain signal in the post-layout phase
 // (see below) so node delivery never depends on derived evaluation history.
 
-use aurora::dsl::{use_flip, use_follow, use_ref, Trigger};
-use aurora::foundation::Transform;
-use aurora::prelude::*;
+use riode::dsl::{use_flip, use_follow, use_ref, Trigger};
+use riode::foundation::Transform;
+use riode::prelude::*;
 
 use super::chrome::{hairline_dark, VERCEL_PILL};
 use super::drag::RowSpec;

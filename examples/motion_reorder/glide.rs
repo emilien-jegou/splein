@@ -6,9 +6,9 @@
 // for frames while a glide is actually in flight, so a list at rest costs
 // nothing.
 
-use aurora::foundation::Transform;
-use aurora::prelude::*;
-use aurora::reactive::Ticker;
+use riode::foundation::Transform;
+use riode::prelude::*;
+use riode::reactive::Ticker;
 
 /// Seconds a released row takes to ease into its slot.
 const GLIDE_SECS: f32 = 0.22;

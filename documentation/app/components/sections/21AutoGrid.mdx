@@ -5,7 +5,7 @@ export const code = `// AutoGrid is a user-defined component, not a DSL built-in
 // See examples/wrap_repro/view.rs for the full pattern.
 #[component]
 fn AutoGrid(width: Signal<f32>, min_child: f32, gap: f32) -> Element {
-    let (cols, child_w) = aurora::dsl::auto_grid::columns_for(
+    let (cols, child_w) = riode::dsl::auto_grid::columns_for(
         width.get(), min_child, gap
     );
     // ... render columns

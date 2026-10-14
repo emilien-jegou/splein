@@ -1,6 +1,6 @@
 // Single responsibility: Accordion panels, headers, and the reveal they animate.
 
-use aurora::prelude::*;
+use riode::prelude::*;
 
 use super::motion_ui::*;
 

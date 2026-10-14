@@ -1,0 +1,18 @@
+[package]
+name = "riode-wayland"
+version = "0.0.1-rc.1"
+edition = "2021"
+publish = true
+description = "Wayland layer-shell SHM presentation backend for the Aurora UI engine"
+license = "GPL-3.0"
+
+[dependencies]
+riode = { path = "../riode", version = "0.0.1-rc.1" }
+riode-tiny-skia = { path = "../riode-tiny-skia", version = "0.0.1-rc.1" }
+smithay-client-toolkit = { workspace = true }
+wayland-client = { workspace = true }
+bytemuck = "1"
+tracing = "0.1"
+
+[dev-dependencies]
+ntest = "0.9"

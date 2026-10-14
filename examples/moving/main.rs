@@ -7,11 +7,11 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Instant;
 
-use aurora::app::switcher::{BootCtx, BootedDemo};
-use aurora::app::AppExtension;
-use aurora::prelude::*;
-use aurora::reactive::ReactiveRuntime;
-use aurora::scene::VectorGraphic;
+use riode::app::switcher::{BootCtx, BootedDemo};
+use riode::app::AppExtension;
+use riode::prelude::*;
+use riode::reactive::ReactiveRuntime;
+use riode::scene::VectorGraphic;
 use common::ExampleCli;
 use winit::event::WindowEvent;
 
@@ -79,7 +79,7 @@ impl AppExtension for DvdPhysicsDriver {
         false
     }
 
-    fn on_frame(&mut self, _diagnostics: &aurora::runtime::FrameDiagnostics) {
+    fn on_frame(&mut self, _diagnostics: &riode::runtime::FrameDiagnostics) {
         let now = Instant::now();
         let dt = (now - self.last_time).as_secs_f32().min(0.05);
         self.last_time = now;
@@ -164,7 +164,7 @@ fn main() {
     cli.app_config_multi("Aurora — DVD Bounce Screensaver")
         .font(
             "Inter",
-            include_bytes!("../../crates/aurora/assets/inter-var.ttf"),
+            include_bytes!("../../crates/riode/assets/inter-var.ttf"),
         )
         .runtime(runtime)
         .extension(driver)

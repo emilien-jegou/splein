@@ -19,8 +19,8 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use super::motion_ui::*;
-use aurora::dsl::use_ref;
-use aurora::prelude::*;
+use riode::dsl::use_ref;
+use riode::prelude::*;
 
 use chrome::{
     VercelPanelProps, VercelShellProps, VercelStatProps, VercelStripProps, VERCEL_BG,

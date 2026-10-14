@@ -7,10 +7,10 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Instant;
 
-use aurora::app::switcher::{BootCtx, BootedDemo};
-use aurora::app::AppExtension;
-use aurora::prelude::*;
-use aurora::reactive::ReactiveRuntime;
+use riode::app::switcher::{BootCtx, BootedDemo};
+use riode::app::AppExtension;
+use riode::prelude::*;
+use riode::reactive::ReactiveRuntime;
 use common::ExampleCli;
 
 const DEFAULT_WIDTH: u32 = 1440;
@@ -34,7 +34,7 @@ impl MissionControlTicker {
 }
 
 impl AppExtension for MissionControlTicker {
-    fn on_frame(&mut self, _diagnostics: &aurora::runtime::FrameDiagnostics) {
+    fn on_frame(&mut self, _diagnostics: &riode::runtime::FrameDiagnostics) {
         let elapsed = self.start.elapsed().as_secs_f32();
         self.time_sig.set(elapsed);
         self.counter_sig.set((elapsed * 1250.0) as u64); // ~1,250 packets/sec
@@ -75,7 +75,7 @@ fn main() {
     cli.app_config_multi("Aurora — Mission Control Engine Showcase")
         .font(
             "Inter",
-            include_bytes!("../../crates/aurora/assets/inter-var.ttf"),
+            include_bytes!("../../crates/riode/assets/inter-var.ttf"),
         )
         .background(0x06090F)
         .runtime(runtime)

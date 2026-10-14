@@ -1,9 +1,9 @@
 // Hot entry for `demo2` (dev only): icons pinned process-wide, tree rebuilt
 // per reload, plus the single `define_hot_ui!` entry block. Mounted by the
-// generative `aurora-hot-gen-ui` crate; `#[path]`s resolve relative to this
+// generative `riode-hot-gen-ui` crate; `#[path]`s resolve relative to this
 // file. Window facts live once as `HOT_*` consts in `./view.rs`.
-use aurora::dsl::IntoElement;
-use aurora::prelude::*;
+use riode::dsl::IntoElement;
+use riode::prelude::*;
 
 #[path = "./view.rs"]
 mod view;
@@ -22,7 +22,7 @@ fn Demo2Root() -> impl IntoElement {
     view::build_ui(icons())
 }
 
-aurora::define_hot_ui! {
+riode::define_hot_ui! {
     root: Demo2Root,
     title: view::HOT_TITLE,
     size: (view::HOT_WIDTH, view::HOT_HEIGHT),

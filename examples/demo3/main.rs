@@ -10,7 +10,7 @@ mod view;
 #[path = "../common/mod.rs"]
 mod common;
 
-use aurora::prelude::*;
+use riode::prelude::*;
 use common::ExampleCli;
 
 fn main() {
@@ -22,7 +22,7 @@ fn main() {
     cli.app_config(view::HOT_TITLE)
         .font(
             "Inter",
-            include_bytes!("../../crates/aurora/assets/inter-var.ttf"),
+            include_bytes!("../../crates/riode/assets/inter-var.ttf"),
         )
         .background(view::HOT_BG)
         .run(view::build_ui);

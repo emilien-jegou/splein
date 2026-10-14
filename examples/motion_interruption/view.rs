@@ -1,7 +1,7 @@
 // Single responsibility: Showcase seamless retargeting of an in-flight spring.
 
 use super::motion_ui::*;
-use aurora::prelude::*;
+use riode::prelude::*;
 
 /// Window chrome shared by the release driver (`main.rs`) and the hot entry
 /// (`hot.rs`): declared once here, referenced by both — never mirrored.

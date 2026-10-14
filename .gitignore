@@ -24,57 +24,57 @@
 !examples/
 !examples/*
 !examples/**/*
-!crates/aurora/
-!crates/aurora/macros/
-!crates/aurora/macros/**/*
-!crates/aurora/assets/
-!crates/aurora/assets/**/*
-!crates/aurora/Cargo.toml
-!crates/aurora/build.rs
-!crates/aurora/src/
-!crates/aurora/src/**/*
-!crates/aurora/tests/
-!crates/aurora/tests/**/*
-!crates/aurora/examples/
-!crates/aurora/examples/**/*
-!crates/aurora/benches/
-!crates/aurora/benches/**/*
-!crates/aurora/docs/
-!crates/aurora/docs/**/*
-!crates/aurora/*md
+!crates/riode/
+!crates/riode/macros/
+!crates/riode/macros/**/*
+!crates/riode/assets/
+!crates/riode/assets/**/*
+!crates/riode/Cargo.toml
+!crates/riode/build.rs
+!crates/riode/src/
+!crates/riode/src/**/*
+!crates/riode/tests/
+!crates/riode/tests/**/*
+!crates/riode/examples/
+!crates/riode/examples/**/*
+!crates/riode/benches/
+!crates/riode/benches/**/*
+!crates/riode/docs/
+!crates/riode/docs/**/*
+!crates/riode/*md
 
-!crates/aurora-tiny-skia/
-!crates/aurora-tiny-skia/**/*
-!crates/aurora-skia/
-!crates/aurora-skia/**/*
+!crates/riode-tiny-skia/
+!crates/riode-tiny-skia/**/*
+!crates/riode-skia/
+!crates/riode-skia/**/*
 
-!crates/aurora-linebuffer/
-!crates/aurora-linebuffer/**/*
+!crates/riode-linebuffer/
+!crates/riode-linebuffer/**/*
 
-!crates/aurora-vello/
-!crates/aurora-vello/**/*
+!crates/riode-vello/
+!crates/riode-vello/**/*
 
-!crates/aurora-wayland/
-!crates/aurora-wayland/**/*
+!crates/riode-wayland/
+!crates/riode-wayland/**/*
 
-!crates/aurora-wgpu/
-!crates/aurora-wgpu/**/*
+!crates/riode-wgpu/
+!crates/riode-wgpu/**/*
 
-!crates/aurora-quad/
-!crates/aurora-quad/**/*
+!crates/riode-quad/
+!crates/riode-quad/**/*
 
-!crates/aurora-hot-gen/
-!crates/aurora-hot-gen/**/*
+!crates/riode-hot-gen/
+!crates/riode-hot-gen/**/*
 
-!crates/aurora-shared/
-!crates/aurora-shared/**/*
+!crates/riode-shared/
+!crates/riode-shared/**/*
 
 
 !crates/hot-stub/
 !crates/hot-stub/**/*
 
-!crates/aurora-cli/
-!crates/aurora-cli/**/*
+!crates/riode-cli/
+!crates/riode-cli/**/*
 
 !docs/
 !docs/**/*

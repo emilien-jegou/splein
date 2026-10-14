@@ -72,9 +72,9 @@ mod motion_ui;
 
 use std::rc::Rc;
 
-use aurora::app::multibackend::MultiBackend;
-use aurora::app::switcher::{BootCtx, BootedDemo, DemoDef, DemoMeta, MenuAction, MenuState};
-use aurora::prelude::*;
+use riode::app::multibackend::MultiBackend;
+use riode::app::switcher::{BootCtx, BootedDemo, DemoDef, DemoMeta, MenuAction, MenuState};
+use riode::prelude::*;
 use motion_ui::*;
 
 use crate::common::ExampleCli;
@@ -198,7 +198,7 @@ pub fn all() -> Vec<DemoDef> {
 /// The F5 menu page boot (id `__menu`, never listed).
 pub fn menu_def() -> DemoDef {
     DemoDef {
-        id: aurora::app::switcher::MENU_ID,
+        id: riode::app::switcher::MENU_ID,
         title: "Demo menu",
         boot: boot_menu,
     }
@@ -349,11 +349,11 @@ fn boot_menu(ctx: &BootCtx) -> BootedDemo {
 /// the debug window opens (F10 toggles it later).
 pub fn run_demo(cli: ExampleCli, id: &'static str) {
     MultiBackend::config([
-        Some(aurora_tiny_skia::create_backend),
-        Some(aurora_vello::create_backend),
-        Some(aurora_vello::create_cpu_backend),
-        Some(aurora_wgpu::create_backend),
-        Some(aurora_skia::create_backend),
+        Some(riode_tiny_skia::create_backend),
+        Some(riode_vello::create_backend),
+        Some(riode_vello::create_cpu_backend),
+        Some(riode_wgpu::create_backend),
+        Some(riode_skia::create_backend),
     ])
     .title("Aurora")
     .size(cli.width, cli.height)

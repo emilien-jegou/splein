@@ -10,7 +10,7 @@ pub mod view;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use aurora::reactive::{ReactiveRuntime, Signal};
+use riode::reactive::{ReactiveRuntime, Signal};
 use common::ExampleCli;
 use motion_ui::*;
 
@@ -26,7 +26,7 @@ fn main() {
     cli.app_config(view::HOT_TITLE)
         .font(
             "Inter",
-            include_bytes!("../../crates/aurora/assets/inter-var.ttf"),
+            include_bytes!("../../crates/riode/assets/inter-var.ttf"),
         )
         .background(view::HOT_BG)
         .runtime(runtime)

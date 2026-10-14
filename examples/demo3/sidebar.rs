@@ -1,7 +1,7 @@
 // Single responsibility: Left navigation sidebar with category pills and local storage progress.
 
 use super::icons::AppIcons;
-use aurora::prelude::*;
+use riode::prelude::*;
 
 pub fn render_sidebar(icons: &AppIcons) -> impl IntoElement {
     view! {

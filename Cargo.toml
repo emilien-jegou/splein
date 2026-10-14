@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
-members = ["crates/splein", "crates/aurora", "crates/aurora-skia", "crates/aurora/macros", "crates/aurora-tiny-skia", "crates/aurora-vello", "crates/aurora-wayland", "crates/aurora-wgpu", "crates/aurora-quad", "crates/aurora/benches/bench_suite", "crates/aurora-shared", "crates/aurora-cli", "crates/aurora-hot-gen", "examples", "crates/probe-min"]
-default-members = ["crates/splein", "crates/aurora", "crates/aurora/macros", "crates/aurora-tiny-skia", "crates/aurora-vello", "crates/aurora-wayland", "crates/aurora-wgpu", "crates/aurora-cli", "examples"]
+members = ["crates/splein", "crates/riode", "crates/riode-skia", "crates/riode/macros", "crates/riode-tiny-skia", "crates/riode-vello", "crates/riode-wayland", "crates/riode-wgpu", "crates/riode-quad", "crates/riode/benches/bench_suite", "crates/riode-shared", "crates/riode-cli", "crates/riode-hot-gen", "examples", "crates/probe-min"]
+default-members = ["crates/splein", "crates/riode", "crates/riode/macros", "crates/riode-tiny-skia", "crates/riode-vello", "crates/riode-wayland", "crates/riode-wgpu", "crates/riode-cli", "examples"]
 
 [workspace.dependencies]
 smithay-client-toolkit = { version = "0.19", default-features = false }
@@ -26,7 +26,7 @@ taffy = "0.5"
 cosmic-text = "0.12"
 
 # Embedded size preset (S2 #11): optimize for flash footprint.
-# Build with: cargo build --profile embedded -p aurora --no-default-features
+# Build with: cargo build --profile embedded -p riode --no-default-features
 [profile.embedded]
 inherits = "release"
 opt-level = "z"

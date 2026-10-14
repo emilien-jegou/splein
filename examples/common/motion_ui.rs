@@ -1,7 +1,7 @@
 // Single responsibility: Shared light design system and page shells for the motion demos.
 #![allow(dead_code)]
 
-use aurora::prelude::*;
+use riode::prelude::*;
 
 /// Tinted application background.
 pub const PAGE: u32 = 0xF4F5F7;

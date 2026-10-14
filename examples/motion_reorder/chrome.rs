@@ -5,7 +5,7 @@
 // shapes in Vercel black-and-white (page `#000`, cards `#0A0A0A`, hairline
 // white-at-12%, white text, `#A1A1A1` secondary).
 
-use aurora::prelude::*;
+use riode::prelude::*;
 
 use super::super::motion_ui::{Eyebrow, EyebrowProps};
 

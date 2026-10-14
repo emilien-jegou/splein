@@ -8,9 +8,9 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use aurora::dsl::ElementRef;
-use aurora::foundation::{ResolvedRect, Transform};
-use aurora::prelude::*;
+use riode::dsl::ElementRef;
+use riode::foundation::{ResolvedRect, Transform};
+use riode::prelude::*;
 
 /// The state the gesture needs, shared by every row.
 ///

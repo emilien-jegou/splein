@@ -1,7 +1,7 @@
 // Single responsibility: Showcase transitions as reactive signal adapters over one boolean.
 
 use super::motion_ui::*;
-use aurora::prelude::*;
+use riode::prelude::*;
 
 /// Window chrome shared by the release driver (`main.rs`) and the hot entry
 /// (`hot.rs`): declared once here, referenced by both — never mirrored.

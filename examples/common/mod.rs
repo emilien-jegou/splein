@@ -1,7 +1,7 @@
 // Single responsibility: Shared CLI argument parser and telemetry bootstrap for Aurora examples.
 
-use aurora::app::VisualDebugger;
-use aurora::prelude::*;
+use riode::app::VisualDebugger;
+use riode::prelude::*;
 
 #[cfg(feature = "tracy")]
 use tracing_subscriber::fmt::format::DefaultFields;
@@ -165,7 +165,7 @@ impl ExampleCli {
     }
     /// Initializes Tracy profiling layer and stdout logger.
     ///
-    /// Honors `RUST_LOG` (e.g. `RUST_LOG=aurora::input=debug` to watch text
+    /// Honors `RUST_LOG` (e.g. `RUST_LOG=riode::input=debug` to watch text
     /// selection press/drag/release decisions); defaults to info level.
     pub fn init_telemetry(&self) {
         #[cfg(feature = "tracy")]
@@ -205,17 +205,17 @@ impl ExampleCli {
     /// One shared engine/reactive state. `1-5` select a single backend
     /// window, `Tab`/`F7` cycles. The CLI positional/flags pick the focused
     /// backend.
-    pub fn app_config_multi(&self, title: &str) -> aurora::app::multibackend::MultiBackendConfig {
-        use aurora::app::multibackend::MultiBackend;
+    pub fn app_config_multi(&self, title: &str) -> riode::app::multibackend::MultiBackendConfig {
+        use riode::app::multibackend::MultiBackend;
         let mut debugger = VisualDebugger::new();
         debugger.show_hud = self.show_hud;
 
         MultiBackend::config([
-            Some(aurora_tiny_skia::create_backend),
-            Some(aurora_vello::create_backend),
-            Some(aurora_vello::create_cpu_backend),
-            Some(aurora_wgpu::create_backend),
-            Some(aurora_skia::create_backend),
+            Some(riode_tiny_skia::create_backend),
+            Some(riode_vello::create_backend),
+            Some(riode_vello::create_cpu_backend),
+            Some(riode_wgpu::create_backend),
+            Some(riode_skia::create_backend),
         ])
         .title(format!(
             "{title} [1-5 engine | Tab/F7 cycle | {}]",
@@ -246,11 +246,11 @@ impl ExampleCli {
             .fps_limit(self.fps_limit)
             .extension(debugger);
         match self.backend {
-            RenderBackend::TinySkia => config.backend_factory(aurora_tiny_skia::create_backend),
-            RenderBackend::Skia => config.backend_factory(aurora_skia::create_backend),
-            RenderBackend::Vello => config.backend_factory(aurora_vello::create_backend),
-            RenderBackend::VelloCpu => config.backend_factory(aurora_vello::create_cpu_backend),
-            RenderBackend::Wgpu => config.backend_factory(aurora_wgpu::create_backend),
+            RenderBackend::TinySkia => config.backend_factory(riode_tiny_skia::create_backend),
+            RenderBackend::Skia => config.backend_factory(riode_skia::create_backend),
+            RenderBackend::Vello => config.backend_factory(riode_vello::create_backend),
+            RenderBackend::VelloCpu => config.backend_factory(riode_vello::create_cpu_backend),
+            RenderBackend::Wgpu => config.backend_factory(riode_wgpu::create_backend),
         }
     }
 }

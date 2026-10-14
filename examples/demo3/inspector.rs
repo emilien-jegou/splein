@@ -1,7 +1,7 @@
 // Single responsibility: Right details inspector displaying metrics and variable font sliders.
 
 use super::icons::AppIcons;
-use aurora::prelude::*;
+use riode::prelude::*;
 
 pub fn render_inspector(icons: &AppIcons) -> impl IntoElement {
     view! {

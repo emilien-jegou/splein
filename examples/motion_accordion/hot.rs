@@ -1,9 +1,9 @@
 // Hot entry for `motion_accordion` (dev only): state-owning root plus the
 // single `define_hot_ui!` entry block. Mounted by the generative
-// `aurora-hot-gen-ui` crate; `#[path]`s resolve relative to this file.
+// `riode-hot-gen-ui` crate; `#[path]`s resolve relative to this file.
 // Window facts live once as `HOT_*` consts in `./view.rs`.
-use aurora::dsl::IntoElement;
-use aurora::prelude::*;
+use riode::dsl::IntoElement;
+use riode::prelude::*;
 
 #[path = "../common/motion_ui.rs"]
 mod motion_ui;
@@ -19,7 +19,7 @@ fn AccordionRoot() -> impl IntoElement {
     panels::Page(open)
 }
 
-aurora::define_hot_ui! {
+riode::define_hot_ui! {
     root: AccordionRoot,
     title: panels::HOT_TITLE,
     size: (panels::HOT_WIDTH, panels::HOT_HEIGHT),

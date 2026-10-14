@@ -5,8 +5,8 @@ mod common;
 
 mod view;
 
-use aurora::app::switcher::BootCtx;
-use aurora::reactive::ReactiveRuntime;
+use riode::app::switcher::BootCtx;
+use riode::reactive::ReactiveRuntime;
 use common::ExampleCli;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -33,7 +33,7 @@ fn main() {
     cli.app_config_multi(view::HOT_TITLE)
         .font(
             "Inter",
-            include_bytes!("../../crates/aurora/assets/inter-var.ttf"),
+            include_bytes!("../../crates/riode/assets/inter-var.ttf"),
         )
         .background(view::HOT_BG)
         .run(move || root.take().expect("root built once"));

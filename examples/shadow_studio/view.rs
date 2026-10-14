@@ -8,9 +8,9 @@
 // reactive signals; a live readout prints the equivalent construction for
 // direct comparison with the browser or the cheat sheet.
 
-use aurora::app::switcher::{BootCtx, BootedDemo};
-use aurora::prelude::*;
-use aurora::reactive::{DynamicProp, ReactiveRuntime};
+use riode::app::switcher::{BootCtx, BootedDemo};
+use riode::prelude::*;
+use riode::reactive::{DynamicProp, ReactiveRuntime};
 use std::cell::RefCell;
 use std::rc::Rc;
 

@@ -29,11 +29,11 @@ fn main() {
 
 #[cfg(test)]
 mod switch_tests {
-    use aurora::app::switcher::{BootCtx, DemoDef, DemoMeta, MenuState};
-    use aurora::prelude::*;
-    use aurora::reactive::ReactiveRuntime;
-    use aurora::runtime::Engine;
-    use aurora::scene::SceneCommand;
+    use riode::app::switcher::{BootCtx, DemoDef, DemoMeta, MenuState};
+    use riode::prelude::*;
+    use riode::reactive::ReactiveRuntime;
+    use riode::runtime::Engine;
+    use riode::scene::SceneCommand;
     use std::cell::RefCell;
     use std::rc::Rc;
 
@@ -103,7 +103,7 @@ mod switch_tests {
             let booted = (demo.boot)(&ctx);
             let mut engine = Engine::with_runtime(Rc::clone(&runtime), booted.root, 1280, 800);
             engine.set_background(booted.background);
-            engine.load_font(include_bytes!("../../crates/aurora/assets/inter-var.ttf"));
+            engine.load_font(include_bytes!("../../crates/riode/assets/inter-var.ttf"));
             engine.frame();
             engine.frame();
             Self {
@@ -128,7 +128,7 @@ mod switch_tests {
         fn switch(&mut self, id: &str) {
             self.engine.prepare_switch();
             let demo = self.demos.iter().find(|d| d.id == id).unwrap();
-            let menu = if id == aurora::app::switcher::MENU_ID {
+            let menu = if id == riode::app::switcher::MENU_ID {
                 Some(self.menu_state.clone())
             } else {
                 None
@@ -154,7 +154,7 @@ mod switch_tests {
         /// Switches without framing (the caller frames + paints per frame).
         fn switch_now(&mut self, id: &str) {
             self.engine.prepare_switch();
-            let (demo, menu) = if id == aurora::app::switcher::MENU_ID {
+            let (demo, menu) = if id == riode::app::switcher::MENU_ID {
                 (registry::menu_def(), Some(self.menu_state.clone()))
             } else {
                 (*self.demos.iter().find(|d| d.id == id).unwrap(), None)
@@ -168,9 +168,9 @@ mod switch_tests {
         /// Switches and frames exactly once, returning that frame's damage.
         /// Damage is per-frame (the ring advances), so full-viewport
         /// invalidation can only be observed on frame one.
-        fn switch_once_damage(&mut self, id: &str) -> aurora::foundation::ResolvedRect {
+        fn switch_once_damage(&mut self, id: &str) -> riode::foundation::ResolvedRect {
             self.engine.prepare_switch();
-            let menu = if id == aurora::app::switcher::MENU_ID {
+            let menu = if id == riode::app::switcher::MENU_ID {
                 Some(self.menu_state.clone())
             } else {
                 None
@@ -245,7 +245,7 @@ mod switch_tests {
         for _ in 0..4 {
             s.engine.frame();
         }
-        let bb = s.switch_once_damage(aurora::app::switcher::MENU_ID);
+        let bb = s.switch_once_damage(riode::app::switcher::MENU_ID);
         assert!(
             bb.x <= 0.0 && bb.y <= 0.0 && bb.right() >= 1280.0 && bb.bottom() >= 800.0,
             "menu switch damage {bb:?} does not cover the viewport"
@@ -269,7 +269,7 @@ mod switch_tests {
     /// Uses a static demo so animation deltas can't legitimately differ.
     #[test]
     fn retained_canvas_has_no_remnants() {
-        use aurora_tiny_skia::TinySkiaRenderer;
+        use riode_tiny_skia::TinySkiaRenderer;
 
         let mut s = Session::new("text-demo");
         let mut retained = TinySkiaRenderer::new();
@@ -285,7 +285,7 @@ mod switch_tests {
         for _ in 0..3 {
             fp(&mut s, &mut retained);
         }
-        s.switch_now(aurora::app::switcher::MENU_ID);
+        s.switch_now(riode::app::switcher::MENU_ID);
         fp(&mut s, &mut retained);
         s.switch_now("text-demo");
         fp(&mut s, &mut retained);
@@ -294,8 +294,8 @@ mod switch_tests {
         let mut fresh = TinySkiaRenderer::new();
         fresh.set_text_context(s.engine.text_context());
         fresh.resize(1280, 800);
-        let mut full = aurora::foundation::DamageRegion::new();
-        full.push(aurora::foundation::ResolvedRect::new(
+        let mut full = riode::foundation::DamageRegion::new();
+        full.push(riode::foundation::ResolvedRect::new(
             0.0, 0.0, 1280.0, 800.0,
         ));
         fresh

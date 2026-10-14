@@ -1,0 +1,20 @@
+[package]
+name = "riode-cli"
+version = "0.0.1-rc.1"
+edition = "2021"
+publish = false
+description = "Aurora dev launcher: runs UI crates in hot-reload mode through the shared runtime"
+license = "GPL-3.0"
+
+[[bin]]
+name = "riode"
+path = "src/main.rs"
+
+[dependencies]
+# Deliberately riode-free: linking any riode crate into the launcher would embed
+# a second runtime beside the shared image the UI dylibs resolve to, and component
+# bodies would panic on the wrong scope stack.
+# clap/libloading/libc are plain rlibs with no riode in their closure — safe.
+clap = { workspace = true }
+libloading = "0.8"
+libc = "0.2"
