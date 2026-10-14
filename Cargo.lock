@@ -40,7 +40,7 @@ dependencies = [
  "bitflags 2.13.2",
  "cc",
  "cesu8",
- "jni 0.21.1",
+ "jni",
  "jni-sys 0.3.1",
  "libc",
  "log",
@@ -52,48 +52,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "android-activity"
-version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0f2a1bb052857d5dd49572219344a7332b31b76405648eabac5bc68978251bcd"
-dependencies = [
- "android-properties",
- "bitflags 2.13.2",
- "cc",
- "jni 0.22.4",
- "libc",
- "log",
- "ndk 0.9.0",
- "ndk-context",
- "ndk-sys 0.6.0+11769913",
- "num_enum",
- "simd_cesu8",
- "thiserror 2.0.21",
-]
-
-[[package]]
 name = "android-properties"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc7eb209b1518d6bb87b283c20095f5228ecda460da70b44f0802523dea6da04"
-
-[[package]]
-name = "android_log-sys"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "84521a3cf562bc62942e294181d9eef17eb38ceb8c68677bc49f144e4c3d4f8d"
-
-[[package]]
-name = "android_logger"
-version = "0.13.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c494134f746c14dc653a35a4ea5aca24ac368529da5370ecf41fe0341c35772f"
-dependencies = [
- "android_log-sys",
- "env_logger",
- "log",
- "once_cell",
-]
 
 [[package]]
 name = "android_system_properties"
@@ -899,16 +861,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "252afb9ae5eaa683babdc6a068b3f5726eb19e05070c731f9b2a23a7c3e8ed34"
 
 [[package]]
-name = "env_logger"
-version = "0.10.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4cd405aab171cb85d6735e5c8d9db038c17d3ca007a4d2c25f337935c3d90580"
-dependencies = [
- "log",
- "regex",
-]
-
-[[package]]
 name = "equivalent"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1620,36 +1572,6 @@ dependencies = [
  "thiserror 1.0.69",
  "walkdir",
  "windows-sys 0.45.0",
-]
-
-[[package]]
-name = "jni"
-version = "0.22.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5efd9a482cf3a427f00d6b35f14332adc7902ce91efb778580e180ff90fa3498"
-dependencies = [
- "cfg-if",
- "combine",
- "jni-macros",
- "jni-sys 0.4.1",
- "log",
- "simd_cesu8",
- "thiserror 2.0.21",
- "walkdir",
- "windows-link",
-]
-
-[[package]]
-name = "jni-macros"
-version = "0.22.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a00109accc170f0bdb141fed3e393c565b6f5e072365c3bd58f5b062591560a3"
-dependencies = [
- "proc-macro2",
- "quote",
- "rustc_version",
- "simd_cesu8",
- "syn 2.0.119",
 ]
 
 [[package]]
@@ -2757,10 +2679,10 @@ dependencies = [
  "parley",
  "rayon",
  "resvg",
+ "riode-engine-quad",
+ "riode-engine-vello",
+ "riode-engine-wgpu",
  "riode-macros",
- "riode-quad",
- "riode-vello",
- "riode-wgpu",
  "rustc-hash 2.1.3",
  "smallvec",
  "swash 0.2.10",
@@ -2774,30 +2696,38 @@ dependencies = [
 ]
 
 [[package]]
-name = "riode-android"
-version = "0.0.1-rc.1"
-dependencies = [
- "android-activity 0.6.1",
- "android_logger",
- "log",
- "riode",
- "winit",
-]
-
-[[package]]
-name = "riode-android-link"
-version = "0.0.1-rc.1"
-dependencies = [
- "riode-android",
-]
-
-[[package]]
 name = "riode-cli"
 version = "0.0.1-rc.1"
 dependencies = [
  "clap",
  "libc",
  "libloading 0.8.9",
+]
+
+[[package]]
+name = "riode-engine-quad"
+version = "0.0.1-rc.1"
+dependencies = [
+ "bytemuck",
+ "pollster",
+ "riode",
+ "riode-engine-tiny-skia",
+ "riode-engine-vello",
+ "riode-engine-wgpu",
+ "softbuffer",
+ "tiny-skia",
+ "tracing",
+ "winit",
+]
+
+[[package]]
+name = "riode-engine-skia"
+version = "0.0.1-rc.1"
+dependencies = [
+ "riode",
+ "riode-engine-tiny-skia",
+ "softbuffer",
+ "winit",
 ]
 
 [[package]]
@@ -2820,14 +2750,48 @@ dependencies = [
 ]
 
 [[package]]
+name = "riode-engine-vello"
+version = "0.0.1-rc.1"
+dependencies = [
+ "bon",
+ "ntest",
+ "pollster",
+ "resvg",
+ "riode",
+ "riode-engine-quad",
+ "riode-engine-tiny-skia",
+ "riode-engine-wgpu",
+ "rustc-hash 2.1.3",
+ "tracing",
+ "tracing-subscriber",
+ "vello",
+ "wgpu",
+ "winit",
+]
+
+[[package]]
+name = "riode-engine-wgpu"
+version = "0.0.1-rc.1"
+dependencies = [
+ "bytemuck",
+ "pollster",
+ "resvg",
+ "riode",
+ "rustc-hash 2.1.3",
+ "tracing",
+ "wgpu",
+ "winit",
+]
+
+[[package]]
 name = "riode-examples"
 version = "0.0.1-rc.1"
 dependencies = [
  "riode",
+ "riode-engine-skia",
  "riode-engine-tiny-skia",
- "riode-skia",
- "riode-vello",
- "riode-wgpu",
+ "riode-engine-vello",
+ "riode-engine-wgpu",
  "tracing",
  "tracing-subscriber",
  "winit",
@@ -2868,116 +2832,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "riode-quad"
-version = "0.0.1-rc.1"
-dependencies = [
- "bytemuck",
- "pollster",
- "riode",
- "riode-engine-tiny-skia",
- "riode-vello",
- "riode-wgpu",
- "softbuffer",
- "tiny-skia",
- "tracing",
- "winit",
-]
-
-[[package]]
-name = "riode-quad-link"
-version = "0.0.1-rc.1"
-dependencies = [
- "riode-quad",
-]
-
-[[package]]
 name = "riode-shared"
 version = "0.0.1-rc.1"
 dependencies = [
  "riode",
+ "riode-engine-skia",
  "riode-engine-tiny-skia",
- "riode-skia",
- "riode-vello",
- "riode-wgpu",
-]
-
-[[package]]
-name = "riode-skia"
-version = "0.0.1-rc.1"
-dependencies = [
- "riode",
- "riode-engine-tiny-skia",
- "softbuffer",
- "winit",
-]
-
-[[package]]
-name = "riode-skia-link"
-version = "0.0.1-rc.1"
-dependencies = [
- "riode-skia",
-]
-
-[[package]]
-name = "riode-tiny-skia"
-version = "0.0.1-rc.1"
-dependencies = [
- "riode-engine-tiny-skia",
-]
-
-[[package]]
-name = "riode-vello"
-version = "0.0.1-rc.1"
-dependencies = [
- "bon",
- "ntest",
- "pollster",
- "resvg",
- "riode",
- "riode-engine-tiny-skia",
- "riode-quad",
- "riode-wgpu",
- "rustc-hash 2.1.3",
- "tracing",
- "tracing-subscriber",
- "vello",
- "wgpu",
- "winit",
-]
-
-[[package]]
-name = "riode-vello-link"
-version = "0.0.1-rc.1"
-dependencies = [
- "riode-vello",
-]
-
-[[package]]
-name = "riode-wayland"
-version = "0.0.1-rc.1"
-dependencies = [
- "riode-platform-wayland",
-]
-
-[[package]]
-name = "riode-wgpu"
-version = "0.0.1-rc.1"
-dependencies = [
- "bytemuck",
- "pollster",
- "resvg",
- "riode",
- "rustc-hash 2.1.3",
- "tracing",
- "wgpu",
- "winit",
-]
-
-[[package]]
-name = "riode-wgpu-link"
-version = "0.0.1-rc.1"
-dependencies = [
- "riode-wgpu",
+ "riode-engine-vello",
+ "riode-engine-wgpu",
 ]
 
 [[package]]
@@ -3012,15 +2874,6 @@ name = "rustc-hash"
 version = "2.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6b1e7f9a428571be2dc5bc0505c13fb6bf936822b894ec87abf8a08a4e51742d"
-
-[[package]]
-name = "rustc_version"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cfcb3a22ef46e85b45de6ee7e79d063319ebb6594faafcf1c225ea92ab6e9b92"
-dependencies = [
- "semver",
-]
 
 [[package]]
 name = "rustix"
@@ -3099,12 +2952,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2ab42ca02749e120097e328d91d415325bdf43b1c72c4c8badf37375fe40a813"
 
 [[package]]
-name = "semver"
-version = "1.0.28"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd"
-
-[[package]]
 name = "serde"
 version = "1.0.229"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3177,22 +3024,6 @@ name = "simd-adler32"
 version = "0.3.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a219298ac11a56ea9a6d2120044824d6f01aeb034955e7af7bc16858527deea"
-
-[[package]]
-name = "simd_cesu8"
-version = "1.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "11031e251abf8611c80f460e19dbdeb54a66db918e49c65a7065b46ac7aec520"
-dependencies = [
- "rustc_version",
- "simdutf8",
-]
-
-[[package]]
-name = "simdutf8"
-version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
 
 [[package]]
 name = "simplecss"
@@ -4798,7 +4629,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0d59ad965a635657faf09c8f062badd885748428933dad8e8bdd64064d92e5ca"
 dependencies = [
  "ahash",
- "android-activity 0.5.2",
+ "android-activity",
  "atomic-waker",
  "bitflags 2.13.2",
  "bytemuck",

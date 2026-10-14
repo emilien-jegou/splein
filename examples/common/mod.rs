@@ -212,10 +212,10 @@ impl ExampleCli {
 
         MultiBackend::config([
             Some(riode_tiny_skia::create_backend),
-            Some(riode_vello::create_backend),
-            Some(riode_vello::create_cpu_backend),
-            Some(riode_wgpu::create_backend),
-            Some(riode_skia::create_backend),
+            Some(riode_engine_vello::create_backend),
+            Some(riode_engine_vello::create_cpu_backend),
+            Some(riode_engine_wgpu::create_backend),
+            Some(riode_engine_skia::create_backend),
         ])
         .title(format!(
             "{title} [1-5 engine | Tab/F7 cycle | {}]",
@@ -247,10 +247,10 @@ impl ExampleCli {
             .extension(debugger);
         match self.backend {
             RenderBackend::TinySkia => config.backend_factory(riode_tiny_skia::create_backend),
-            RenderBackend::Skia => config.backend_factory(riode_skia::create_backend),
-            RenderBackend::Vello => config.backend_factory(riode_vello::create_backend),
-            RenderBackend::VelloCpu => config.backend_factory(riode_vello::create_cpu_backend),
-            RenderBackend::Wgpu => config.backend_factory(riode_wgpu::create_backend),
+            RenderBackend::Skia => config.backend_factory(riode_engine_skia::create_backend),
+            RenderBackend::Vello => config.backend_factory(riode_engine_vello::create_backend),
+            RenderBackend::VelloCpu => config.backend_factory(riode_engine_vello::create_cpu_backend),
+            RenderBackend::Wgpu => config.backend_factory(riode_engine_wgpu::create_backend),
         }
     }
 }

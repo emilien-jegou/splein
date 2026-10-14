@@ -12,9 +12,9 @@ autoexamples = false
 [dependencies]
 riode = { path = "../crates/core/riode", version = "0.0.1-rc.1" }
 riode-engine-tiny-skia = { path = "../crates/engines/riode-engine-tiny-skia", version = "0.0.1-rc.1" }
-riode-skia = { path = "../crates/engines/riode-skia", version = "0.0.1-rc.1" }
-riode-vello = { path = "../crates/engines/riode-vello", version = "0.0.1-rc.1" }
-riode-wgpu = { path = "../crates/engines/riode-wgpu", version = "0.0.1-rc.1" }
+riode-engine-skia = { path = "../crates/engines/riode-engine-skia", version = "0.0.1-rc.1" }
+riode-engine-vello = { path = "../crates/engines/riode-engine-vello", version = "0.0.1-rc.1" }
+riode-engine-wgpu = { path = "../crates/engines/riode-engine-wgpu", version = "0.0.1-rc.1" }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 winit = { version = "0.29", default-features = false, features = ["rwh_06", "x11", "wayland"] }

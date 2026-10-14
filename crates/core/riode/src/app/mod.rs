@@ -42,8 +42,8 @@
 //! | [`RenderBackend`] | Factory | When |
 //! |---|---|---|
 //! | `TinySkia` (default) | `riode_tiny_skia::create_backend` | CPU rasterization; the sane default and what the test harness uses |
-//! | `Vello` | `riode_vello::create_backend` | GPU rasterization via wgpu |
-//! | `VelloCpu` | `riode_vello::create_cpu_backend` | Vello's CPU-staged pipeline, for comparing against GPU |
+//! | `Vello` | `riode_engine_vello::create_backend` | GPU rasterization via wgpu |
+//! | `VelloCpu` | `riode_engine_vello::create_cpu_backend` | Vello's CPU-staged pipeline, for comparing against GPU |
 //!
 //! Forgetting `.backend_factory(..)` panics with a message naming the missing factory —
 //! that panic is intentional (a window with no painter is a programming error, not a
@@ -198,8 +198,8 @@ impl AppConfig {
     /// Supplies the constructor for the selected backend.
     ///
     /// The engine crate implements no rasterizer, so the factory comes from a backend
-    /// crate: `riode_tiny_skia::create_backend`, `riode_vello::create_backend`,
-    /// or `riode_vello::create_cpu_backend` (for `RenderBackend::VelloCpu`).
+    /// crate: `riode_tiny_skia::create_backend`, `riode_engine_vello::create_backend`,
+    /// or `riode_engine_vello::create_cpu_backend` (for `RenderBackend::VelloCpu`).
     /// Desktop-only.
     #[cfg(feature = "desktop")]
     pub fn backend_factory(mut self, factory: BackendFactory) -> Self {
@@ -291,9 +291,9 @@ impl AppConfig {
         let backend: Box<dyn Backend> = match self.backend {
             RenderBackend::Vello | RenderBackend::VelloCpu | RenderBackend::Wgpu => {
                 let want = match self.backend {
-                    RenderBackend::Vello => "riode_vello::create_backend",
-                    RenderBackend::VelloCpu => "riode_vello::create_cpu_backend",
-                    _ => "riode_wgpu::create_backend",
+                    RenderBackend::Vello => "riode_engine_vello::create_backend",
+                    RenderBackend::VelloCpu => "riode_engine_vello::create_cpu_backend",
+                    _ => "riode_engine_wgpu::create_backend",
                 };
                 let factory = self.backend_factory.expect(
                     "no GPU backend factory: pass the matching create_backend via \
@@ -305,7 +305,7 @@ impl AppConfig {
             RenderBackend::TinySkia | RenderBackend::Skia => {
                 let factory = self.backend_factory.expect(
                     "no CPU backend factory: pass `riode_tiny_skia::create_backend` \
-                     or `riode_skia::create_backend` via `AppConfig::backend_factory`",
+                     or `riode_engine_skia::create_backend` via `AppConfig::backend_factory`",
                 );
                 factory(window.clone(), pw, ph, engine.text_context())
                     .expect("CPU backend init failed")

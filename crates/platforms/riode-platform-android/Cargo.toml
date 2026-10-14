@@ -1,5 +1,5 @@
 [package]
-name = "riode-android"
+name = "riode-platform-android"
 version = "0.0.1-rc.1"
 edition = "2021"
 publish = true

@@ -1,5 +1,5 @@
 [package]
-name = "riode-quad"
+name = "riode-engine-quad"
 version = "0.0.1-rc.1"
 publish = true
 edition = "2021"
@@ -9,8 +9,8 @@ license = "MIT"
 [dependencies]
 riode = { path = "../../core/riode", version = "0.0.1-rc.1" }
 riode-engine-tiny-skia = { path = "../riode-engine-tiny-skia", version = "0.0.1-rc.1" }
-riode-vello = { path = "../riode-vello", version = "0.0.1-rc.1" }
-riode-wgpu = { path = "../riode-wgpu", version = "0.0.1-rc.1" }
+riode-engine-vello = { path = "../riode-engine-vello", version = "0.0.1-rc.1" }
+riode-engine-wgpu = { path = "../riode-engine-wgpu", version = "0.0.1-rc.1" }
 softbuffer = "0.4"
 bytemuck = "1.16"
 winit = { version = "0.29", default-features = false, features = ["rwh_06"] }

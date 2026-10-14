@@ -1,5 +1,5 @@
 [package]
-name = "riode-skia"
+name = "riode-engine-skia"
 version = "0.0.1-rc.1"
 publish = true
 edition = "2021"

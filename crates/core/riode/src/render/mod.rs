@@ -31,7 +31,7 @@
 //!
 //! // GPU: same scene, different painter.
 //! App::config().backend(RenderBackend::Vello)
-//!     .backend_factory(riode_vello::create_backend)
+//!     .backend_factory(riode_engine_vello::create_backend)
 //!     .run(Page);
 //! ```
 //!

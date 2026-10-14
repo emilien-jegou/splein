@@ -98,11 +98,11 @@ impl Gpu {
     /// Renders an riode scene offscreen, returning raw RGBA8 pixels.
     fn render(&mut self, engine: &Engine, w: u32, h: u32) -> Vec<u8> {
         use riode::scene::chunk::InheritedClips;
-        use riode_vello::command::{compile_vello_chunk, VelloImageCache};
-        use riode_vello::renderer::{chunk_placement_affine, local_viewport_bound};
-        use riode_vello::shadow::VelloShadowCache;
-        use riode_vello::svg::VelloSvgCache;
-        use riode_vello::text::VelloGlyphCache;
+        use riode_engine_vello::command::{compile_vello_chunk, VelloImageCache};
+        use riode_engine_vello::renderer::{chunk_placement_affine, local_viewport_bound};
+        use riode_engine_vello::shadow::VelloShadowCache;
+        use riode_engine_vello::svg::VelloSvgCache;
+        use riode_engine_vello::text::VelloGlyphCache;
         use vello::kurbo::Affine;
         use vello::peniko::BlendMode;
         use vello::Scene as VelloScene;
@@ -131,7 +131,7 @@ impl Gpu {
                 .text_ctx(&engine.text_context())
                 .call();
             for clip in chunk.inherited_clips.iter() {
-                let shape = riode_vello::path::build_kurbo_rounded_rect(&clip.rect, clip.radius);
+                let shape = riode_engine_vello::path::build_kurbo_rounded_rect(&clip.rect, clip.radius);
                 scene.push_layer(BlendMode::default(), 1.0, Affine::IDENTITY, &shape);
             }
             scene.append(&frag, Some(placement));

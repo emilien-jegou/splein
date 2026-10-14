@@ -17,8 +17,8 @@
 
 pub use riode::*;
 pub use riode_tiny_skia as tiny_skia;
-pub use riode_skia as skia;
-pub use riode_vello as vello;
-pub use riode_wgpu as wgpu;
+pub use riode_engine_skia as skia;
+pub use riode_engine_vello as vello;
+pub use riode_engine_wgpu as wgpu;
 
 include!("host.rs");

@@ -350,10 +350,10 @@ fn boot_menu(ctx: &BootCtx) -> BootedDemo {
 pub fn run_demo(cli: ExampleCli, id: &'static str) {
     MultiBackend::config([
         Some(riode_tiny_skia::create_backend),
-        Some(riode_vello::create_backend),
-        Some(riode_vello::create_cpu_backend),
-        Some(riode_wgpu::create_backend),
-        Some(riode_skia::create_backend),
+        Some(riode_engine_vello::create_backend),
+        Some(riode_engine_vello::create_cpu_backend),
+        Some(riode_engine_wgpu::create_backend),
+        Some(riode_engine_skia::create_backend),
     ])
     .title("Aurora")
     .size(cli.width, cli.height)

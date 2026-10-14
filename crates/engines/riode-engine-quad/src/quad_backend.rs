@@ -26,9 +26,9 @@ use riode::text::{
     FontStyle, LineHeight, TextAlign, TextConfig, TextContext, TextDecoration, TextOverflow,
 };
 use riode_tiny_skia::{render_text, TextRenderParams, TinySkiaRenderer};
-use riode_vello::VelloRenderer;
-use riode_wgpu::context::WgpuContext;
-use riode_wgpu::renderer::WgpuRenderer;
+use riode_engine_vello::VelloRenderer;
+use riode_engine_wgpu::context::WgpuContext;
+use riode_engine_wgpu::renderer::WgpuRenderer;
 
 /// Height of the legend strip across the top of the quad window.
 pub const QUAD_STRIP: u32 = 120;

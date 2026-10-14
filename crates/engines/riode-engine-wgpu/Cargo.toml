@@ -1,5 +1,5 @@
 [package]
-name = "riode-wgpu"
+name = "riode-engine-wgpu"
 version = "0.0.1-rc.1"
 edition = "2021"
 publish = true
