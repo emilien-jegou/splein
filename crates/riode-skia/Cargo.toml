@@ -1,6 +1,7 @@
 [package]
 name = "riode-skia"
 version = "0.0.1-rc.1"
+publish = true
 edition = "2021"
 
 [features]

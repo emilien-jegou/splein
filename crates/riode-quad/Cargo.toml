@@ -1,6 +1,7 @@
 [package]
 name = "riode-quad"
 version = "0.0.1-rc.1"
+publish = true
 edition = "2021"
 description = "Single-window 2x2 combine backend for Aurora UI engine (all rasterizers side by side)"
 license = "MIT"

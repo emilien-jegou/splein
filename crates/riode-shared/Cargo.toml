@@ -2,7 +2,7 @@
 name = "riode-shared"
 version = "0.0.1-rc.1"
 edition = "2021"
-publish = false
+publish = true
 description = "Single shared riode runtime image for hot-reload hosts and UI libraries (dylib, dev only)"
 license = "GPL-3.0"
 

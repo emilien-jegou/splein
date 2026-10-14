@@ -2,7 +2,7 @@
 name = "riode-cli"
 version = "0.0.1-rc.1"
 edition = "2021"
-publish = false
+publish = true
 description = "Aurora dev launcher: runs UI crates in hot-reload mode through the shared runtime"
 license = "GPL-3.0"
 

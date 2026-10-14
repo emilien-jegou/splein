@@ -2,7 +2,7 @@
 name = "riode-android"
 version = "0.0.1-rc.1"
 edition = "2021"
-publish = false
+publish = true
 description = "Android host for riode"
 
 [lib]
