@@ -230,7 +230,7 @@ pub fn Row(index: usize, spec: RowSpec) -> impl IntoElement {
                 direction="horizontal"
                 width="fill"
                 height="fill"
-                radius={24.0}
+                radius={14.0}
                 fill={VERCEL_PILL}
                 stroke={Stroke::inside(1.0, hairline_dark())}
                 alignment="center"

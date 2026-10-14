@@ -386,8 +386,11 @@ impl AppExtension for ComponentReloadExtension {
         // (shapes shifted under a textually template-only edit) falls back to
         // a real rebuild rather than showing stale UI.
         let mut fast_redraw = false;
-        if let Some(pairs) = self.dev.take_pending_fast() {
-            let n = crate::hot_reload::template::apply_template_delta(&pairs, &[]);
+        if let Some(patch) = self.dev.take_pending_fast() {
+            let n = crate::hot_reload::template::apply_template_delta(
+                &patch.strings,
+                &patch.numbers,
+            );
             if n > 0 {
                 engine.queue_full_reload();
                 fast_redraw = true;

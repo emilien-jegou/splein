@@ -60,23 +60,28 @@ pub fn clear_view_templates() {
 /// Keys are `{line}:{idx}`: the `view!` invocation's source line plus the
 /// literal's ordinal within that expansion. File scoping is handled by the
 /// caller (only slots matching the edited file's registered shapes are pushed).
-static TPL_STRINGS: Mutex<Option<std::collections::HashMap<String, String>>> =
+///
+/// `tpl_string` returns `&'static str` (never `String`): builder and prop
+/// signatures take `&'static str`, so the slot must be type-identical to the
+/// literal it replaces. Fresh values are leaked once at apply time — bounded,
+/// explicitly dev-only cruft like the retired dylib images.
+static TPL_STRINGS: Mutex<Option<std::collections::HashMap<String, &'static str>>> =
     Mutex::new(None);
 static TPL_F32: Mutex<Option<std::collections::HashMap<String, f32>>> =
     Mutex::new(None);
 
 /// Reads a template string slot, falling back to the compiled default.
 #[inline]
-pub fn tpl_string(key: &str, default: &str) -> String {
+pub fn tpl_string(key: &str, default: &'static str) -> &'static str {
     if !cfg!(debug_assertions) {
-        return default.to_string();
+        return default;
     }
     let guard = TPL_STRINGS.lock().unwrap_or_else(|e| e.into_inner());
     guard
         .as_ref()
         .and_then(|m| m.get(key))
-        .cloned()
-        .unwrap_or_else(|| default.to_string())
+        .copied()
+        .unwrap_or(default)
 }
 
 /// Reads a template f32 slot, falling back to the compiled default.
@@ -94,14 +99,14 @@ pub fn tpl_f32(key: &str, default: f32) -> f32 {
 }
 
 /// Pushes fresh template values from the IPC sidecar. Returns the number of
-/// slots actually updated.
+/// slots actually updated. Strings leak once (see `tpl_string`).
 pub fn apply_template_delta(strings: &[(String, String)], f32s: &[(String, f32)]) -> usize {
     let mut n = 0;
     if !strings.is_empty() {
         let mut guard = TPL_STRINGS.lock().unwrap_or_else(|e| e.into_inner());
         let map = guard.get_or_insert_with(Default::default);
         for (k, v) in strings {
-            map.insert(k.clone(), v.clone());
+            map.insert(k.clone(), Box::leak(v.clone().into_boxed_str()) as &'static str);
             n += 1;
         }
     }
@@ -141,22 +146,281 @@ pub struct TemplateSlot {
     pub number: Option<f32>,
 }
 
-/// Extracts `<Text>"lit"</Text>` / `<Text content="lit">` literals per `view!`
-/// body, in source order, keyed `{line}:{idx}`.
+/// Whether trimmed text is a plain float literal the macro would slot
+/// (mirrors `slot_literal_value`'s `LitFloat`-with-dot rule: `12.0`, `.5`,
+/// `16.` — never signs, idents, calls, or int-only tokens).
+fn as_slot_float(trimmed: &str) -> Option<f32> {
+    let t = trimmed.trim();
+    if !t.contains('.') {
+        return None;
+    }
+    if !t
+        .trim_end_matches(|c: char| c == 'f' || c == 'F' || c == '3' || c == '2' || c == '6' || c == '4')
+        .chars()
+        .all(|c| c.is_ascii_digit() || c == '.' || c == 'e' || c == 'E' || c == '+' || c == '-')
+    {
+        return None;
+    }
+    if t.starts_with(['+', '-']) || t.is_empty() {
+        return None;
+    }
+    // Reject anything with ident chars or multiple dots (paths, method calls,
+    // ranges): slots are lone numeric tokens only.
+    if t.chars().any(|c| c.is_alphabetic() && c != 'e' && c != 'E') {
+        return None;
+    }
+    if t.bytes().filter(|&b| b == b'.').count() != 1 {
+        return None;
+    }
+    // Suffix (`f32`) must follow digits directly, like the lexer demands.
+    let core = t.trim_end_matches(|c: char| c.is_alphabetic() || c == '_');
+    if core.ends_with('.') || core.starts_with('.') && core.len() == 1 {
+        return None;
+    }
+    core.parse::<f32>().ok()
+}
+
+/// Reads one `"..."` string starting at `s` (which must start with `"`),
+/// returning value + byte length. Escape-aware; `None` when unterminated.
+fn read_quoted(s: &str) -> Option<(String, usize)> {
+    let bytes = s.as_bytes();
+    if bytes.first() != Some(&b'"') {
+        return None;
+    }
+    let mut out = String::new();
+    let mut k = 1;
+    let mut escaped = false;
+    while k < bytes.len() {
+        let c = bytes[k];
+        if escaped {
+            // Keep the escape sequence verbatim (matches `value_string`-style
+            // cooked output closely enough for template refresh; the rebuild
+            // path remains authoritative for exotic escapes).
+            out.push('\\');
+            out.push(c as char);
+            escaped = false;
+        } else if c == b'\\' {
+            escaped = true;
+        } else if c == b'"' {
+            return Some((out, k + 1));
+        } else {
+            // Boundary-safe: push full chars, never raw bytes.
+            let ch = s[k..].chars().next()?;
+            out.push(ch);
+            k += ch.len_utf8() - 1;
+        }
+        k += 1;
+    }
+    None
+}
+
+/// Extracts slottable literals from one `view!` body in source order.
 ///
-/// Textual scan (not the macro parser): only handles the single-literal Text
-/// forms. Anything fancier (format!, nested elements, `{expr}`) yields no slot
-/// and the caller falls back to a rebuild. `line` is the 1-based line of the
-/// `view!` token starting that body.
-pub fn extract_view_literals(src: &str) -> Vec<TemplateSlot> {
+/// Counts exactly what the macro slots, in the same order: plain `"..."`
+/// / `{ "..." }` / float attr values, `<Text>"lit"</Text>` children, and
+/// `<Text content="lit">`. Anything else (`{expr}`, closures, builder
+/// chains, nested elements) consumes no slot on either side.
+///
+/// Returns `None` when the body contains a nested `view!` (separate slot
+/// namespace the linear scan cannot attribute) — the caller rebuilds.
+fn extract_body_slots(body: &str, line: usize) -> Option<Vec<TemplateSlot>> {
+    let mut slots = Vec::new();
+    let mut idx = 0usize;
+    let bytes = body.as_bytes();
+    let mut p = 0;
+    let mut push_string = |s: String, idx: &mut usize, slots: &mut Vec<TemplateSlot>| {
+        slots.push(TemplateSlot {
+            key: format!("{line}:{idx}"),
+            string: Some(s),
+            number: None,
+        });
+        *idx += 1;
+    };
+    let mut push_number = |v: f32, idx: &mut usize, slots: &mut Vec<TemplateSlot>| {
+        slots.push(TemplateSlot {
+            key: format!("{line}:{idx}"),
+            string: None,
+            number: Some(v),
+        });
+        *idx += 1;
+    };
+    while p < bytes.len() {
+        // Nested `view!` opens a separate slot namespace: bail to rebuild.
+        if body[p..].starts_with("view!")
+            && {
+                let r = body[p + 5..].trim_start();
+                r.starts_with('{') || r.starts_with('(') || r.starts_with('[')
+            }
+        {
+            return None;
+        }
+        // `<Text ...>` child or content= form.
+        if body[p..].starts_with("<Text") {
+            let Some(tag_end_rel) = body[p..].find('>') else {
+                break;
+            };
+            let tag = &body[p..p + tag_end_rel];
+            // content= attr form, matched as an attr NAME (whitespace before,
+            // `=` after) so values merely containing the word don't count.
+            let mut lit: Option<String> = None;
+            let mut csearch = 0;
+            while let Some(rel) = tag[csearch..].find("content") {
+                let cpos = csearch + rel;
+                let before_ok =
+                    cpos == 0 || tag[..cpos].chars().next_back().is_some_and(|c| c.is_whitespace());
+                let after_eq = tag[cpos + 7..]
+                    .trim_start()
+                    .strip_prefix('=')
+                    .map(|s| s.trim_start());
+                let Some(after_eq) = (before_ok as bool).then_some(after_eq).flatten() else {
+                    csearch = cpos + 7;
+                    continue;
+                };
+                if after_eq.starts_with('"') {
+                    if let Some((s, _)) = read_quoted(after_eq) {
+                        lit = Some(s);
+                    }
+                    break;
+                } else if after_eq.starts_with('{') {
+                    let inner = after_eq[1..].trim_start();
+                    if inner.starts_with('"') {
+                        if let Some((s, n)) = read_quoted(inner) {
+                            if inner[n..].trim_start().starts_with('}') {
+                                lit = Some(s);
+                            }
+                        }
+                    }
+                    // A real content= attr with a non-literal value slots
+                    // nothing (macro agrees): stop, a duplicate attr would be
+                    // invalid RSX anyway.
+                    break;
+                } else {
+                    break;
+                }
+            }
+            let inner_start = p + tag_end_rel + 1;
+            if lit.is_none() {
+                let rest = body[inner_start..].trim_start();
+                if rest.starts_with('"') {
+                    if let Some((s, _)) = read_quoted(rest) {
+                        lit = Some(s);
+                    }
+                }
+            }
+            if let Some(s) = lit {
+                push_string(s, &mut idx, &mut slots);
+            }
+            p = inner_start;
+            continue;
+        }
+        // Attr assignment `name = value` inside a tag: slot lone literals.
+        // Detected textually: ident-char run, optional space, `=`.
+        if bytes[p].is_ascii_alphabetic() || bytes[p] == b'_' {
+            let mut q = p;
+            while q < bytes.len() && (bytes[q].is_ascii_alphanumeric() || bytes[q] == b'_' || bytes[q] == b'-' || bytes[q] == b':') {
+                q += 1;
+            }
+            let mut r = q;
+            while r < bytes.len() && bytes[r].is_ascii_whitespace() {
+                r += 1;
+            }
+            if r < bytes.len() && bytes[r] == b'=' && {
+                // `==`, `=>`, `>=`... are not assignments.
+                let before_ok = true;
+                let after = if r + 1 < bytes.len() { bytes[r + 1] } else { 0 };
+                before_ok && after != b'=' && after != b'>'
+            } {
+                let mut v = r + 1;
+                while v < bytes.len() && bytes[v].is_ascii_whitespace() {
+                    v += 1;
+                }
+                let vstr = &body[v..];
+                if vstr.starts_with('"') {
+                    if let Some((s, n)) = read_quoted(vstr) {
+                        push_string(s, &mut idx, &mut slots);
+                        p = v + n;
+                        continue;
+                    }
+                } else if vstr.starts_with('{') {
+                    // Balanced braced value: slot only a lone literal inside.
+                    let mut depth = 1usize;
+                    let mut k = v + 1;
+                    let mut in_str = false;
+                    let mut esc = false;
+                    while k < bytes.len() && depth > 0 {
+                        let c = bytes[k];
+                        if in_str {
+                            if esc {
+                                esc = false;
+                            } else if c == b'\\' {
+                                esc = true;
+                            } else if c == b'"' {
+                                in_str = false;
+                            }
+                        } else if c == b'"' {
+                            in_str = true;
+                        } else if c == b'{' {
+                            depth += 1;
+                        } else if c == b'}' {
+                            depth -= 1;
+                        }
+                        k += 1;
+                    }
+                    let inner = vstr[1..k - v - 1].trim();
+                    if depth == 0 {
+                        if inner.starts_with('"') {
+                            if let Some((s, n)) = read_quoted(inner) {
+                                if inner[n..].trim().is_empty() {
+                                    push_string(s, &mut idx, &mut slots);
+                                }
+                            }
+                        } else if let Some(f) = as_slot_float(inner) {
+                            push_number(f, &mut idx, &mut slots);
+                        }
+                    }
+                    p = k;
+                    continue;
+                } else {
+                    // Bare value: slot a lone float (`width=96.0` is not valid
+                    // RSX, but costless to accept if the macro ever allows it).
+                    let mut k = v;
+                    while k < bytes.len()
+                        && !bytes[k].is_ascii_whitespace()
+                        && !matches!(bytes[k], b',' | b'>' | b'/' | b')' | b'}' | b']')
+                    {
+                        k += 1;
+                    }
+                    if let Some(f) = as_slot_float(&body[v..k]) {
+                        push_number(f, &mut idx, &mut slots);
+                    }
+                    p = k;
+                    continue;
+                }
+                p = v;
+                continue;
+            }
+        }
+        // Step one full char (never split a multibyte codepoint).
+        let len = body[p..].chars().next().map(|c| c.len_utf8()).unwrap_or(1);
+        p += len;
+    }
+    Some(slots)
+}
+
+/// Extracts slottable literals per `view!` body, in source order, keyed
+/// `{line}:{idx}`.
+///
+/// `line` is the 1-based line of the `view!` token starting that body.
+/// Returns `None` if any body needs the rebuild path (unterminated macro or
+/// nested `view!`).
+pub fn extract_view_literals(src: &str) -> Option<Vec<TemplateSlot>> {
     let mut slots = Vec::new();
     let mut search_from = 0;
+    let bytes = src.as_bytes();
     while let Some(rel) = src[search_from..].find("view!") {
         let macro_at = search_from + rel;
         let line = src[..macro_at].bytes().filter(|&b| b == b'\n').count() + 1;
-        // Find body open delimiter.
         let mut j = macro_at + 5;
-        let bytes = src.as_bytes();
         while j < bytes.len() && bytes[j].is_ascii_whitespace() {
             j += 1;
         }
@@ -169,7 +433,6 @@ pub fn extract_view_literals(src: &str) -> Vec<TemplateSlot> {
                 continue;
             }
         };
-        // Balanced scan to body end (string/comment aware, mirrors the gate).
         let mut depth = 1usize;
         let mut k = j + 1;
         while k < bytes.len() && depth > 0 {
@@ -198,87 +461,44 @@ pub fn extract_view_literals(src: &str) -> Vec<TemplateSlot> {
             k += 1;
         }
         if depth > 0 {
-            break;
+            return None;
         }
         let body = &src[j + 1..k - 1];
-        let mut idx = 0usize;
-        let mut bpos = 0;
-        while let Some(trel) = body[bpos..].find("<Text") {
-            let t = bpos + trel;
-            // Tag end (first `>` after `<Text`).
-            let Some(tag_end_rel) = body[t..].find('>') else {
-                break;
-            };
-            let tag = &body[t..t + tag_end_rel];
-            // content="..." attr form.
-            let mut lit: Option<String> = None;
-            if let Some(cpos) = tag.find("content") {
-                let after = &tag[cpos + 7..];
-                if let Some(q1) = after.find('"') {
-                    let rest = &after[q1 + 1..];
-                    if let Some(q2) = rest.find('"') {
-                        lit = Some(rest[..q2].to_string());
-                    }
-                }
-            }
-            let inner_start = t + tag_end_rel + 1;
-            if lit.is_none() {
-                // Child form: `"lit"</Text>`.
-                let rest = &body[inner_start..];
-                let trimmed = rest.trim_start();
-                if trimmed.starts_with('"') {
-                    let mut esc = false;
-                    let chars: Vec<u8> = trimmed.bytes().collect();
-                    let mut end = None;
-                    for (ci, &c) in chars.iter().enumerate().skip(1) {
-                        if esc {
-                            esc = false;
-                        } else if c == b'\\' {
-                            esc = true;
-                        } else if c == b'"' {
-                            end = Some(ci);
-                            break;
-                        }
-                    }
-                    if let Some(e) = end {
-                        lit = Some(trimmed[1..e].to_string());
-                    }
-                }
-            }
-            if let Some(s) = lit {
-                slots.push(TemplateSlot {
-                    key: format!("{line}:{idx}"),
-                    string: Some(s),
-                    number: None,
-                });
-                idx += 1;
-            }
-            bpos = inner_start;
-        }
+        // Per-body numbering from 0: the macro's slot counter is per
+        // `view!` expansion, keyed by that expansion's own line.
+        let Some(found) = extract_body_slots(body, line) else {
+            return None;
+        };
+        slots.extend(found);
         let _ = open;
         search_from = k;
     }
-    slots
+    Some(slots)
+}
+
+/// Resolved fast-path values: strings and floats keyed by full slot key.
+pub struct ResolvedSlots {
+    /// `(full_key, fresh_string)` pairs for [`apply_template_delta`].
+    pub strings: Vec<(String, String)>,
+    /// `(full_key, fresh_f32)` pairs for [`apply_template_delta`].
+    pub numbers: Vec<(String, f32)>,
 }
 
 /// Resolves extractor `{line}:{idx}` keys to full registry keys for one file.
 ///
 /// Matches registry entries whose file path ends with `file_suffix` (the edited
-/// file's basename) and whose line matches. Returns `(resolved, unresolved)`;
-/// the caller falls back to a full rebuild unless `unresolved` is empty and
-/// `resolved` is non-empty.
-pub fn resolve_slot_keys(
-    file_suffix: &str,
-    slots: &[TemplateSlot],
-) -> (Vec<(String, String)>, usize) {
+/// file's basename) and whose line matches. Returns resolved pairs plus an
+/// unresolved count; the caller falls back to a full rebuild unless
+/// `unresolved` is zero and at least one pair resolved.
+pub fn resolve_slot_keys(file_suffix: &str, slots: &[TemplateSlot]) -> (ResolvedSlots, usize) {
     let guard = VIEW_SHAPES.lock().unwrap_or_else(|e| e.into_inner());
     let map = guard.clone().unwrap_or_default();
-    let mut resolved = Vec::new();
+    let mut out = ResolvedSlots {
+        strings: Vec::new(),
+        numbers: Vec::new(),
+    };
     let mut unresolved = 0;
     for slot in slots {
-        let Some(value) = slot.string.as_ref() else {
-            continue;
-        };
         let mut hit: Option<String> = None;
         for reg_key in map.keys() {
             // Registry key: `{file}:{line}`; slot needs `{file}:{line}:{idx}`.
@@ -298,11 +518,19 @@ pub fn resolve_slot_keys(
             }
         }
         match hit {
-            Some(full) => resolved.push((full, value.clone())),
+            Some(full) => {
+                if let Some(s) = slot.string.as_ref() {
+                    out.strings.push((full, s.clone()));
+                } else if let Some(n) = slot.number {
+                    out.numbers.push((full, n));
+                } else {
+                    unresolved += 1;
+                }
+            }
             None => unresolved += 1,
         }
     }
-    (resolved, unresolved)
+    (out, unresolved)
 }
 
 /// What a file edit needs.
@@ -495,7 +723,7 @@ mod tests {
     #[test]
     fn extractor_keys_text_literals_by_view_line_and_ordinal() {
         let src = "fn p() {\n view! { <Group><Text>\"hi\"</Text><Text content=\"yo\"></Text></Group> }\n}";
-        let slots = extract_view_literals(src);
+        let slots = extract_view_literals(src).expect("scannable");
         assert_eq!(slots.len(), 2);
         assert_eq!(slots[0].key, "2:0");
         assert_eq!(slots[0].string.as_deref(), Some("hi"));
@@ -506,7 +734,46 @@ mod tests {
     #[test]
     fn extractor_ignores_expr_children() {
         let src = "fn p() {\n view! { <Group><Text>{name}</Text></Group> }\n}";
-        assert!(extract_view_literals(src).is_empty());
+        assert!(extract_view_literals(src).expect("scannable").is_empty());
+    }
+
+    #[test]
+    fn extractor_slots_attr_literals_in_source_order() {
+        // Mirrors the macro's expansion order: attrs in source order, then
+        // children — radius, label, gap, then the Text child.
+        let src = "fn p() {\n view! { <Group gap={16.0} label=\"row\"><Text>\"hi\"</Text></Group> }\n}";
+        let slots = extract_view_literals(src).expect("scannable");
+        assert_eq!(slots.len(), 3);
+        assert_eq!(slots[0].key, "2:0");
+        assert_eq!(slots[0].number, Some(16.0));
+        assert_eq!(slots[1].key, "2:1");
+        assert_eq!(slots[1].string.as_deref(), Some("row"));
+        assert_eq!(slots[2].key, "2:2");
+        assert_eq!(slots[2].string.as_deref(), Some("hi"));
+    }
+
+    #[test]
+    fn extractor_skips_expr_and_builder_attrs() {
+        let src = "fn p() {\n view! { <Group element={group().x(x)} on_click={cb} count={n + 1} r={12.0}></Group> }\n}";
+        let slots = extract_view_literals(src).expect("scannable");
+        assert_eq!(slots.len(), 1);
+        assert_eq!(slots[0].number, Some(12.0));
+    }
+
+    #[test]
+    fn extractor_rejects_plain_ints_like_the_macro() {
+        // `weight=500` lexes as LitInt: the macro slots nothing, so the
+        // extractor must count nothing either (else slot ordinals desync).
+        let src = "fn p() {\n view! { <Group weight={500} gap={16.0}></Group> }\n}";
+        let slots = extract_view_literals(src).expect("scannable");
+        assert_eq!(slots.len(), 1);
+        assert_eq!(slots[0].number, Some(16.0));
+    }
+
+    #[test]
+    fn extractor_bails_on_nested_view() {
+        let src = "fn p() {\n view! { <Group>{view! { <Text>\"x\"</Text> }}</Group> }\n}";
+        assert!(extract_view_literals(src).is_none());
     }
 
     #[test]
@@ -515,7 +782,7 @@ mod tests {
         let old = "fn p() {\n view! { <Group><Text>\"a — b\"</Text></Group> }\n}";
         let new = "fn p() {\n view! { <Group><Text>\"a — c\"</Text></Group> }\n}";
         assert_eq!(classify_edit(old, new), EditKind::TemplateOnly);
-        let slots = extract_view_literals(new);
+        let slots = extract_view_literals(new).expect("scannable");
         assert_eq!(slots.len(), 1);
         assert_eq!(slots[0].string.as_deref(), Some("a — c"));
         // Multibyte outside any macro body is equally safe.
@@ -539,6 +806,9 @@ mod tests {
         assert_eq!(n, 2);
         assert_eq!(tpl_string("9:0", "dflt"), "fresh");
         assert_eq!(tpl_f32("9:1", 1.5), 2.5);
+        // Types stay `&'static str`: the slot is assignable where the literal was.
+        let s: &'static str = tpl_string("9:0", "dflt");
+        assert_eq!(s, "fresh");
         clear_template_values();
         assert_eq!(tpl_string("9:0", "dflt"), "dflt");
     }
@@ -554,9 +824,9 @@ mod tests {
         }];
         let (resolved, unresolved) = resolve_slot_keys("view.rs", &slots);
         assert_eq!(unresolved, 0);
-        assert_eq!(resolved.len(), 1);
-        assert_eq!(resolved[0].0, "examples/text_smooth/view.rs:10:0");
-        assert_eq!(resolved[0].1, "new");
+        assert_eq!(resolved.strings.len(), 1);
+        assert_eq!(resolved.strings[0].0, "examples/text_smooth/view.rs:10:0");
+        assert_eq!(resolved.strings[0].1, "new");
         clear_view_templates();
         clear_template_values();
     }

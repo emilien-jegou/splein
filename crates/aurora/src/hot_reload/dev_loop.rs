@@ -207,11 +207,11 @@ pub struct DevLoop {
     file_snapshots: std::collections::HashMap<PathBuf, String>,
     /// Classification of the most recent observed `.rs` save, if any.
     last_edit_kind: Option<crate::hot_reload::template::EditKind>,
-    /// Template fast-path patch awaiting application: `(key, value)` pairs the
-    /// extension applies via `apply_template_delta`, then reloads from the
-    /// *existing* factory with no rebuild. Set when a `TemplateOnly` save
-    /// fully resolves against registered shapes; `None` means rebuild as usual.
-    pending_fast: Option<Vec<(String, String)>>,
+    /// Template fast-path patch awaiting application: resolved string + float
+    /// slots the extension applies via `apply_template_delta`, then reloads
+    /// from the *existing* factory with no rebuild. Set when a `TemplateOnly`
+    /// save fully resolves against registered shapes; `None` means rebuild.
+    pending_fast: Option<crate::hot_reload::template::ResolvedSlots>,
     /// `.rs` files the last watcher hit touched (for fast-path extraction).
     last_changed_rs: Vec<PathBuf>,
 }
@@ -261,7 +261,9 @@ impl DevLoop {
     ///
     /// The extension applies it (`apply_template_delta`) and re-runs the
     /// existing factory — no cargo, no dlopen. Consumed once.
-    pub fn take_pending_fast(&mut self) -> Option<Vec<(String, String)>> {
+    pub fn take_pending_fast(
+        &mut self,
+    ) -> Option<crate::hot_reload::template::ResolvedSlots> {
         self.pending_fast.take()
     }
 
@@ -508,7 +510,7 @@ impl DevLoop {
     /// slots, unresolvable keys — returns `false` and the caller rebuilds.
     fn try_template_fast_path(&mut self) -> bool {
         use crate::hot_reload::template::{
-            extract_view_literals, resolve_slot_keys, EditKind,
+            extract_view_literals, resolve_slot_keys, EditKind, ResolvedSlots,
         };
         if self.last_edit_kind != Some(EditKind::TemplateOnly) {
             return false;
@@ -516,12 +518,21 @@ impl DevLoop {
         if self.last_changed_rs.is_empty() {
             return false;
         }
-        let mut all: Vec<(String, String)> = Vec::new();
+        let mut all = ResolvedSlots {
+            strings: Vec::new(),
+            numbers: Vec::new(),
+        };
         for path in std::mem::take(&mut self.last_changed_rs) {
             let Ok(text) = std::fs::read_to_string(&path) else {
                 return false;
             };
-            let slots = extract_view_literals(&text);
+            let Some(slots) = extract_view_literals(&text) else {
+                tracing::info!(
+                    "aurora: hot-reload template fast path miss (unscannable view in {}); rebuilding",
+                    path.display()
+                );
+                return false;
+            };
             if slots.is_empty() {
                 return false;
             }
@@ -530,7 +541,9 @@ impl DevLoop {
                 .map(|s| s.to_string_lossy().into_owned())
                 .unwrap_or_default();
             let (resolved, unresolved) = resolve_slot_keys(&suffix, &slots);
-            if unresolved > 0 || resolved.is_empty() {
+            if unresolved > 0
+                || (resolved.strings.is_empty() && resolved.numbers.is_empty())
+            {
                 tracing::info!(
                     "aurora: hot-reload template fast path miss ({} unresolved in {}); rebuilding",
                     unresolved,
@@ -538,14 +551,16 @@ impl DevLoop {
                 );
                 return false;
             }
-            all.extend(resolved);
+            all.strings.extend(resolved.strings);
+            all.numbers.extend(resolved.numbers);
         }
-        if all.is_empty() {
+        if all.strings.is_empty() && all.numbers.is_empty() {
             return false;
         }
         tracing::info!(
-            "aurora: hot-reload template fast path ({} slots, no build)",
-            all.len()
+            "aurora: hot-reload template fast path ({} str + {} f32 slots, no build)",
+            all.strings.len(),
+            all.numbers.len()
         );
         self.pending_fast = Some(all);
         true

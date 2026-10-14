@@ -58,8 +58,34 @@ pub(crate) fn attr_method(key: &str) -> String {
     }
 }
 
-fn attr_value_tokens(attr: &KeyedAttribute) -> TokenStream2 {
-    match &attr.possible_value {
+/// Wraps a lone literal attr value in a template slot when it is exactly one
+/// string or float literal (braced `{12.0}` or bare `"lit"` / `12.0` forms as
+/// emitted by [`attr_value_tokens`]); anything else passes through untouched.
+///
+/// Slot keys (`{file}:{line}:{idx}`) count in expansion order, mirroring the
+/// textual extractor's source order. Only plain literals slot — `{expr}`
+/// blocks, closures, and builder chains always take the rebuild path.
+pub(crate) fn slot_literal_value(val: TokenStream2, flow: &FlowTables) -> TokenStream2 {
+    if let Ok(s) = syn::parse2::<syn::LitStr>(val.clone()) {
+        let idx = flow.slots.get();
+        flow.slots.set(idx + 1);
+        return quote! { ::aurora::hot_reload::template::tpl_string(::std::concat!(::std::file!(), ":", ::std::line!(), ":", #idx), #s) };
+    }
+    if let Ok(f) = syn::parse2::<syn::LitFloat>(val.clone()) {
+        // Mirror the textual extractor's float rule (lone dotted token):
+        // exotic reprs stay on the rebuild path rather than risking a silent
+        // slot-order desync between the two counters.
+        let repr = f.to_string();
+        if repr.contains('.') {
+            let idx = flow.slots.get();
+            flow.slots.set(idx + 1);
+            return quote! { ::aurora::hot_reload::template::tpl_f32(::std::concat!(::std::file!(), ":", ::std::line!(), ":", #idx), #f) };
+        }
+    }
+    val
+}
+
+fn attr_value_tokens(attr: &KeyedAttribute) -> TokenStream2 {    match &attr.possible_value {
         KeyedAttributeValue::Binding(_) => {
             // `attr(args)` closure-arg form: not meaningful for Aurora props.
             quote! { ::std::compile_error!("view!: `attr(...)` closure args are not supported; pass a value") }
@@ -267,7 +293,7 @@ fn child_expr(node: &ViewNode, flow: &FlowTables) -> syn::Result<TokenStream2> {
     }
 }
 
-fn apply_attrs(base: TokenStream2, el: &Element) -> syn::Result<TokenStream2> {
+fn apply_attrs(base: TokenStream2, el: &Element, flow: &FlowTables) -> syn::Result<TokenStream2> {
     let mut out = base;
     for a in el.attributes() {
         match a {
@@ -281,6 +307,7 @@ fn apply_attrs(base: TokenStream2, el: &Element) -> syn::Result<TokenStream2> {
                 let key = node_name_string(&attr.key);
                 let method = format_ident!("{}", attr_method(&key));
                 let val = attr_value_tokens(&attr.clone());
+                let val = slot_literal_value(val, flow);
                 out = quote! { #out.#method(#val) };
             }
         }
@@ -315,7 +342,7 @@ pub(crate) fn element_expr(el: &Element, flow: &FlowTables) -> syn::Result<Token
         // take no children (native error if given any, as before).
         if tag == "Group" {
             let ctor = primitive_ctor(&tag).unwrap();
-            let mut out = apply_attrs(ctor, el)?;
+            let mut out = apply_attrs(ctor, el, flow)?;
             if !el.children.is_empty() {
                 let kids = children_segments_vec(&el.children, flow)?;
                 out = quote! { #out.child_segments(#kids) };
@@ -323,7 +350,7 @@ pub(crate) fn element_expr(el: &Element, flow: &FlowTables) -> syn::Result<Token
             return Ok(out);
         }
         let ctor = primitive_ctor(&tag).unwrap();
-        let mut out = apply_attrs(ctor, el)?;
+        let mut out = apply_attrs(ctor, el, flow)?;
         if !el.children.is_empty() {
             let kids = children_vec(&el.children, flow)?;
             out = quote! { #out.children(#kids) };
@@ -352,6 +379,7 @@ pub(crate) fn element_expr(el: &Element, flow: &FlowTables) -> syn::Result<Token
                 }
                 let method = format_ident!("{}", attr_method(&key));
                 let val = attr_value_tokens(&attr.clone());
+                let val = slot_literal_value(val, flow);
                 chain = quote! { #chain.#method(#val) };
             }
         }
@@ -400,6 +428,7 @@ fn text_expr(el: &Element, flow: &FlowTables) -> syn::Result<TokenStream2> {
                     }
                 } else {
                     let method = format_ident!("{}", attr_method(&key));
+                    let val = slot_literal_value(val, flow);
                     modifiers.push(quote! { .#method(#val) });
                 }
             }
