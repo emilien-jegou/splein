@@ -3,7 +3,7 @@
 use crate::foundation::{Point, Radius, ResolvedRect, Transform};
 use crate::scene::command::{LayerId, SceneCommand};
 use smallvec::SmallVec;
-use std::rc::Rc;
+use std::sync::Arc;
 
 /// A clip rectangle in absolute screen space, with the radius it was declared with.
 ///
@@ -45,7 +45,7 @@ pub struct SceneChunk {
     /// instead of deep-cloning every command each frame. Mutated only while
     /// compiling a fresh chunk (uniquely owned then); `make_mut` keeps a
     /// correct copy-on-write fallback if that ever changes.
-    pub commands: Rc<Vec<SceneCommand>>,
+    pub commands: Arc<Vec<SceneCommand>>,
     pub layer_id: Option<LayerId>,
     /// Ancestor clips baked into this chunk's command list, kept for cache validation.
     pub inherited_clips: InheritedClips,
@@ -65,7 +65,7 @@ impl SceneChunk {
         Self {
             bounds,
             abs_origin,
-            commands: Rc::new(Vec::new()),
+            commands: Arc::new(Vec::new()),
             layer_id: None,
             inherited_clips: InheritedClips::new(),
             placement: Transform::IDENTITY,
@@ -82,7 +82,7 @@ impl SceneChunk {
         Self {
             bounds,
             abs_origin,
-            commands: Rc::new(commands),
+            commands: Arc::new(commands),
             layer_id: None,
             inherited_clips: InheritedClips::new(),
             placement: Transform::IDENTITY,
@@ -94,7 +94,7 @@ impl SceneChunk {
     pub fn with_layer(bounds: ResolvedRect, abs_origin: Point, layer_id: LayerId) -> Self {        Self {
             bounds,
             abs_origin,
-            commands: Rc::new(Vec::new()),
+            commands: Arc::new(Vec::new()),
             layer_id: Some(layer_id),
             inherited_clips: InheritedClips::new(),
             placement: Transform::IDENTITY,
@@ -112,7 +112,7 @@ impl SceneChunk {
     /// it for an unchanged chunk.
     pub fn rebase_to_local(&mut self) {
         let (ox, oy) = (self.abs_origin.x, self.abs_origin.y);
-        for cmd in Rc::make_mut(&mut self.commands).iter_mut() {
+        for cmd in Arc::make_mut(&mut self.commands).iter_mut() {
             if let SceneCommand::PushOffset(p) = cmd {
                 p.x -= ox;
                 p.y -= oy;
@@ -124,7 +124,7 @@ impl SceneChunk {
 
     #[inline(always)]
     pub fn push(&mut self, cmd: SceneCommand) {
-        Rc::make_mut(&mut self.commands).push(cmd);
+        Arc::make_mut(&mut self.commands).push(cmd);
         // Any mutation voids the memoized hash (recomputed at finalization).
         self.content_hash = None;
     }

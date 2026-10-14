@@ -126,9 +126,12 @@ fn main() -> ExitCode {
                 Ok(path) => path,
                 Err(code) => return code,
             };
-            let host = match resolve_image(host, "libaurora_devkit_bin.so") {
-                Ok(path) => path,
-                Err(code) => return code,
+            let host = match host {
+                Some(path) => match resolve_image(Some(path), "libaurora_devkit_bin.so") {
+                    Ok(path) => path,
+                    Err(code) => return code,
+                },
+                None => shared.clone(),
             };
             run_host(
                 &shared,
@@ -149,9 +152,12 @@ fn main() -> ExitCode {
                 Ok(path) => path,
                 Err(code) => return code,
             };
-            let host = match resolve_image(host, "libaurora_devkit_bin.so") {
-                Ok(path) => path,
-                Err(code) => return code,
+            let host = match host {
+                Some(path) => match resolve_image(Some(path), "libaurora_devkit_bin.so") {
+                    Ok(path) => path,
+                    Err(code) => return code,
+                },
+                None => shared.clone(),
             };
             run_selftest(&shared, &host, &ui)
         }

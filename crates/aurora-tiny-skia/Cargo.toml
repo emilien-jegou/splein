@@ -7,9 +7,10 @@ description = "Tiny-Skia CPU rasterization backend for the Aurora UI engine"
 license = "GPL-3.0"
 
 [features]
-default = ["svg-runtime"]
+default = ["svg-runtime", "parallel"]
 tracy = ["dep:tracy-client"]
 svg-runtime = ["dep:resvg", "aurora/svg-runtime"]
+parallel = ["dep:rayon"]
 
 [dependencies]
 aurora = { path = "../aurora", version = "0.0.1-rc.1" }
@@ -23,6 +24,7 @@ bytemuck = { version = "1.25.2", features = ["derive"] }
 bon = "3.3"
 tracing = "0.1"
 tracy-client = { version = "0.19", features = ["enable"], optional = true }
+rayon = { version = "1", optional = true }
 
 [dev-dependencies]
 ntest = "0.9"

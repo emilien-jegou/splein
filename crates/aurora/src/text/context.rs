@@ -129,13 +129,14 @@ impl TextContext {
 
     /// Loads TrueType/OpenType font bytes into context and retains binary handle for GPU engines.
     pub fn load_font(&self, bytes: &[u8]) {
+        let blob = Arc::new(bytes.to_vec());
         let index = {
             let mut blobs = self.font_blobs.lock().unwrap();
             let index = blobs.len();
-            blobs.push(Arc::new(bytes.to_vec()));
+            blobs.push(Arc::clone(&blob));
             index
         };
-        self.engine.load_font(bytes, index);
+        self.engine.load_font_blob(blob, index);
     }
 
     /// Loads a font file from disk into the database for lazy system registration.

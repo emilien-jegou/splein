@@ -74,7 +74,7 @@ impl Scene {
                 continue;
             }
             let mut rc = chunk.commands;
-            if let Some(buf) = std::rc::Rc::get_mut(&mut rc) {
+            if let Some(buf) = std::sync::Arc::get_mut(&mut rc) {
                 if self.cmd_pool.len() < 32 {
                     // Reclaim capacity only: the buffer still holds this
                     // frame's commands, so clear it — the next chunk must

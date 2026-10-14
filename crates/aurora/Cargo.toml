@@ -20,8 +20,8 @@ text-runtime = ["dep:parley", "dep:swash"]
 # Runtime SVG parsing (resvg/usvg). Off = VectorGraphic stub (dims only,
 # from_str errors). Pre-rasterized images (S2 #3) are the replacement.
 svg-runtime = ["dep:resvg"]
-# Winit windowing/event-loop layer. Off = headless Engine only (no windows).
 desktop = ["dep:winit"]
+parallel = ["dep:rayon"]
 
 [dependencies]
 parley = { version = "0.11", default-features = false, features = ["std"], optional = true }
@@ -48,12 +48,12 @@ tracing-tracy = { version = "0.12", features = ["enable"], optional = true }
 
 # Hot-reload: file watching + dynamic library code-swap (dev loop only).
 notify = "8"
+rayon = { version = "1", optional = true }
 libloading = "0.8"
 
 [dev-dependencies]
 ntest = "0.9"
 libc = "0.2"
-aurora-tiny-skia = { path = "../aurora-tiny-skia", version = "0.0.1-rc.1" }
 aurora-vello = { path = "../aurora-vello", version = "0.0.1-rc.1" }
 aurora-wgpu = { path = "../aurora-wgpu", version = "0.0.1-rc.1" }
 aurora-quad = { path = "../aurora-quad", version = "0.0.1-rc.1" }

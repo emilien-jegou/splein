@@ -18,6 +18,7 @@ pub struct CpuBackend {
     _context: Context<Arc<Window>>,
     surface: Surface<Arc<Window>, Arc<Window>>,
     renderer: TinySkiaRenderer,
+    resize_pending: bool,
 }
 
 impl CpuBackend {
@@ -41,6 +42,7 @@ impl CpuBackend {
             _context: context,
             surface,
             renderer,
+            resize_pending: true,
         })
     }
 }
@@ -52,6 +54,7 @@ impl Backend for CpuBackend {
             .surface
             .resize(NonZeroU32::new(w).unwrap(), NonZeroU32::new(h).unwrap());
         self.renderer.resize(width, height);
+        self.resize_pending = true;
     }
 
     fn tag(&self) -> &'static str {
@@ -76,6 +79,31 @@ impl Backend for CpuBackend {
         self.renderer.render_damage(frame.scene, &raster_damage)?;
         let raster = t_raster.elapsed();
 
+        if self.resize_pending {
+            self.resize_pending = false;
+            let t_present = Instant::now();
+            let buffer = self
+                .surface
+                .buffer_mut()
+                .map_err(|e| BackendError::surface(format!("buffer acquire: {e:?}")))?;
+            let (width, height) = (frame.surface.width, frame.surface.height);
+            let mut post = frame.post_process;
+            SurfacePresenter::present_viewport()
+                .pixmap(self.renderer.canvas())
+                .buffer(buffer)
+                .active_w(width)
+                .active_h(height)
+                .post_process(move |dst, dmg, stride, h| {
+                    if let Some(pass) = post.as_mut() {
+                        pass.apply(dst, dmg, stride, h);
+                    }
+                })
+                .call();
+            return Ok(PresentReport {
+                raster,
+                present: t_present.elapsed(),
+            });
+        }
         let t_present = Instant::now();
         let buffer = self
             .surface

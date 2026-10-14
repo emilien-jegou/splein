@@ -48,6 +48,29 @@ fn box_blur_row_pass(src: &[u8], dst: &mut [u8], w: usize, h: usize, r: usize) {
     let window_size = (r * 2 + 1) as u32;
     let inv_fixed = ((1 << 16) + (window_size / 2)) / window_size;
 
+    #[cfg(feature = "parallel")]
+    if w > 0 && h > 0 && r > 0 && w * h >= 4096 {
+        use rayon::prelude::*;
+        (0..h).into_par_iter().for_each(|y| {
+            let mut acc = (src[y * w] as u32) * (r as u32 + 1);
+            for x in 0..r.min(w) {
+                acc += src[y * w + x] as u32;
+            }
+            for x in 0..w {
+                let add_x = (x + r).min(w - 1);
+                let sub_x = x.saturating_sub(r + 1);
+                acc += src[y * w + add_x] as u32;
+                acc -= src[y * w + sub_x] as u32;
+                let raw = dst.as_ptr() as usize;
+                unsafe {
+                    *(raw as *mut u8).add(y * w + x) =
+                        ((acc * inv_fixed + 0x8000) >> 16) as u8;
+                }
+            }
+        });
+        return;
+    }
+
     for y in 0..h {
         let row = y * w;
         let mut acc = (src[row] as u32) * (r as u32 + 1);
@@ -57,21 +80,64 @@ fn box_blur_row_pass(src: &[u8], dst: &mut [u8], w: usize, h: usize, r: usize) {
         }
 
         for x in 0..w {
-            // Window for x is [x-r, x+r]: entering is x+r, leaving is x-r-1.
-            // (x+r+1 / x-r shifts the kernel a pixel and miscounts edges.)
             let add_x = (x + r).min(w - 1);
             let sub_x = x.saturating_sub(r + 1);
 
             acc += src[row + add_x] as u32;
             acc -= src[row + sub_x] as u32;
 
-            // Round to nearest so solid input reaches 255 instead of
-            // truncating at 254 and leaving a 1-level seam step.
             dst[row + x] = ((acc * inv_fixed + 0x8000) >> 16) as u8;
         }
     }
 }
 
+fn box_blur_col_pass(src: &[u8], dst: &mut [u8], w: usize, h: usize, r: usize) {
+    let window_size = (r * 2 + 1) as u32;
+    let inv_fixed = ((1 << 16) + (window_size / 2)) / window_size;
+
+    #[cfg(feature = "parallel")]
+    if w > 1 && h > 0 && r > 0 && w * h >= 4096 {
+        use rayon::prelude::*;
+
+        let raw = dst.as_ptr() as usize;
+        (0..w).into_par_iter().for_each(|x| {
+            let mut acc = (src[x] as u32) * (r as u32 + 1);
+            for y in 0..r.min(h) {
+                acc += src[y * w + x] as u32;
+            }
+            for y in 0..h {
+                let add_y = (y + r).min(h - 1);
+                let sub_y = y.saturating_sub(r + 1);
+                acc += src[add_y * w + x] as u32;
+                acc -= src[sub_y * w + x] as u32;
+                let ptr = raw as *mut u8;
+                unsafe {
+                    *ptr.add(y * w + x) =
+                        ((acc * inv_fixed + 0x8000) >> 16) as u8;
+                }
+            }
+        });
+        return;
+    }
+
+    for x in 0..w {
+        let mut acc = (src[x] as u32) * (r as u32 + 1);
+        for y in 0..r.min(h) {
+            acc += src[y * w + x] as u32;
+        }
+        for y in 0..h {
+            let add_y = (y + r).min(h - 1);
+            let sub_y = y.saturating_sub(r + 1);
+            acc += src[add_y * w + x] as u32;
+            acc -= src[sub_y * w + x] as u32;
+            let raw = dst.as_ptr() as usize;
+                unsafe {
+                    *(raw as *mut u8).add(y * w + x) =
+                        ((acc * inv_fixed + 0x8000) >> 16) as u8;
+                }
+        }
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -158,30 +224,5 @@ mod tests {
         let src: Vec<u8> = (0..64).map(|i| (i * 4) as u8).collect();
         let out = blur_2d(&src, 8, 8, 0);
         assert_eq!(out, src);
-    }
-}
-
-fn box_blur_col_pass(src: &[u8], dst: &mut [u8], w: usize, h: usize, r: usize) {
-    let window_size = (r * 2 + 1) as u32;
-    let inv_fixed = ((1 << 16) + (window_size / 2)) / window_size;
-
-    for x in 0..w {
-        let mut acc = (src[x] as u32) * (r as u32 + 1);
-
-        for y in 0..r.min(h) {
-            acc += src[y * w + x] as u32;
-        }
-
-        for y in 0..h {
-            // Window for y is [y-r, y+r]: entering is y+r, leaving is y-r-1.
-            let add_y = (y + r).min(h - 1);
-            let sub_y = y.saturating_sub(r + 1);
-
-            acc += src[add_y * w + x] as u32;
-            acc -= src[sub_y * w + x] as u32;
-
-            // Round to nearest (see row pass).
-            dst[y * w + x] = ((acc * inv_fixed + 0x8000) >> 16) as u8;
-        }
     }
 }

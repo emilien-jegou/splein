@@ -3,7 +3,7 @@
 
 use aurora::foundation::{Appearance, Color, DamageRegion, Fill, Point, ResolvedRect};
 use aurora::scene::{Scene, SceneChunk, SceneCommand};
-use aurora_linebuffer::{FramebufferSink, LineBufferBackend, LineSink};
+use aurora_tiny_skia::{FramebufferSink, LineBufferBackend, LineSink};
 
 fn solid_rect_scene() -> Scene {
     let mut scene = Scene::new();

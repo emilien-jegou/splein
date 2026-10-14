@@ -42,8 +42,6 @@ fn ensure_built() {
         .arg("aurora-shared")
         .arg("-p")
         .arg("aurora-hot-ui")
-        .arg("-p")
-        .arg("aurora-devkit-bin")
         .status()
         .expect("cargo must run to build the hot-ui cdylib");
     assert!(

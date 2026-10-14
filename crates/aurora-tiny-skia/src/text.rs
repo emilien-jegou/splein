@@ -89,6 +89,31 @@ impl LineCompositeCache {
             cap: cap.max(1),
         }
     }
+    /// Rebounds the retained cache to a geometry-aware budget, evicting
+    /// oldest entries until it fits. Safe to call on a live cache (e.g.
+    /// from a backend resize): the family of keys is unchanged, only retained
+    /// bytes are trimmed.
+    pub fn set_cap(&mut self, cap: usize) {
+        let cap = cap.max(1);
+        self.cap = cap;
+        while self.bytes > self.cap || self.entries.len() > LINE_CACHE_MAX_ENTRIES {
+            let victim = self
+                .entries
+                .iter()
+                .take(64)
+                .min_by_key(|(_, e)| e.used)
+                .map(|(k, _)| *k);
+            match victim {
+                Some(k) => {
+                    if let Some(old) = self.entries.remove(&k) {
+                        self.bytes = self.bytes.saturating_sub(old.bytes);
+                    }
+                }
+                None => break,
+            }
+        }
+    }
+
 
     /// Marks a composited line most-recently-used and returns its pixmap.
     ///

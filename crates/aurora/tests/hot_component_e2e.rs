@@ -75,8 +75,6 @@ fn foreign_image_binds_sentinel_elsewhere() {
             .arg("aurora-shared")
             .arg("-p")
             .arg("aurora-hot-ui")
-            .arg("-p")
-            .arg("aurora-devkit-bin")
             .status()
             .expect("cargo must run to build the hot-ui cdylib");
         assert!(
@@ -110,7 +108,6 @@ fn dev_loop_cycles_and_handshake_agrees() {
         companion_packages: vec![
             "aurora-shared".to_string(),
             "aurora-hot-ui".to_string(),
-            "aurora-devkit-bin".to_string(),
         ],
     });
     await_library(

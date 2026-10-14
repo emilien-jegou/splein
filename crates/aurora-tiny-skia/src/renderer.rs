@@ -12,6 +12,10 @@ use aurora::foundation::DamageRegion;
 use aurora::render::error::BackendError;
 use aurora::scene::scene::Scene;
 use aurora::text::TextContext;
+use aurora::scene::SceneChunk;
+use aurora::foundation::ResolvedRect;
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 
 /// Software rasterizer driving scene chunks into CPU pixel buffers.
 pub struct TinySkiaRenderer {
@@ -49,6 +53,9 @@ impl TinySkiaRenderer {
     /// Reallocates persistent canvas while preserving shared bounds.
     pub fn resize(&mut self, width: u32, height: u32) {
         let (nw, nh) = (width.max(1), height.max(1));
+        // Keep retained text-line compositing bounded by one viewport-sized
+        // RGBA plane rather than the fixed 8 MiB legacy budget.
+        self.line_cache.set_cap(((nw as usize) * (nh as usize) * 4).clamp(256 * 1024, 8 << 20));
         if self.persistent_canvas.width() == nw && self.persistent_canvas.height() == nh {
             return;
         }
@@ -80,6 +87,158 @@ impl TinySkiaRenderer {
     /// Updates the typography shaper and glyph database handle.
     pub fn set_text_context(&mut self, text_ctx: TextContext) {
         self.text_ctx = text_ctx;
+    }
+
+    #[cfg(feature = "parallel")]
+    fn render_damage_parallel(
+        &mut self,
+        scene: &Scene,
+        tiles: &[ResolvedRect],
+        cw: u32,
+        ch: u32,
+    ) -> Result<(), BackendError> {
+        let text_ctx = self.text_ctx.clone();
+        // Snapshot the chunks a tile needs as owned values so Rayon can
+        // borrow them by value instead of sharing `Scene` (whose command
+        // stream uses Rc and is not Sync).
+        let tile_chunks: Vec<(ResolvedRect, Vec<SceneChunk>)> = tiles
+            .iter()
+            .map(|rect| {
+                let chunks = scene
+                    .chunks
+                    .iter()
+                    .filter(|chunk| chunk.bounds.overlaps(rect))
+                    .cloned()
+                    .collect();
+                (*rect, chunks)
+            })
+            .collect();
+        let workers = rayon::current_num_threads().clamp(1, tiles.len().max(1));
+        let results = tile_chunks
+            .par_iter()
+            .map_init(
+                || TileWorker {
+                    scratch: None,
+                    clip_stack: ClipStack::new(),
+                    tx_stack: Vec::with_capacity(32),
+                    opacity_stack: Vec::with_capacity(32),
+                    text_ctx: text_ctx.clone(),
+                    svg_cache: SvgCache::new(),
+                    image_cache: ImageCache::new(),
+                    shadow_rasterizer: ShadowRasterizer::new(),
+                    line_cache: LineCompositeCache::new(),
+                },
+                |worker, tile| -> Result<(u32, u32, u32, u32, tiny_skia::Pixmap), BackendError> {
+                    let rect = &tile.0;
+                    let (x, y) = (
+                        (rect.x.floor() as i32).max(0) as u32,
+                        (rect.y.floor() as i32).max(0) as u32,
+                    );
+                    let (r, b) = (
+                        (rect.right().ceil() as u32).min(cw),
+                        (rect.bottom().ceil() as u32).min(ch),
+                    );
+                    if r <= x || b <= y {
+                        return Ok((x, y, 0, 0, tiny_skia::Pixmap::new(1, 1).unwrap()));
+                    }
+                    let (rw, rh) = (r - x, b - y);
+                    let qx = tile_quantum(rw).max(1);
+                    let qy = tile_quantum(rh).max(1);
+                    let mut scratch = worker
+                        .scratch
+                        .take()
+                        .unwrap_or_else(|| tiny_skia::Pixmap::new(qx, qy).unwrap());
+                    if scratch.width() < qx || scratch.height() < qy {
+                        scratch = tiny_skia::Pixmap::new(qx, qy).unwrap();
+                    }
+                    scratch.fill(tiny_skia::Color::TRANSPARENT);
+                    worker.clip_stack.reset();
+                    worker.tx_stack.clear();
+                    worker.opacity_stack.clear();
+                    worker.tx_stack.push(tiny_skia::Transform::identity());
+                    worker.tx_stack.push(tiny_skia::Transform::from_translate(
+                        -(x as f32),
+                        -(y as f32),
+                    ));
+                    worker.tx_stack.pop();
+                    // Recompute transform stack in the same order as serial code.
+                    worker.tx_stack.clear();
+                    worker.opacity_stack.clear();
+                    worker.tx_stack.push(tiny_skia::Transform::from_translate(
+                        -(x as f32),
+                        -(y as f32),
+                    ));
+                    worker.opacity_stack.push(1.0);
+                    let mut ctx = CommandContext {
+                        clip_stack: &mut worker.clip_stack,
+                        text_ctx: &worker.text_ctx,
+                        svg_cache: &mut worker.svg_cache,
+                        image_cache: &mut worker.image_cache,
+                        shadow_rasterizer: &mut worker.shadow_rasterizer,
+                        tx_stack: &mut worker.tx_stack,
+                        opacity_stack: &mut worker.opacity_stack,
+                        line_cache: &mut worker.line_cache,
+                    };
+                    for chunk in &tile.1 {
+                        let base = *ctx.tx_stack.last().unwrap();
+                        for clip in chunk.inherited_clips.iter() {
+                            ctx.clip_stack.push(
+                                &clip.rect,
+                                clip.radius,
+                                base,
+                                rw,
+                                rh,
+                                scratch.width(),
+                                scratch.height(),
+                            );
+                        }
+                        let placed = base
+                            .pre_translate(chunk.abs_origin.x, chunk.abs_origin.y)
+                            .pre_concat(tiny_skia::Transform::from_row(
+                                chunk.placement.a,
+                                chunk.placement.b,
+                                chunk.placement.c,
+                                chunk.placement.d,
+                                chunk.placement.tx,
+                                chunk.placement.ty,
+                            ));
+                        ctx.tx_stack.push(placed);
+                        execute_commands(
+                            &chunk.commands,
+                            &mut scratch.as_mut(),
+                            &mut ctx,
+                            rw as f32,
+                            rh as f32,
+                        );
+                        ctx.tx_stack.pop();
+                        for _ in chunk.inherited_clips.iter() {
+                            ctx.clip_stack.pop();
+                        }
+                    }
+                    worker.tx_stack.pop();
+                    worker.clip_stack.reset();
+                    Ok((x, y, rw, rh, scratch))
+                },
+            )
+            .collect::<Result<Vec<_>, BackendError>>()?;
+
+        let dst = self.persistent_canvas.data_mut();
+        let cw = cw as usize;
+        for (x, y, rw, rh, scratch) in results {
+            if rw == 0 || rh == 0 {
+                continue;
+            }
+            let src = scratch.data();
+            let src_stride = scratch.width() as usize * 4;
+            let di_base = (y as usize) * cw * 4 + (x as usize) * 4;
+            for row in 0..rh as usize {
+                let si = row * src_stride;
+                let di = di_base + row * (cw * 4);
+                dst[di..di + (rw as usize) * 4]
+                    .copy_from_slice(&src[si..si + (rw as usize) * 4]);
+            }
+        }
+        Ok(())
     }
 
     /// Rasterizes damaged rectangles of the scene into the persistent canvas.
@@ -124,6 +283,12 @@ impl TinySkiaRenderer {
             } else {
                 tiles.push(shift.clip);
             }
+        }
+
+#[cfg(feature = "parallel")]
+        if tiles.rects().len() > 1 {
+            let tiles = tiles.rects().to_vec();
+            return self.render_damage_parallel(scene, &tiles, cw, ch);
         }
 
         for rect in tiles.rects() {
@@ -309,4 +474,18 @@ impl Default for TinySkiaRenderer {
 #[inline(always)]
 fn tile_quantum(n: u32) -> u32 {
     n.next_multiple_of(64).max(64)
+}
+
+
+#[cfg(feature = "parallel")]
+struct TileWorker {
+    scratch: Option<tiny_skia::Pixmap>,
+    clip_stack: ClipStack,
+    tx_stack: Vec<tiny_skia::Transform>,
+    opacity_stack: Vec<f32>,
+    text_ctx: TextContext,
+    svg_cache: SvgCache,
+    image_cache: ImageCache,
+    shadow_rasterizer: ShadowRasterizer,
+    line_cache: LineCompositeCache,
 }

@@ -91,9 +91,15 @@ impl ParleyEngine {
 
     /// Loads TrueType/OpenType font bytes and records the blob's family names.
     pub fn load_font(&self, bytes: &[u8], blob_index: usize) {
-        // One Blob instance per load: its id is recorded so shaped fonts
-        // resolve to this blob in O(1) without byte comparison.
-        let blob = Blob::from(bytes.to_vec());
+        self.load_font_blob(Arc::new(bytes.to_vec()), blob_index);
+    }
+
+    /// Loads a font from a shared byte buffer, retaining only that buffer in
+    /// the Parley collection. The same `Arc` can be shared by `TextContext`
+    /// so the font is not copied twice per load.
+    #[cfg(feature = "text-runtime")]
+    pub fn load_font_blob(&self, bytes: Arc<Vec<u8>>, blob_index: usize) {
+        let blob = Blob::new(bytes);
         let blob_id = blob.id();
         let families = {
             let mut fcx = self.font_ctx.lock().unwrap();
@@ -268,6 +274,12 @@ impl ParleyEngine {
     }
 
     pub fn load_font(&self, bytes: &[u8], blob_index: usize) {
+        drop(bytes);
+        self.load_font_blob(Arc::new(Vec::new()), blob_index);
+    }
+
+    /// Stub counterpart: retain the buffer slot without Parley collection state.
+    pub fn load_font_blob(&self, bytes: Arc<Vec<u8>>, blob_index: usize) {
         let mut map = self.blob_families.lock().unwrap();
         while map.len() <= blob_index {
             map.push(Vec::new());
@@ -281,6 +293,7 @@ impl ParleyEngine {
             h.finish()
         };
         self.blob_ids.lock().unwrap().insert(id, blob_index);
+        self.font_blobs.lock().unwrap().push(bytes);
     }
 
     pub(crate) fn resolve_family(

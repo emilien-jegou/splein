@@ -67,8 +67,6 @@
 !crates/aurora-shared/
 !crates/aurora-shared/**/*
 
-!crates/aurora-devkit-bin/
-!crates/aurora-devkit-bin/**/*
 
 !crates/hot-stub/
 !crates/hot-stub/**/*

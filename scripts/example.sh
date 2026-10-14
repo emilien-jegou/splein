@@ -46,15 +46,14 @@ esac
 #      the dylib links below when co-built (proven by same-hour with/without
 #      trials). Static links are immune, so it builds in isolation.
 #   2. Grouped `aurora-shared` + generative `aurora-hot-gen-ui` +
-#      `aurora-devkit-bin` (host): the dylib set resolves within a single unit
+#      shared image now owns host entry points.
 #      graph. `AURORA_HOT_EXAMPLE` selects which example the generative crate
 #      mounts; the loop itself rebuilds shared + UI with the same shape (see
 #      DevLoopConfig::companion_packages).
 # Everything is `--release`: runtime speed matters for interactive demos, and a
 # single profile everywhere keeps one unit family (the loop spawns release too).
 cargo build --release -p aurora-cli
-RUSTFLAGS="-C prefer-dynamic" cargo build --release -p aurora-shared
-AURORA_HOT_EXAMPLE="$NAME" RUSTFLAGS="-C prefer-dynamic" cargo build --release -p aurora-hot-gen-ui -p aurora-devkit-bin
+AURORA_HOT_EXAMPLE="$NAME" RUSTFLAGS="-C prefer-dynamic" cargo build --release -p aurora-shared -p aurora-hot-gen-ui
 
 if [ -n "$ENGINE" ]; then
     exec ./target/release/aurora hot --example "$NAME" --root "$ROOT" \

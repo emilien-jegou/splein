@@ -1,14 +1,5 @@
-// Hot-reload host loop: window, engine, and component code-swap driver.
-//
-// Built as a `dylib` linking only `aurora-shared`, so it shares the process's one aurora
-// instance with every UI cdylib. Exports a single C-compatible entry point the thin
-// `aurora` launcher calls; everything else (event loop, backends, reload extension) is
-// ordinary aurora API resolving through the shared image.
-//
-// All arguments cross as primitives and borrowed C strings (read during the call), so no
-// shared struct layout is required between stub and host beyond this signature.
-
-extern crate aurora_shared as aurora;
+// Hot-reload host loop moved into aurora-shared so the shared image also owns devkit entry points.
+// (Originally crates/aurora-devkit-bin; kept here to remove a second dylib boundary.)
 
 use aurora::hot_reload::{
     blocking_hot_build, ComponentReloadExtension, DevLoopConfig, DylibReloader, HotTitleFn,
@@ -23,9 +14,6 @@ fn arg<'a>(ptr: *const c_char) -> &'a str {
     unsafe { CStr::from_ptr(ptr).to_str().unwrap_or("") }
 }
 
-/// Maps a user-supplied engine name to a [`RenderBackend`]. Same accepted names
-/// as the release examples: `tiny-skia`/`skia`/`cpu`, `vello`/`gpu`, `vello-cpu`,
-/// `wgpu`. Anything else (including empty) selects the TinySkia default.
 fn parse_engine_name(raw: &str) -> RenderBackend {
     match raw.to_lowercase().replace('_', "-").as_str() {
         "tiny-skia" | "tinyskia" | "skia" | "cpu" => RenderBackend::TinySkia,
@@ -36,16 +24,6 @@ fn parse_engine_name(raw: &str) -> RenderBackend {
     }
 }
 
-/// Runs the hot-reload host: builds the first UI image, opens the window at
-/// its declared chrome, and drives the watch → rebuild → swap loop until
-/// exit. Never returns until the window closes.
-///
-/// Load-first boot: the canonical build runs synchronously *before* the
-/// window exists, the fresh image's `aurora_hot_window` / `aurora_hot_title`
-/// symbols size and title the window up front — so it opens once at final
-/// chrome, never popping from a boot default. A failed boot build exits loud
-/// with the stderr tail (no UI exists to show a placeholder in). `engine`
-/// selects the raster backend (see `parse_engine_name`).
 #[no_mangle]
 pub extern "Rust" fn devkit_run(
     package: *const c_char,
@@ -57,26 +35,17 @@ pub extern "Rust" fn devkit_run(
     let debugger = aurora::app::VisualDebugger::new();
     let example_raw = arg(example);
     let example = (!example_raw.is_empty()).then(|| example_raw.to_string());
-    // The shared image co-builds with the UI in the same unit graph (see
-    // DevLoopConfig::companion_packages). The UI package is the generative
-    // `aurora-hot-gen-ui` crate (`--example <name>` selects the mounted
-    // example); shared is the constant companion.
     let package_raw = arg(package);
     let root = std::path::PathBuf::from(arg(workspace_root));
     let loop_config = || DevLoopConfig {
         package: package_raw.to_string(),
         example: example.clone(),
         workspace_root: root.clone(),
-        // Generative mode watches the example folder itself (its
-        // view.rs/hot.rs are the live sources); legacy mode keeps
-        // the package-src default probing.
         watch_dir: example.as_deref().map(|name| root.join("examples").join(name)),
         lib_path: None,
         auto_build: true,
         companion_packages: vec!["aurora-shared".to_string(), package_raw.to_string()],
     };
-    // Blocking first build: the window cannot be sized until the image
-    // exists. Same canonical command the loop respawns (one unit family).
     let build_log = std::env::temp_dir().join(format!("aurora-hot-boot-{}.log", std::process::id()));
     if let Err(tail) = blocking_hot_build(&loop_config(), &build_log) {
         eprintln!("aurora: hot-reload boot build failed; log: {}", build_log.display());
@@ -85,26 +54,20 @@ pub extern "Rust" fn devkit_run(
         }
         std::process::exit(1);
     }
-    // Read the declared chrome out of the fresh image, then drop the handle:
-    // the loop re-loads the same image moments later through its own reloader.
     let (info, title) = read_boot_chrome(&loop_config());
     let ext = ComponentReloadExtension::new(loop_config());
     let backend = parse_engine_name(arg(engine));
-    // Final chrome up front: created once, visible, at the declared size.
     let mut config = aurora::app::App::config()
         .title(title)
         .size(info.width.max(1), info.height.max(1))
-        // Without a loaded font no text node can shape: hot UI text ("Hello",
-        // counters, placeholders) would mount invisibly. Same Inter variable font
-        // the examples bundle; baked in at compile time, no extra crate needed.
         .font("Inter", include_bytes!("../../aurora/assets/inter-var.ttf"))
         .background(Color::hex(info.background))
         .backend(backend);
     config = match backend {
-        RenderBackend::TinySkia => config.backend_factory(aurora_shared::tiny_skia::create_backend),
-        RenderBackend::Vello => config.backend_factory(aurora_shared::vello::create_backend),
-        RenderBackend::VelloCpu => config.backend_factory(aurora_shared::vello::create_cpu_backend),
-        RenderBackend::Wgpu => config.backend_factory(aurora_shared::wgpu::create_backend),
+        RenderBackend::TinySkia => config.backend_factory(crate::tiny_skia::create_backend),
+        RenderBackend::Vello => config.backend_factory(crate::vello::create_backend),
+        RenderBackend::VelloCpu => config.backend_factory(crate::vello::create_cpu_backend),
+        RenderBackend::Wgpu => config.backend_factory(crate::wgpu::create_backend),
     };
     config
         .extension(debugger)
@@ -112,7 +75,6 @@ pub extern "Rust" fn devkit_run(
         .run(placeholder);
 }
 
-/// Shown until the first UI library finishes loading.
 fn placeholder() -> impl IntoElement {
     group()
         .width(400.0)
@@ -120,9 +82,6 @@ fn placeholder() -> impl IntoElement {
         .children([text("building hot-ui…").size(16.0)])
 }
 
-/// Reads the window chrome the fresh boot image declares. Version-handshake
-/// first (a skewed image must never size the window); window symbols are
-/// optional (predating images fall back to defaults, same as in-loop).
 fn read_boot_chrome(config: &DevLoopConfig) -> (HotWindowInfo, String) {
     let fallback = (HotWindowInfo::fallback(), "Aurora Hot Reload".to_string());
     let mut loader = DylibReloader::new(config.lib_path());
@@ -155,16 +114,6 @@ fn read_boot_chrome(config: &DevLoopConfig) -> (HotWindowInfo, String) {
     (info, title)
 }
 
-/// Headless self-test: mount, click, swap entry points, rebuild, verify — entirely inside
-/// the shared instance (no window, no event loop).
-///
-/// The stub resolves the UI's entry points and forwards them as raw pointers (it owns the
-/// dlopen; this side must not touch libloading, keeping its dependency set to exactly
-/// one crate). Returns 0 when every check passes, 1 otherwise, with diagnostics on
-/// stderr. Never unwinds across the boundary: the whole body runs under `catch_unwind`.
-///
-/// Checks: component scopes tracked, counter mounts, tap lands in dylib hook state,
-/// re-resolved entry points rebuild with taps preserved and a clean report.
 #[no_mangle]
 pub extern "Rust" fn devkit_selftest(version_fn: usize, root_fn: usize) -> i32 {
     let outcome = std::panic::catch_unwind(|| selftest_body(version_fn, root_fn));
@@ -194,8 +143,6 @@ fn selftest_body(version_fn: usize, root_fn: usize) -> i32 {
     use std::cell::{Cell, RefCell};
     use std::rc::Rc;
 
-    // SAFETY: the stub forwards pointers resolved from the loaded UI image, same
-    // toolchain both sides (the loop's documented contract).
     let version_fn: ComponentVersionFn = unsafe { std::mem::transmute(version_fn) };
     let root_fn: ComponentRootFn = unsafe { std::mem::transmute(root_fn) };
     let run = || -> Result<(), i32> {
@@ -226,7 +173,6 @@ fn selftest_body(version_fn: usize, root_fn: usize) -> i32 {
             engine.hot_reload().registry().contains("hot_ui::Counter"),
             "dylib component scopes tracked",
         )?;
-        // NOTE: tracks the demo source (`hero` fill in aurora-hot-ui); update together.
         let hero_fill = engine.with_arena(|arena, _| {
             let key: aurora::foundation::Key = "hero".into();
             arena
@@ -246,7 +192,6 @@ fn selftest_body(version_fn: usize, root_fn: usize) -> i32 {
             "counter mounts at base height",
         )?;
 
-        // Click the counter card.
         let (x, y) = engine
             .rect("counter")
             .map(|r| (r.x + r.width / 2.0, r.y + r.height / 2.0))
@@ -263,7 +208,6 @@ fn selftest_body(version_fn: usize, root_fn: usize) -> i32 {
             "tap lands in dylib hook state",
         )?;
 
-        // Swap entry points (stands in for a rebuilt library) and rebuild publicly.
         current.set(Some(root_fn));
         engine.queue_full_reload();
         engine.advance(1.0 / 60.0);
@@ -277,11 +221,6 @@ fn selftest_body(version_fn: usize, root_fn: usize) -> i32 {
         check(stats.reloads_total == 1, "exactly one reload recorded")?;
         check(stats.last_error.is_none(), "no reload error recorded")?;
 
-        // A dylib panic must unwind catchably across the boundary, never abort the
-        // process: calling the entry outside any hook scope panics inside dylib code
-        // ("hook called outside a component body"). If personalities disagree, this
-        // kills the process instead of returning Err — that outcome fails loudly here
-        // rather than in production. The payload must also survive as data.
         let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| root_fn()));
         check(outcome.is_err(), "unscoped entry call panics")?;
         let msg = match outcome {

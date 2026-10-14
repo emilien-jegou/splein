@@ -18,12 +18,12 @@ use aurora::foundation::DamageRegion;
 use aurora::render::error::BackendError;
 use aurora::scene::scene::Scene;
 use aurora::text::TextContext;
-use aurora_tiny_skia::clip::ClipStack;
-use aurora_tiny_skia::command::{execute_commands, CommandContext};
-use aurora_tiny_skia::image::ImageCache;
-use aurora_tiny_skia::shadow::ShadowRasterizer;
-use aurora_tiny_skia::svg::SvgCache;
-use aurora_tiny_skia::text::LineCompositeCache;
+use crate::clip::ClipStack;
+use crate::command::{execute_commands, CommandContext};
+use crate::image::ImageCache;
+use crate::shadow::ShadowRasterizer;
+use crate::svg::SvgCache;
+use crate::text::LineCompositeCache;
 pub use sink::{FramebufferSink, LineSink};
 use tiny_skia::{Pixmap, Transform as SkiaTransform};
 

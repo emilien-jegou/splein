@@ -7,6 +7,7 @@ pub mod clip;
 pub mod command;
 pub mod cpu_backend;
 pub mod image;
+pub mod linebuffer;
 pub mod path;
 pub mod presenter;
 pub mod raster;
@@ -22,6 +23,7 @@ pub use cpu_backend::CpuBackend;
 pub use raster::{HeadlessFrame, HeadlessRaster};
 pub use renderer::TinySkiaRenderer;
 pub use text::{render_text, LineCompositeCache, TextRenderParams};
+pub use linebuffer::{FramebufferSink, LineBufferBackend, LineSink};
 
 use std::sync::Arc;
 use winit::window::Window;
