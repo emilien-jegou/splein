@@ -185,11 +185,7 @@ pub fn Row(index: usize, spec: RowSpec) -> impl IntoElement {
             }}
             on:drag-end={{
                 let drag = drag.clone();
-                let settle = settle;
-                let settling = settling;
-                let displayed = displayed.clone();
                 let flip = flip_sig;
-                let follow_handle = follow_handle.clone();
                 move |info: &DragInfo| {
                     // Resolve the follow offset NOW, before reading anything.
                     // It only materializes in the post-layout phase: releasing
@@ -219,7 +215,6 @@ pub fn Row(index: usize, spec: RowSpec) -> impl IntoElement {
                 }
             }}
             on:pointer-up={{
-                let drag = drag.clone();
                 move |_: &PointerEvent| {
                     drag.held.set(None);
                     drag.want_centre.set(None);
