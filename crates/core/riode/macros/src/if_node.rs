@@ -281,6 +281,6 @@ pub fn expand(node: &IfNode) -> syn::Result<TokenStream2> {
         out = quote! { #out else { ::std::vec![] } };
     }
     Ok(quote! {
-        ::riode::dsl::ChildSegment::Dynamic(::std::rc::Rc::new(move || #out))
+        ::riode::internal::ChildSegment::Dynamic(::std::rc::Rc::new(move || #out))
     })
 }

@@ -8,7 +8,7 @@ use crate::foundation::{Fill, LayoutPresence, Shadow, Size, Transform};
 use crate::input::handlers::NodeHandlers;
 use crate::reactive::id::SubscriberId;
 use crate::reactive::observer::Observer;
-use crate::reactive::prop::DynamicProp;
+use crate::reactive::prop::Prop;
 use crate::reactive::ReactiveRuntime;
 use crate::tree::binding::{resolve_z_index, DynamicBindings, NodeBindings, PoseBindings};
 use crate::tree::SubscriberRouter;
@@ -27,7 +27,7 @@ pub fn reconcile_group(
 ) -> NodeId {
     let id = existing.unwrap_or_else(|| arena.insert(LayoutNode::default()));
 
-    // Evaluation node for context reads below: every DynamicProp::Context in
+    // Evaluation node for context reads below: every Prop::Context in
     // this declaration resolves against the retained ancestors of THIS node.
     // Restored on drop (regions nest: scheduler rebuilds reconcile children).
     let _eval_node = crate::reactive::context::enter_node(id, arena);
@@ -283,8 +283,8 @@ fn pose_bindings(def: &GroupDef) -> Option<PoseBindings> {
 /// updates agree by construction. Mirrors [`PoseBindings::compose`] exactly —
 /// same translate/rotate/scale order, same neutral-value skips.
 fn static_pose(def: &GroupDef) -> Option<Transform> {
-    let static_val = |p: &Option<DynamicProp<f32>>| match p {
-        Some(DynamicProp::Static(v)) => Some(*v),
+    let static_val = |p: &Option<Prop<f32>>| match p {
+        Some(Prop::Static(v)) => Some(*v),
         _ => None,
     };
     let x = static_val(&def.x);
@@ -389,8 +389,8 @@ impl ResolvedProps {
         );
 
         let shadow = match &def.shadow {
-            Some(DynamicProp::Static(s)) => Some(s.clone()),
-            Some(DynamicProp::Dynamic(_)) | Some(DynamicProp::Context(_)) => {
+            Some(Prop::Static(s)) => Some(s.clone()),
+            Some(Prop::Dynamic(_)) | Some(Prop::Context(_)) => {
                 evaluate_prop(&def.shadow, p_sub, runtime)
             }
             None => None,

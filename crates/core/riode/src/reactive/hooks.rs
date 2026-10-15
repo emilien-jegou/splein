@@ -660,7 +660,7 @@ macro_rules! use_signal {
 ///
 /// The closure reads signals with `.get()` and the runtime auto-tracks every read,
 /// so the derivation recomputes whenever any signal it touched changes. This is
-/// the named-handle counterpart to inline `DynamicProp` closures: use this when
+/// the named-handle counterpart to inline `Prop` closures: use this when
 /// you need to store the derivation in a struct, pass it as a prop, or share it
 /// across multiple binding sites.
 ///

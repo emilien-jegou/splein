@@ -60,7 +60,7 @@
 //! | [`signal`] / [`computed`] / [`effect`] | The three primitives |
 //! | [`runtime`] | [`ReactiveRuntime`]: the store, plus [`runtime::tick`] and [`runtime::run_post_layout`] frame drivers |
 //! | [`hooks`] | [`Cx`] + all `use_*` hooks + the `use_signal!` / `computed!` macros |
-//! | [`prop`] / [`readable`] | [`DynamicProp`]/[`IntoProp`], [`Readable`]/[`SignalRead`]: binding-facing adapters |
+//! | [`prop`] / [`readable`] | [`Prop`]/[`IntoProp`], [`Readable`]/[`SignalRead`]: binding-facing adapters |
 //! | [`ticker`] / [`mod@batch`] / [`ambient`] / [`observer`] / [`id`] | Plumbing: ticker registry, batching, scope guards, observer edges, id types |
 //!
 //! # Pitfalls
@@ -99,7 +99,7 @@ pub use hooks::{
 };
 pub use id::{SignalId, SubscriberId};
 pub use observer::Observer;
-pub use prop::{computed, DynamicProp, IntoProp, IntoPropValue, Prop, PropDefault};
+pub use prop::{computed, IntoProp, IntoPropValue, Prop, PropDefault};
 pub use readable::{Readable, SignalRead};
 pub use runtime::{run_post_layout, tick, PostLayoutId, ReactiveRuntime};
 pub use signal::Signal;

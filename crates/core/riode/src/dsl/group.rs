@@ -10,23 +10,23 @@ use crate::input::{
     ClickInfo, DragInfo, HandlerSet, HitTest, HoverInfo, KeyEvent, PointerEvent, Propagation,
     WheelInfo,
 };
-use crate::reactive::prop::{DynamicProp, IntoProp};
+use crate::reactive::prop::{Prop, IntoProp};
 use crate::reactive::readable::Readable;
 
 /// Declarative flex container builder with reactive properties and styling modifiers.
 #[derive(Clone)]
 pub struct GroupDef {
     pub key: Option<Key>,
-    pub width: Option<DynamicProp<Size>>,
-    pub height: Option<DynamicProp<Size>>,
-    pub fill: Option<DynamicProp<Option<Fill>>>,
-    pub opacity: Option<DynamicProp<f32>>,
-    pub transform: Option<DynamicProp<Transform>>,
-    pub x: Option<DynamicProp<f32>>,
-    pub y: Option<DynamicProp<f32>>,
-    pub scale: Option<DynamicProp<f32>>,
-    pub rotate_degrees: Option<DynamicProp<f32>>,
-    pub shadow: Option<DynamicProp<Shadow>>,
+    pub width: Option<Prop<Size>>,
+    pub height: Option<Prop<Size>>,
+    pub fill: Option<Prop<Option<Fill>>>,
+    pub opacity: Option<Prop<f32>>,
+    pub transform: Option<Prop<Transform>>,
+    pub x: Option<Prop<f32>>,
+    pub y: Option<Prop<f32>>,
+    pub scale: Option<Prop<f32>>,
+    pub rotate_degrees: Option<Prop<f32>>,
+    pub shadow: Option<Prop<Shadow>>,
     pub light_override: Option<LightEnvironment>,
     pub layout: LayoutConfig,
     pub margin: Margin,
@@ -44,7 +44,7 @@ pub struct GroupDef {
     /// Vertical scroll offset in logical px, bound to the `SCROLL` channel.
     /// Composed into the node's transform as a `(0, -offset)` translation:
     /// paint-class like x/y, so it never triggers layout.
-    pub scroll_offset: Option<DynamicProp<f32>>,
+    pub scroll_offset: Option<Prop<f32>>,
     pub anchor: Option<Anchor>,
     /// Optional width-to-height ratio, resolved by the layout engine.
     pub aspect_ratio: Option<f32>,
@@ -54,10 +54,10 @@ pub struct GroupDef {
     /// or derivation — a dragged row elevating above its siblings while held, for instance.
     /// Paint order (and therefore hit order) follows the retained style, so a change here
     /// repaints but never re-lays-out.
-    pub z_index: Option<DynamicProp<i32>>,
+    pub z_index: Option<Prop<i32>>,
     pub is_overlay: bool,
     pub has_layer: bool,
-    pub presence: Option<DynamicProp<LayoutPresence>>,
+    pub presence: Option<Prop<LayoutPresence>>,
     /// Handle bound to this node at reconciliation, when the caller wants to read its geometry.
     pub element_ref: Option<ElementRef>,
     /// Pointer interaction handlers, reconciled onto the node alongside its bindings.
@@ -152,10 +152,10 @@ impl GroupDef {
     pub fn fill<P: IntoProp<Fill>>(mut self, p: P) -> Self {
         let prop = p.into_prop();
         self.fill = Some(match prop {
-            DynamicProp::Static(v) => DynamicProp::Static(Some(v)),
-            DynamicProp::Dynamic(f) => DynamicProp::Dynamic(std::rc::Rc::new(move || Some(f()))),
+            Prop::Static(v) => Prop::Static(Some(v)),
+            Prop::Dynamic(f) => Prop::Dynamic(std::rc::Rc::new(move || Some(f()))),
             // Markers compose through `.map`, like any other staged transform.
-            DynamicProp::Context(m) => DynamicProp::Context(m.map(Some)),
+            Prop::Context(m) => Prop::Context(m.map(Some)),
         });
         self
     }
@@ -197,7 +197,7 @@ impl GroupDef {
     /// Composed through `Readable` so a caller may hand over either a `Signal` or a
     /// `Computed` without wrapping it first.
     pub fn rotate_degrees_from(mut self, source: impl Readable<f32> + 'static) -> Self {
-        self.rotate_degrees = Some(DynamicProp::Dynamic(Rc::new(move || source.read())));
+        self.rotate_degrees = Some(Prop::Dynamic(Rc::new(move || source.read())));
         self
     }
     /// Shadow from anything shadow-like: an elevation (`8.0`), an
@@ -362,13 +362,13 @@ impl GroupDef {
         self
     }
 
-    /// Whether any property reads context (a `DynamicProp::Context` anywhere
+    /// Whether any property reads context (a `Prop::Context` anywhere
     /// in the declaration). Reconcile uses it to place missing-provider
     /// guards; evaluation uses it to... nothing — reads resolve uniformly.
     pub fn has_context_reads(&self) -> bool {
-        use crate::reactive::prop::DynamicProp;
-        fn is_ctx<T>(p: &Option<DynamicProp<T>>) -> bool {
-            matches!(p, Some(DynamicProp::Context(_)))
+        use crate::reactive::prop::Prop;
+        fn is_ctx<T>(p: &Option<Prop<T>>) -> bool {
+            matches!(p, Some(Prop::Context(_)))
         }
         is_ctx(&self.width)
             || is_ctx(&self.height)
@@ -722,19 +722,19 @@ impl GroupDef {
     pub fn visible<P: IntoProp<bool>>(mut self, v: P) -> Self {
         let prop = v.into_prop();
         self.presence = Some(match prop {
-            DynamicProp::Static(on) => DynamicProp::Static(if on {
+            Prop::Static(on) => Prop::Static(if on {
                 LayoutPresence::Present
             } else {
                 LayoutPresence::Absent
             }),
-            DynamicProp::Dynamic(f) => DynamicProp::Dynamic(Rc::new(move || {
+            Prop::Dynamic(f) => Prop::Dynamic(Rc::new(move || {
                 if f() {
                     LayoutPresence::Present
                 } else {
                     LayoutPresence::Absent
                 }
             })),
-            DynamicProp::Context(m) => DynamicProp::Context(m.map(|on| {
+            Prop::Context(m) => Prop::Context(m.map(|on| {
                 if on {
                     LayoutPresence::Present
                 } else {

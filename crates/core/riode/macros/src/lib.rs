@@ -57,7 +57,7 @@ mod view;
 /// ```
 ///
 /// Without arguments the expansion is exactly as before (`::riode` paths, concrete
-/// `::riode::dsl::Element` return). With `scope`, the wrapper returns `impl IntoElement`
+/// `::riode::internal::Element` return). With `scope`, the wrapper returns `impl IntoElement`
 /// instead, resolved from whatever the caller imported.
 #[proc_macro_attribute]
 pub fn component(attr: TokenStream, item: TokenStream) -> TokenStream {
@@ -113,7 +113,7 @@ pub fn include_svg(tokens: TokenStream) -> TokenStream {
 
 /// Optional `scope = ::path::to::scope_fn` and/or `name = "identity"` arguments.
 ///
-/// Empty means the defaults (`::riode::dsl::component_scope` behavior and
+/// Empty means the defaults (`::riode::internal::component_scope` behavior and
 /// `module_path!()::Name` identity). `name` pins the stable hook identity explicitly, so
 /// a component keeps its state across file moves and renames — which is exactly what a
 /// hot-reload edit cycle does to paths. Anything else is a compile error naming itself.
@@ -228,7 +228,7 @@ fn expand(input: ItemFn, args: ScopeArgs) -> syn::Result<proc_macro2::TokenStrea
         wrapper_sig.output = syn::parse_quote!(-> impl IntoElement);
         scope_call = quote! { #path(|| #body_name(#(#arg_names),*)) };
     } else {
-        wrapper_sig.output = syn::parse_quote!(-> ::riode::dsl::Element);
+        wrapper_sig.output = syn::parse_quote!(-> ::riode::internal::Element);
         // Stable identity: module path + component name, so ordinal hooks
         // survive remounts and rebuilds while call order is unchanged.
         // Siblings disambiguate by child index; modules can't collide.
@@ -240,7 +240,7 @@ fn expand(input: ItemFn, args: ScopeArgs) -> syn::Result<proc_macro2::TokenStrea
                 ::std::concat!(::std::module_path!(), "::", ::std::stringify!(#name))
             },
         };
-        scope_call = quote! { ::riode::dsl::component_scope_named(
+        scope_call = quote! { ::riode::internal::component_scope_named(
             #identity,
             ::std::file!(),
             || #body_name(#(#arg_names),*)
@@ -264,10 +264,39 @@ fn expand(input: ItemFn, args: ScopeArgs) -> syn::Result<proc_macro2::TokenStrea
         props::expand_props(&input)?.unwrap_or_else(|| quote! {})
     };
 
+    // P11 — components callable from Rust as `Card::build(…)`. The wrapper `Card(…)`
+    // already lives in the value namespace; a *braced* struct `Card { … }` occupies only
+    // the type namespace (a unit struct would too and would collide, but a braced one has
+    // no value-namespace constructor), so `Card::build(…)` resolves through the type while
+    // `Card(…)` and the `<Card …/>` tag (→ `CardProps`) are untouched. The private field
+    // blocks `Card { … }` construction — `build`/the fn are the only doors. Skipped for
+    // custom-scope components (no Aurora element type to name) and generics.
+    let build_tokens = if custom_scope || !input.sig.generics.params.is_empty() {
+        quote! {}
+    } else {
+        let inputs = &sig.inputs;
+        quote! {
+            #[doc(hidden)]
+            #[allow(non_snake_case)]
+            #[allow(dead_code)]
+            #vis struct #name { _riode_build: () }
+
+            impl #name {
+                /// Rust-callable constructor — the same element as the `<#name …/>` tag
+                /// and as calling `#name(…)` directly. One widget, three call syntaxes.
+                #[allow(clippy::too_many_arguments)]
+                #vis fn build(#inputs) -> ::riode::internal::Element {
+                    #name(#(#arg_names),*)
+                }
+            }
+        }
+    };
+
     Ok(quote! {
         #body_fn
         #wrapper
         #props_tokens
+        #build_tokens
     })
 }
 

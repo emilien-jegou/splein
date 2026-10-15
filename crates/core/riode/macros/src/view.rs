@@ -17,13 +17,13 @@ use rstml::node::{
 type Element = NodeElement<Infallible>;
 type ViewNode = Node<Infallible>;
 
-/// Primitives that map to `::riode::dsl::<lower>()` builder constructors.
+/// Primitives that map to `::riode::internal::<lower>()` builder constructors.
 fn primitive_ctor(tag: &str) -> Option<TokenStream2> {
     match tag {
-        "Group" => Some(quote! { ::riode::dsl::group() }),
+        "Group" => Some(quote! { ::riode::internal::group() }),
         "Text" => None, // handled specially: content is a constructor arg
-        "Image" => Some(quote! { ::riode::dsl::image() }),
-        "Svg" => Some(quote! { ::riode::dsl::svg() }),
+        "Image" => Some(quote! { ::riode::internal::image() }),
+        "Svg" => Some(quote! { ::riode::internal::svg() }),
         "Custom" => None, // `custom()` needs a Primitive arg; require it via children? reject
         _ => None,
     }
@@ -248,8 +248,8 @@ pub(crate) fn children_vec(children: &[ViewNode], flow: &FlowTables) -> syn::Res
     // `{vec}` splice contributes siblings, never a wrapper node (F1).
     Ok(quote! {
         {
-            let mut __riode_kids: ::std::vec::Vec<::riode::dsl::Element> = ::std::vec::Vec::new();
-            #(::riode::dsl::IntoSplice::splice_into(#items, &mut __riode_kids);)*
+            let mut __riode_kids: ::std::vec::Vec<::riode::internal::Element> = ::std::vec::Vec::new();
+            #(::riode::internal::IntoSplice::splice_into(#items, &mut __riode_kids);)*
             __riode_kids
         }
     })
@@ -299,7 +299,7 @@ pub(crate) fn child_segment(node: &ViewNode, flow: &FlowTables) -> syn::Result<T
     let e = flow.splice(e)?;
     // `child_expr` yields a `Vec<Element>` per child; a static segment holds
     // that list directly, so a `{vec}` splice inside a `<Group>` flattens too.
-    Ok(quote! { ::riode::dsl::ChildSegment::Static(#e) })
+    Ok(quote! { ::riode::internal::ChildSegment::Static(#e) })
 }
 
 /// Emits already-parsed children as a `vec![…]` of segments, for `<Group>`
@@ -319,12 +319,12 @@ fn child_expr(node: &ViewNode, flow: &FlowTables) -> syn::Result<TokenStream2> {
     match node {
         Node::Element(el) => {
             let e = element_expr(el, flow)?;
-            Ok(quote! { ::std::vec![::riode::dsl::IntoElement::into_element(#e)] })
+            Ok(quote! { ::std::vec![::riode::internal::IntoElement::into_element(#e)] })
         }
         Node::Text(t) => {
             let s = t.value_string();
             Ok(quote! {
-                ::std::vec![::riode::dsl::IntoElement::into_element(::riode::dsl::text(#s))]
+                ::std::vec![::riode::internal::IntoElement::into_element(::riode::internal::text(#s))]
             })
         }
         Node::Block(b) => {
@@ -334,11 +334,11 @@ fn child_expr(node: &ViewNode, flow: &FlowTables) -> syn::Result<TokenStream2> {
                 rstml::node::NodeBlock::ValidBlock(block) => strip_braces(block),
                 other => quote! { #other },
             };
-            Ok(quote! { ::riode::dsl::view_child(#inner) })
+            Ok(quote! { ::riode::internal::view_child(#inner) })
         }
         Node::Fragment(f) => {
             let kids = children_vec(&f.children, flow)?;
-            Ok(quote! { ::riode::dsl::view_child(#kids) })
+            Ok(quote! { ::riode::internal::view_child(#kids) })
         }
         Node::Comment(_) | Node::Doctype(_) => Err(syn::Error::new_spanned(
             node,
@@ -461,7 +461,7 @@ pub(crate) fn element_expr(el: &Element, flow: &FlowTables) -> syn::Result<Token
 fn text_expr(el: &Element, flow: &FlowTables) -> syn::Result<TokenStream2> {
     // Optional `content=` attr plus at most single-child content; mixing both is an error.
     let mut content_attr: Option<TokenStream2> = None;
-    let mut base = quote! { ::riode::dsl::text };
+    let mut base = quote! { ::riode::internal::text };
     let mut modifiers: Vec<TokenStream2> = Vec::new();
     for a in el.attributes() {
         match a {
@@ -782,7 +782,7 @@ fn expand_inner(tokens: TokenStream2) -> syn::Result<TokenStream2> {
             // knowable at runtime, so the flat list is checked there.
             let body = quote! {
                 {
-                    let __riode_root_kids: ::std::vec::Vec<::riode::dsl::Element> = #kids;
+                    let __riode_root_kids: ::std::vec::Vec<::riode::internal::Element> = #kids;
                     let mut __riode_root_iter = __riode_root_kids.into_iter();
                     match (__riode_root_iter.next(), __riode_root_iter.next()) {
                         (::std::option::Option::Some(one), ::std::option::Option::None) => one,

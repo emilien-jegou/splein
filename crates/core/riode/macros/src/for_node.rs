@@ -264,27 +264,27 @@ pub fn expand(node: &ForNode) -> TokenStream2 {
         .map(|i| quote! { #i })
         .unwrap_or_else(|| quote! { _i });
     // Unused `item` binding is the user's own spelling; keep warning (agreed).
-    let row = quote! { move |#idx_pat: usize, #item| -> ::std::vec::Vec<::riode::dsl::ChildSegment> { #row_vec } };
+    let row = quote! { move |#idx_pat: usize, #item| -> ::std::vec::Vec<::riode::internal::ChildSegment> { #row_vec } };
     match &node.key {
         ForKey::Default => {
             quote! {
                 {
-                    ::riode::dsl::ChildSegment::keyed_index(#items, #row)
+                    ::riode::internal::ChildSegment::keyed_index(#items, #row)
                 }
             }
         }
         ForKey::DotChain(chain) => {
             quote! {
                 {
-                    ::riode::dsl::ChildSegment::keyed(#items, |__riode_it| __riode_it #chain, #row)
+                    ::riode::internal::ChildSegment::keyed(#items, |__riode_it| __riode_it #chain, #row)
                 }
             }
         }
         ForKey::Closure(c) => {
-            quote! { { ::riode::dsl::ChildSegment::keyed(#items, #c, #row) } }
+            quote! { { ::riode::internal::ChildSegment::keyed(#items, #c, #row) } }
         }
         ForKey::Path(p) => {
-            quote! { { ::riode::dsl::ChildSegment::keyed(#items, #p, #row) } }
+            quote! { { ::riode::internal::ChildSegment::keyed(#items, #p, #row) } }
         }
     }
 }

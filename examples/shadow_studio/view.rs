@@ -10,7 +10,7 @@
 
 use riode::app::switcher::{BootCtx, BootedDemo};
 use riode::prelude::*;
-use riode::reactive::{DynamicProp, ReactiveRuntime};
+use riode::reactive::{Prop, ReactiveRuntime};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -108,7 +108,7 @@ fn slider(
 }
 
 /// A small labeled button.
-fn button(label: DynamicProp<String>, on_press: impl Fn() + 'static) -> Element {
+fn button(label: Prop<String>, on_press: impl Fn() + 'static) -> Element {
     view! {
         <Group
             width={150.0}

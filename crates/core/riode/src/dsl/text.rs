@@ -3,7 +3,7 @@
 use crate::dsl::component::IntoElement;
 use crate::dsl::element::Element;
 use crate::foundation::{Anchor, Color, Key, Margin, Padding, Size};
-use crate::reactive::prop::{DynamicProp, IntoProp};
+use crate::reactive::prop::{Prop, IntoProp};
 use crate::text::{
     FontId, FontStyle, FontVariation, LineHeight, TextAlign, TextConfig, TextDecoration,
     TextOverflow, TextWrap,
@@ -15,7 +15,7 @@ pub struct TextDef {
     /// Optional diffing reconciliation key.
     pub key: Option<Key>,
     /// Dynamic or static string text content.
-    pub content: DynamicProp<String>,
+    pub content: Prop<String>,
     /// Optional explicit font face override.
     pub font_id: Option<FontId>,
     /// Optional preferred font family name.
@@ -103,10 +103,10 @@ pub fn text<P: IntoProp<String>>(content: P) -> TextDef {
 }
 
 impl TextDef {
-    /// Whether the content reads context (a `DynamicProp::Context`).
+    /// Whether the content reads context (a `Prop::Context`).
     /// Reconcile uses it to place missing-provider guards.
     pub fn has_context_reads(&self) -> bool {
-        matches!(self.content, crate::reactive::prop::DynamicProp::Context(_))
+        matches!(self.content, crate::reactive::prop::Prop::Context(_))
     }
 
     /// Sets an explicit reconciliation diffing key.

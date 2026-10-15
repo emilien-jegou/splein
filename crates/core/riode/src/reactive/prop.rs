@@ -5,9 +5,25 @@ use crate::reactive::computed::Computed;
 use crate::reactive::signal::Signal;
 use std::rc::Rc;
 
-/// Dynamic property holding either a static value or a reactive computation closure.
+/// A reactive-capable component prop: a static value or a live binding.
+///
+/// `Prop<String>` accepts a literal, `String`, `Signal<String>`, `Computed<String>`,
+/// a `move || …` closure, or a `Ctx<T>` context read — anything implementing
+/// [`IntoPropValue`]. `Option<Prop<T>>` means omissible; `Prop<Option<T>>` means
+/// dynamically absent/present.
+///
+/// # The prop policy
+///
+/// One rule, applied everywhere a component takes a prop:
+///
+/// - **`T`** (plain) — a one-shot constructor value, reconciled per build.
+/// - **`Prop<T>`** — a lazily-evaluated binding the component re-reads where
+///   liveness matters (property positions that call `.evaluate()`).
+///
+/// Prefer plain `T` unless the prop genuinely needs to track a signal; mixed
+/// signatures are fine *with the rule visible*.
 #[derive(Clone)]
-pub enum DynamicProp<T> {
+pub enum Prop<T> {
     Static(T),
     Dynamic(Rc<dyn Fn() -> T>),
     /// A lazily-resolved context read (see `reactive::context`). Resolves
@@ -16,7 +32,7 @@ pub enum DynamicProp<T> {
     Context(Ctx<T>),
 }
 
-impl<T: Clone + 'static> DynamicProp<T> {
+impl<T: Clone + 'static> Prop<T> {
     /// Evaluates the property value.
     ///
     /// A `Context` read resolves through the ambient evaluation node (set by
@@ -24,9 +40,9 @@ impl<T: Clone + 'static> DynamicProp<T> {
     /// evaluation it panics loudly rather than returning a stale guess.
     pub fn evaluate(&self) -> T {
         match self {
-            DynamicProp::Static(val) => val.clone(),
-            DynamicProp::Dynamic(f) => f(),
-            DynamicProp::Context(m) => m.resolve(),
+            Prop::Static(val) => val.clone(),
+            Prop::Dynamic(f) => f(),
+            Prop::Context(m) => m.resolve(),
         }
     }
 
@@ -36,7 +52,7 @@ impl<T: Clone + 'static> DynamicProp<T> {
     /// signal read under the observer) and must schedule like any binding.
     #[inline(always)]
     pub fn is_dynamic(&self) -> bool {
-        matches!(self, DynamicProp::Dynamic(_) | DynamicProp::Context(_))
+        matches!(self, Prop::Dynamic(_) | Prop::Context(_))
     }
 
     /// Extracts a clone of the dynamic closure handle, if dynamic.
@@ -47,24 +63,16 @@ impl<T: Clone + 'static> DynamicProp<T> {
     #[inline(always)]
     pub fn dynamic_closure(&self) -> Option<Rc<dyn Fn() -> T>> {
         match self {
-            DynamicProp::Dynamic(f) => Some(Rc::clone(f)),
-            DynamicProp::Context(m) => Some(m.resolving_closure()),
-            DynamicProp::Static(_) => None,
+            Prop::Dynamic(f) => Some(Rc::clone(f)),
+            Prop::Context(m) => Some(m.resolving_closure()),
+            Prop::Static(_) => None,
         }
     }
 }
 
-/// Friendly alias for a reactive-capable component prop.
-///
-/// `Prop<String>` accepts a literal, `String`, `Signal<String>`,
-/// `Computed<String>`, or a `move || ...` closure — anything implementing
-/// [`IntoPropValue`]. `Option<Prop<T>>` means omissible; `Prop<Option<T>>`
-/// means dynamically absent/present.
-pub type Prop<T> = DynamicProp<T>;
-
 /// Constructs a dynamic property from a computation closure.
-pub fn computed<T, F: Fn() -> T + 'static>(f: F) -> DynamicProp<T> {
-    DynamicProp::Dynamic(Rc::new(f))
+pub fn computed<T, F: Fn() -> T + 'static>(f: F) -> Prop<T> {
+    Prop::Dynamic(Rc::new(f))
 }
 
 /// Default used when a `#[prop(default)]` prop is omitted from RSX.
@@ -88,102 +96,102 @@ impl<T> PropDefault for Option<T> {
 /// generated `*Props` builders take `impl IntoPropValue<T>` so literals,
 /// signals, derivations, and closures all satisfy one bound.
 pub trait IntoPropValue<T> {
-    fn into_prop_value(self) -> DynamicProp<T>;
+    fn into_prop_value(self) -> Prop<T>;
 }
 
-impl<T: Clone + 'static> IntoPropValue<T> for DynamicProp<T> {
-    fn into_prop_value(self) -> DynamicProp<T> {
+impl<T: Clone + 'static> IntoPropValue<T> for Prop<T> {
+    fn into_prop_value(self) -> Prop<T> {
         self
     }
 }
 
 impl IntoPropValue<String> for &'static str {
-    fn into_prop_value(self) -> DynamicProp<String> {
-        DynamicProp::Static(self.to_string())
+    fn into_prop_value(self) -> Prop<String> {
+        Prop::Static(self.to_string())
     }
 }
 
 impl IntoPropValue<String> for String {
-    fn into_prop_value(self) -> DynamicProp<String> {
-        DynamicProp::Static(self)
+    fn into_prop_value(self) -> Prop<String> {
+        Prop::Static(self)
     }
 }
 
 impl IntoPropValue<f32> for f32 {
-    fn into_prop_value(self) -> DynamicProp<f32> {
-        DynamicProp::Static(self)
+    fn into_prop_value(self) -> Prop<f32> {
+        Prop::Static(self)
     }
 }
 
 impl IntoPropValue<bool> for bool {
-    fn into_prop_value(self) -> DynamicProp<bool> {
-        DynamicProp::Static(self)
+    fn into_prop_value(self) -> Prop<bool> {
+        Prop::Static(self)
     }
 }
 
 impl<T: Clone + 'static> IntoPropValue<T> for Signal<T> {
-    fn into_prop_value(self) -> DynamicProp<T> {
-        DynamicProp::Dynamic(Rc::new(move || self.get()))
+    fn into_prop_value(self) -> Prop<T> {
+        Prop::Dynamic(Rc::new(move || self.get()))
     }
 }
 
 impl<T: Clone + 'static> IntoPropValue<T> for Computed<T> {
-    fn into_prop_value(self) -> DynamicProp<T> {
-        DynamicProp::Dynamic(Rc::new(move || self.get()))
+    fn into_prop_value(self) -> Prop<T> {
+        Prop::Dynamic(Rc::new(move || self.get()))
     }
 }
 
 impl<T: Clone + 'static> IntoPropValue<T> for Ctx<T> {
-    fn into_prop_value(self) -> DynamicProp<T> {
-        DynamicProp::Context(self)
+    fn into_prop_value(self) -> Prop<T> {
+        Prop::Context(self)
     }
 }
 
 impl<T: Clone + 'static> IntoPropValue<Option<T>> for Option<T> {
-    fn into_prop_value(self) -> DynamicProp<Option<T>> {
-        DynamicProp::Static(self)
+    fn into_prop_value(self) -> Prop<Option<T>> {
+        Prop::Static(self)
     }
 }
 
 impl<T: Clone + 'static, F: Fn() -> T + 'static> IntoPropValue<T> for F {
-    fn into_prop_value(self) -> DynamicProp<T> {
-        DynamicProp::Dynamic(Rc::new(self))
+    fn into_prop_value(self) -> Prop<T> {
+        Prop::Dynamic(Rc::new(self))
     }
 }
 
 /// Conversion trait into a generic dynamic property.
 pub trait IntoProp<T> {
-    /// Converts `self` into a `DynamicProp<T>`.
-    fn into_prop(self) -> DynamicProp<T>;
+    /// Converts `self` into a `Prop<T>`.
+    fn into_prop(self) -> Prop<T>;
 }
 
-impl<T> IntoProp<T> for DynamicProp<T> {
-    fn into_prop(self) -> DynamicProp<T> {
+impl<T> IntoProp<T> for Prop<T> {
+    fn into_prop(self) -> Prop<T> {
         self
     }
 }
 
 impl IntoProp<bool> for bool {
-    fn into_prop(self) -> DynamicProp<bool> {
-        DynamicProp::Static(self)
+    fn into_prop(self) -> Prop<bool> {
+        Prop::Static(self)
     }
 }
 
 impl IntoProp<f32> for f32 {
-    fn into_prop(self) -> DynamicProp<f32> {
-        DynamicProp::Static(self)
+    fn into_prop(self) -> Prop<f32> {
+        Prop::Static(self)
     }
 }
 
 impl IntoProp<f32> for i32 {
-    fn into_prop(self) -> DynamicProp<f32> {
-        DynamicProp::Static(self as f32)
+    fn into_prop(self) -> Prop<f32> {
+        Prop::Static(self as f32)
     }
 }
 
 impl IntoProp<f32> for u32 {
-    fn into_prop(self) -> DynamicProp<f32> {
-        DynamicProp::Static(self as f32)
+    fn into_prop(self) -> Prop<f32> {
+        Prop::Static(self as f32)
     }
 }
 
@@ -193,13 +201,13 @@ macro_rules! impl_display_prop {
     ($($t:ty),*) => {
         $(
             impl IntoProp<String> for $t {
-                fn into_prop(self) -> DynamicProp<String> {
-                    DynamicProp::Static(self.to_string())
+                fn into_prop(self) -> Prop<String> {
+                    Prop::Static(self.to_string())
                 }
             }
             impl IntoPropValue<String> for $t {
-                fn into_prop_value(self) -> DynamicProp<String> {
-                    DynamicProp::Static(self.to_string())
+                fn into_prop_value(self) -> Prop<String> {
+                    Prop::Static(self.to_string())
                 }
             }
         )*
@@ -217,8 +225,8 @@ macro_rules! impl_int_prop_value {
         $(
             $(
                 impl IntoPropValue<$dst> for $src {
-                    fn into_prop_value(self) -> DynamicProp<$dst> {
-                        DynamicProp::Static(self as $dst)
+                    fn into_prop_value(self) -> Prop<$dst> {
+                        Prop::Static(self as $dst)
                     }
                 }
             )*
@@ -232,43 +240,43 @@ impl_int_prop_value! {
 }
 
 impl IntoProp<i32> for i32 {
-    fn into_prop(self) -> DynamicProp<i32> {
-        DynamicProp::Static(self)
+    fn into_prop(self) -> Prop<i32> {
+        Prop::Static(self)
     }
 }
 
 impl IntoProp<String> for String {
-    fn into_prop(self) -> DynamicProp<String> {
-        DynamicProp::Static(self)
+    fn into_prop(self) -> Prop<String> {
+        Prop::Static(self)
     }
 }
 
 impl IntoProp<String> for &'static str {
-    fn into_prop(self) -> DynamicProp<String> {
-        DynamicProp::Static(self.to_string())
+    fn into_prop(self) -> Prop<String> {
+        Prop::Static(self.to_string())
     }
 }
 
 impl<T: Clone + 'static> IntoProp<T> for Signal<T> {
-    fn into_prop(self) -> DynamicProp<T> {
-        DynamicProp::Dynamic(Rc::new(move || self.get()))
+    fn into_prop(self) -> Prop<T> {
+        Prop::Dynamic(Rc::new(move || self.get()))
     }
 }
 
 impl<T: Clone + 'static> IntoProp<T> for Computed<T> {
-    fn into_prop(self) -> DynamicProp<T> {
-        DynamicProp::Dynamic(Rc::new(move || self.get()))
+    fn into_prop(self) -> Prop<T> {
+        Prop::Dynamic(Rc::new(move || self.get()))
     }
 }
 
 impl<T: Clone + 'static> IntoProp<T> for Ctx<T> {
-    fn into_prop(self) -> DynamicProp<T> {
-        DynamicProp::Context(self)
+    fn into_prop(self) -> Prop<T> {
+        Prop::Context(self)
     }
 }
 
 impl<T: 'static, F: Fn() -> T + 'static> IntoProp<T> for F {
-    fn into_prop(self) -> DynamicProp<T> {
-        DynamicProp::Dynamic(Rc::new(self))
+    fn into_prop(self) -> Prop<T> {
+        Prop::Dynamic(Rc::new(self))
     }
 }

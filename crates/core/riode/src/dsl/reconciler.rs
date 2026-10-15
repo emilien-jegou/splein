@@ -3,7 +3,7 @@
 use crate::dsl::element::Element;
 use crate::dsl::reconcile_group::reconcile_group;
 use crate::dsl::reconcile_leaf::{reconcile_custom, reconcile_text};
-use crate::reactive::prop::DynamicProp;
+use crate::reactive::prop::Prop;
 use crate::reactive::{Observer, ReactiveRuntime, SubscriberId};
 use crate::tree::NodeId;
 use crate::tree::SubscriberRouter;
@@ -30,7 +30,7 @@ pub fn reconcile(
 /// Evaluates a dynamic property while registering dependency subscriptions.
 #[inline(always)]
 pub fn evaluate_prop<T: Clone + 'static>(
-    prop: &Option<DynamicProp<T>>,
+    prop: &Option<Prop<T>>,
     sub: Option<SubscriberId>,
     runtime: &Rc<RefCell<ReactiveRuntime>>,
 ) -> Option<T> {

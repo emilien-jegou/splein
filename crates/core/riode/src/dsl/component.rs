@@ -57,7 +57,7 @@ impl<F: Fn() -> String + 'static> IntoElement for F {
     }
 }
 
-impl IntoElement for crate::reactive::DynamicProp<String> {
+impl IntoElement for crate::reactive::Prop<String> {
     fn into_element(self) -> Element {
         crate::dsl::text(self).into_element()
     }

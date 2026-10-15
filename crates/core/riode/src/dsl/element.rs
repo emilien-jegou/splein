@@ -113,15 +113,15 @@ impl Element {
             }
             Element::Text(t) => {
                 let content = match &t.content {
-                    crate::reactive::prop::DynamicProp::Static(s) => {
+                    crate::reactive::prop::Prop::Static(s) => {
                         let mut short: String = s.chars().take(24).collect();
                         if s.len() > short.len() {
                             short.push('…');
                         }
                         format!("{short:?}")
                     }
-                    crate::reactive::prop::DynamicProp::Dynamic(_) => "<dyn>".to_string(),
-                    crate::reactive::prop::DynamicProp::Context(_) => "<ctx>".to_string(),
+                    crate::reactive::prop::Prop::Dynamic(_) => "<dyn>".to_string(),
+                    crate::reactive::prop::Prop::Context(_) => "<ctx>".to_string(),
                 };
                 out.push_str(&format!(
                     "Text key={:?} content={content} color={:?} size={}\n",
@@ -138,13 +138,13 @@ impl Element {
 /// Renders one optional reactive prop for [`Element::summarize`]: statics by value,
 /// dynamics and context reads by kind, absence as `-`.
 fn prop_summary<T: std::fmt::Debug>(
-    prop: &Option<crate::reactive::prop::DynamicProp<T>>,
+    prop: &Option<crate::reactive::prop::Prop<T>>,
 ) -> String {
     match prop {
         None => "-".to_string(),
-        Some(crate::reactive::prop::DynamicProp::Static(v)) => format!("{v:?}"),
-        Some(crate::reactive::prop::DynamicProp::Dynamic(_)) => "<dyn>".to_string(),
-        Some(crate::reactive::prop::DynamicProp::Context(_)) => "<ctx>".to_string(),
+        Some(crate::reactive::prop::Prop::Static(v)) => format!("{v:?}"),
+        Some(crate::reactive::prop::Prop::Dynamic(_)) => "<dyn>".to_string(),
+        Some(crate::reactive::prop::Prop::Context(_)) => "<ctx>".to_string(),
     }
 }
 

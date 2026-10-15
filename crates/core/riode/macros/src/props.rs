@@ -7,7 +7,7 @@
 //
 // Inference (no attributes needed):
 // - outer `Option<T>`          → omissible, missing means `None`
-// - `Prop<T>` / `DynamicProp<T>` → reactive setter (`impl IntoPropValue<T>`)
+// - `Prop<T>`                  → reactive setter (`impl IntoPropValue<T>`)
 // - `Option<Prop<T>>`          → omissible + reactive
 // - `children: Vec<Element>`   → children slot (filled by nested RSX)
 // - `#[prop(default)]` / `#[prop(default = expr)]` → omitted means the default
@@ -101,12 +101,12 @@ fn strip_outer_option(ty: &Type) -> Option<Type> {
     None
 }
 
-/// Whether the type is (possibly option-wrapped) `Prop<T>` / `DynamicProp<T>`,
-/// returning the reactive value type `T`.
+/// Whether the type is (possibly option-wrapped) `Prop<T>`, returning the
+/// reactive value type `T`.
 fn reactive_inner(ty: &Type) -> Option<Type> {
     if let Type::Path(p) = ty {
         let seg = p.path.segments.last()?;
-        if seg.ident == "Prop" || seg.ident == "DynamicProp" {
+        if seg.ident == "Prop" {
             if let syn::PathArguments::AngleBracketed(args) = &seg.arguments {
                 if let Some(syn::GenericArgument::Type(inner)) = args.args.first() {
                     return Some(inner.clone());
@@ -330,12 +330,12 @@ pub fn expand_props(input: &ItemFn) -> syn::Result<Option<TokenStream2>> {
                 self.key = ::std::option::Option::Some(::std::convert::Into::into(k));
                 self
             }
-            pub fn build(self) -> ::riode::dsl::Element {
+            pub fn build(self) -> ::riode::internal::Element {
                 let props = #public_props { #(#takes,)* key: self.key };
                 let __riode_el = #name(#(#arg_names),*);
                 match props.key {
                     ::std::option::Option::Some(__k) => {
-                        ::riode::dsl::Element::with_key(__riode_el, __k)
+                        ::riode::internal::Element::with_key(__riode_el, __k)
                     }
                     ::std::option::Option::None => __riode_el,
                 }

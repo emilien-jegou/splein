@@ -13,6 +13,7 @@ pub mod dsl;
 pub mod foundation;
 pub mod hot_reload;
 pub mod input;
+pub mod internal;
 pub mod layout;
 pub mod pipeline;
 pub mod prelude;

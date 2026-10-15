@@ -204,6 +204,6 @@ pub fn expand(node: &MatchNode) -> syn::Result<TokenStream2> {
         }
     }
     Ok(quote! {
-        ::riode::dsl::ChildSegment::Dynamic(::std::rc::Rc::new(move || match #scrut { #(#arms)* }))
+        ::riode::internal::ChildSegment::Dynamic(::std::rc::Rc::new(move || match #scrut { #(#arms)* }))
     })
 }
