@@ -1,5 +1,8 @@
-// Glyph coverage sampling: atlas R channel through the display
-// transfer function, then * vertex alpha.
+// Glyph coverage sampling: plain alpha coverage from the R8 atlas,
+// then through the display transfer function, then * vertex alpha.
+//
+// Stores the exact coverage bitmap from the analytic rasterizer.
+// No MSDF decoding needed -- just multiply alpha by the sampled value.
 //
 // Transfer matches tiny-skia's GAMMA_LUT (COVERAGE_GAMMA=2.2):
 // small hinted text (<=16px, gam flag 0) composites raw coverage;

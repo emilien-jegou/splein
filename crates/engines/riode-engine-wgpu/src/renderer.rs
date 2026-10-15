@@ -92,7 +92,7 @@ impl WgpuRenderer {
             gpu.config.width,
             gpu.config.height,
         );
-        let atlas = GlyphAtlas::new(&gpu.device);
+        let atlas = GlyphAtlas::new(&gpu.device, &text_ctx);
         let glyph_bg_linear = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("riode-wgpu-glyph-bg-linear"),
             layout: &pipes.glyph_layout,

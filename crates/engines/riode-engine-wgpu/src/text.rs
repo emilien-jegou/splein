@@ -1,6 +1,9 @@
-// Single responsibility: GPU glyph atlas with guttered shelf packing + LRU repack.
+// Single responsibility: GPU glyph atlas with plain alpha coverage (R8, gpui-style).
+// Exact coverage bitmap from the analytic rasterizer -- no distance transform approximation.
+// 4x less memory than MSDF (1 byte/px vs 4), enabling more subpixel variants.
 
 use riode::text::glyph::GlyphKey;
+use riode::text::TextContext;
 use rustc_hash::FxHashMap;
 
 /// UV rect in atlas (0..1), inset to the inner bitmap (gutter excluded).
@@ -20,10 +23,10 @@ const ATLAS_SIZE: u32 = 2048;
 const GUTTER: u32 = 2;
 /// Entries unused for this many frames are dropped on repack.
 const STALE_FRAMES: u64 = 120;
-
 struct Cell {
     entry: AtlasEntry,
     /// Retained coverage bytes (without gutter) for repack re-upload.
+    /// 1 channel (R), so 1 byte per pixel.
     data: Vec<u8>,
     last_used: u64,
 }
@@ -39,7 +42,11 @@ struct Cursor {
 /// Scaled coverage lives in distinct slots so 1x and 2x never share texels.
 pub type AtlasSlot = (u64, u8, u16);
 
-/// Shelf-packed coverage atlas over R8Unorm.
+/// Shelf-packed coverage atlas over R8Unorm (1 channel, gpui-style).
+///
+/// Stores the exact alpha coverage bitmap from the analytic rasterizer.
+/// No distance transform -- the raw per-pixel coverage (0-255) is stored directly.
+/// Shader simply multiplies vertex alpha by the sampled coverage value.
 ///
 /// Eviction is repack-based LRU: on overflow, cells unused in the last
 /// STALE_FRAMES are dropped and survivors re-uploaded into a fresh shelf.
@@ -54,9 +61,9 @@ pub struct GlyphAtlas {
 }
 
 impl GlyphAtlas {
-    pub fn new(device: &wgpu::Device) -> Self {
+    pub fn new(device: &wgpu::Device, _text_ctx: &TextContext) -> Self {
         let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("riode-wgpu-glyph-atlas"),
+            label: Some("riode-wgpu-coverage-glyph-atlas"),
             size: wgpu::Extent3d {
                 width: ATLAS_SIZE,
                 height: ATLAS_SIZE,
@@ -133,15 +140,18 @@ impl GlyphAtlas {
         h: u32,
         data: &[u8],
     ) {
-        // Guttered upload: replicated border around the bitmap so linear
-        // border taps read our own edge, never a neighbor.
+        // Coverage is 1 byte per pixel (R8Unorm)
         let (cw, ch) = ((w + 2 * GUTTER) as usize, (h + 2 * GUTTER) as usize);
         let mut padded = vec![0u8; cw * ch];
         for row in 0..ch {
             let sy = ((row as u32).saturating_sub(GUTTER)).min(h.saturating_sub(1));
             for col in 0..cw {
                 let sx = ((col as u32).saturating_sub(GUTTER)).min(w.saturating_sub(1));
-                padded[row * cw + col] = data[(sy * w + sx) as usize];
+                let src_idx = (sy * w + sx) as usize;
+                let dst_idx = row * cw + col;
+                if src_idx < data.len() {
+                    padded[dst_idx] = data[src_idx];
+                }
             }
         }
         queue.write_texture(
@@ -167,10 +177,6 @@ impl GlyphAtlas {
 
     fn entry_for(x: u32, y: u32, w: u32, h: u32) -> AtlasEntry {
         let s = ATLAS_SIZE as f32;
-        // UVs address the inner bitmap exactly edge-to-edge: the 2px
-        // replicated gutter already guarantees linear border taps read our
-        // own edge texels, so no half-texel inset is needed. (The inset
-        // shrank every glyph by a texel — a permanent minification blur.)
         let (ix0, iy0) = (x + GUTTER, y + GUTTER);
         AtlasEntry {
             u0: ix0 as f32 / s,
@@ -215,7 +221,7 @@ impl GlyphAtlas {
         tracing::debug!(
             dropped,
             live = self.map.len(),
-            "riode-wgpu glyph atlas repacked"
+            "riode-wgpu coverage glyph atlas repacked"
         );
         self.gen += 1;
     }
@@ -231,7 +237,7 @@ impl GlyphAtlas {
         scale_q16: u16,
         w: u32,
         h: u32,
-        data: &[u8],
+        data: &[u8], // Coverage data: 1 byte per pixel
     ) -> Option<AtlasEntry> {
         if w == 0 || h == 0 {
             return None;
@@ -258,5 +264,20 @@ impl GlyphAtlas {
             },
         );
         Some(entry)
+    }
+
+    /// Insert glyph from coverage bitmap (analytic rasterizer output).
+    /// Stores coverage directly -- no distance transform needed.
+    pub fn insert_from_coverage(
+        &mut self,
+        queue: &wgpu::Queue,
+        key: GlyphKey,
+        phase: u8,
+        scale_q16: u16,
+        w: u32,
+        h: u32,
+        coverage: &[u8],
+    ) -> Option<AtlasEntry> {
+        self.insert(queue, key, phase, scale_q16, w, h, coverage)
     }
 }

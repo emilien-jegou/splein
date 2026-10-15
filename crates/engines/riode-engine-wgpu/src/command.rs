@@ -451,20 +451,18 @@ impl Batch {
                 let pen_x = origin.x + g.point.x + line.align_offset;
                 let pen_y = origin.y + g.point.y;
                 let placed = t.transform_point(Point::new(pen_x, pen_y));
-                // Subpixel policy (mirrors the tiny-skia reference): the X bin
-                // selects only the *raster variant* (nearest quarter) while
-                // *placement stays exact* — quantizing X placement drops a
+                // Subpixel policy: 4x4 = 16 raster variants (gpui-style).
+                // The X and Y bins select the raster variant (nearest quarter)
+                // while *placement stays exact* — quantizing placement drops a
                 // per-glyph residual, and glyphs crossing bin edges on
                 // different frames visibly drift at different speeds.
-                // Y is frozen at bin zero, exactly like the CPU path: at
-                // hinted sizes the hinter grid-fits vertical stems, so every
-                // Y phase change re-fits the outline (morphing/popping per
-                // glyph on different frames). The frozen raster never morphs;
-                // the exact Y fraction rides the quad position and dissolves
-                // into linear filtering, so the run glides uniformly.
+                // With R8 coverage (4x less memory than MSDF), we can afford
+                // 16 subpixel phases for smoother subpixel positioning.
                 let fx = placed.x - placed.x.floor();
+                let fy = placed.y - placed.y.floor();
                 let binx = (((fx * 4.0) + 0.5).floor() as i32).clamp(0, 3);
-                let phase = (binx as u8) & 3;
+                let biny = (((fy * 4.0) + 0.5).floor() as i32).clamp(0, 3);
+                let phase = (binx as u8) | ((biny as u8) << 2);
                 // Single raster: bitmap + bearing together (no TOCTOU).
                 // Metrics arrive in scaled px (q==1.0 at unity scale).
                 let rastered =
@@ -474,7 +472,7 @@ impl Batch {
                                 return None;
                             }
                             let entry = atlas.get(g.cache_key, phase, sq16).or_else(|| {
-                                atlas.insert(
+                                atlas.insert_from_coverage(
                                     queue,
                                     g.cache_key,
                                     phase,
