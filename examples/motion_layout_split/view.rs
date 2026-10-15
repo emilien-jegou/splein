@@ -59,7 +59,7 @@ pub fn Page() -> impl IntoElement {
 
 /// The one view that moves. Its box is fixed; only the transform binding changes.
 #[component]
-fn Card(travel: Derived<f32>) -> impl IntoElement {
+fn Card(travel: Computed<f32>) -> impl IntoElement {
     view! {
         <Group
             key="card"

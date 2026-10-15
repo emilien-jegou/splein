@@ -1,7 +1,7 @@
 // Single responsibility: Signal handle with two-phase topological glitch-free dispatch.
 
 use crate::reactive::ambient;
-use crate::reactive::derived::Derived;
+use crate::reactive::computed::Computed;
 use crate::reactive::id::SignalId;
 use crate::reactive::readable::Readable;
 use crate::reactive::runtime::ReactiveRuntime;
@@ -73,23 +73,23 @@ impl<T: Clone + 'static> Signal<T> {
     }
 
     /// Derives a signal recomputing `f` whenever this signal changes.
-    pub fn map<U: Clone + 'static>(&self, f: impl Fn(T) -> U + 'static) -> Derived<U> {
+    pub fn map<U: Clone + 'static>(&self, f: impl Fn(T) -> U + 'static) -> Computed<U> {
         let source = *self;
-        Derived::new(self.runtime_ref(), move || f(source.get()))
+        Computed::new(self.runtime_ref(), move || f(source.get()))
     }
 
     /// Derives a value from this signal and another at once.
     ///
-    /// See [`Derived::combine`]; this is the same capability from the writable side.
+    /// See [`Computed::combine`]; this is the same capability from the writable side.
     pub fn combine<B2: Clone + 'static, B: Readable<B2> + Clone + 'static, U: Clone + 'static>(
         &self,
         other: B,
         f: impl Fn(T, B2) -> U + 'static,
-    ) -> Derived<U> {
+    ) -> Computed<U> {
         // Built as a fresh derivation rather than a `map` over `self`, so both reads register as
         // dependencies and the result recomputes when *either* source changes.
         let a = *self;
-        Derived::new(self.runtime_ref(), move || f(a.get(), other.read()))
+        Computed::new(self.runtime_ref(), move || f(a.get(), other.read()))
     }
 
     /// Updates the signal value and dispatches two-phase invalidation notifications.
@@ -117,7 +117,7 @@ impl<T: Clone + 'static> Signal<T> {
     /// Marks transitively affected derivations dirty over an explicit work
     /// stack rather than recursion, so arbitrarily deep chains cannot
     /// overflow the call stack on write. Evaluation itself stays lazy:
-    /// `Derived::get` refreshes through `ensure_fresh`, so a burst of
+    /// `Computed::get` refreshes through `ensure_fresh`, so a burst of
     /// writes with no intermediate reads pays marking only.
     fn write(&self, new_value: T) {
         let runtime = self.runtime_ref();
@@ -196,5 +196,38 @@ impl<T: PartialEq + Clone + 'static> Signal<T> {
         if changed {
             self.write_inner(&runtime, new_value);
         }
+    }
+}
+
+impl Signal<bool> {
+    /// Flips the boolean — the `on:click={sig.toggle}` handler shape.
+    pub fn toggle(&self) {
+        self.update(|v| *v = !*v);
+    }
+
+    /// Writes `true`, the `on:pointer-down={sig.set_true}` press shape.
+    pub fn set_true(&self) {
+        self.set(true);
+    }
+
+    /// Writes `false`, the `on:pointer-up={sig.set_false}` release shape.
+    pub fn set_false(&self) {
+        self.set(false);
+    }
+}
+
+/// `+1` / `-1` on a counter signal — the `on:click={count.increment}` shape.
+///
+/// The bound covers integer counters and float scalars; `From<u8>` supplies the
+/// literal `1` because `usize: From<i32>` does not exist (orphan rule).
+impl<T: Clone + std::ops::AddAssign + std::ops::SubAssign + From<u8> + 'static> Signal<T> {
+    /// Adds one (or `1.0` for floats).
+    pub fn increment(&self) {
+        self.update(|v| *v += T::from(1u8));
+    }
+
+    /// Subtracts one (underflowing integers panic in debug, wrapping is the caller's call).
+    pub fn decrement(&self) {
+        self.update(|v| *v -= T::from(1u8));
     }
 }

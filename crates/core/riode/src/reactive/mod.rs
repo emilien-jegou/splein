@@ -13,7 +13,7 @@
 //!   dependents. `Copy` is load-bearing: handles are meant to be cloned into closures
 //!   freely, and cross-engine misuse fails loudly via runtime epochs instead of
 //!   aliasing the wrong graph.
-//! - [`Derived<T>`]: a memoized computation. Lazy, cached, dependency-tracked —
+//! - [`Computed<T>`]: a memoized computation. Lazy, cached, dependency-tracked —
 //!   `signal.map(|v| ...)` is the one-line form.
 //! - [`Effect`]: a subscriber that *runs* when its dependencies change (as opposed to a
 //!   derivation, which *recomputes* when read).
@@ -32,7 +32,7 @@
 //! let cx = Cx::new(Rc::clone(&rt));
 //! let view = cx.enter(|| {
 //!     let count = use_signal(0);
-//!     let doubled = count.map(|c| c * 2);          // Derived: recomputes on read
+//!     let doubled = count.map(|c| c * 2);          // Computed: recomputes on read
 //!     Effect::new(&cx, move || {                   // Effect: runs on write
 //!         println!("count is now {}", count.get());
 //!     });
@@ -57,9 +57,9 @@
 //!
 //! | Module | Holds |
 //! |--------|-------|
-//! | [`signal`] / [`derived`] / [`effect`] | The three primitives |
+//! | [`signal`] / [`computed`] / [`effect`] | The three primitives |
 //! | [`runtime`] | [`ReactiveRuntime`]: the store, plus [`runtime::tick`] and [`runtime::run_post_layout`] frame drivers |
-//! | [`hooks`] | [`Cx`] + all `use_*` hooks + the `use_signal!` / `derived!` macros |
+//! | [`hooks`] | [`Cx`] + all `use_*` hooks + the `use_signal!` / `computed!` macros |
 //! | [`prop`] / [`readable`] | [`DynamicProp`]/[`IntoProp`], [`Readable`]/[`SignalRead`]: binding-facing adapters |
 //! | [`ticker`] / [`mod@batch`] / [`ambient`] / [`observer`] / [`id`] | Plumbing: ticker registry, batching, scope guards, observer edges, id types |
 //!
@@ -77,7 +77,7 @@
 pub mod ambient;
 pub mod batch;
 pub mod context;
-pub mod derived;
+pub mod computed;
 pub mod effect;
 pub mod hooks;
 pub mod id;
@@ -91,16 +91,16 @@ pub mod ticker;
 pub use ambient::{guard as ambient_guard, AmbientGuard};
 pub use batch::batch;
 pub use context::{Context, Ctx, Provided};
-pub use derived::Derived;
+pub use computed::Computed;
 pub use effect::Effect;
 pub use hooks::{
-    use_frame_clock, use_interval, use_interval_toggle, use_playback, use_signal, use_signal_keyed,
-    use_timeout, use_transition, Cx,
+    use_effect, use_effect_post_layout, use_frame_clock, use_interval, use_interval_toggle,
+    use_playback, use_signal, use_signal_keyed, use_timeout, use_transition, Cx, Teardown,
 };
 pub use id::{SignalId, SubscriberId};
 pub use observer::Observer;
 pub use prop::{computed, DynamicProp, IntoProp, IntoPropValue, Prop, PropDefault};
 pub use readable::{Readable, SignalRead};
-pub use runtime::{run_post_layout, tick, ReactiveRuntime};
+pub use runtime::{run_post_layout, tick, PostLayoutId, ReactiveRuntime};
 pub use signal::Signal;
 pub use ticker::Ticker;

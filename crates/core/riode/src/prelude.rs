@@ -6,8 +6,8 @@ pub use crate::anim::{
 pub use crate::app::{App, AppConfig, AppExtension, FpsLimit, OverlayCaps, OverlayPainter};
 // `component` is the #[component] attribute macro re-exported below, so the hand-written
 // `dsl::component` function is deliberately left out of the prelude: one name cannot be both.
-/// Named derived handle from a plain closure: `derived!(move || signal.get() + 1)`.
-pub use crate::derived;
+/// Named computed handle (memoized derivation) from a plain closure: `computed!(move || signal.get() + 1)`.
+pub use crate::computed;
 pub use crate::dsl::{
     custom, group, image, svg, text, use_scroll, view_child, Behavior, ChildSegment, Component,
     CustomDef, Element, GroupDef, IntoElement, OnScroll, Provider, RowFn, ScrollHandle,
@@ -31,9 +31,10 @@ pub use crate::input::{
     PointerEvent, PointerPhase, Propagation, WheelInfo,
 };
 pub use crate::reactive::{
-    ambient_guard, batch, computed, use_frame_clock, use_interval, use_interval_toggle,
-    use_playback, use_signal, use_signal_keyed, use_timeout, AmbientGuard, Context, Ctx, Cx,
-    Derived, Effect, IntoPropValue, Prop, PropDefault, Provided, Signal, SignalRead,
+    ambient_guard, batch, computed, use_effect, use_effect_post_layout, use_frame_clock,
+    use_interval, use_interval_toggle, use_playback, use_signal, use_signal_keyed, use_timeout,
+    AmbientGuard, Context, Ctx, Cx, Computed, Effect, IntoPropValue, PostLayoutId, Prop,
+    PropDefault, Provided, Signal, SignalRead,
 };
 /// Call-site-keyed signal hook: `use_signal!("name", init)` (explicit, move-proof keys).
 pub use crate::use_signal;

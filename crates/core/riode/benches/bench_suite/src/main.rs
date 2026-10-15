@@ -22,7 +22,7 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-use riode::reactive::{batch, Derived, ReactiveRuntime, Signal};
+use riode::reactive::{batch, Computed, ReactiveRuntime, Signal};
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 use criterion::{black_box, criterion_group, criterion_main, BatchSize, Criterion, Throughput};
 
@@ -52,13 +52,13 @@ fn new_runtime() -> Rc<RefCell<ReactiveRuntime>> {
 const CHAIN: usize = 10_000;
 
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-fn build_chain(rt: &Rc<RefCell<ReactiveRuntime>>) -> (Signal<u64>, Derived<u64>) {
+fn build_chain(rt: &Rc<RefCell<ReactiveRuntime>>) -> (Signal<u64>, Computed<u64>) {
     let root = Signal::new(Rc::clone(rt), 0u64);
     let r = root.clone();
-    let mut leaf = Derived::new(Rc::clone(rt), move || r.get().wrapping_add(1));
+    let mut leaf = Computed::new(Rc::clone(rt), move || r.get().wrapping_add(1));
     for _ in 2..CHAIN {
         let prev = leaf.clone();
-        leaf = Derived::new(Rc::clone(rt), move || prev.get().wrapping_add(1));
+        leaf = Computed::new(Rc::clone(rt), move || prev.get().wrapping_add(1));
     }
     (root, leaf)
 }
@@ -225,7 +225,7 @@ fn bench_diamond_network(c: &mut Criterion) {
 
     struct Diamond {
         root: Signal<u64>,
-        memo_d: Derived<u64>,
+        memo_d: Computed<u64>,
     }
 
     // Glitch check: D must evaluate exactly once per root change.
@@ -234,14 +234,14 @@ fn bench_diamond_network(c: &mut Criterion) {
     let test_root = Signal::new(Rc::clone(&rt), 10u64);
     let r_a = test_root.clone();
     let rt_c = Rc::clone(&rt);
-    let test_a = Derived::new(rt_c, move || r_a.get().wrapping_mul(2));
+    let test_a = Computed::new(rt_c, move || r_a.get().wrapping_mul(2));
     let r_b = test_root.clone();
     let rt_c = Rc::clone(&rt);
-    let test_b = Derived::new(rt_c, move || r_b.get().wrapping_add(5));
+    let test_b = Computed::new(rt_c, move || r_b.get().wrapping_add(5));
     let a_d = test_a.clone();
     let b_d = test_b.clone();
     let rt_c = Rc::clone(&rt);
-    let test_d = Derived::new(rt_c, move || {
+    let test_d = Computed::new(rt_c, move || {
         evals_in.set(evals_in.get() + 1);
         a_d.get().wrapping_add(b_d.get())
     });
@@ -260,11 +260,11 @@ fn bench_diamond_network(c: &mut Criterion) {
         .map(|i| {
             let root = Signal::new(Rc::clone(&rt), i as u64);
             let ra = root.clone();
-            let ma = Derived::new(Rc::clone(&rt), move || ra.get().wrapping_mul(3));
+            let ma = Computed::new(Rc::clone(&rt), move || ra.get().wrapping_mul(3));
             let rb = root.clone();
-            let mb = Derived::new(Rc::clone(&rt), move || rb.get().wrapping_add(7));
+            let mb = Computed::new(Rc::clone(&rt), move || rb.get().wrapping_add(7));
             let (ca, cb) = (ma.clone(), mb.clone());
-            let md = Derived::new(Rc::clone(&rt), move || ca.get().wrapping_add(cb.get()));
+            let md = Computed::new(Rc::clone(&rt), move || ca.get().wrapping_add(cb.get()));
             Diamond { root, memo_d: md }
         })
         .collect();
@@ -442,10 +442,10 @@ fn bench_layout_1k(c: &mut Criterion) {
 fn bench_fan_out_200(c: &mut Criterion) {
     let rt = new_runtime();
     let root = Signal::new(Rc::clone(&rt), 0u64);
-    let memos: Vec<Derived<u64>> = (0..200)
+    let memos: Vec<Computed<u64>> = (0..200)
         .map(|i| {
             let r = root.clone();
-            Derived::new(Rc::clone(&rt), move || r.get().wrapping_add(i))
+            Computed::new(Rc::clone(&rt), move || r.get().wrapping_add(i))
         })
         .collect();
     root.set(1);

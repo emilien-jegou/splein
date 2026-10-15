@@ -31,7 +31,7 @@ pub enum ShadowShape {
 /// Where the shadow offset comes from.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum ShadowOffset {
-    /// Derived from elevation + light direction via [`LightEnvironment::offset_for`].
+    /// Computed from elevation + light direction via [`LightEnvironment::offset_for`].
     Elevation,
     /// Explicit pixel offset (CSS `box-shadow` semantics).
     Explicit { offset_x: f32, offset_y: f32 },

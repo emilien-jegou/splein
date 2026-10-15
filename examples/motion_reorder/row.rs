@@ -48,7 +48,7 @@ pub fn Row(index: usize, spec: RowSpec) -> impl IntoElement {
     //
     // Plain closures with automatic dependency tracking: each `derived!` subscribes to
     // every signal its body reads — no `.map()`/`.combine()` chains.
-    let is_held = derived!({
+    let is_held = computed!({
         let held = drag.held;
         let label = label.clone();
         move || held.get().as_deref() == Some(label.as_str())
@@ -65,7 +65,7 @@ pub fn Row(index: usize, spec: RowSpec) -> impl IntoElement {
         label.clone(),
         (settling, settle),
     );
-    let flip = derived!({
+    let flip = computed!({
         let is_held = is_held.clone();
         let settling = settling;
         move || {
@@ -81,7 +81,7 @@ pub fn Row(index: usize, spec: RowSpec) -> impl IntoElement {
     });
     // Only the held row follows the pointer. `want_centre` is global intent, so an
     // ungated follow would pull every row toward the cursor and stack the list under it.
-    let follow = derived!({
+    let follow = computed!({
         let is_held = is_held.clone();
         move || {
             if is_held.get() {
@@ -95,7 +95,7 @@ pub fn Row(index: usize, spec: RowSpec) -> impl IntoElement {
     // order, so without this the rows gliding into their new slots slide *over* the row
     // being dragged. Bound like the offsets above: `held` flips on press and release, the
     // node repaints, layout never runs.
-    let elevation = derived!({
+    let elevation = computed!({
         let is_held = is_held.clone();
         let settling = settling;
         // Stay above while gliding home, for the same reason as while held.

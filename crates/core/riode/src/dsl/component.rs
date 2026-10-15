@@ -45,7 +45,7 @@ impl IntoElement for crate::reactive::Signal<String> {
     }
 }
 
-impl IntoElement for crate::reactive::Derived<String> {
+impl IntoElement for crate::reactive::Computed<String> {
     fn into_element(self) -> Element {
         crate::dsl::text(self).into_element()
     }

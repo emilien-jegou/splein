@@ -35,6 +35,14 @@ pub(crate) struct SignalSlot {
     pub(crate) generation: u32,
 }
 
+/// Handle to a registered post-layout callback, for taking it back out.
+///
+/// Issued by [`ReactiveRuntime::register_post_layout`] and consumed by
+/// [`ReactiveRuntime::unregister_post_layout`]. A plain `usize` would do, but the
+/// newtype keeps it from being mistaken for a signal or subscriber id.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct PostLayoutId(pub(crate) usize);
+
 /// Central reactive state store managing signals, derived values, and observers.
 pub struct ReactiveRuntime {
     /// Unique identity of this runtime, minted once at construction.
@@ -49,21 +57,21 @@ pub struct ReactiveRuntime {
     pub(crate) subscribers: FxHashMap<SignalId, smallvec::SmallVec<[Observer; 4]>>,
     pub(crate) effects: FxHashMap<SubscriberId, Rc<dyn Fn()>>,
     pub(crate) listeners: FxHashMap<SubscriberId, Rc<dyn Fn()>>,
-    pub(crate) derived_dirty: FxHashSet<SignalId>,
+    pub(crate) computed_dirty: FxHashSet<SignalId>,
     /// Type-erased recompute closures for live derivations, keyed by slot.
     ///
     /// Lets a write eagerly refresh every transitive derivation in
     /// dependency-first order without calling back into user handles, so
     /// deep chains cannot overflow the call stack through nested `get()`.
-    /// Entries are added by `Derived::new` and removed by `dispose_derived`.
-    pub(crate) derived_recompute: FxHashMap<SignalId, Rc<dyn Fn() -> Box<dyn Any>>>,
+    /// Entries are added by `Computed::new` and removed by `dispose_computed`.
+    pub(crate) computed_recompute: FxHashMap<SignalId, Rc<dyn Fn() -> Box<dyn Any>>>,
     /// Reverse edge index: sources each live derivation currently reads.
     ///
-    /// Lets `dispose_derived` unlink exactly the subscriber sets that
+    /// Lets `dispose_computed` unlink exactly the subscriber sets that
     /// reference the id instead of sweeping every set in the runtime, which
     /// keeps teardown of large graphs linear rather than quadratic.
     /// Recorded in `track_read` whenever the reading observer is a derivation.
-    pub(crate) derived_sources: FxHashMap<SignalId, FxHashSet<SignalId>>,
+    pub(crate) computed_sources: FxHashMap<SignalId, FxHashSet<SignalId>>,
     observer_stack: Vec<Observer>,
     dirty_subscribers: FxHashSet<SubscriberId>,
     pending_subscribers: FxHashSet<SubscriberId>,
@@ -161,7 +169,40 @@ pub struct ReactiveRuntime {
     /// It is an ordering seam and nothing more. No animation state lives here, and the callbacks
     /// are ordinary client code: the engine runs them in a defined order because that order is
     /// part of the frame's contract, not because it wants to know what they do.
-    post_layout: RefCell<Vec<Rc<dyn Fn(f32)>>>,
+    post_layout: RefCell<PostLayout>,
+}
+
+/// Post-layout callbacks, each under a handle so its owner can take it back out.
+///
+/// A callback registered by a keyed row has to leave when the row does. Without a handle
+/// the list is append-only: every row that ever mounted keeps its callback forever, and a
+/// long-lived list (or a hot-reload loop) grows the per-frame walk without bound. The handle
+/// is what turns "insert on rebuild" into explicit cleanup plus setup.
+struct PostLayout {
+    next_id: usize,
+    entries: Vec<(PostLayoutId, Rc<dyn Fn(f32)>)>,
+}
+
+impl PostLayout {
+    fn new() -> Self {
+        Self {
+            next_id: 0,
+            entries: Vec::new(),
+        }
+    }
+
+    fn insert(&mut self, work: Rc<dyn Fn(f32)>) -> PostLayoutId {
+        let id = PostLayoutId(self.next_id);
+        self.next_id += 1;
+        self.entries.push((id, work));
+        id
+    }
+
+    fn remove(&mut self, id: PostLayoutId) -> bool {
+        let before = self.entries.len();
+        self.entries.retain(|(existing, _)| *existing != id);
+        self.entries.len() != before
+    }
 }
 
 impl ReactiveRuntime {
@@ -173,9 +214,9 @@ impl ReactiveRuntime {
             subscribers: FxHashMap::default(),
             effects: FxHashMap::default(),
             listeners: FxHashMap::default(),
-            derived_dirty: FxHashSet::default(),
-            derived_recompute: FxHashMap::default(),
-            derived_sources: FxHashMap::default(),
+            computed_dirty: FxHashSet::default(),
+            computed_recompute: FxHashMap::default(),
+            computed_sources: FxHashMap::default(),
             observer_stack: Vec::new(),
             dirty_subscribers: FxHashSet::default(),
             pending_subscribers: FxHashSet::default(),
@@ -199,7 +240,7 @@ impl ReactiveRuntime {
             keyed_hook_states: FxHashMap::default(),
             snapshot: GeometrySnapshot::new(),
             watched: FxHashSet::default(),
-            post_layout: RefCell::new(Vec::new()),
+            post_layout: RefCell::new(PostLayout::new()),
         }
     }
 
@@ -248,8 +289,21 @@ impl ReactiveRuntime {
     ///
     /// Called once per owning component rather than per frame, so this list grows with the number
     /// of components that need the ordering and not with the number of frames.
-    pub fn register_post_layout(&self, work: impl Fn(f32) + 'static) {
-        self.post_layout.borrow_mut().push(Rc::new(work));
+    ///
+    /// Returns the handle needed to take the callback back out again with
+    /// [`Self::unregister_post_layout`]. A caller that never will (engine-owned work) can ignore
+    /// it; a caller that re-registers on every rebuild should not, or the list grows by one per
+    /// rebuild.
+    pub fn register_post_layout(&self, work: impl Fn(f32) + 'static) -> PostLayoutId {
+        self.post_layout.borrow_mut().insert(Rc::new(work))
+    }
+
+    /// Removes a previously registered post-layout callback. Returns whether one was there.
+    ///
+    /// Idempotent: unregistering a handle twice (or one already cleared) is a no-op, so a
+    /// teardown that races a reload sweep does not have to coordinate.
+    pub fn unregister_post_layout(&self, id: PostLayoutId) -> bool {
+        self.post_layout.borrow_mut().remove(id)
     }
 
     /// A copy of the registered callbacks, sharing each one rather than moving it.
@@ -258,12 +312,17 @@ impl ReactiveRuntime {
     /// again next frame. Cloning the `Rc`s is what lets the borrow be released before any of them
     /// runs, so a callback that reads a signal cannot re-enter the `RefCell` this list lives in.
     fn post_layout_snapshot(&self) -> Vec<Rc<dyn Fn(f32)>> {
-        self.post_layout.borrow().clone()
+        self.post_layout
+            .borrow()
+            .entries
+            .iter()
+            .map(|(_, cb)| Rc::clone(cb))
+            .collect()
     }
 
     /// Number of registered post-layout callbacks. Tests and diagnostics only.
     pub fn post_layout_count(&self) -> usize {
-        self.post_layout.borrow().len()
+        self.post_layout.borrow().entries.len()
     }
 
     /// Attaches a motion hand-off to the next write of `id`.
@@ -594,7 +653,7 @@ impl ReactiveRuntime {
 
     /// Disposes a plain signal slot, returning it to the free list.
     ///
-    /// Mirrors [`Self::dispose_derived`] minus the derivation registries. Plain
+    /// Mirrors [`Self::dispose_computed`] minus the derivation registries. Plain
     /// signals have no `Drop` (handles are `Copy`), so this is explicit — call it
     /// when the owner goes away. Un-disposed slots simply never get reused, which
     /// is today's behavior, not a regression.
@@ -602,7 +661,7 @@ impl ReactiveRuntime {
         // Validate liveness first: double-dispose must fail here, not alias later.
         self.slot(id);
         self.subscribers.remove(&id);
-        self.derived_dirty.remove(&id);
+        self.computed_dirty.remove(&id);
         self.motion_handoff.remove(&id);
         self.pending_roots.remove(&id);
         if let Some(slot) = self.values.get_mut(id.index) {
@@ -697,16 +756,16 @@ impl ReactiveRuntime {
         }
     }
 
-    pub fn dispose_derived(&mut self, id: SignalId) {
+    pub fn dispose_computed(&mut self, id: SignalId) {
         self.subscribers.remove(&id);
-        self.derived_dirty.remove(&id);
-        self.derived_recompute.remove(&id);
+        self.computed_dirty.remove(&id);
+        self.computed_recompute.remove(&id);
         self.motion_handoff.remove(&id);
         self.pending_roots.remove(&id);
-        if let Some(sources) = self.derived_sources.remove(&id) {
+        if let Some(sources) = self.computed_sources.remove(&id) {
             for src in sources {
                 if let Some(set) = self.subscribers.get_mut(&src) {
-                    set.retain(|o| *o != Observer::Derived(id));
+                    set.retain(|o| *o != Observer::Computed(id));
                     if set.is_empty() {
                         self.subscribers.remove(&src);
                     }
@@ -755,8 +814,8 @@ impl ReactiveRuntime {
                 subs.push(current);
             }
             match current {
-                Observer::Derived(d) => {
-                    self.derived_sources.entry(d).or_default().insert(id);
+                Observer::Computed(d) => {
+                    self.computed_sources.entry(d).or_default().insert(id);
                 }
                 Observer::Effect(e) | Observer::Subscriber(e) => {
                     let srcs = self.effect_sources.entry(e).or_default();
@@ -810,7 +869,7 @@ impl ReactiveRuntime {
             if let Some(subs) = self.subscribers.get(&id) {
                 for ob in subs.iter().copied() {
                     match ob {
-                        Observer::Derived(dep) => {
+                        Observer::Computed(dep) => {
                             if visited.insert(dep) {
                                 stack.push(dep);
                             }
@@ -819,8 +878,8 @@ impl ReactiveRuntime {
                     }
                 }
             }
-            if self.derived_recompute.contains_key(&id) {
-                self.derived_dirty.insert(id);
+            if self.computed_recompute.contains_key(&id) {
+                self.computed_dirty.insert(id);
             }
         }
 
@@ -838,7 +897,7 @@ impl ReactiveRuntime {
                         effects_to_run.push(Rc::clone(action));
                     }
                 }
-                Observer::Derived(_) => {}
+                Observer::Computed(_) => {}
             }
         }
         visited.clear();
@@ -913,8 +972,8 @@ impl Drop for ReactiveRuntime {
         // half-dropped struct. In normal operation the registry is already
         // empty (every handle disposes on drop), so forgetting a leftover
         // only abandons teardown-time state the process is exiting anyway.
-        if !self.derived_recompute.is_empty() {
-            let leftover = std::mem::take(&mut self.derived_recompute);
+        if !self.computed_recompute.is_empty() {
+            let leftover = std::mem::take(&mut self.computed_recompute);
             std::mem::forget(leftover);
         }
     }

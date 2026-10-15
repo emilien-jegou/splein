@@ -322,7 +322,7 @@ impl TextContext {
 
     /// Widest unbreakable segment of a run: its min-content inline size, i.e. CSS `min-width: auto`.
     ///
-    /// Derived from the unbounded layout, which `Size::Fit` text already shapes and caches, so
+    /// Computed from the unbounded layout, which `Size::Fit` text already shapes and caches, so
     /// measuring the floor costs no extra shaping pass. A `NoWrap` run cannot break at all,
     /// so its floor is its full (max-content) width.
     pub fn min_inline_width(&self, config: &TextConfig) -> f32 {

@@ -42,7 +42,7 @@ pub fn Page() -> impl IntoElement {
     let active = {
         let down = down;
         let up = up;
-        derived!(move || if pressed.get() { down.get() } else { up.get() })
+        computed!(move || if pressed.get() { down.get() } else { up.get() })
     };
 
     view! {
@@ -83,7 +83,7 @@ pub fn Page() -> impl IntoElement {
 /// Leaving the surface counts as a release, otherwise a pointer-down that slides off would
 /// leave the button stuck in its pressed state.
 #[component]
-fn Button(pressed: Signal<bool>, presses: Signal<u32>, scale: Derived<f32>) -> impl IntoElement {
+fn Button(pressed: Signal<bool>, presses: Signal<u32>, scale: Computed<f32>) -> impl IntoElement {
     let down = pressed;
     let up = pressed;
     let drop = pressed;

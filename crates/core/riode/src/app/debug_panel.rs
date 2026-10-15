@@ -673,7 +673,7 @@ fn pill(label: &'static str, lit: bool) -> Element {
 
 fn tab_body(ui: &PanelUi, snap: &Snapshot) -> Element {
     // Visibility toggles, not rebuilds: tab clicks must swap content even
-    // when the app is idle (no version bumps, no rebuilds). Live Derived
+    // when the app is idle (no version bumps, no rebuilds). Live Computed
     // props re-evaluate per frame; bodies run once.
     let show_layers = ui.tab.clone().map(|t| t == 0);
     let show_design = ui.tab.clone().map(|t| t == 1);

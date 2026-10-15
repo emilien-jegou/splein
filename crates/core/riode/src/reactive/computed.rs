@@ -14,14 +14,14 @@ thread_local! {
 
 /// Memoized computed value tracking upstream signal reads and updating lazily.
 ///
-/// The compute closure lives in the runtime's `derived_recompute` registry,
+/// The compute closure lives in the runtime's `computed_recompute` registry,
 /// never in the handle: a chain of derivations would otherwise own each
 /// other through nested `Rc` closures, and dropping a deep chain would nest
 /// one destructor per link until the stack overflows. Handles only share a
 /// counting token so `Drop` still disposes exactly when the last clone goes
 /// away.
 #[derive(Clone)]
-pub struct Derived<T: 'static> {
+pub struct Computed<T: 'static> {
     id: SignalId,
     runtime: Rc<RefCell<ReactiveRuntime>>,
     _shared: Rc<()>,
@@ -31,7 +31,7 @@ pub struct Derived<T: 'static> {
 /// Refreshes a dirty derivation and every dirty transitive dependency it
 /// reads, dependencies first, over an explicit work stack.
 ///
-/// Walks up through `derived_sources` (dependency direction) collecting
+/// Walks up through `computed_sources` (dependency direction) collecting
 /// dirty derivations in post-order, so evaluation runs deepest-dependency
 /// first: each recompute reads already-fresh inputs, and the nested `get()`
 /// calls inside user closures hit clean values and return immediately
@@ -51,7 +51,7 @@ fn ensure_fresh(runtime: &Rc<RefCell<ReactiveRuntime>>, id: SignalId) {
                 continue;
             }
             stack.push((cur, true));
-            if let Some(srcs) = rt.derived_sources.get(&cur) {
+            if let Some(srcs) = rt.computed_sources.get(&cur) {
                 for src in srcs {
                     if !visited.insert(*src) {
                         continue;
@@ -59,7 +59,7 @@ fn ensure_fresh(runtime: &Rc<RefCell<ReactiveRuntime>>, id: SignalId) {
                     // Only live, dirty derivations need evaluation; plain
                     // signals and fresh derivations are read as-is.
                     let needs_eval =
-                        rt.derived_recompute.contains_key(src) && rt.derived_dirty.contains(src);
+                        rt.computed_recompute.contains_key(src) && rt.computed_dirty.contains(src);
                     if needs_eval {
                         stack.push((*src, false));
                     }
@@ -78,10 +78,10 @@ fn ensure_fresh(runtime: &Rc<RefCell<ReactiveRuntime>>, id: SignalId) {
         // recompute re-tracks the sources it actually reads.
         let recompute = {
             let mut rt = runtime.borrow_mut();
-            let recompute = rt.derived_recompute.get(&cur).cloned();
+            let recompute = rt.computed_recompute.get(&cur).cloned();
             if recompute.is_some() {
-                rt.derived_dirty.remove(&cur);
-                rt.push_observer(Observer::Derived(cur));
+                rt.computed_dirty.remove(&cur);
+                rt.push_observer(Observer::Computed(cur));
             }
             recompute
         };
@@ -95,7 +95,7 @@ fn ensure_fresh(runtime: &Rc<RefCell<ReactiveRuntime>>, id: SignalId) {
             // Store only if still live; a re-entrant dispose may have
             // unlinked the slot mid-recompute. Generation-checked: a stale id
             // must not overwrite its successor's slot.
-            if rt.derived_recompute.contains_key(&cur) {
+            if rt.computed_recompute.contains_key(&cur) {
                 if let Some(slot) = rt.values.get_mut(cur.index) {
                     if slot.generation == cur.generation && slot.value.is_some() {
                         slot.value = Some(value);
@@ -106,10 +106,10 @@ fn ensure_fresh(runtime: &Rc<RefCell<ReactiveRuntime>>, id: SignalId) {
     }
 }
 
-impl<T: Clone + 'static> Derived<T> {
+impl<T: Clone + 'static> Computed<T> {
     pub fn new<F: Fn() -> T + 'static>(runtime: Rc<RefCell<ReactiveRuntime>>, compute: F) -> Self {
         let id = runtime.borrow_mut().create_signal(Box::new(None::<T>));
-        runtime.borrow_mut().push_observer(Observer::Derived(id));
+        runtime.borrow_mut().push_observer(Observer::Computed(id));
         let initial = compute();
         runtime.borrow_mut().pop_observer();
         *runtime.borrow_mut().slot_mut(id) = Box::new(Some(initial));
@@ -122,7 +122,7 @@ impl<T: Clone + 'static> Derived<T> {
                 let compute = Rc::clone(&compute);
                 move || Box::new(Some(compute())) as Box<dyn std::any::Any>
             });
-            runtime.borrow_mut().derived_recompute.insert(id, recompute);
+            runtime.borrow_mut().computed_recompute.insert(id, recompute);
             Self {
                 id,
                 runtime: Rc::clone(&runtime),
@@ -134,7 +134,7 @@ impl<T: Clone + 'static> Derived<T> {
 
     pub fn get(&self) -> T {
         self.runtime.borrow_mut().track_read(self.id);
-        if self.runtime.borrow().derived_dirty.contains(&self.id) {
+        if self.runtime.borrow().computed_dirty.contains(&self.id) {
             ensure_fresh(&self.runtime, self.id);
         }
         self.runtime
@@ -154,9 +154,9 @@ impl<T: Clone + 'static> Derived<T> {
     /// Same shape as [`Signal::map`](crate::reactive::Signal::map), so a derivation can be refined without going back to
     /// a writable signal. Memoized on the same terms: it recomputes only when this
     /// derivation is dirty.
-    pub fn map<U: Clone + 'static>(&self, f: impl Fn(T) -> U + 'static) -> Derived<U> {
+    pub fn map<U: Clone + 'static>(&self, f: impl Fn(T) -> U + 'static) -> Computed<U> {
         let source = self.clone();
-        Derived::new(Rc::clone(&self.runtime), move || f(source.get()))
+        Computed::new(Rc::clone(&self.runtime), move || f(source.get()))
     }
 
     /// Derives a value from two upstream signals at once.
@@ -172,13 +172,13 @@ impl<T: Clone + 'static> Derived<T> {
         &self,
         other: B,
         f: impl Fn(T, B2) -> U + 'static,
-    ) -> Derived<U> {
+    ) -> Computed<U> {
         let a = self.clone();
         let b = other;
         // `read` rather than `get`, so a plain `Signal` on the right tracks its reads the same
         // way this derivation does on the left. The recompute condition then depends on both
         // sources regardless of which of them happens to be writable.
-        Derived::new(Rc::clone(&self.runtime), move || f(a.get(), b.read()))
+        Computed::new(Rc::clone(&self.runtime), move || f(a.get(), b.read()))
     }
 
     /// The runtime this derivation belongs to, for owners that need to register work.
@@ -187,11 +187,11 @@ impl<T: Clone + 'static> Derived<T> {
     }
 }
 
-impl<T: 'static> Drop for Derived<T> {
+impl<T: 'static> Drop for Computed<T> {
     fn drop(&mut self) {
         if Rc::strong_count(&self._shared) == 1 {
             match self.runtime.try_borrow_mut() {
-                Ok(mut rt) => rt.dispose_derived(self.id),
+                Ok(mut rt) => rt.dispose_computed(self.id),
                 Err(_) => DEFERRED_DISPOSALS
                     .with(|q| q.borrow_mut().push((Rc::clone(&self.runtime), self.id))),
             }
@@ -204,7 +204,7 @@ impl<T: 'static> Drop for Derived<T> {
 /// Pops one entry at a time and releases the queue borrow before disposing:
 /// disposal drops recompute closures that own further handles, and a nested
 /// handle drop must find this queue unborrowed (it re-queues itself here
-/// when the runtime is busy). Holding the borrow across `dispose_derived`
+/// when the runtime is busy). Holding the borrow across `dispose_computed`
 /// would panic on the nested re-borrow instead.
 pub fn drain_deferred_disposals() {
     loop {
@@ -216,7 +216,7 @@ pub fn drain_deferred_disposals() {
         // either branch below moves `runtime` again.
         let done = match runtime.try_borrow_mut() {
             Ok(mut rt) => {
-                rt.dispose_derived(id);
+                rt.dispose_computed(id);
                 true
             }
             Err(_) => false,

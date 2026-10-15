@@ -106,6 +106,56 @@ fn attr_value_tokens(attr: &KeyedAttribute) -> TokenStream2 {    match &attr.pos
     }
 }
 
+/// Extracts the bare expression an attribute holds, unwrapping one brace layer
+/// (`{pressed.set_true}` → `pressed.set_true`), for shape inspection.
+fn attr_expr(attr: &KeyedAttribute) -> Option<syn::Expr> {
+    match &attr.possible_value {
+        KeyedAttributeValue::Value(v) => match &v.value {
+            KVAttributeValue::Expr(syn::Expr::Block(b))
+                if b.attrs.is_empty() && b.label.is_none() =>
+            {
+                if b.block.stmts.len() == 1 {
+                    if let Some(syn::Stmt::Expr(e, None)) = b.block.stmts.first() {
+                        return Some(e.clone());
+                    }
+                }
+                Some(syn::Expr::Block(b.clone()))
+            }
+            KVAttributeValue::Expr(e) => Some(e.clone()),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// `on:click={sig.method}` → `move |_| (sig).method()` — method-reference sugar.
+///
+/// Only fires for `on:`-namespaced attrs (the unambiguous event namespace, which
+/// cannot collide with a prop named `on_click`) whose value is a bare field/method
+/// path with no arguments. A bare `sig.method` is not a valid handler today — it is
+/// a field access, not `Fn` — so this only turns a would-be type error into the
+/// obvious closure: `on:click={presses.increment}` reads as "on click, increment".
+fn event_method_ref(key: &str, attr: &KeyedAttribute) -> Option<TokenStream2> {
+    if !key.starts_with("on:") {
+        return None;
+    }
+    match attr_expr(attr)? {
+        syn::Expr::Field(syn::ExprField { base, member, .. }) => {
+            Some(quote! { move |_| (#base).#member() })
+        }
+        _ => None,
+    }
+}
+
+/// The final value tokens for an attribute: method-reference sugar for `on:` events
+/// with a bare `sig.method`, otherwise the normal (possibly slotted) value.
+fn attr_value(key: &str, attr: &KeyedAttribute, flow: &FlowTables) -> TokenStream2 {
+    if let Some(sugar) = event_method_ref(key, attr) {
+        return sugar;
+    }
+    slot_literal_value(attr_value_tokens(attr), flow)
+}
+
 /// Attr values holding a single nested element: `head={<Strip …/>}`.
 ///
 /// Braced RSX fails Rust parsing, so rstml recovers it as `InvalidBraced` and
@@ -318,8 +368,7 @@ fn apply_attrs(base: TokenStream2, el: &Element, flow: &FlowTables) -> syn::Resu
             NodeAttribute::Attribute(attr) => {
                 let key = node_name_string(&attr.key);
                 let method = format_ident!("{}", attr_method(&key));
-                let val = attr_value_tokens(&attr.clone());
-                let val = slot_literal_value(val, flow);
+                let val = attr_value(&key, &attr.clone(), flow);
                 out = quote! { #out.#method(#val) };
             }
         }
@@ -390,8 +439,7 @@ pub(crate) fn element_expr(el: &Element, flow: &FlowTables) -> syn::Result<Token
                     ));
                 }
                 let method = format_ident!("{}", attr_method(&key));
-                let val = attr_value_tokens(&attr.clone());
-                let val = slot_literal_value(val, flow);
+                let val = attr_value(&key, &attr.clone(), flow);
                 chain = quote! { #chain.#method(#val) };
             }
         }

@@ -127,7 +127,7 @@ impl PointerTracker {
 
     /// Pointer velocity over the recent history, in logical pixels per second.
     ///
-    /// Derived from engine-supplied timestamps rather than the wall clock so a headless test
+    /// Computed from engine-supplied timestamps rather than the wall clock so a headless test
     /// stepping fixed deltas measures the same velocity the app would.
     pub fn velocity(&self) -> Point {
         if self.history.len() < 2 {

@@ -1,7 +1,7 @@
 // Single responsibility: Generic dynamic property abstraction supporting values, signals, and computations.
 
 use crate::reactive::context::Ctx;
-use crate::reactive::derived::Derived;
+use crate::reactive::computed::Computed;
 use crate::reactive::signal::Signal;
 use std::rc::Rc;
 
@@ -57,7 +57,7 @@ impl<T: Clone + 'static> DynamicProp<T> {
 /// Friendly alias for a reactive-capable component prop.
 ///
 /// `Prop<String>` accepts a literal, `String`, `Signal<String>`,
-/// `Derived<String>`, or a `move || ...` closure — anything implementing
+/// `Computed<String>`, or a `move || ...` closure — anything implementing
 /// [`IntoPropValue`]. `Option<Prop<T>>` means omissible; `Prop<Option<T>>`
 /// means dynamically absent/present.
 pub type Prop<T> = DynamicProp<T>;
@@ -127,7 +127,7 @@ impl<T: Clone + 'static> IntoPropValue<T> for Signal<T> {
     }
 }
 
-impl<T: Clone + 'static> IntoPropValue<T> for Derived<T> {
+impl<T: Clone + 'static> IntoPropValue<T> for Computed<T> {
     fn into_prop_value(self) -> DynamicProp<T> {
         DynamicProp::Dynamic(Rc::new(move || self.get()))
     }
@@ -255,7 +255,7 @@ impl<T: Clone + 'static> IntoProp<T> for Signal<T> {
     }
 }
 
-impl<T: Clone + 'static> IntoProp<T> for Derived<T> {
+impl<T: Clone + 'static> IntoProp<T> for Computed<T> {
     fn into_prop(self) -> DynamicProp<T> {
         DynamicProp::Dynamic(Rc::new(move || self.get()))
     }

@@ -195,7 +195,7 @@ impl GroupDef {
     /// Rotates by an animated value, or applies no rotation when none is animated.
     ///
     /// Composed through `Readable` so a caller may hand over either a `Signal` or a
-    /// `Derived` without wrapping it first.
+    /// `Computed` without wrapping it first.
     pub fn rotate_degrees_from(mut self, source: impl Readable<f32> + 'static) -> Self {
         self.rotate_degrees = Some(DynamicProp::Dynamic(Rc::new(move || source.read())));
         self
@@ -696,7 +696,7 @@ impl GroupDef {
     ///
     /// Sugar over [`Self::layout_presence`]: `visible(true)` is
     /// `LayoutPresence::Present`, `visible(false)` is `LayoutPresence::Absent`.
-    /// Accepts any bool prop (literal, `Signal<bool>`, `Derived<bool>`, closure).
+    /// Accepts any bool prop (literal, `Signal<bool>`, `Computed<bool>`, closure).
     pub fn visible<P: IntoProp<bool>>(mut self, v: P) -> Self {
         let prop = v.into_prop();
         self.presence = Some(match prop {

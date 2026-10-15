@@ -73,7 +73,7 @@
 //!   filed by identity, so position-keyed rows hand each other the wrong springs after
 //!   a reorder.
 //! - A `text()` fed a fresh `String` every frame re-shapes every frame. Feed it a signal
-//!   (or a `Derived`) so shaping is cached until the content actually changes.
+//!   (or a `Computed`) so shaping is cached until the content actually changes.
 //! - `custom()` primitives bypass layout caching — measure honestly in `Primitive::measure`
 //!   or every ancestor pays for it.
 

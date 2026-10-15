@@ -8,7 +8,7 @@ pub enum Observer {
     /// Active effect callback identifier.
     Effect(SubscriberId),
     /// Downstream memoized computation identifier.
-    Derived(SignalId),
+    Computed(SignalId),
     /// Generic invalidation subscriber handle.
     Subscriber(SubscriberId),
 }

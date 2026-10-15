@@ -146,7 +146,7 @@ fn Item(
 fn Header(
     index: usize,
     title: &'static str,
-    is_open: Derived<bool>,
+    is_open: Computed<bool>,
     open: Signal<Option<usize>>,
 ) -> impl IntoElement {
     let toggle_open = open;
@@ -188,7 +188,7 @@ fn Header(
 /// above deliberately stays plain — it owns the open/close click, and a selectable title
 /// would turn every drifted press into a drag and swallow the toggle.
 #[component]
-fn PanelBody(index: usize, copy: &'static str, is_open: Derived<bool>) -> impl IntoElement {
+fn PanelBody(index: usize, copy: &'static str, is_open: Computed<bool>) -> impl IntoElement {
     // The copy fades on the same clock as the box, so it never appears before the reveal.
     let reveal =
         Transition::from_str("out-cubic 180ms").on(is_open.map(
@@ -226,7 +226,7 @@ fn PanelBody(index: usize, copy: &'static str, is_open: Derived<bool>) -> impl I
 
 /// Rotating chevron driven by the item's own animated angle.
 #[component]
-fn Chevron(degrees: Derived<f32>) -> impl IntoElement {
+fn Chevron(degrees: Computed<f32>) -> impl IntoElement {
     view! {
         <Group
             width={18.0}

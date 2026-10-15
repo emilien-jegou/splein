@@ -62,8 +62,8 @@ impl Ticker for GlideTicker {
 pub fn offset(
     flip: impl SignalRead<Transform> + 'static,
     follow: impl SignalRead<Transform> + 'static,
-) -> Derived<Transform> {
-    derived!(move || {
+) -> Computed<Transform> {
+    computed!(move || {
         let a = flip.get();
         let b = follow.get();
         Transform::from_translation(a.tx + b.tx, a.ty + b.ty)

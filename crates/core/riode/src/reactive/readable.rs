@@ -3,14 +3,14 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::reactive::derived::Derived;
+use crate::reactive::computed::Computed;
 use crate::reactive::runtime::ReactiveRuntime;
 use crate::reactive::signal::Signal;
 use crate::reactive::ticker::Ticker;
 
 /// Read-only view of a reactive value.
 ///
-/// Implemented by both [`Signal`] and [`Derived`], so a component that only needs to read
+/// Implemented by both [`Signal`] and [`Computed`], so a component that only needs to read
 /// a value can accept `impl SignalRead<T>` and the compiler guarantees the child cannot
 /// mutate parent state. This is the least-privilege prop type for child components.
 pub trait SignalRead<T: Clone + 'static> {
@@ -24,15 +24,15 @@ impl<T: Clone + 'static> SignalRead<T> for Signal<T> {
     }
 }
 
-impl<T: Clone + 'static> SignalRead<T> for Derived<T> {
+impl<T: Clone + 'static> SignalRead<T> for Computed<T> {
     fn get(&self) -> T {
-        Derived::get(self)
+        Computed::get(self)
     }
 }
 
 /// A value source an adapter can read and attach frame-driven work to.
 ///
-/// Both [`Signal`] and [`Derived`] implement this, so a caller can animate a value whether
+/// Both [`Signal`] and [`Computed`] implement this, so a caller can animate a value whether
 /// it was declared directly or derived from other signals, with no adapter difference.
 pub trait Readable<T: Clone + 'static> {
     /// Reads the current value.
@@ -71,7 +71,7 @@ impl<T: Clone + 'static> Readable<T> for Signal<T> {
     }
 }
 
-impl<T: Clone + 'static> Readable<T> for Derived<T> {
+impl<T: Clone + 'static> Readable<T> for Computed<T> {
     fn read(&self) -> T {
         self.get()
     }

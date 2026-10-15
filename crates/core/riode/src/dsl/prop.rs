@@ -4,7 +4,7 @@ use crate::foundation::{
     Alignment, Color, Direction, Distribution, Fill, Gap, LayoutPresence, Margin, Radius, Shadow,
     Size, Stroke, Transform,
 };
-use crate::reactive::derived::Derived;
+use crate::reactive::computed::Computed;
 use crate::reactive::prop::{DynamicProp, IntoProp};
 use crate::reactive::signal::Signal;
 
@@ -82,13 +82,13 @@ impl IntoProp<Fill> for Signal<Color> {
     }
 }
 
-impl IntoProp<Size> for Derived<f32> {
+impl IntoProp<Size> for Computed<f32> {
     fn into_prop(self) -> DynamicProp<Size> {
         DynamicProp::Dynamic(std::rc::Rc::new(move || Size::Fixed(self.get())))
     }
 }
 
-impl IntoProp<Fill> for Derived<Color> {
+impl IntoProp<Fill> for Computed<Color> {
     fn into_prop(self) -> DynamicProp<Fill> {
         DynamicProp::Dynamic(std::rc::Rc::new(move || Fill::solid(self.get())))
     }

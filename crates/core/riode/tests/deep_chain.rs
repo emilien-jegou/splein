@@ -2,21 +2,21 @@
 // overflowing the call stack, and diamonds evaluate glitch-free.
 //
 // Regression coverage for the P0 conversion of `Signal::write` /
-// `Derived::get` from call-stack recursion to an explicit work stack: a
+// `Computed::get` from call-stack recursion to an explicit work stack: a
 // 20,000-node linear chain exceeds what nested `get()` frames can survive
 // on a default test-thread stack.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use riode::reactive::{batch, Derived, ReactiveRuntime, Signal};
+use riode::reactive::{batch, Computed, ReactiveRuntime, Signal};
 
 fn new_runtime() -> Rc<RefCell<ReactiveRuntime>> {
     Rc::new(RefCell::new(ReactiveRuntime::new()))
 }
 
 /// A 20k linear chain must set and pull correctly: depth that nested
-/// `Derived::get -> compute -> get` frames cannot survive.
+/// `Computed::get -> compute -> get` frames cannot survive.
 ///
 /// Runs on an explicitly large stack because dropping 20k refcounted links
 /// nests one destructor per link — inherent to any owned chain, unrelated
@@ -32,10 +32,10 @@ fn deep_linear_chain_set_and_pull_is_correct() {
             let rt = new_runtime();
             let root = Signal::new(Rc::clone(&rt), 0u64);
             let r = root.clone();
-            let mut leaf = Derived::new(Rc::clone(&rt), move || r.get().wrapping_add(1));
+            let mut leaf = Computed::new(Rc::clone(&rt), move || r.get().wrapping_add(1));
             for _ in 2..N {
                 let prev = leaf.clone();
-                leaf = Derived::new(Rc::clone(&rt), move || prev.get().wrapping_add(1));
+                leaf = Computed::new(Rc::clone(&rt), move || prev.get().wrapping_add(1));
             }
 
             root.set(1);
@@ -67,10 +67,10 @@ fn deep_chain_frames_do_not_grow_the_stack() {
             let rt = new_runtime();
             let root = Signal::new(Rc::clone(&rt), 0u64);
             let r = root.clone();
-            let mut leaf = Derived::new(Rc::clone(&rt), move || r.get().wrapping_add(1));
+            let mut leaf = Computed::new(Rc::clone(&rt), move || r.get().wrapping_add(1));
             for _ in 2..N {
                 let prev = leaf.clone();
-                leaf = Derived::new(Rc::clone(&rt), move || prev.get().wrapping_add(1));
+                leaf = Computed::new(Rc::clone(&rt), move || prev.get().wrapping_add(1));
             }
 
             root.set(7);
@@ -94,11 +94,11 @@ fn diamond_terminal_evaluates_exactly_once_per_change() {
 
     let root = Signal::new(Rc::clone(&rt), 10u64);
     let ra = root.clone();
-    let a = Derived::new(Rc::clone(&rt), move || ra.get().wrapping_mul(2));
+    let a = Computed::new(Rc::clone(&rt), move || ra.get().wrapping_mul(2));
     let rb = root.clone();
-    let b = Derived::new(Rc::clone(&rt), move || rb.get().wrapping_add(5));
+    let b = Computed::new(Rc::clone(&rt), move || rb.get().wrapping_add(5));
     let (ca, cb) = (a.clone(), b.clone());
-    let d = Derived::new(Rc::clone(&rt), move || {
+    let d = Computed::new(Rc::clone(&rt), move || {
         evals_in.set(evals_in.get() + 1);
         ca.get().wrapping_add(cb.get())
     });
