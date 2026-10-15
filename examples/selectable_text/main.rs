@@ -6,6 +6,7 @@ mod common;
 mod view;
 
 use riode::prelude::*;
+use riode::internal::*;  // P10 escape hatch: this file composes repr-builders directly
 use common::ExampleCli;
 pub use view::*;
 

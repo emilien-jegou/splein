@@ -1,6 +1,7 @@
 // Single responsibility: Native OS window presenting the live Paper 1 showcase design.
 
 use riode::prelude::*;
+use riode::internal::*;  // P10 escape hatch: this file composes repr-builders directly
 use common::ExampleCli;
 
 #[path = "../common/mod.rs"]

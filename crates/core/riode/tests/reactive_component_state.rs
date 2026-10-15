@@ -11,6 +11,7 @@ use std::rc::Rc;
 
 use riode::dsl::Element;
 use riode::prelude::*;
+use riode::internal::*;  // P10 escape hatch: this test composes repr-builders directly
 use riode::reactive::{Cx, ReactiveRuntime, Signal};
 use riode_tiny_skia::testing::Harness;
 

@@ -6,6 +6,7 @@ use std::rc::Rc;
 use riode::dsl::{use_flip, use_ref, ElementRef, Trigger};
 use riode::foundation::{Color, Direction, Size};
 use riode::prelude::*;
+use riode::internal::*;  // P10 escape hatch: this test composes repr-builders directly
 use riode::reactive::{Cx, ReactiveRuntime, Signal};
 use riode_tiny_skia::testing::Harness;
 

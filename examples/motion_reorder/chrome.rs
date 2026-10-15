@@ -6,6 +6,7 @@
 // white-at-12%, white text, `#A1A1A1` secondary).
 
 use riode::prelude::*;
+use riode::internal::*;  // P10 escape hatch: this file composes repr-builders directly
 
 use super::super::motion_ui::{Eyebrow, EyebrowProps};
 

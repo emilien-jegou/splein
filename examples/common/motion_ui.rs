@@ -2,6 +2,7 @@
 #![allow(dead_code)]
 
 use riode::prelude::*;
+use riode::internal::*;  // P10 escape hatch: this file composes repr-builders directly
 
 /// Tinted application background.
 pub const PAGE: u32 = 0xF4F5F7;

@@ -12,6 +12,7 @@ use std::rc::Rc;
 use riode::dsl::Element;
 use riode::hot_reload::SharedFactory;
 use riode::prelude::*;
+use riode::internal::*;  // P10 escape hatch: this test composes repr-builders directly
 use riode::reactive::{Cx, ReactiveRuntime};
 use riode::runtime::Engine;
 

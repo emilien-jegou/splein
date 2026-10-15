@@ -1,6 +1,7 @@
 // Single responsibility: Showcases Aurora text layout: wrap, alignment, tracking, decoration, ellipsis.
 
 use riode::prelude::*;
+use riode::internal::*;  // P10 escape hatch: this file composes repr-builders directly
 
 /// Window chrome shared by the release driver (`main.rs`) and the hot entry
 /// (`hot.rs`): declared once here, referenced by both — never mirrored.

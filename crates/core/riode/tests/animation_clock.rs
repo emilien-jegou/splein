@@ -6,6 +6,7 @@
 
 use riode::foundation::Color;
 use riode::prelude::*;
+use riode::internal::*;  // P10 escape hatch: this test composes repr-builders directly
 use riode_tiny_skia::testing::Harness;
 
 /// A card whose x springs to 120, driven by a plain linear tween so any difference in the

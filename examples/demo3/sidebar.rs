@@ -2,6 +2,7 @@
 
 use super::icons::AppIcons;
 use riode::prelude::*;
+use riode::internal::*;  // P10 escape hatch: this file composes repr-builders directly
 
 pub fn render_sidebar(icons: &AppIcons) -> impl IntoElement {
     view! {

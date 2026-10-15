@@ -8,10 +8,13 @@ pub use crate::app::{App, AppConfig, AppExtension, FpsLimit, OverlayCaps, Overla
 // `dsl::component` function is deliberately left out of the prelude: one name cannot be both.
 /// Named computed handle (memoized derivation) from a plain closure: `computed!(move || signal.get() + 1)`.
 pub use crate::computed;
+// User-facing vocabulary only. The repr-builders (`group`/`text`/`image`/`svg`/`custom`)
+// and their def types (`GroupDef`/`TextDef`/`ChildSegment`/`CustomDef`) moved to
+// `riode::internal` (P10) — spell `<Group>`/`<Text>` in `view!` instead. `Element`/
+// `IntoElement`/`IntoSplice`/`Component` stay here: they are the component contract.
 pub use crate::dsl::{
-    custom, group, image, svg, text, use_scroll, view_child, Behavior, ChildSegment, Component,
-    CustomDef, Element, GroupDef, IntoElement, OnScroll, Provider, RowFn, ScrollHandle,
-    ScrollView, ScrollViewProps, Scrollbar, TextDef, VirtualScrollView, VirtualScrollViewProps,
+    use_scroll, Behavior, Component, Element, IntoElement, OnScroll, Provider, RowFn, ScrollHandle,
+    ScrollView, ScrollViewProps, Scrollbar, VirtualScrollView, VirtualScrollViewProps,
 };
 pub use crate::foundation::{
     Alignment, Anchor, BlendMode, Color, Direction, Distribution, FalloffCurve, Fill, Gap,

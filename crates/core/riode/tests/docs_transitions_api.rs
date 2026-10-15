@@ -9,6 +9,7 @@
 
 use riode::dsl::{use_flip, use_follow, use_ref, ElementRef, Trigger};
 use riode::prelude::*;
+use riode::internal::*;  // P10 escape hatch: this test composes repr-builders directly
 use riode::reactive::hooks::use_transition;
 use riode_tiny_skia::testing::Harness;
 

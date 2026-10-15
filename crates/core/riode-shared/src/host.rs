@@ -6,6 +6,7 @@ use riode::hot_reload::{
     HotWindowFn, HotWindowInfo,
 };
 use riode::prelude::*;
+use riode::internal::*;  // P10 escape hatch: this test composes repr-builders directly
 use std::ffi::{c_char, CStr};
 
 /// Reads a borrowed C string. The stub keeps every string alive for the call.

@@ -7,6 +7,7 @@ use riode::dsl::{group, text, IntoElement};
 use riode::foundation::{Color, Direction, Margin};
 use riode::input::PointerPhase;
 use riode::prelude::*;
+use riode::internal::*;  // P10 escape hatch: this test composes repr-builders directly
 use riode::reactive::ReactiveRuntime;
 use riode_tiny_skia::testing::{report, Escape, Filmstrip, Harness, Located, Rgba, Snapshot};
 

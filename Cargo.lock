@@ -2750,6 +2750,7 @@ dependencies = [
  "pollster",
  "resvg",
  "riode",
+ "riode-engine-skia",
  "riode-engine-tiny-skia",
  "riode-engine-wgpu",
  "rustc-hash 2.1.3",

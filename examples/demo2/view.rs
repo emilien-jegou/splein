@@ -1,6 +1,7 @@
 // Single responsibility: Self-contained interactive runner for the Paper HUD Dock design.
 
 use riode::prelude::*;
+use riode::internal::*;  // P10 escape hatch: this file composes repr-builders directly
 use std::sync::Arc;
 
 /// Window chrome shared by the release driver (`main.rs`) and the hot entry

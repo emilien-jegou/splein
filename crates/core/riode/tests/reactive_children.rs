@@ -6,6 +6,7 @@ use std::rc::Rc;
 use riode::dsl::{group, text, IntoElement};
 use riode::foundation::Color;
 use riode::prelude::*;
+use riode::internal::*;  // P10 escape hatch: this test composes repr-builders directly
 use riode::reactive::{ReactiveRuntime, Signal};
 use riode::runtime::Engine;
 use riode_tiny_skia::HeadlessRaster;

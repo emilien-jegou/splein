@@ -133,7 +133,7 @@ fn dfs_count(arena: &riode::tree::TreeArena, root: riode::tree::NodeId) -> usize
     while let Some(id) = stack.pop() {
         black_box(id);
         visited += 1;
-        stack.extend_from_slice(arena.children(id));
+        stack.extend_from_slice(arena.children(id).as_slice());
     }
     visited
 }
@@ -144,7 +144,7 @@ fn bench_tree_arena_10k(c: &mut Criterion) {
         let (mut arena, ids) = setup_arena_tree();
         assert_eq!(dfs_count(&arena, ids[0]), 10_000);
         for i in (0..10_000).step_by(10) {
-            arena.remove_with(ids[i], |_| {});
+            arena.remove_with(ids[i], |_, _| {});
         }
         // Removing every 10th node removes whole subtrees; the survivors are
         // the nodes never visited by a removal.
@@ -162,7 +162,7 @@ fn bench_tree_arena_10k(c: &mut Criterion) {
             let (mut arena, ids) = setup_arena_tree();
             black_box(dfs_count(&arena, ids[0]));
             for i in (0..10_000).step_by(10) {
-                arena.remove_with(ids[i], |_| {});
+                arena.remove_with(ids[i], |_, _| {});
             }
             samples.push(start.elapsed());
         }
@@ -191,7 +191,7 @@ fn bench_tree_arena_10k(c: &mut Criterion) {
             let (mut arena, ids) = setup_arena_tree();
             black_box(dfs_count(&arena, ids[0]));
             for i in (0..10_000).step_by(10) {
-                arena.remove_with(ids[i], |_| {});
+                arena.remove_with(ids[i], |_, _| {});
             }
         });
     });
@@ -207,7 +207,7 @@ fn bench_tree_arena_10k(c: &mut Criterion) {
             setup_arena_tree,
             |(mut arena, ids)| {
                 for i in (0..10_000).step_by(10) {
-                    arena.remove_with(ids[i], |_| {});
+                    arena.remove_with(ids[i], |_, _| {});
                 }
             },
             BatchSize::SmallInput,

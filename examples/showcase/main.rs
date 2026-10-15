@@ -10,6 +10,7 @@ use std::time::Instant;
 use riode::app::switcher::{BootCtx, BootedDemo};
 use riode::app::AppExtension;
 use riode::prelude::*;
+use riode::internal::*;  // P10 escape hatch: this file composes repr-builders directly
 use riode::reactive::ReactiveRuntime;
 use common::ExampleCli;
 

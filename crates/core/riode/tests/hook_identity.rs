@@ -4,6 +4,7 @@ use std::rc::Rc;
 
 use riode::dsl::{group, IntoElement};
 use riode::prelude::*;
+use riode::internal::*;  // P10 escape hatch: this test composes repr-builders directly
 use riode::reactive::{Cx, ReactiveRuntime, Signal};
 
 thread_local! {

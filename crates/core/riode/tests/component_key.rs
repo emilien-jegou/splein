@@ -16,6 +16,7 @@ use std::rc::Rc;
 use riode::dsl::{reconcile, Element};
 use riode::foundation::Key;
 use riode::prelude::*;
+use riode::internal::*;  // P10 escape hatch: this test composes repr-builders directly
 use riode::reactive::{Cx, ReactiveRuntime};
 use riode::tree::{NodeId, SubscriberRouter, TreeArena};
 
