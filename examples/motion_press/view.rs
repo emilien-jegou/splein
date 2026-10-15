@@ -33,11 +33,22 @@ pub fn Page() -> impl IntoElement {
                 }
             },
         ));
+    // The release springs, so it must chase the *same* target the press eases toward —
+    // held while down, rest while up. Watching a constant rest value parked it at 1.0,
+    // so the release jumped instead of springing.
     let up =
-        Transition::from_str("spring:bouncy")
-            .on(pressed.map(|p| if p { 1.0 } else { 1.0 }));
+        Transition::from_str("spring:bouncy").on(pressed.map(
+            |p| {
+                if p {
+                    HELD
+                } else {
+                    1.0
+                }
+            },
+        ));
 
-    // Whichever stream owns the current state drives the view; the other sits at 1.0.
+    // Whichever stream owns the current state drives the view; the other trails its own
+    // copy of the target, unused. Down eases on press; up springs on release.
     // Plain closure: reads three signals, subscribes to all three, no .map()/.combine().
     let active = {
         let down = down;
@@ -96,7 +107,11 @@ fn Button(pressed: Signal<bool>, presses: Signal<u32>, scale: Computed<f32>) -> 
             on:pointer-down={pressed.set_true}
             on:pointer-up={pressed.set_false}
             on:pointer-leave={pressed.set_false}
-            on:click={move |info| presses.update(|n| *n += info.click_count as u32)}
+            // One press is one count. `info.click_count` is the multi-click *selection*
+            // counter (1 caret / 2 word / 3 paragraph), which climbs across a burst —
+            // so `+= click_count` tallied a fast second press as +2. A press counter
+            // ignores it.
+            on:click={move |_info| presses.update(|n| *n += 1)}
         >
             <Text size={15.0} weight={700u16} color={Color::WHITE} margin={Margin::x(28.0)}>
                 "Continue"
