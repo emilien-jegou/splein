@@ -749,9 +749,16 @@ impl GroupDef {
     ///
     /// A behavior owns its state (one clone, inside the behavior) and fans out to
     /// the typed `on_*` slots, so call sites read as one verb instead of five
-    /// closures: `row.attach(ReorderGesture::new(drag))`.
+    /// closures: `row.on_drag(Drag::start(at).step(..).end(..))`.
     pub fn attach<B: Behavior>(self, behavior: B) -> Self {
         behavior.attach(self)
+    }
+
+    /// Attaches a [`Drag`](crate::dsl::gesture::Drag) gesture: grab, hold,
+    /// track, and release fan out to the typed drag slots with release cleanup
+    /// guaranteed. RSX spells this `on:drag={…}`.
+    pub fn on_drag(self, drag: crate::dsl::gesture::Drag) -> Self {
+        self.attach(drag)
     }
 }
 

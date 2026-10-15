@@ -49,7 +49,7 @@ pub fn use_flip(
     target: ElementRef,
     trigger: impl Readable<Trigger> + 'static,
     spring: Spring,
-) -> Signal<Transform> {
+) -> (Signal<Transform>, FlipHandle) {
     let Some(scope) = current_scope() else {
         no_scope()
     };
@@ -122,7 +122,53 @@ pub fn use_flip(
         FlipCell::refresh_ticker(&cell, false);
     }
 
-    cell.out.clone()
+    (cell.out.clone(), FlipHandle(Rc::clone(&cell)))
+}
+
+/// Synchronous control over a recalled FLIP cell: reseed its offset and read
+/// whether it is still gliding. Mirrors [`FollowHandle`].
+///
+/// Reseeding (rather than layering a second offset spring on top) is what
+/// keeps exactly one displacement owner per row: the caller folds the current
+/// visual offset in and the spring decays it home, so there is no second
+/// motion to cancel, mask, or fight — and no cancel protocol to go stale.
+#[derive(Clone)]
+pub struct FlipHandle(Rc<FlipCell>);
+
+impl FlipHandle {
+    /// Folds a live offset into the spring and retargets home: position and
+    /// velocity carry forward, so reseeding mid-glide is continuous.
+    /// Starts the spring if it was at rest. Always unpauses: a reseed means
+    /// new ownership of the motion (a release), which supersedes any freeze.
+    pub fn reseed(&self, offset: Transform) {
+        self.0.paused.set(false);
+        let cell = &self.0;
+        {
+            let mut x = cell.x.borrow_mut();
+            x.position = offset.tx;
+            x.retarget(0.0);
+            let mut y = cell.y.borrow_mut();
+            y.position = offset.ty;
+            y.retarget(0.0);
+        }
+        cell.running.set(true);
+        cell.publish(offset.tx, offset.ty);
+        FlipCell::refresh_ticker(&cell, true);
+    }
+
+    /// Whether the displacement spring is still gliding.
+    pub fn is_running(&self) -> bool {
+        self.0.running.get()
+    }
+
+    /// Freezes the spring mid-flight: position and velocity are kept, nothing
+    /// integrates and nothing inverts until [`Self::set_paused`] releases it
+    /// (or [`Self::reseed`] supersedes it). Grab uses this so a row stops at
+    /// the exact mid-flight position the pointer found — then tracks the hand
+    /// from there with zero jump and zero drift.
+    pub fn set_paused(&self, paused: bool) {
+        self.0.paused.set(paused);
+    }
 }
 
 /// Whether the arrangement a FLIP is watching has changed.
@@ -170,6 +216,10 @@ struct FlipCell {
     owed: Cell<bool>,
     /// Whether an offset is currently being animated.
     running: Cell<bool>,
+    /// Frozen by an active grab: the spring holds its position (and the sample
+    /// keeps housekeeping) so the row stops exactly where the pointer found
+    /// it. Cleared on every release path; reseed also clears it.
+    paused: Cell<bool>,
     /// Kept alive for its subscription; see `set_effect`.
     ///
     /// An `Effect` unsubscribes when dropped, so holding it here is what makes the trigger
@@ -193,6 +243,7 @@ impl FlipCell {
             last_trigger: Cell::new(None),
             owed: Cell::new(false),
             running: Cell::new(false),
+            paused: Cell::new(false),
             effect: RefCell::new(None),
             registered: Cell::new(false),
             ticker_gen: Cell::new(None),
@@ -258,12 +309,21 @@ impl FlipCell {
     ///
     /// Returns `None` for a resize — the element moved, but the arrangement did not — and for the
     /// first sighting, where there is no First position to invert from.
+    ///
+    /// While paused the sample only does housekeeping (refresh `last`, consume
+    /// `owed`): the layout delta it would have reported belongs to boxes the
+    /// frozen spring is deliberately ignoring, and inverting it would unfreeze
+    /// by the back door. Freshness resumes on unpause because `last` never
+    /// goes stale.
     fn sample(&self) -> Option<(f32, f32)> {
         let now = self.target.position();
         let previous = self.last.replace(now);
         // Consumed whatever the outcome: a trigger that fires without moving anything must not
         // leave this armed for some unrelated future sample.
         let owed = self.owed.replace(false);
+        if self.paused.get() {
+            return None;
+        }
 
         let (Some(now), Some(previous)) = (now, previous) else {
             return None;
@@ -300,8 +360,10 @@ impl FlipCell {
     }
 
     /// Advances both axes and republishes, until they are both at rest.
+    /// A paused spring holds exactly still (grab freeze); resuming picks up
+    /// wherever the tracks are, with whatever velocity they kept.
     fn advance(&self, dt: f32) {
-        if !self.running.get() {
+        if !self.running.get() || self.paused.get() {
             return;
         }
 
@@ -566,6 +628,9 @@ impl Ticker for FlipTicker {
     }
 
     fn is_active(&self) -> bool {
-        self.0.running.get()
+        // A paused spring holds still by design; reporting active would keep
+        // frames spinning for motion that is intentionally frozen (tap-hold
+        // with no drag). Drags drive their own frames via the follow path.
+        self.0.running.get() && !self.0.paused.get()
     }
 }

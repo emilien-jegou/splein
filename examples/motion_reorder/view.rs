@@ -14,8 +14,6 @@ mod list;
 #[path = "./row.rs"]
 mod row;
 
-use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 
 use super::motion_ui::*;
@@ -92,7 +90,15 @@ pub fn Page() -> impl IntoElement {
     // instead of snapping its centre to it.
     let grab_dy = use_signal(0.0f32);
     // Where the pointer is asking the held row's centre to be, in window coordinates.
+    // Grab-relative (see `Drag::want_centre`): the engine gesture tracks the
+    // raw position alongside, but only the list can fold the grab offset.
     let want_centre = use_signal(None::<f32>);
+    // Live raw pointer position for the engine gesture (bound per row).
+    let gesture_at = use_gesture();
+    // Paint-order high-water mark: bumped on every grab so the most recently
+    // grabbed row always paints above earlier ones, no matter who is still
+    // landing. Monotonic; parked rows sit at 0 (see Row).
+    let z_top = use_signal(0i32);
 
     let drag = Rc::new(Drag {
         order,
@@ -100,9 +106,10 @@ pub fn Page() -> impl IntoElement {
         held,
         grab_dy,
         want_centre,
+        gesture_at,
+        z_top,
         // One handle for the list, which is how the gesture learns where the rows are.
         list: use_ref(),
-        settlers: RefCell::new(HashMap::new()),
     });
 
     view! {

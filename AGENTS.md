@@ -46,6 +46,14 @@ they may never declare a fix correct.
 - **Do not run visual harnesses, snapshot suites, or pixel-diff tooling
   as validation.** They may be *compiled* to keep the tree green; they
   may not pass judgement on appearance.
+- **Do not run test/check pipelines to investigate or validate motion or
+  visual behavior, and do not offer code-derived theories of animation
+  behavior as diagnosis.** Reading transition code and reasoning about it
+  has proven unreliable and burns sessions for nothing: passing suites
+  coexist with broken motion, and each analysis cycle costs more than it
+  learns. For motion bugs, change as little as possible (ideally the demo
+  only), state at most one concrete prediction, and hand off for human
+  observation. The human's report is the only diagnostic instrument.
 - **Do not create tests until the human has validated the fix.** Tests
   lock in behavior — locking in unverified visuals bakes bugs into the
   suite.

@@ -12,7 +12,7 @@ use riode::prelude::*;
 
 use super::chrome::{hairline_dark, VERCEL_PILL};
 use super::drag::RowSpec;
-use super::glide::{offset, GlideTicker};
+use super::glide::offset;
 use super::{PAD, SETTLE};
 
 /// One row: its own FLIP, its own pointer follow, and the two summed into one transform.
@@ -28,10 +28,18 @@ pub fn Row(index: usize, spec: RowSpec) -> impl IntoElement {
     // it back, which springs to zero as it plays. Overdamped on purpose: displaced rows only
     // ever glide toward their new slot and never cross through each other, which is what a
     // snappier (underdamped) spring would read as mid-drag.
-    let flip_sig = use_flip(row_ref.clone(), drag.revision.map(Trigger::from), SETTLE);
+    //
+    // This is the row's ONLY displacement spring: the release glide is folded into it on
+    // drop (see the end callback) instead of living in a second spring with its own
+    // ticker, gate, and cancel protocol. One spring cannot mask itself, go stale, or
+    // need cancelling — grab-mid-glide and swap-during-glide both reduce to retargeting.
+    let (flip_sig, flip_handle) = use_flip(row_ref.clone(), drag.revision.map(Trigger::from), SETTLE);
 
     // The pointer offset, derived from the pointer's intent and the row's current box rather
-    // than accumulated from the grab.
+    // than accumulated from the grab. `want_centre` carries pointer-minus-grab-offset
+    // (set in the step callback below), so the held row keeps the grabbed point under
+    // the cursor; the engine gesture's raw position cannot express that (only the
+    // list measures slots), which is why this stays a list-owned signal.
     let (follow_sig, follow_handle) = use_follow(
         row_ref.clone(),
         drag.want_centre,
@@ -53,32 +61,32 @@ pub fn Row(index: usize, spec: RowSpec) -> impl IntoElement {
         let label = label.clone();
         move || held.get().as_deref() == Some(label.as_str())
     });
-    // The release glide: eases the row from its release offset into its slot after a
-    // drop, so letting go lands softly instead of snapping. Starts at identity and is
-    // seeded by the gesture on release; a fresh grab cancels it outright.
-    let settle = use_signal(Transform::IDENTITY);
-    let settling = use_signal(false);
-    // Register this row's glide state for grab-time cancellation (see Drag): a stale
-    // glide from a previous drag masks this row's FLIP for the whole next drag.
-    // Keyed by label (overwritten per rebuild, so exactly one entry per row).
-    drag.settlers.borrow_mut().insert(
-        label.clone(),
-        (settling, settle),
-    );
-    let flip = computed!({
-        let is_held = is_held.clone();
-        let settling = settling;
-        move || {
-            // Kept shut while settling for the same reason as while held: the raw FLIP
-            // still holds decaying offsets from the drag's reorders, and letting them in
-            // would fight the glide.
-            if is_held.get() || settling.get() {
-                Transform::IDENTITY
-            } else {
-                flip_sig.get()
+    // Landing flag: true from release until the flip spring rests, so a row
+    // gliding home paints above its siblings. Derived live every post-layout
+    // from the spring itself — never latched — so no timer or gate can stick
+    // it on, which is what used to mask flips and teleport rows.
+    let landing = use_signal(false);
+    // This row's paint level, taken from the shared high-water mark on every
+    // grab: later gestures always outrank earlier ones, so the held row can
+    // never slide under a still-landing one. Parked back at 0 with `landing`.
+    let z_mine = use_signal(0i32);
+    use_effect_post_layout({
+        let landing = landing;
+        let z_mine = z_mine;
+        let flip_handle = flip_handle.clone();
+        move |_| {
+            if landing.get() && !flip_handle.is_running() {
+                landing.set(false);
+                z_mine.set(0);
             }
         }
     });
+    // No gate on the flip: it is always shown. Gating it shut while held hid
+    // the live offset the instant the row was grabbed (a snap by the full
+    // in-flight displacement) — and the freeze below is what makes showing it
+    // safe: a frozen spring is a constant, and a constant cannot fight follow
+    // or lag behind the cursor. Only a *live* second dynamic would double-drive,
+    // and none exists anymore.
     // Only the held row follows the pointer. `want_centre` is global intent, so an
     // ungated follow would pull every row toward the cursor and stack the list under it.
     let follow = computed!({
@@ -97,18 +105,25 @@ pub fn Row(index: usize, spec: RowSpec) -> impl IntoElement {
     // node repaints, layout never runs.
     let elevation = computed!({
         let is_held = is_held.clone();
-        let settling = settling;
+        let landing = landing;
+        let z_mine = z_mine;
         // Stay above while gliding home, for the same reason as while held.
+        // `landing` mirrors the live spring (cleared the frame it rests), so
+        // unlike the old settle flag it cannot stick and mask anything.
+        //
+        // Progressive tiers, not a shared top level: `z_mine` was taken from
+        // the high-water mark at grab time, so the latest gesture always
+        // outranks earlier ones still landing — no element ever slides behind.
         move || {
-            if is_held.get() || settling.get() {
-                1
+            if is_held.get() || landing.get() {
+                z_mine.get()
             } else {
                 0
             }
         }
     });
 
-    let displayed = offset(offset(flip, follow), settle);
+    let displayed = offset(flip_sig, follow);
 
     // The transform the node actually binds: a plain signal mirroring the composed
     // value, refreshed in the post-layout phase like `FollowCell::resolve`. Going
@@ -143,79 +158,104 @@ pub fn Row(index: usize, spec: RowSpec) -> impl IntoElement {
             padding={Padding::symmetric(PAD, 0.0)}
             transform={displayed_sig}
             z_index={elevation}
-            on:pointer-down={{
+            // One gesture instead of five handlers: press/track/release fan out
+            // from `Drag`, which also guarantees the node is drag-gated and the
+            // gesture state clears on release. The callbacks keep exactly the
+            // list-specific work (glide cancellation, grab offset, held
+            // identity, reorder swaps, glide seeding); the row's own
+            // `on:pointer-up` stays for the one thing the gesture cannot know —
+            // clearing list-held state after a press that never became a drag
+            // (no drag-end fires then, so nothing else would clear it).
+            on:drag={{
                 let drag = drag.clone();
                 let label = label.clone();
-                let settle = settle;
-                let settling = settling;
-                move |event: &PointerEvent| {
-                    // A fresh gesture obsoletes every release-glide still running:
-                    // see Drag::cancel_stale_glides.
-                    drag.cancel_stale_glides();
-                    settling.set(false);
-                    settle.set(Transform::IDENTITY);
-                    let centre = drag
-                        .slots()
-                        .get(drag.slot_of(&label))
-                        .map(|r| r.y + r.height * 0.5)
-                        .unwrap_or(event.position.y);
-                    drag.grab_dy.set(event.position.y - centre);
-                    drag.held.set(Some(label.clone()));
-                }
-            }}
-            on:drag-start={{
-                let drag = drag.clone();
-                move |info: &DragInfo| {
-                    drag.want_centre
-                        .set(Some(info.position.y - drag.grab_dy.get()));
-                }
-            }}
-            on:drag-step={{
-                let drag = drag.clone();
-                let label = label.clone();
-                move |info: &DragInfo| {
-                    let centre = info.position.y - drag.grab_dy.get();
-                    drag.want_centre.set(Some(centre));
+                let follow_handle = follow_handle;
+                let displayed = displayed;
+                let landing = landing;
+                let flip_handle = flip_handle.clone();
+                Drag::start(drag.gesture_at)
+                    .grab({
+                        let drag = drag.clone();
+                        let label = label.clone();
+                        let flip_handle = flip_handle.clone();
+                        move |event: &PointerEvent| {
+                            // Freeze the flip FIRST: the row must stop at the
+                            // exact mid-flight position the pointer found, so
+                            // the grab math below measures against a frozen
+                            // spring rather than a decaying one (which would
+                            // drift tracking for the whole drag). Unfreezes on
+                            // every release path (reseed on drag-end, unpause
+                            // on tap-release).
+                            flip_handle.set_paused(true);
+                            // Take the next paint level: this gesture outranks
+                            // everything still landing from earlier ones.
+                            drag.z_top.update(|z| *z += 1);
+                            z_mine.set(drag.z_top.get());
+                            // Grab offset against the layout slot centre. Exact
+                            // here precisely because the flip above is frozen:
+                            // with zero live offset, layout and visual coincide.
+                            let centre = drag
+                                .slots()
+                                .get(drag.slot_of(&label))
+                                .map(|r| r.y + r.height * 0.5)
+                                .unwrap_or(event.position.y);
+                            drag.grab_dy.set(event.position.y - centre);
+                            drag.held.set(Some(label.clone()));
+                        }
+                    })
+                    .step({
+                        let drag = drag.clone();
+                        let label = label.clone();
+                        move |info: &DragInfo| {
+                            // Runs on drag-start too (as the first step): same-slot
+                            // moves no-op inside `move_row`, so sharing is safe.
+                            // Fold the grab offset here, in the only place that
+                            // knows it: the row keeps its grabbed point under
+                            // the cursor instead of snapping centre-to-cursor.
+                            let centre = info.position.y - drag.grab_dy.get();
+                            drag.want_centre.set(Some(centre));
 
-                    let from = drag.slot_of(&label);
-                    if let Some(to) = drag.target_slot(centre) {
-                        drag.move_row(from, to);
-                    }
-                }
-            }}
-            on:drag-end={{
-                let drag = drag.clone();
-                let flip = flip_sig;
-                move |info: &DragInfo| {
-                    // Resolve the follow offset NOW, before reading anything.
-                    // It only materializes in the post-layout phase: releasing
-                    // in the same frame as the last pointer sample (a fast
-                    // whip) would otherwise seed the glide below from a stale
-                    // zero and teleport the row to its slot. See FollowHandle.
-                    follow_handle.resolve_now();
-                    let from = displayed.get();
-                    settle.set(from);
-                    settling.set(true);
-                    drag.held.set(None);
-                    drag.want_centre.set(None);
-                    drag.grab_dy.set_with_velocity(0.0, info.velocity.y);
-                    if (from.ty.abs() >= 1.0 || from.tx.abs() >= 1.0)
-                        || flip.get() != Transform::IDENTITY
-                    {
-                        settle.register_ticker(Box::new(GlideTicker {
-                            out: settle,
-                            settling,
-                            flip,
-                            from,
-                            t: 0.0,
-                        }));
-                    } else {
-                        settling.set(false);
-                    }
-                }
+                            let from = drag.slot_of(&label);
+                            if let Some(to) = drag.target_slot(centre) {
+                                drag.move_row(from, to);
+                            }
+                        }
+                    })
+                    .end({
+                        let drag = drag.clone();
+                        let flip_handle = flip_handle.clone();
+                        // `info` carries release velocity, deliberately unread: the
+                        // glide inherits the flip spring's live velocity instead
+                        // (whatever re-inverts left behind), matching the old
+                        // settle behavior whose handoff never had a consumer.
+                        move |_info: &DragInfo| {
+                            // Resolve the follow offset NOW, before reading anything.
+                            // It only materializes in the post-layout phase: releasing
+                            // in the same frame as the last pointer sample (a fast
+                            // whip) would otherwise seed the glide below from a stale
+                            // zero and teleport the row to its slot. See FollowHandle.
+                            follow_handle.resolve_now();
+                            // Fold the release offset into the flip spring itself and
+                            // show it: position and velocity carry forward, so the
+                            // row glides home from exactly where the pointer left
+                            // it. No second spring, no ticker, no gate, nothing to
+                            // cancel or go stale — grab-mid-glide and swap-during-
+                            // glide both reduce to retargeting.
+                            flip_handle.reseed(displayed.get());
+                            landing.set(true);
+                            drag.held.set(None);
+                            drag.want_centre.set(None);
+                            drag.grab_dy.set(0.0);
+                        }
+                    })
             }}
             on:pointer-up={{
+                let drag = drag.clone();
+                let flip_handle = flip_handle;
                 move |_: &PointerEvent| {
+                    // Tap-release (no drag-end fires): resume the frozen glide
+                    // so the row keeps landing instead of sticking mid-flight.
+                    flip_handle.set_paused(false);
                     drag.held.set(None);
                     drag.want_centre.set(None);
                 }

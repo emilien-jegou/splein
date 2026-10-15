@@ -13,14 +13,14 @@ pub use crate::computed;
 // `riode::internal` (P10) — spell `<Group>`/`<Text>` in `view!` instead. `Element`/
 // `IntoElement`/`IntoSplice`/`Component` stay here: they are the component contract.
 pub use crate::dsl::{
-    use_scroll, AutoGrid, AutoGridProps, Behavior, Component, Element, IntoElement, OnScroll,
-    Provider, RowFn, ScrollHandle, ScrollView, ScrollViewProps, Scrollbar, VirtualScrollView,
-    VirtualScrollViewProps,
+    use_gesture, use_scroll, AutoGrid, AutoGridProps, Behavior, Component, Drag, Element,
+    IntoElement, OnScroll, Provider, RowFn, ScrollHandle, ScrollView, ScrollViewProps, Scrollbar,
+    VirtualScrollView, VirtualScrollViewProps,
 };
 pub use crate::foundation::{
     Alignment, Anchor, BlendMode, Color, Direction, Distribution, FalloffCurve, Fill, Gap,
-    LayoutPresence, LightEnvironment, Margin, Padding, Radius, RenderDriver, Shadow, ShadowOffset,
-    ShadowShape, Size, Stroke, StrokeAlign, Transform,
+    LayoutPresence, LightEnvironment, Margin, Padding, Radius, RenderDriver, Shadow,
+    ShadowOffset, ShadowShape, Size, Stroke, StrokeAlign, Transform,
 };
 pub use crate::hot_reload::{
     component_abi_fingerprint, host_sentinel_address, remote_abi_fingerprint, toolchain_id,

@@ -24,7 +24,7 @@ fn Slider(moved: Signal<bool>, refs: Rc<RefCell<Vec<ElementRef>>>) -> Element {
     let handle = use_ref();
     refs.borrow_mut().push(handle.clone());
 
-    let flip = use_flip(
+    let (flip, _flip_handle) = use_flip(
         handle.clone(),
         moved.map(|m| Trigger::from(m as u64)),
         Spring::snappy(),

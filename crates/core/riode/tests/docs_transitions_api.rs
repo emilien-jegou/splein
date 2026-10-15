@@ -145,7 +145,7 @@ fn section_4_reading_geometry() {
 fn DocumentedRow(spec: RowSpec) -> impl IntoElement {
     let row_ref = use_ref();
 
-    let flip = use_flip(
+    let (flip, _flip_handle) = use_flip(
         row_ref.clone(),
         spec.revision.map(Trigger::from),
         Spring::snappy(),

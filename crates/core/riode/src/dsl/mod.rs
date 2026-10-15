@@ -85,7 +85,7 @@ pub use custom::{custom, CustomDef};
 pub use diff::ChildOp;
 pub use element::Element;
 pub use element_ref::ElementRef;
-pub use flip::{use_flip, use_follow, use_ref, FollowHandle, Trigger};
+pub use flip::{use_flip, use_follow, use_ref, FlipHandle, FollowHandle, Trigger};
 pub use scroll::{
     use_scroll, OnScroll, RowFn, ScrollHandle, ScrollView, ScrollViewProps, Scrollbar,
     VirtualScrollView, VirtualScrollViewProps,
@@ -98,6 +98,7 @@ pub use text::{text, TextDef};
 
 pub mod cleanup;
 pub use auto_grid::{columns_for, AutoGrid, AutoGridProps};
+pub use gesture::{use_gesture, Drag};
 
 pub mod auto_grid;
 pub mod component;
@@ -106,6 +107,7 @@ pub mod diff;
 pub mod element;
 pub mod element_ref;
 pub mod flip;
+pub mod gesture;
 pub mod group;
 pub mod image;
 pub mod prop;

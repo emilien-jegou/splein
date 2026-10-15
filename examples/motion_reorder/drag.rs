@@ -1,15 +1,15 @@
-// Single responsibility: Shared drag gesture state and slot measurement.
+// Single responsibility: Shared list state and slot measurement.
 //
 // `Drag` is the one handle every row reads: the order list, the held row's
-// identity, the pointer's intent, and the measured row boxes. Rows never talk
-// to each other directly; they all go through here.
+// identity, the grab offset, and the measured row boxes. (Despite the name it
+// is list state, not the gesture — the press/track/release state machine is
+// the engine's `riode::dsl::gesture::Drag`, bound per row in `row.rs`.)
+// Rows never talk to each other directly; they all go through here.
 
-use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 
 use riode::dsl::ElementRef;
-use riode::foundation::{ResolvedRect, Transform};
+use riode::foundation::{Point, ResolvedRect};
 use riode::prelude::*;
 
 /// The state the gesture needs, shared by every row.
@@ -35,37 +35,27 @@ pub struct Drag {
     pub revision: Signal<u32>,
     pub held: Signal<Option<String>>,
     pub grab_dy: Signal<f32>,
+    /// Pointer intent with the grab offset folded in (`pointer.y - grab_dy`),
+    /// so the held row keeps the grabbed point under the cursor instead of
+    /// snapping its centre to it. Only the list can fold the offset (it alone
+    /// measures slots), so this stays a list-owned signal even though the
+    /// engine gesture tracks the raw position alongside it.
     pub want_centre: Signal<Option<f32>>,
+    /// Live raw pointer position, owned by the engine gesture (bound per row
+    /// in `row.rs`). Simple consumers drive motion straight from it; this
+    /// list keeps `want_centre` instead (see above).
+    pub gesture_at: Signal<Option<Point>>,
+    /// Paint-order high-water mark (see `view.rs`): every grab takes the next
+    /// level, so the most recent gesture always paints on top.
+    pub z_top: Signal<i32>,
     /// Handle on the list, whose children *are* the rows.
     ///
     /// Reading the row boxes through the list rather than through each row's own handle is what
     /// lets one gesture compare the pointer against every slot without any of them cooperating.
     pub list: ElementRef,
-    /// Every row's release-glide state, by label. A new grab cancels all stale
-    /// glides (see `cancel_stale_glides`): a glide left running from a previous
-    /// drag keeps its row's FLIP masked, and new swaps re-invert the masked
-    /// spring forever, so the row teleports every swap until something clears it.
-    pub settlers: RefCell<HashMap<String, (Signal<bool>, Signal<Transform>)>>,
 }
 
 impl Drag {
-    /// Cancels every row's release-glide unconditionally.
-    ///
-    /// A fresh gesture obsoletes all release motion: whatever was gliding home is
-    /// either already home (no-op) or about to be dragged again (stale offset that
-    /// would fight the pointer). Critically, a glide whose FLIP never jointly
-    /// finished keeps masking that row's FLIP, and each new swap re-inverts the
-    /// masked spring — teleporting every move for the whole drag. Grab time is
-    /// the one moment all rows are accounted for, so this runs first, here.
-    pub fn cancel_stale_glides(&self) {
-        for (_, (settling, settle)) in self.settlers.borrow().iter() {
-            if settling.get() {
-                settling.set(false);
-                settle.set(Transform::IDENTITY);
-            }
-        }
-    }
-
     /// Moves a row and bumps the revision each row's FLIP watches.
     pub fn move_row(&self, from: usize, to: usize) {
         if from == to {
