@@ -5,11 +5,11 @@ export const code = `static STATUS: Context<String> = initContext!();
 static CLIPBOARD: Context<String> = initContext!();
 
 view! {
-    <Group .provided={STATUS.provided(status)}>
-        <Group .provided={CLIPBOARD.provided(clipboard)}>
+    <Provider grant={STATUS.provide(status)}>
+        <Provider grant={CLIPBOARD.provide(clipboard)}>
             // ... children
-        </Group>
-    </Group>
+        </Provider>
+    </Provider>
 }
 
 // Consume anywhere in the tree

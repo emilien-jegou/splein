@@ -1,8 +1,8 @@
 import SectionShell from "../layout/SectionShell"
 import KeyedForDemo from "../demos/KeyedForDemo"
 
-export const code = `// Keyed reconciliation uses builder methods, not <for> syntax.
-// See GroupDef::keyed() or GroupDef::keyed_list() in the engine.
+export const code = `// Keyed reconciliation with <for key=>: rows are matched by label,
+// so counts follow the label instead of the position.
 view! {
     <Group
         direction="vertical"
@@ -11,16 +11,16 @@ view! {
         gap={GAP}
         ref={list_ref}
     >
-        {items.iter().map(|(i, spec)| view! {
-            <Row index={i} spec={spec} key={spec.label.clone()} />
-        })}
+        <for (i, spec) in items key={.label.clone()}>
+            <Row index={i} spec={spec} />
+        </for>
     </Group>
 }`
 
 <SectionShell
       number="31"
       title="Keyed For"
-      description="Keyed reconciliation via builder methods. Items are matched by key across re-renders, preserving component state."
+      description="Keyed reconciliation via <for key=>. Items are matched by key across updates, preserving component state."
   code={code}
 >
   <KeyedForDemo />

@@ -360,9 +360,12 @@ fn tracy_thumbnail(buf: &[u32], stride: usize, height: usize) -> Option<(Vec<u8>
     Some((rgba, tw as u16, th as u16))
 }
 
-/// Numbered capture path under `$AURORA_CAPTURE_DIR` (default `/tmp`).
+/// Numbered capture path under `$RIODE_CAPTURE_DIR` (default `/tmp`).
 fn capture_path(captures: u32, ext: &str) -> String {
-    let dir = std::env::var("AURORA_CAPTURE_DIR").unwrap_or_else(|_| "/tmp".into());
+    // P13: `RIODE_` canonical; `AURORA_` accepted for one release.
+    let dir = std::env::var("RIODE_CAPTURE_DIR")
+        .or_else(|_| std::env::var("AURORA_CAPTURE_DIR"))
+        .unwrap_or_else(|_| "/tmp".into());
     format!(
         "{}/riode-frame-{}.{}",
         dir.trim_end_matches('/'),

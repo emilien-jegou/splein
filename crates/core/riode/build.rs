@@ -21,5 +21,7 @@ fn main() {
         .map(|s| s.split_whitespace().collect::<Vec<_>>().join(" "))
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "unknown-toolchain".to_string());
+    println!("cargo:rustc-env=RIODE_TOOLCHAIN_ID={id}");
+    // P13: old name kept for one release so mixed-version hosts still handshake.
     println!("cargo:rustc-env=AURORA_TOOLCHAIN_ID={id}");
 }

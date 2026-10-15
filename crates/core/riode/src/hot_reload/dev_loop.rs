@@ -26,7 +26,7 @@ use std::time::SystemTime;
 pub struct DevLoopConfig {
     /// Cargo package whose `cdylib` holds the UI (rebuilt by the loop).
     pub package: String,
-    /// Generative-UI example name (`AURORA_HOT_EXAMPLE`): when set, the loop
+    /// Generative-UI example name (`RIODE_HOT_EXAMPLE`): when set, the loop
     /// rebuilds the shared generative crate for this example and watches its
     /// folder. `None` keeps the legacy per-example-package behavior.
     pub example: Option<String>,
@@ -872,7 +872,10 @@ fn hot_build_command(config: &DevLoopConfig) -> std::process::Command {
     // the build script mounts. Forwarded explicitly (not merely inherited)
     // so every build agrees even when the parent process env differs.
     if let Some(example) = config.example.as_deref() {
-        command.env("AURORA_HOT_EXAMPLE", example);
+        // P13: `RIODE_` canonical; the stale `AURORA_` value is removed (not merely
+        // overridden) so every build agrees even when the parent env differs.
+        command.env_remove("AURORA_HOT_EXAMPLE");
+        command.env("RIODE_HOT_EXAMPLE", example);
     }
     command
 }

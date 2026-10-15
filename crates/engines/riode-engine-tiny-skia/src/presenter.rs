@@ -36,11 +36,16 @@ impl SurfacePresenter {
 
         // Escape hatch for compositors where partial damage misbehaves: skips
         // the damage upload entirely and presents the whole viewport.
-        // Diagnostic use (`AURORA_FULL_PRESENT=1`): if a missing highlight
+        // Diagnostic use (`RIODE_FULL_PRESENT=1`): if a missing highlight
         // appears with this set, the partial path is at fault, not the scene.
         // Read once: presenting runs per frame and must not pay an env lookup.
+        // P13: `RIODE_` canonical; `AURORA_` accepted for one release.
         static FULL_PRESENT: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        if *FULL_PRESENT.get_or_init(|| std::env::var_os("AURORA_FULL_PRESENT").is_some()) {
+        if *FULL_PRESENT.get_or_init(|| {
+            std::env::var_os("RIODE_FULL_PRESENT")
+                .or_else(|| std::env::var_os("AURORA_FULL_PRESENT"))
+                .is_some()
+        }) {
             Self::present_viewport()
                 .pixmap(pixmap)
                 .buffer(buffer)

@@ -15,7 +15,7 @@ Five stages, same for both flavors below:
    stale pixels.
 2. **Rebuild** — `DevLoop` runs one vanilla `cargo build` over the shared image
    plus the generative UI crate (`-p riode-shared -p riode-hot-gen-ui` with
-   `AURORA_HOT_EXAMPLE=<name>`) in the background; the
+   `RIODE_HOT_EXAMPLE=<name>`) in the background; the
    static launcher binary (`riode-cli`) builds separately in the main target.
    The host's boot path runs the same canonical build synchronously *before*
    creating the window (see `blocking_hot_build`: script, loop, and boot all
@@ -140,7 +140,7 @@ Headless verification without a window:
 - **One cargo process, one canonical root set.** `scripts/example.sh` and every
    loop-spawned rebuild run `cargo build` over the shared image plus the
    generative UI crate (`-p riode-shared -p riode-hot-gen-ui` with
-   `AURORA_HOT_EXAMPLE=<name>` set) — the example varies per run via env,
+   `RIODE_HOT_EXAMPLE=<name>` set) — the example varies per run via env,
    shared is the constant companion — so the shared image
   and its consumer resolve within a single unit graph. (The static
   `riode-cli` launcher builds separately in the main target; it links

@@ -60,7 +60,7 @@
 //! [`VisualDebugger`] (the `debug_*` modules) draws layout boxes, scene chunks, and a
 //! performance HUD over your UI. The human-operated debug keys are `F8` (freeze the
 //! clock), `.` (advance one 1/120 s quantum while frozen), `[`/`]` (slow motion),
-//! and `s` (write presented pixels to `$AURORA_CAPTURE_DIR`).
+//! and `s` (write presented pixels to `$RIODE_CAPTURE_DIR`).
 //!
 //! # Headless use
 //!

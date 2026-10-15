@@ -4,8 +4,8 @@ import SignalsDemo from "../demos/SignalsDemo"
 export const code = `let count = use_signal(0);
 let label = count.map(|c| format!("Count: {c}"));
 
-// derived! with automatic dependency tracking
-let active = derived!(move || {
+// computed! with automatic dependency tracking
+let active = computed!(move || {
     if pressed.get() { down.get() } else { up.get() }
 });
 
@@ -18,7 +18,7 @@ view! {
 <SectionShell
       number="09"
       title="Signals"
-      description="Reactive state with use_signal, Derived, derived!, and .map(). Automatic dependency tracking drives re-renders."
+      description="Reactive state with use_signal, Computed, computed!, and .map(). Automatic dependency tracking drives updates."
   code={code}
 >
   <SignalsDemo />

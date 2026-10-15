@@ -21,7 +21,9 @@ they may never declare a fix correct.
    variable per row. If the symptom needs motion, drive it from the frame
    clock so it moves from the first frame.
 2. **Diagnose read-only.** Trace the full path the symptom travels
-   (signals → layout → damage → compile → emit → raster → present) *before*
+   (Tick → Input → React → Layout → Post-layout → Damage → compile →
+   bounds → Report — the seven frame-pipeline phases, quoted verbatim from
+   `crates/core/riode/src/runtime/mod.rs`) *before*
    proposing anything. Eliminate suspects with evidence, in writing. When
    every in-house stage is exonerated, say which dependency or boundary is
    left — do not gesture at it, name the exact call.
@@ -51,8 +53,8 @@ they may never declare a fix correct.
   Only the human's report counts.
 - **Debug tooling the human operates**: `F8` freeze/unfreeze the clock,
   `.` advance exactly one animation quantum (1/120 s) while frozen,
-  `[` / `]` slow-motion time scale, `s` write presented pixels to
-  `$AURORA_CAPTURE_DIR/riode-frame-N.png` for zoomed pixel-diffing.
+   `[` / `]` slow-motion time scale, `s` write presented pixels to
+   `$RIODE_CAPTURE_DIR/riode-frame-N.png` for zoomed pixel-diffing.
   Point the human at these instead of inventing new ones.
 - **External debug window**: `F5` opens the demo menu, `F7` cycles raster
   engines, `F10` toggles the separate debug panel window (telemetry,
@@ -88,7 +90,7 @@ they may never declare a fix correct.
     read from the same `view::HOT_*` consts). The generative
     `examples/riode-hot-gen/` crate (`riode-hot-gen-ui`, `crate-type =
     ["cdylib"]`, depending **only** on `riode-shared` — never `riode`
-    directly) mounts it per `AURORA_HOT_EXAMPLE`.
+    directly) mounts it per `RIODE_HOT_EXAMPLE`.
 - **New example checklist:** copy an existing folder (e.g. `text_smooth`),
   rename, write `hot.rs` (wiring + one `define_hot_ui! { ... }` block, see
   `text_smooth/hot.rs`). No workspace member needed. Keep `view.rs` as the

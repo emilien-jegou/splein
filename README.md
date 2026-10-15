@@ -8,6 +8,18 @@
 
 **splein** is a screen annotation overlay for Wayland compositors (Hyprland, Sway), built in Rust.
 
+This workspace also hosts the **riode** retained-mode UI engine it renders with — see `crates/core/riode` (engine) and `examples/` (demos; run one with `nu scripts/toolbox.nu example motion_press`).
+
+The engine frame pipeline, quoted verbatim from `crates/core/riode/src/runtime/mod.rs`:
+
+1. **Tick** — advance the clock; tickers integrate.
+2. **Input** — dispatch queued pointer/key events (`pointer_input`).
+3. **React** — drain dirty subscribers into node bindings; reconcile structural changes.
+4. **Layout** — `FrameScheduler::commit_frame`: boundaries or full pass.
+5. **Post-layout** — client callbacks that must see fresh geometry (FLIP sampling).
+6. **Damage → compile → bounds** — the `crate::pipeline` passes.
+7. **Report** — `FrameReport` with stats + full `FrameDiagnostics`.
+
 > [!WARNING]
 > **Demo Preview / Work in Progress**: This project is in active development. Several UI elements and tools (such as the Text and Select Region tools) are placeholders and not yet fully implemented.
 

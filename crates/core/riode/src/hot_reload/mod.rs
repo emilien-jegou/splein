@@ -126,7 +126,10 @@ use std::path::{Path, PathBuf};
 /// `extern "Rust"` boundary (today: SIGABRT on unwind). Falls back to `"unknown"` for
 /// exotic non-cargo builds, where the layout half of the fingerprint still guards.
 pub fn toolchain_id() -> &'static str {
-    option_env!("AURORA_TOOLCHAIN_ID").unwrap_or("unknown-toolchain")
+    // P13: `RIODE_` canonical; `AURORA_` accepted for one release.
+    option_env!("RIODE_TOOLCHAIN_ID")
+        .or(option_env!("AURORA_TOOLCHAIN_ID"))
+        .unwrap_or("unknown-toolchain")
 }
 
 /// FNV-1a over one `u64`, for fingerprint folding. Deterministic across processes

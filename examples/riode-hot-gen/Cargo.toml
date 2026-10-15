@@ -3,7 +3,7 @@ name = "riode-hot-gen-ui"
 version = "0.2.0"
 edition = "2021"
 publish = false
-description = "Generative hot-reload UI (cdylib, dev only): one crate serving every example via AURORA_HOT_EXAMPLE"
+description = "Generative hot-reload UI (cdylib, dev only): one crate serving every example via RIODE_HOT_EXAMPLE"
 license = "GPL-3.0"
 readme = "README.md"
 

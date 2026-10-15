@@ -47,13 +47,13 @@ esac
 #      trials). Static links are immune, so it builds in isolation.
 #   2. Grouped `riode-shared` + generative `riode-hot-gen-ui` +
 #      shared image now owns host entry points.
-#      graph. `AURORA_HOT_EXAMPLE` selects which example the generative crate
+#      graph. `RIODE_HOT_EXAMPLE` selects which example the generative crate
 #      mounts; the loop itself rebuilds shared + UI with the same shape (see
 #      DevLoopConfig::companion_packages).
 # Everything is `--release`: runtime speed matters for interactive demos, and a
 # single profile everywhere keeps one unit family (the loop spawns release too).
 cargo build --release -p riode-cli
-AURORA_HOT_EXAMPLE="$NAME" RUSTFLAGS="-C prefer-dynamic" cargo build --release -p riode-shared -p riode-hot-gen-ui
+RIODE_HOT_EXAMPLE="$NAME" RUSTFLAGS="-C prefer-dynamic" cargo build --release -p riode-shared -p riode-hot-gen-ui
 
 if [ -n "$ENGINE" ]; then
     exec ./target/release/riode hot --example "$NAME" --root "$ROOT" \

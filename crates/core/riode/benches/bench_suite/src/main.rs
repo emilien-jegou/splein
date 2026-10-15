@@ -26,11 +26,13 @@ use riode::reactive::{batch, Computed, ReactiveRuntime, Signal};
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 use criterion::{black_box, criterion_group, criterion_main, BatchSize, Criterion, Throughput};
 
-/// Strict-gate switch: `AURORA_STRICT_BENCH=1` enforces median exit gates.
+/// Strict-gate switch: `RIODE_STRICT_BENCH=1` enforces median exit gates.
 /// Off by default so local runs just report Criterion numbers.
+/// P13: `RIODE_` canonical; `AURORA_` accepted for one release.
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 fn strict() -> bool {
-    std::env::var("AURORA_STRICT_BENCH")
+    std::env::var("RIODE_STRICT_BENCH")
+        .or_else(|_| std::env::var("AURORA_STRICT_BENCH"))
         .map(|v| v == "1")
         .unwrap_or(false)
 }
@@ -89,7 +91,7 @@ fn bench_signal_chain(c: &mut Criterion) {
         );
         eprintln!("signal chain 10k: median {:?} (PASSED strict gate)", median);
     } else {
-        eprintln!("signal chain 10k: strict gate disabled; set AURORA_STRICT_BENCH=1 to enforce");
+        eprintln!("signal chain 10k: strict gate disabled; set RIODE_STRICT_BENCH=1 to enforce");
     }
 
     let mut counter = 2u64;
@@ -179,7 +181,7 @@ fn bench_tree_arena_10k(c: &mut Criterion) {
         );
     } else {
         eprintln!(
-            "arena 10k lifecycle: strict gate disabled; set AURORA_STRICT_BENCH=1 to enforce"
+            "arena 10k lifecycle: strict gate disabled; set RIODE_STRICT_BENCH=1 to enforce"
         );
     }
 
@@ -305,7 +307,7 @@ fn bench_diamond_network(c: &mut Criterion) {
         );
         eprintln!("diamond 1k: median {:?} (PASSED strict gate)", median);
     } else {
-        eprintln!("diamond 1k: strict gate disabled; set AURORA_STRICT_BENCH=1 to enforce");
+        eprintln!("diamond 1k: strict gate disabled; set RIODE_STRICT_BENCH=1 to enforce");
     }
 
     let mut counter = 100u64;
