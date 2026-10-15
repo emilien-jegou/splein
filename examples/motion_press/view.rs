@@ -84,11 +84,6 @@ pub fn Page() -> impl IntoElement {
 /// leave the button stuck in its pressed state.
 #[component]
 fn Button(pressed: Signal<bool>, presses: Signal<u32>, scale: Computed<f32>) -> impl IntoElement {
-    let down = pressed;
-    let up = pressed;
-    let drop = pressed;
-    let counted = presses;
-
     view! {
         <Group
             key="cta"
@@ -98,18 +93,10 @@ fn Button(pressed: Signal<bool>, presses: Signal<u32>, scale: Computed<f32>) -> 
             alignment="center"
             distribution="center"
             scale={scale}
-            on:pointer-down={{
-                move |_| down.set(true)
-            }}
-            on:pointer-up={{
-                move |_| up.set(false)
-            }}
-            on:pointer-leave={{
-                move |_| drop.set(false)
-            }}
-            on:click={{
-                move |info| counted.update(|n| *n += info.click_count as u32)
-            }}
+            on:pointer-down={pressed.set_true}
+            on:pointer-up={pressed.set_false}
+            on:pointer-leave={pressed.set_false}
+            on:click={move |info| presses.update(|n| *n += info.click_count as u32)}
         >
             <Text size={15.0} weight={700u16} color={Color::WHITE} margin={Margin::x(28.0)}>
                 "Continue"

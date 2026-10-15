@@ -115,18 +115,18 @@ pub fn Row(index: usize, spec: RowSpec) -> impl IntoElement {
     // through a plain signal keeps node delivery independent of derived
     // evaluation history (whatever the chain above does or skips, the node reads
     // one signal that is rewritten every frame its value changes).
+    //
+    // `use_effect_post_layout` owns the registration: it re-registers on rebuild with the
+    // previous callback torn down first, and unregisters when the row leaves the list —
+    // instead of the old guard-signal hack, which registered once and never cleaned up.
     let displayed_sig = use_signal(Transform::IDENTITY);
-    {
+    use_effect_post_layout({
         let displayed = displayed.clone();
         let displayed_sig = displayed_sig;
-        let mirrored = use_signal(false);
-        if !mirrored.get() {
-            mirrored.set(true);
-            row_ref.runtime().borrow_mut().register_post_layout(move |_dt| {
-                displayed_sig.set_if_changed(displayed.get());
-            });
+        move |_dt| {
+            displayed_sig.set_if_changed(displayed.get());
         }
-    }
+    });
 
     view! {
         // Outer row: the hit box, the measured slot, and the animated node. Transparent
