@@ -6,6 +6,7 @@ use std::rc::Rc;
 use riode::dsl::{group, IntoElement};
 use riode::prelude::*;
 use riode::reactive::{run_post_layout, Cx, ReactiveRuntime, Signal};
+use riode_tiny_skia::testing::Harness;
 
 thread_local! {
     static LOG: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
@@ -206,5 +207,66 @@ fn unregister_post_layout_removes_the_callback_and_is_idempotent() {
     assert!(
         !runtime.unregister_post_layout(id),
         "a second remove is a no-op, so a teardown racing a sweep cannot double-fire"
+    );
+}
+
+/// A keyed row that leaves the list must run its teardown: React semantics — the unmounted
+/// row takes its state, and with it its post-layout callback. Without the unmount sweep the
+/// registry only ever grows, which is the leak `use_effect_post_layout` exists to close.
+#[component]
+fn MirrorRow(_index: usize, label: String) -> impl IntoElement {
+    let src = use_signal(1u32);
+    let out = use_signal(0u32);
+    use_effect_post_layout(move |_dt| {
+        out.set_if_changed(src.get());
+    });
+    group()
+        .key(format!("row-{label}"))
+        .width(10.0)
+        .height(10.0)
+        .into_element()
+}
+
+#[test]
+#[ntest::timeout(5_000)]
+fn a_removed_keyed_row_unregisters_its_post_layout_callback() {
+    let rt = Rc::new(RefCell::new(ReactiveRuntime::new()));
+    let labels = Signal::new(
+        Rc::clone(&rt),
+        vec!["a".to_string(), "b".to_string()],
+    );
+    let list = || {
+        group()
+            .width(Size::fill())
+            .height(Size::fill())
+            .direction(Direction::Vertical)
+            .children_labels_keyed(labels.clone(), |s: &String| s.clone(), MirrorRow)
+            .into_element()
+    };
+    let mut h = Harness::from_runtime(Rc::clone(&rt), Cx::new(Rc::clone(&rt)).enter(list), 300, 400);
+    h.steps(4);
+
+    assert_eq!(
+        rt.borrow().post_layout_count(),
+        2,
+        "two live rows register two post-layout callbacks"
+    );
+
+    labels.set(vec!["b".to_string()]);
+    h.steps(8);
+
+    assert_eq!(
+        rt.borrow().post_layout_count(),
+        1,
+        "the removed row must unregister its callback, not leave it mirroring a dead node"
+    );
+
+    labels.set(vec!["b".to_string(), "a".to_string()]);
+    h.steps(8);
+
+    assert_eq!(
+        rt.borrow().post_layout_count(),
+        2,
+        "the re-added row mounts fresh and registers exactly one callback again"
     );
 }

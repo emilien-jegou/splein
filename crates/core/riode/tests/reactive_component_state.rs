@@ -174,13 +174,20 @@ fn after_a_reorder_each_row_keeps_its_own_state() {
 
 #[test]
 #[ntest::timeout(5_000)]
-fn removing_and_re_adding_an_item_restores_its_state() {
+fn removing_and_re_adding_an_item_starts_fresh() {
+    // React semantics: a keyed item that leaves the list unmounts, so its state goes with it.
+    // Re-adding the same key mounts a *new* instance at the base value — state that should
+    // survive a round trip out of the list belongs in props, not in the row's hook memory.
     let rt = Rc::new(RefCell::new(ReactiveRuntime::new()));
     let labels = labels_signal(&rt, &["a", "b"]);
     let mut h = mount(|| list(labels.clone()), rt);
 
     tap(&mut h, "a", 3);
     let grown = height_of(&mut h, "a");
+    assert!(
+        (grown - 100.0).abs() < 0.5,
+        "three taps must grow the row before it leaves, it is at {grown}"
+    );
 
     labels.set(vec!["b".to_string()]);
     h.steps(8);
@@ -192,8 +199,8 @@ fn removing_and_re_adding_an_item_restores_its_state() {
     labels.set(vec!["b".to_string(), "a".to_string()]);
     h.steps(8);
     assert!(
-        (height_of(&mut h, "a") - grown).abs() < 0.5,
-        "an item that leaves and comes back should find its state again: {grown} -> {}",
+        (height_of(&mut h, "a") - 40.0).abs() < 0.5,
+        "a re-added item must mount fresh at its base height, not resurrect the old state: {}",
         height_of(&mut h, "a")
     );
 }

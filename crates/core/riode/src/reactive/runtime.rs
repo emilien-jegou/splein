@@ -1,6 +1,7 @@
 // Single responsibility: Reactive signal dependency graph, batches, and notification dispatch.
 
 use crate::foundation::snapshot::GeometrySnapshot;
+use crate::foundation::Key;
 use crate::reactive::id::{BuildTag, SignalId, SubscriberId};
 use crate::reactive::observer::Observer;
 use crate::reactive::ticker::{Ticker, TickerRegistry};
@@ -137,6 +138,15 @@ pub struct ReactiveRuntime {
     /// A hook skipped on one build simply leaves its entry untouched, so later hooks
     /// never shift slots when an earlier one is conditional.
     pub(crate) keyed_hook_states: FxHashMap<Rc<str>, FxHashMap<&'static str, KeyedSlot>>,
+    /// Bridge from a reconciliation key back to the hook instance its row filed state under.
+    ///
+    /// A row's hooks live under the `enter_keyed` scope name (the `key_of` value, e.g. `"b"`),
+    /// but its node is reconciled under whatever key the row set on its own root — often a
+    /// different string (`"row-b"`). Removal is only observable at reconcile time, by node, so
+    /// without this pairing there is no way to go from "that node left the tree" to "that
+    /// instance's hook state must go". Written by `children_labels_keyed`, read and cleared by
+    /// the purge path. One entry per live keyed row.
+    element_hook_instance: FxHashMap<Key, Rc<str>>,
     /// Where every element holding a geometry handle ended up this frame.
     ///
     /// The one place the reactive layer touches geometry. It is a plain table rather than a
@@ -238,6 +248,7 @@ impl ReactiveRuntime {
             motion_handoff: FxHashMap::default(),
             hook_states: FxHashMap::default(),
             keyed_hook_states: FxHashMap::default(),
+            element_hook_instance: FxHashMap::default(),
             snapshot: GeometrySnapshot::new(),
             watched: FxHashSet::default(),
             post_layout: RefCell::new(PostLayout::new()),
@@ -547,6 +558,28 @@ impl ReactiveRuntime {
     pub(crate) fn clear_hook_state(&mut self) {
         self.hook_states.clear();
         self.keyed_hook_states.clear();
+        self.element_hook_instance.clear();
+    }
+
+    /// Records that a node keyed `key` was built by the row whose hooks live under `instance`.
+    ///
+    /// Called by `children_labels_keyed`, the one place that knows both halves of the pairing:
+    /// the `enter_keyed` scope name it just opened, and the key the row set on the element it
+    /// returned. Removal is only visible at reconcile time, by node, so this is what lets the
+    /// purge path find the instance to drop.
+    pub(crate) fn link_element_hook_instance(&mut self, key: Key, instance: Rc<str>) {
+        self.element_hook_instance.insert(key, instance);
+    }
+
+    /// The hook instance a reconciliation key's row filed its state under, if it was linked.
+    pub(crate) fn element_hook_instance(&self, key: &Key) -> Option<Rc<str>> {
+        self.element_hook_instance.get(key).cloned()
+    }
+
+    /// Forgets a key's pairing once its row has been purged, so the bridge cannot grow past
+    /// the number of live keyed rows.
+    pub(crate) fn unlink_element_hook_instance(&mut self, key: &Key) {
+        self.element_hook_instance.remove(key);
     }
 
     /// Whether any registered ticker still wants frames.

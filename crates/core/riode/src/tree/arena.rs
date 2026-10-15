@@ -103,7 +103,11 @@ impl TreeArena {
     /// it and never pay a sibling scan of their own. Children are taken
     /// (not cloned) and the subtree drains over an explicit stack, so deep
     /// trees cannot overflow the call stack and teardown allocates nothing.
-    pub fn remove_with<F: FnMut(NodeId)>(&mut self, id: NodeId, mut on_remove: F) {
+    ///
+    /// The visitor also receives the node's reconciliation key: a keyed row's hook state is
+    /// filed under an instance name the node never carries, so removal — which is only
+    /// observable here, by node — needs the key to look the instance back up.
+    pub fn remove_with<F: FnMut(NodeId, Option<Key>)>(&mut self, id: NodeId, mut on_remove: F) {
         if !self.is_valid(id) {
             return;
         }
@@ -144,7 +148,8 @@ impl TreeArena {
                 self.slots[c.index as usize].next_sibling = None;
                 stack.push(c);
             }
-            on_remove(cur);
+            let key = self.slots[cur.index as usize].node.key.clone();
+            on_remove(cur, key);
             self.keys.unbind(cur);
 
             if let Some(bounds) = self.slots[cur.index as usize]

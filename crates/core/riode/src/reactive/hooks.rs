@@ -393,6 +393,48 @@ pub fn remember_value<T: Clone + 'static>(scope: &HookScope, slot: usize, value:
     states[slot] = Some(Rc::new(value.clone()) as Rc<dyn Any>);
 }
 
+/// Drops the hook state of a keyed row that left the tree, and everything nested inside it.
+///
+/// React semantics: a keyed item that unmounts takes its state with it; re-adding it mounts
+/// a fresh instance rather than resurrecting the old one. State that should survive a round
+/// trip out of the list belongs in props, not in the component's own hook memory.
+///
+/// Dropping the slot is also what disarms the row's effects: an effect cell owns its
+/// `Effect`, so losing the last `Rc` runs the cell's teardown and disposes the subscriber.
+/// The cells are therefore collected first and dropped *after* the runtime borrow is
+/// released — a teardown may read or write signals, and `Effect::drop` disposes through this
+/// same runtime.
+///
+/// `root` is the `enter_keyed` scope name (the `key_of` value). Descendants are filed under
+/// `{root}#{…}`, so the match is exact-or-`{root}#`-prefixed, never a bare string prefix:
+/// a row keyed `"a"` must not sweep a sibling keyed `"ab"`.
+pub(crate) fn drop_instance_subtree_state(
+    runtime: &Rc<RefCell<ReactiveRuntime>>,
+    root: &str,
+) {
+    let prefix = format!("{root}#");
+    let removed = {
+        let mut rt = runtime.borrow_mut();
+        let doomed: Vec<Rc<str>> = rt
+            .hook_states
+            .keys()
+            .filter(|k| k.as_ref() == root || k.as_ref().starts_with(&prefix))
+            .cloned()
+            .collect();
+        let mut taken = Vec::with_capacity(doomed.len());
+        for key in doomed {
+            if let Some(states) = rt.hook_states.remove(&key) {
+                taken.push(states);
+            }
+            rt.keyed_hook_states.remove(&key);
+        }
+        taken
+    };
+    // Outside the borrow: each dropped cell runs its teardown, and its `Effect` disposes
+    // itself through the runtime.
+    drop(removed);
+}
+
 /// Publishes elapsed seconds into a signal once per frame.
 struct FrameClock {
     out: Signal<f64>,
@@ -715,10 +757,9 @@ struct EffectCell {
 impl Drop for EffectCell {
     fn drop(&mut self) {
         // Runs before the fields below, so teardown fires before `Effect::drop` disposes the
-        // subscriber. This is the "torn down for good" path — `clear_hook_state` on a
-        // full-tree switch drops the cell and with it the last run's teardown. A keyed row
-        // leaving a list does *not* take this path: its hook state is kept for re-add, so its
-        // teardown stays pending until the unmount sweep runs it explicitly.
+        // subscriber. This *is* the unmount path: a keyed row leaving the tree has its hook
+        // state dropped (`drop_instance_subtree_state`), the last `Rc` to this cell goes, and
+        // the pending teardown runs here.
         if let Some(t) = self.teardown.take() {
             t();
         }
@@ -761,16 +802,15 @@ fn arm_effect(cell: &Rc<RefCell<EffectCell>>, scope: &HookScope) {
 /// run.
 ///
 /// `body` returns a one-shot that undoes it. That teardown runs before the *next* run of
-/// `body` (so a rebuild does explicit cleanup + setup instead of overwriting). When a
-/// component is torn down for good (`clear_hook_state`, a full-tree switch) the cell drops
-/// and the last run's teardown fires too. What it does *not* yet cover is a keyed row leaving
-/// a list: that instance's hook state is deliberately kept so the row can find it again on
-/// re-add, so its teardown is pending, not run. See the unmount-sweep work.
+/// `body` (so a rebuild does explicit cleanup + setup instead of overwriting), and once more
+/// when the component unmounts: a keyed row leaving a list has its hook state dropped, the
+/// cell falls out, and the pending teardown fires. React semantics throughout — unmount
+/// destroys state, re-adding the same key mounts a fresh instance.
 ///
-/// What it already absorbs is the "insert into the registry on rebuild" half of the
-/// `motion_reorder` mirror-signal hack: registration and its unregister ride the same
-/// teardown, so a rebuilt row re-registers exactly once instead of stacking a new callback
-/// per rebuild (24 drags took that list from 10 entries to 50).
+/// What it absorbs is the "insert into the registry on rebuild" half of the `motion_reorder`
+/// mirror-signal hack: registration and its unregister ride the same teardown, so a rebuilt
+/// row re-registers exactly once instead of stacking a new callback per rebuild (24 drags
+/// took that list from 10 entries to 50), and a removed row takes its callback with it.
 ///
 /// ```ignore
 /// use_effect(move || {
@@ -829,10 +869,9 @@ where
 /// The phase is in the name rather than smuggled in as a magic registration, because the two
 /// slots have different lifetimes: the effect body runs once per mount/rebuild, `frame` runs
 /// every frame until it is torn down. Registration and its unregister ride the same teardown,
-/// so a rebuilt row re-registers exactly once instead of stacking a new callback per rebuild —
-/// the explicit version of the "insert into the registry on rebuild" pattern this hook exists
-/// to absorb. (A row that leaves the list still has to run that unregister itself; see the
-/// unmount-sweep work on `use_effect`.)
+/// so a rebuilt row re-registers exactly once instead of stacking a new callback per rebuild,
+/// and a removed row takes its callback with it — the explicit version of the "insert into
+/// the registry on rebuild" pattern this hook exists to absorb.
 ///
 /// ```ignore
 /// use_effect_post_layout(move |dt| {

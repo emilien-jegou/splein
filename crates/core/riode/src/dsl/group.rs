@@ -476,7 +476,29 @@ impl GroupDef {
                             // needs no runtime of its own.
                             let key = key_of(&s);
                             match crate::reactive::Cx::current() {
-                                Some(cx) => cx.enter_keyed(key, || row(i, s)),
+                                Some(cx) => cx.enter_keyed(key.clone(), || {
+                                    let el = row(i, s);
+                                    // Removal is only observable at reconcile time, by node, and
+                                    // the node never carries the instance this row's hooks live
+                                    // under. Give the element the row's own key when the row set
+                                    // none, then record the pairing so a purge can go from "that
+                                    // node left the tree" to "that instance's state must go".
+                                    let el = match el.key() {
+                                        Some(_) => el,
+                                        None => el.with_key(key.clone()),
+                                    };
+                                    if let Some(el_key) = el.key() {
+                                        if let Some(scope) =
+                                            crate::reactive::hooks::current_scope()
+                                        {
+                                            scope.runtime().borrow_mut().link_element_hook_instance(
+                                                el_key,
+                                                Rc::from(key.as_str()),
+                                            );
+                                        }
+                                    }
+                                    el
+                                }),
                                 // Built outside any scope, e.g. by a caller that only wants the shape.
                                 // The rows still work; they just cannot preserve hook state.
                                 None => row(i, s),
