@@ -208,6 +208,29 @@ macro_rules! impl_display_prop {
 
 impl_display_prop!(f32, i32, u32, usize, isize, bool);
 
+/// Integer literals into integer props (`count={7}` on a `Prop<usize>`): an
+/// unsuffixed literal defaults to `i32`, and `IntoPropValue` is a *local* trait
+/// so the cast is legal here (unlike `From<i32> for usize`, which the orphan
+/// rule forbids). Mirrors `impl_num_prop!`'s i32/u32 sources.
+macro_rules! impl_int_prop_value {
+    ($($src:ty => $($dst:ty),*);* $(;)?) => {
+        $(
+            $(
+                impl IntoPropValue<$dst> for $src {
+                    fn into_prop_value(self) -> DynamicProp<$dst> {
+                        DynamicProp::Static(self as $dst)
+                    }
+                }
+            )*
+        )*
+    };
+}
+
+impl_int_prop_value! {
+    i32 => u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize;
+    u32 => u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize;
+}
+
 impl IntoProp<i32> for i32 {
     fn into_prop(self) -> DynamicProp<i32> {
         DynamicProp::Static(self)

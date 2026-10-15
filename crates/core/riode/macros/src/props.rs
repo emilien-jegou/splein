@@ -54,13 +54,36 @@ fn prop_default_attr(attrs: &[syn::Attribute]) -> syn::Result<PropDefaultAttr> {
 }
 
 /// Last path segment identifier of a type, if it is a plain path.
-#[allow(dead_code)]
 fn last_segment_ident(ty: &Type) -> Option<String> {
     if let Type::Path(p) = ty {
         p.path.segments.last().map(|s| s.ident.to_string())
     } else {
         None
     }
+}
+
+/// Whether the type is a plain integer. These get a *concrete* setter so a
+/// bare literal (`len={100_000}`) infers the prop's own type — `impl Into<T>`
+/// would default the literal to `i32`, and `From<i32> for usize` cannot exist
+/// (orphan rule), so `Into<usize>` is unsatisfiable for an unsuffixed literal.
+/// Concrete matches the primitive setters (`weight(u16)`, `z_index(i32)`).
+fn is_integer_type(ty: &Type) -> bool {
+    matches!(
+        last_segment_ident(ty).as_deref(),
+        Some(
+            "u8" | "u16"
+                | "u32"
+                | "u64"
+                | "u128"
+                | "usize"
+                | "i8"
+                | "i16"
+                | "i32"
+                | "i64"
+                | "i128"
+                | "isize"
+        )
+    )
 }
 
 /// Strips one outer `Option<...>` layer, returning the inner type.
@@ -220,9 +243,25 @@ pub fn expand_props(input: &ItemFn) -> syn::Result<Option<TokenStream2>> {
             }
         } else if f.optional {
             let inner = strip_outer_option(t).unwrap_or_else(|| t.clone());
+            if is_integer_type(&inner) {
+                quote! {
+                    pub fn #n(mut self, v: #inner) -> Self {
+                        self.#n = ::std::option::Option::Some(::std::option::Option::Some(v));
+                        self
+                    }
+                }
+            } else {
+                quote! {
+                    pub fn #n(mut self, v: impl ::std::convert::Into<#inner>) -> Self {
+                        self.#n = ::std::option::Option::Some(::std::option::Option::Some(v.into()));
+                        self
+                    }
+                }
+            }
+        } else if is_integer_type(t) {
             quote! {
-                pub fn #n(mut self, v: impl ::std::convert::Into<#inner>) -> Self {
-                    self.#n = ::std::option::Option::Some(::std::option::Option::Some(v.into()));
+                pub fn #n(mut self, v: #t) -> Self {
+                    self.#n = ::std::option::Option::Some(v);
                     self
                 }
             }
