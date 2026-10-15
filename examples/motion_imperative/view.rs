@@ -22,14 +22,14 @@ pub fn Page() -> impl IntoElement {
     let outward = use_interval_toggle(STEP_SECS);
 
     // Panel: one tween, applied to each property independently.
-    let panel_ease = Transition::from_str("out-quint 650ms");
+    let panel_ease = Transition::ease(650.ms(), Ease::OutQuint);
     let x = panel_ease.on(outward.map(|out| if out { 0.0 } else { TRAVEL }));
     let opacity = panel_ease.on(outward.map(|out| if out { 1.0 } else { 0.4 }));
     let scale = panel_ease.on(outward.map(|out| if out { 1.0 } else { 0.9 }));
 
     // Badge: a spring, so it carries no duration at all and arrives on its own terms.
     let badge_scale =
-        Transition::from_str("spring:bouncy").on(outward.map(|out| if out { 1.25 } else { 1.0 }));
+        Transition::bouncy().on(outward.map(|out| if out { 1.25 } else { 1.0 }));
 
     view! {
         <Shell

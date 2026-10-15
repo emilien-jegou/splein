@@ -116,7 +116,7 @@ fn Item(
     // The height is animated here rather than by the engine, so it is a real layout value at
     // every frame. The copy below is laid out against it and clipped by it in the same pass,
     // which is why nothing needs a separate reveal.
-    let height = Transition::from_str("spring:smooth").on(is_open.clone().map(move |open| {
+    let height = Transition::smooth().on(is_open.clone().map(move |open| {
         if open {
             OPEN
         } else {
@@ -191,7 +191,7 @@ fn Header(
 fn PanelBody(index: usize, copy: &'static str, is_open: Computed<bool>) -> impl IntoElement {
     // The copy fades on the same clock as the box, so it never appears before the reveal.
     let reveal =
-        Transition::from_str("out-cubic 180ms").on(is_open.map(
+        Transition::ease(180.ms(), Ease::OutCubic).on(is_open.map(
             move |open| {
                 if open {
                     1.0

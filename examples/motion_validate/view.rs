@@ -27,7 +27,7 @@ pub fn Page() -> impl IntoElement {
     // cannot disagree. The previous version bound both to the raw `expanded` flag and let the
     // engine spring the box alone, so the label swapped to "Validate" on frame one while the box
     // was still 52px wide -- a long word laid out in a box that had not grown yet.
-    let width = Transition::from_str("spring").on(expanded.map(|is_open| {
+    let width = Transition::snappy().on(expanded.map(|is_open| {
         if is_open {
             EXPANDED
         } else {

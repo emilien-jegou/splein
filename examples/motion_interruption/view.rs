@@ -28,7 +28,7 @@ pub fn Page() -> impl IntoElement {
         move || step.update(|n| *n += 1)
     });
 
-    let x = Transition::from_str("spring").on(target);
+    let x = Transition::snappy().on(target);
 
     view! {
         <Shell

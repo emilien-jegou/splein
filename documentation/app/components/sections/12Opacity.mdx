@@ -1,7 +1,7 @@
 import SectionShell from "../layout/SectionShell"
 import OpacityDemo from "../demos/OpacityDemo"
 
-export const code = `let opacity = Transition::from_str("out-cubic 180ms")
+export const code = `let opacity = Transition::ease(180.ms(), Ease::OutCubic)
     .on(is_open.map(move |open| {
         if open { 1.0 } else { 0.0 }
     }));

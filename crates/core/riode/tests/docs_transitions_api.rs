@@ -265,6 +265,22 @@ fn section_10_every_documented_easing_exists() {
     ];
     let _ = [Repeat::Once, Repeat::PingPong, Repeat::Loop];
     let _ = [Spring::smooth(), Spring::snappy(), Spring::bouncy()];
+    // P12: the obvious-tier preset constructors match the Spring presets.
+    let _ = [Transition::smooth(), Transition::snappy(), Transition::bouncy()];
+    // P12: from_str still parses the documented grammar.
+    let _ = Transition::from_str("spring");
+    let _ = Transition::from_str("spring:bouncy");
+    let _ = Transition::from_str("out-cubic 200ms");
+    assert!(Transition::parse("bogus").is_none());
+}
+
+// P12: an unparseable string panics in debug builds, naming the offender.
+// Release keeps the no-crash fallback, so this only runs under debug_assertions.
+#[cfg(debug_assertions)]
+#[test]
+#[should_panic(expected = "bogus")]
+fn section_10_from_str_rejects_garbage_loudly_in_debug() {
+    let _ = Transition::from_str("bogus");
 }
 
 #[test]

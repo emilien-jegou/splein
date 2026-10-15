@@ -82,6 +82,11 @@ Two constructors:
   a natural length and the end matters more than the middle.
 - `Transition::spring(spring)` — physics. Right when the motion can be interrupted, reversed, or
   given a velocity from a gesture.
+- `Transition::snappy()` / `::bouncy()` / `::smooth()` — the obvious presets, for when
+  `Transition::spring(Spring::snappy())` is more typing than the choice deserves.
+- `Transition::from_str("…")` — the secondary, data-driven form (presets and timings from
+  config or text). **Panics in debug builds on an unparseable string**; prefer the typed
+  builders above, which fail at compile time on typos.
 
 `Transition::on` returns the **current** value, so it composes with everything: drive a
 `width`, an `opacity`, a `scale`, or a string.

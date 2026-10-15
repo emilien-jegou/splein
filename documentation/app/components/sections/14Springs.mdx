@@ -5,14 +5,14 @@ export const code = `// Custom spring
 const SETTLE: Spring = Spring::new(300.0, 38.0, 1.0);
 
 // Named presets
-Transition::from_str("spring")
-Transition::from_str("spring:bouncy")
-Transition::from_str("spring:smooth")
+Transition::snappy()
+Transition::bouncy()
+Transition::smooth()
 
 // Retargeting: adopts live position + velocity
 let step = use_signal(0u32);
 let target = step.map(|n| if n % 2 == 0 { RIGHT } else { LEFT });
-let x = Transition::from_str("spring").on(target);`
+let x = Transition::snappy().on(target);`
 
 <SectionShell
       number="14"

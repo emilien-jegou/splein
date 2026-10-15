@@ -21,10 +21,10 @@ pub fn Page() -> impl IntoElement {
     // transition says how, and the frame loop supplies the time.
     // One declaration, three independent streams: the target says where, the
     // transition says how, and the frame loop supplies the time.
-    let tween = Transition::from_str("out-cubic 200ms");
+    let tween = Transition::ease(200.ms(), Ease::OutCubic);
     let opacity = tween.on(enabled.map(|on| if on { 1.0 } else { 0.35 }));
     let slide_x = tween.on(enabled.map(|on| if on { 0.0 } else { 48.0 }));
-    let spring = Transition::from_str("spring");
+    let spring = Transition::snappy();
     let scale = spring.on(enabled.map(|on| if on { 1.18 } else { 1.0 }));
 
     view! {
@@ -38,7 +38,7 @@ pub fn Page() -> impl IntoElement {
                     <Panel
                         head={<Strip
                             left={<Eyebrow label="TWEEN" />}
-                            right={text("Transition::from_str(\"out-cubic 200ms\")").size(12.0).color(BODY)}
+                            right={text("Transition::ease(200.ms(), Ease::OutCubic)").size(12.0).color(BODY)}
                         />}
                     >
                         {tile("fade + slide", ACCENT).opacity(opacity).x(slide_x)}
@@ -46,7 +46,7 @@ pub fn Page() -> impl IntoElement {
                     <Panel
                         head={<Strip
                             left={<Eyebrow label="SPRING" />}
-                            right={text("Transition::from_str(\"spring\")").size(12.0).color(BODY)}
+                            right={text("Transition::snappy()").size(12.0).color(BODY)}
                         />}
                     >
                         {tile("settle", 0x10B981).scale(scale)}

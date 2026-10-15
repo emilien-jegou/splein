@@ -24,7 +24,7 @@ pub fn Page() -> impl IntoElement {
     let presses = use_signal(0u32);
 
     let down =
-        Transition::from_str("out-cubic 90ms").on(pressed.map(
+        Transition::ease(90.ms(), Ease::OutCubic).on(pressed.map(
             |p| {
                 if p {
                     HELD
@@ -37,7 +37,7 @@ pub fn Page() -> impl IntoElement {
     // held while down, rest while up. Watching a constant rest value parked it at 1.0,
     // so the release jumped instead of springing.
     let up =
-        Transition::from_str("spring:bouncy").on(pressed.map(
+        Transition::bouncy().on(pressed.map(
             |p| {
                 if p {
                     HELD

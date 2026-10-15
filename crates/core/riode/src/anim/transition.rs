@@ -95,6 +95,21 @@ impl Transition {
         }
     }
 
+    /// The obvious spring: snappy, no overshoot. `Transition::spring(Spring::snappy())`.
+    pub const fn snappy() -> Self {
+        Self::spring(Spring::snappy())
+    }
+
+    /// The obvious spring: soft landing with overshoot. `Transition::spring(Spring::bouncy())`.
+    pub const fn bouncy() -> Self {
+        Self::spring(Spring::bouncy())
+    }
+
+    /// The obvious spring: critically-damped glide. `Transition::spring(Spring::smooth())`.
+    pub const fn smooth() -> Self {
+        Self::spring(Spring::smooth())
+    }
+
     /// Sets what happens once a self-driven playback reaches its target.
     pub const fn repeat(mut self, repeat: Repeat) -> Self {
         self.repeat = repeat;
@@ -128,14 +143,24 @@ impl Transition {
     /// Named `from_str` (not `from`) because the inherent playback builder
     /// `from()` would shadow `From::from` at the call site.
     ///
-    /// Never panics: an unparseable string degrades to a snappy spring (same
-    /// no-crash contract as foundation literals) and logs loudly.
+    /// This is the *secondary*, data-driven form — prefer the typed builders
+    /// (`Transition::ease`, `Transition::spring`, `Transition::snappy()` /
+    /// `::bouncy()` / `::smooth()`), which fail at compile time on typos.
+    /// An unparseable string **panics in debug builds** (naming the offending
+    /// string) and degrades to a snappy spring in release (same no-crash
+    /// contract as foundation literals) while logging loudly.
     pub fn from_str(s: &str) -> Self {
         match Self::parse(s) {
             Some(t) => t,
             None => {
-                tracing::error!("riode: invalid transition `{s}`; expected `spring[:preset]`, `<ease> <duration>`, or `<duration>`; using snappy spring");
-                Self::spring(Spring::snappy())
+                let msg = format!("riode: invalid transition `{s}`; expected `spring[:preset]`, `<ease> <duration>`, or `<duration>`; using snappy spring");
+                #[cfg(debug_assertions)]
+                panic!("{msg}");
+                #[cfg(not(debug_assertions))]
+                {
+                    tracing::error!("{msg}");
+                    Self::spring(Spring::snappy())
+                }
             }
         }
     }

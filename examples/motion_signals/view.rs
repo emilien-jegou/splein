@@ -23,7 +23,7 @@ pub fn Page() -> impl IntoElement {
     let target = on.map(|is_on| if is_on { 1.0 } else { 0.0 });
 
     // The one simulation. Everything below is `p.map(..)`.
-    let p = Transition::from_str("spring").on(target);
+    let p = Transition::snappy().on(target);
 
     view! {
         <Shell
