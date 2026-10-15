@@ -4,6 +4,30 @@
 // `fill={0x121212}`, `width="fill"`, `radius="max"`, `margin="8 16"`,
 // `direction="vertical"`, `shadow="0 4 16 #0006"`.
 //
+// # Grammar reference
+//
+// The single source of truth for every accepted string form. Keywords are
+// case-insensitive; a future `DSL.md` mirrors this table verbatim. Numbers may
+// carry a `px` suffix wherever a length is accepted.
+//
+// | Type (prop) | Accepted forms |
+// |---|---|
+// | Color / Fill (`fill`, `color`, stroke/shadow color) | `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, bare hex `121212` (3/4/6/8 digits), `rgb(r,g,b)`, `rgba(r,g,b,a)` (0-255 ints or 0-1 floats), or a name: `transparent`, `black`, `white`, `red`, `green`, `blue`, `gray`/`grey`, `ink`, `paper`, `accent` |
+// | Size (`width`, `height`) | `fill` / `stretch` / `100%`, `fit` / `auto`, `fold`, `50%` (percent), `12px`, or a bare number (px) |
+// | Radius (`radius`) | `max` / `pill` / `full`, `12px`, or a bare number (px) |
+// | Gap (`gap`) | `full` / `fill` (→ 0), `12px`, or a bare number (px) |
+// | Margin / Padding (`margin`, `padding`) | CSS shorthand — 1-4 space-separated numbers: `8`, `8 16`, `8 16 4`, `8 16 4 2`; parts accept `px` |
+// | Direction (`direction`) | `horizontal` / `row` / `x`, `vertical` / `column` / `col` / `y` |
+// | Alignment (`alignment`) | `start` / `flex-start` / `left` / `top`, `center` / `middle`, `end` / `flex-end` / `right` / `bottom`, `stretch` |
+// | Distribution (`distribution`) | `start` / `flex-start`, `center`, `end` / `flex-end`, `space-between` / `between` |
+// | FlowWrap (`flow_wrap`) | `wrap`, `nowrap` / `no` / `none` (dashes/underscores ignored) |
+// | TextWrap (`wrap`) | `wrap` / `normal` / `prewrap`, `nowrap` / `no` / `none`, `balance` |
+// | AspectRatio (`aspect_ratio`) | `16/9`, `16:9`, or a bare number (a trailing `px` is tolerated) |
+// | StrokeAlign (stroke align) | `inside`, `center`, `outside` |
+// | Anchor (`anchor`) | `top-left`/`tl`, `top`/`tc`, `top-right`/`tr`, `left`, `center`/`middle`, `right`, `bottom-left`/`bl`, `bottom`/`bc`, `bottom-right`/`br` (dashes/underscores ignored) |
+// | Stroke (`stroke`) | `color` (→ 1px inside) or `width color [inside|center|outside]` |
+// | Shadow (`shadow`) | an elevation number (`8`) or `offset-x offset-y blur [spread] [color]` (`0 4 16 #0006`) |
+//
 // # The no-crash contract
 //
 // A literal means the same thing everywhere — on a primitive or inside a user
