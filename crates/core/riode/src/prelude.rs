@@ -13,8 +13,9 @@ pub use crate::computed;
 // `riode::internal` (P10) — spell `<Group>`/`<Text>` in `view!` instead. `Element`/
 // `IntoElement`/`IntoSplice`/`Component` stay here: they are the component contract.
 pub use crate::dsl::{
-    use_scroll, Behavior, Component, Element, IntoElement, OnScroll, Provider, RowFn, ScrollHandle,
-    ScrollView, ScrollViewProps, Scrollbar, VirtualScrollView, VirtualScrollViewProps,
+    use_scroll, AutoGrid, AutoGridProps, Behavior, Component, Element, IntoElement, OnScroll,
+    Provider, RowFn, ScrollHandle, ScrollView, ScrollViewProps, Scrollbar, VirtualScrollView,
+    VirtualScrollViewProps,
 };
 pub use crate::foundation::{
     Alignment, Anchor, BlendMode, Color, Direction, Distribution, FalloffCurve, Fill, Gap,

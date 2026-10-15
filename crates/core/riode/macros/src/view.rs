@@ -232,6 +232,13 @@ fn strip_braces(block: &syn::Block) -> TokenStream2 {
 pub(crate) fn children_vec(children: &[ViewNode], flow: &FlowTables) -> syn::Result<TokenStream2> {
     // Component children stay elements: control nodes compose under Groups,
     // never as direct component children (components forward `Vec<Element>`).
+    // NOTE (P15 experiment, reverted): evaluating control segments here and
+    // flattening bakes a snapshot — parent bodies do not re-run on signal
+    // change (proven: even 60 frames never re-flattened), so a `<for>` flattened
+    // here goes silently static while the same `<for>` under a `<Group>` stays
+    // live. A compile error beats a stale list. Pass `{vec}` from plain Rust
+    // (identical snapshot semantics, honestly spelled) or hoist the node
+    // above the component / wrap it in a `<Group>`.
     for c in children {
         if is_control_child(c) {
             return Err(syn::Error::new_spanned(

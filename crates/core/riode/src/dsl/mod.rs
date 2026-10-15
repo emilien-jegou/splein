@@ -97,6 +97,8 @@ pub use svg::svg;
 pub use text::{text, TextDef};
 
 pub mod cleanup;
+pub use auto_grid::{columns_for, AutoGrid, AutoGridProps};
+
 pub mod auto_grid;
 pub mod component;
 pub mod custom;

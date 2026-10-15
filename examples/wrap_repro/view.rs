@@ -43,7 +43,7 @@ pub fn Page() -> impl IntoElement {
             <ReproLabel label="5 · ASPECT RATIO (16/9 card — height follows width)" />
             <Group width={320.0} height="fit" aspect_ratio="16/9" fill="#24405E" radius={10.0}>
             </Group>
-            <ReproLabel label="6 · CLIENT AUTOGRID (buttons change width — columns follow, no engine grid)" />
+            <ReproLabel label="6 · AUTOGRID (buttons change width — columns follow)" />
             <AutoGridDemo />
         </Group>
     }
@@ -93,6 +93,7 @@ fn AutoGridDemo() -> impl IntoElement {
     let width = use_signal(420.0f32);
     let narrow = width;
     let widen = width;
+    let labels = use_signal(vec!["One", "Two", "Three", "Four", "Five", "Six"]);
     view! {
         <Group direction="vertical" width="fill" height="fit" gap={8.0}>
             <Group direction="horizontal" width="fit" height="fit" gap={8.0}>
@@ -103,45 +104,23 @@ fn AutoGridDemo() -> impl IntoElement {
                     {text("+").size(14.0).color("#FFFFFF")}
                 </Group>
             </Group>
-            <AutoGrid width={width} min_child={150.0} gap={8.0} />
+            <AutoGrid width={width} min_child={150.0} gap={8.0}>
+                {labels
+                    .get()
+                    .iter()
+                    .map(|label| {
+                        group()
+                            .key(label.to_string())
+                            .width("fill")
+                            .height(48.0)
+                            .fill("#2B3A4D")
+                            .radius(8.0)
+                            .alignment("center")
+                            .children([text(*label).size(14.0).color("#FFFFFF").into_element()])
+                            .into_element()
+                    })
+                    .collect::<Vec<_>>()}
+            </AutoGrid>
         </Group>
     }
-}
-
-#[component]
-fn AutoGrid(width: Signal<f32>, min_child: f32, gap: f32) -> impl IntoElement {
-    let items = ["One", "Two", "Three", "Four", "Five", "Six"];
-    let (cols, child_w) = riode::dsl::auto_grid::columns_for(width.get(), min_child, gap);
-    let mut rows: Vec<Element> = Vec::new();
-    for chunk in items.chunks(cols as usize) {
-        let mut cells: Vec<Element> = Vec::new();
-        for item in chunk {
-            cells.push(
-                group()
-                    .width(child_w)
-                    .height(48.0)
-                    .fill("#2B3A4D")
-                    .radius(8.0)
-                    .alignment("center")
-                    .children([text(*item).size(14.0).color("#FFFFFF").into_element()])
-                    .into_element(),
-            );
-        }
-        rows.push(
-            group()
-                .direction("horizontal")
-                .width("fill")
-                .height("fit")
-                .gap(gap)
-                .children(cells)
-                .into_element(),
-        );
-    }
-    group()
-        .direction("vertical")
-        .width(width.get())
-        .height("fit")
-        .gap(gap)
-        .children(rows)
-        .into_element()
 }

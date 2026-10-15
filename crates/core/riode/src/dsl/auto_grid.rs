@@ -1,10 +1,15 @@
-// Single responsibility: Client-side responsive grid math over width signals.
+// Single responsibility: Client-side responsive grid math over width signals,
+// plus the first-class `<AutoGrid>` element built on it.
 //
-// Deliberately *not* an engine feature: column count and cell width are pure
-// arithmetic on an already-known available width (a window/container signal or
-// a fixed box). The engine never parses `repeat(auto-fit, minmax(...))`; user
-// code derives `(columns, child_width)` here and emits ordinary nested `Group`
-// rows. See `examples/wrap_repro/view.rs` (`AutoGrid`) for the pattern.
+// Column count and cell width are pure arithmetic on an already-known available
+// width (a window/container signal or a fixed box). The engine never parses
+// `repeat(auto-fit, minmax(...))`; user code derives `(columns, child_width)`
+// here and emits ordinary nested `Group` rows.
+
+use crate::internal::{group, Element, IntoElement};
+use crate::prelude::component;
+use crate::reactive::Signal;
+use std::rc::Rc;
 
 /// Columns and per-cell width for `avail` px holding cells of at least
 /// `min_child` px separated by `gap` px.
@@ -28,6 +33,81 @@ pub fn columns_for(avail: f32, min_child: f32, gap: f32) -> (u32, f32) {
         ((avail - gap * (cols - 1) as f32) / cols as f32).max(0.0)
     };
     (cols, child_w)
+}
+
+/// First-class auto-grid (P15): chunks its children into rows of cells at
+/// least `min_child` px wide, separated by `gap`, inside the `width` the
+/// caller owns.
+///
+/// ```rust,ignore
+/// <AutoGrid width={width} min_child={150.0} gap={8.0}>
+///     {labels
+///         .get()
+///         .iter()
+///         .map(|label| {
+///             group()
+///                 .key(label.to_string())
+///                 .width("fill")
+///                 .height(48.0)
+///                 .children([text(label).size(14.0).into_element()])
+///                 .into_element()
+///         })
+///         .collect::<Vec<_>>()}
+/// </AutoGrid>
+/// ```
+///
+/// NOTE: rows arrive as a plain `{vec}` splice, not a `<for>` node — control
+/// nodes compose under `<Group>`, never as direct component children (a
+/// flattened `<for>` would go silently static: parent bodies do not re-run
+/// on signal change). Key each cell so re-chunks reconcile by identity.
+///
+/// The rows are a live segment (`children_of`), not imperative code in the
+/// body: the body runs once per mount and the chunking closure re-evaluates
+/// whenever `width` changes, so narrowing reflows rows and widening merges
+/// them without the component re-running. Each cell is wrapped in a
+/// transparent width-constrained group — the cell itself keeps whatever
+/// height it declares — and rows are plain horizontal groups, so both the row
+/// pitch and the column pitch come from `gap`.
+#[component]
+pub fn AutoGrid(
+    width: Signal<f32>,
+    min_child: f32,
+    gap: f32,
+    children: Vec<Element>,
+) -> impl IntoElement {
+    let kids = Rc::new(children);
+    group()
+        .direction("vertical")
+        .width(width)
+        .height("fit")
+        .gap(gap)
+        .children_of(move || {
+            let w = width.get();
+            let (cols, child_w) = columns_for(w, min_child, gap);
+            kids.chunks(cols.max(1) as usize)
+                .map(|chunk| {
+                    group()
+                        .direction("horizontal")
+                        .width("fill")
+                        .height("fit")
+                        .gap(gap)
+                        .children(
+                            chunk
+                                .iter()
+                                .map(|cell| {
+                                    group()
+                                        .width(child_w)
+                                        .height("fit")
+                                        .children([cell.clone()])
+                                        .into_element()
+                                })
+                                .collect::<Vec<_>>(),
+                        )
+                        .into_element()
+                })
+                .collect()
+        })
+        .into_element()
 }
 
 #[cfg(test)]
