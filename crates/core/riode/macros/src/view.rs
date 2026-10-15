@@ -62,9 +62,12 @@ pub(crate) fn attr_method(key: &str) -> String {
 /// string or float literal (braced `{12.0}` or bare `"lit"` / `12.0` forms as
 /// emitted by [`attr_value_tokens`]); anything else passes through untouched.
 ///
-/// Slot keys (`{file}:{line}:{idx}`) count in expansion order, mirroring the
-/// textual extractor's source order. Only plain literals slot — `{expr}`
-/// blocks, closures, and builder chains always take the rebuild path.
+/// Slot keys (`{file}:{line}:{idx}`) count in expansion order. This counter is
+/// the single index authority: the runtime derives the slot table from these
+/// registrations (`slot_manifest`), and the textual extractor only lists
+/// values for `resolve_slot_keys` to zip — it counts nothing. Only plain
+/// literals slot — `{expr}` blocks, closures, and builder chains always take
+/// the rebuild path.
 pub(crate) fn slot_literal_value(val: TokenStream2, flow: &FlowTables) -> TokenStream2 {
     if let Ok(s) = syn::parse2::<syn::LitStr>(val.clone()) {
         let idx = flow.slots.get();

@@ -173,15 +173,77 @@ pub fn clear_template_values() {
     }
 }
 
-/// One extracted literal slot from a `view!` body, in expansion order.
+/// One `view!` site's extracted slot values, in source order — no ordinals.
+///
+/// P17: the macro is the sole index authority (its `tpl_*` registrations
+/// carry every `{file}:{line}:{idx}` key, recoverable via [`slot_manifest`]);
+/// the extractor only lists values. [`resolve_slot_keys`] zips these against
+/// the manifest and requires an exact kind-sequence + length match, so any
+/// recognition divergence between the two passes rebuilds instead of
+/// corrupting.
 #[derive(Clone, Debug, PartialEq)]
-pub struct TemplateSlot {
-    /// `{line}:{idx}` key matching the macro-emitted lookup.
-    pub key: String,
-    /// Fresh string value, if a string literal.
-    pub string: Option<String>,
-    /// Fresh f32 value, if a numeric literal.
-    pub number: Option<f32>,
+pub struct ViewSlots {
+    /// 1-based line of the `view!` token starting the body.
+    pub line: usize,
+    /// Slottable literal values in source order.
+    pub values: Vec<SlotValue>,
+}
+
+/// One slottable literal value.
+#[derive(Clone, Debug, PartialEq)]
+pub enum SlotValue {
+    Str(String),
+    Num(f32),
+}
+
+/// Slot kind, for manifest verification.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SlotKind {
+    Str,
+    Num,
+}
+
+/// Ordered slot table for one view site, derived from the macro's own
+/// registrations: every `tpl_*` call the running UI made carries its full
+/// `{file}:{line}:{idx}` key, so grouping by file+line and sorting by idx
+/// reproduces the macro's table with no second counter.
+///
+/// Returns `(full_key, kind)` in macro ordinal order. Empty when unarmed or
+/// when the running UI never read that site (nothing to fast-path against).
+pub fn slot_manifest(file_suffix: &str, line: usize) -> Vec<(String, SlotKind)> {
+    fn split_key(key: &str) -> Option<(&str, usize, usize)> {
+        // rsplitn keeps colons inside the file remainder (Windows drive paths).
+        let mut it = key.rsplitn(3, ':');
+        let (idx, ln, file) = match (it.next(), it.next(), it.next()) {
+            (Some(a), Some(b), Some(c)) => (a.parse::<usize>().ok()?, b.parse::<usize>().ok()?, c),
+            _ => return None,
+        };
+        Some((file, ln, idx))
+    }
+    let mut out: Vec<(usize, String, SlotKind)> = Vec::new();
+    let sguard = TPL_STRINGS.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(map) = sguard.as_ref() {
+        for key in map.keys() {
+            if let Some((file, ln, idx)) = split_key(key) {
+                if ln == line && file.ends_with(file_suffix) {
+                    out.push((idx, key.clone(), SlotKind::Str));
+                }
+            }
+        }
+    }
+    drop(sguard);
+    let fguard = TPL_F32.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(map) = fguard.as_ref() {
+        for key in map.keys() {
+            if let Some((file, ln, idx)) = split_key(key) {
+                if ln == line && file.ends_with(file_suffix) {
+                    out.push((idx, key.clone(), SlotKind::Num));
+                }
+            }
+        }
+    }
+    out.sort_by_key(|(idx, _, _)| *idx);
+    out.into_iter().map(|(_, k, kind)| (k, kind)).collect()
 }
 
 /// Whether trimmed text is a plain float literal the macro would slot
@@ -252,35 +314,26 @@ fn read_quoted(s: &str) -> Option<(String, usize)> {
     None
 }
 
-/// Extracts slottable literals from one `view!` body in source order.
+/// Extracts slottable literal values from one `view!` body in source order.
 ///
-/// Counts exactly what the macro slots, in the same order: plain `"..."`
-/// / `{ "..." }` / float attr values, `<Text>"lit"</Text>` children, and
-/// `<Text content="lit">`. Anything else (`{expr}`, closures, builder
-/// chains, nested elements) consumes no slot on either side.
+/// P17: no ordinals here — values only, in the order the text lists them.
+/// Slottability still mirrors the macro (`LitStr` always; lone dotted floats;
+/// `<Text>"lit"</Text>` children and `<Text content="lit">`; nothing else).
+/// Any divergence from the macro's table can no longer misalign keys: resolve
+/// zips against the manifest and rebuilds on any kind-sequence or length
+/// mismatch — so a recognition gap costs a rebuild, never a corrupt value.
 ///
 /// Returns `None` when the body contains a nested `view!` (separate slot
 /// namespace the linear scan cannot attribute) — the caller rebuilds.
-fn extract_body_slots(body: &str, line: usize) -> Option<Vec<TemplateSlot>> {
+fn extract_body_slots(body: &str) -> Option<Vec<SlotValue>> {
     let mut slots = Vec::new();
-    let mut idx = 0usize;
     let bytes = body.as_bytes();
     let mut p = 0;
-    let push_string = |s: String, idx: &mut usize, slots: &mut Vec<TemplateSlot>| {
-        slots.push(TemplateSlot {
-            key: format!("{line}:{idx}"),
-            string: Some(s),
-            number: None,
-        });
-        *idx += 1;
+    let push_string = |s: String, slots: &mut Vec<SlotValue>| {
+        slots.push(SlotValue::Str(s));
     };
-    let push_number = |v: f32, idx: &mut usize, slots: &mut Vec<TemplateSlot>| {
-        slots.push(TemplateSlot {
-            key: format!("{line}:{idx}"),
-            string: None,
-            number: Some(v),
-        });
-        *idx += 1;
+    let push_number = |v: f32, slots: &mut Vec<SlotValue>| {
+        slots.push(SlotValue::Num(v));
     };
     while p < bytes.len() {
         // Nested `view!` opens a separate slot namespace: bail to rebuild.
@@ -346,7 +399,7 @@ fn extract_body_slots(body: &str, line: usize) -> Option<Vec<TemplateSlot>> {
                 }
             }
             if let Some(s) = lit {
-                push_string(s, &mut idx, &mut slots);
+                push_string(s, &mut slots);
             }
             p = inner_start;
             continue;
@@ -375,7 +428,7 @@ fn extract_body_slots(body: &str, line: usize) -> Option<Vec<TemplateSlot>> {
                 let vstr = &body[v..];
                 if vstr.starts_with('"') {
                     if let Some((s, n)) = read_quoted(vstr) {
-                        push_string(s, &mut idx, &mut slots);
+                        push_string(s, &mut slots);
                         p = v + n;
                         continue;
                     }
@@ -409,11 +462,11 @@ fn extract_body_slots(body: &str, line: usize) -> Option<Vec<TemplateSlot>> {
                         if inner.starts_with('"') {
                             if let Some((s, n)) = read_quoted(inner) {
                                 if inner[n..].trim().is_empty() {
-                                    push_string(s, &mut idx, &mut slots);
+                                    push_string(s, &mut slots);
                                 }
                             }
                         } else if let Some(f) = as_slot_float(inner) {
-                            push_number(f, &mut idx, &mut slots);
+                            push_number(f, &mut slots);
                         }
                     }
                     p = k;
@@ -429,7 +482,7 @@ fn extract_body_slots(body: &str, line: usize) -> Option<Vec<TemplateSlot>> {
                         k += 1;
                     }
                     if let Some(f) = as_slot_float(&body[v..k]) {
-                        push_number(f, &mut idx, &mut slots);
+                        push_number(f, &mut slots);
                     }
                     p = k;
                     continue;
@@ -445,14 +498,13 @@ fn extract_body_slots(body: &str, line: usize) -> Option<Vec<TemplateSlot>> {
     Some(slots)
 }
 
-/// Extracts slottable literals per `view!` body, in source order, keyed
-/// `{line}:{idx}`.
+/// Extracts slottable literal values per `view!` body, in source order.
 ///
 /// `line` is the 1-based line of the `view!` token starting that body.
 /// Returns `None` if any body needs the rebuild path (unterminated macro or
 /// nested `view!`).
-pub fn extract_view_literals(src: &str) -> Option<Vec<TemplateSlot>> {
-    let mut slots = Vec::new();
+pub fn extract_view_literals(src: &str) -> Option<Vec<ViewSlots>> {
+    let mut views = Vec::new();
     let mut search_from = 0;
     let bytes = src.as_bytes();
     while let Some(rel) = src[search_from..].find("view!") {
@@ -502,16 +554,16 @@ pub fn extract_view_literals(src: &str) -> Option<Vec<TemplateSlot>> {
             return None;
         }
         let body = &src[j + 1..k - 1];
-        // Per-body numbering from 0: the macro's slot counter is per
-        // `view!` expansion, keyed by that expansion's own line.
-        let Some(found) = extract_body_slots(body, line) else {
+        // No per-body numbering: values are zipped against the macro's own
+        // manifest at resolve time (P17).
+        let Some(values) = extract_body_slots(body) else {
             return None;
         };
-        slots.extend(found);
+        views.push(ViewSlots { line, values });
         let _ = open;
         search_from = k;
     }
-    Some(slots)
+    Some(views)
 }
 
 /// Resolved fast-path values: strings and floats keyed by full slot key.
@@ -522,50 +574,50 @@ pub struct ResolvedSlots {
     pub numbers: Vec<(String, f32)>,
 }
 
-/// Resolves extractor `{line}:{idx}` keys to full registry keys for one file.
+/// Resolves extracted per-view values to full registry keys for one file.
 ///
-/// Matches registry entries whose file path ends with `file_suffix` (the edited
-/// file's basename) and whose line matches. Returns resolved pairs plus an
-/// unresolved count; the caller falls back to a full rebuild unless
-/// `unresolved` is zero and at least one pair resolved.
-pub fn resolve_slot_keys(file_suffix: &str, slots: &[TemplateSlot]) -> (ResolvedSlots, usize) {
-    let guard = VIEW_SHAPES.lock().unwrap_or_else(|e| e.into_inner());
-    let map = guard.clone().unwrap_or_default();
+/// P17: no idx arithmetic here either. Each view's values are zipped
+/// positionally against the macro's manifest ([`slot_manifest`], derived from
+/// the running UI's own `tpl_*` registrations), requiring an exact
+/// kind-sequence + length match. Anything else — a recognition gap, a
+/// structural edit the gate let through, an unread site — counts every value
+/// unresolved, and the caller falls back to a full rebuild. Values only flow
+/// on a total match, so divergence rebuilds instead of corrupting.
+///
+/// Matches registry entries whose file path ends with `file_suffix` (the
+/// edited file's basename). Returns resolved pairs plus an unresolved count;
+/// the caller rebuilds unless `unresolved` is zero and at least one pair
+/// resolved.
+pub fn resolve_slot_keys(file_suffix: &str, views: &[ViewSlots]) -> (ResolvedSlots, usize) {
     let mut out = ResolvedSlots {
         strings: Vec::new(),
         numbers: Vec::new(),
     };
     let mut unresolved = 0;
-    for slot in slots {
-        let mut hit: Option<String> = None;
-        for reg_key in map.keys() {
-            // Registry key: `{file}:{line}`; slot needs `{file}:{line}:{idx}`.
-            let Some(colon) = reg_key.rfind(':') else {
-                continue;
-            };
-            let (file, line) = (&reg_key[..colon], &reg_key[colon + 1..]);
-            if !file.ends_with(file_suffix) {
-                continue;
-            }
-            let Some(slot_colon) = slot.key.rfind(':') else {
-                continue;
-            };
-            if line == &slot.key[..slot_colon] {
-                hit = Some(format!("{reg_key}:{}", &slot.key[slot_colon + 1..]));
-                break;
-            }
-        }
-        match hit {
-            Some(full) => {
-                if let Some(s) = slot.string.as_ref() {
-                    out.strings.push((full, s.clone()));
-                } else if let Some(n) = slot.number {
-                    out.numbers.push((full, n));
-                } else {
-                    unresolved += 1;
+    for view in views {
+        let manifest = slot_manifest(file_suffix, view.line);
+        // Collect locally: a late kind mismatch must discard the whole view,
+        // never push a partial (misaligned) delta.
+        let mut strs: Vec<(String, String)> = Vec::new();
+        let mut nums: Vec<(String, f32)> = Vec::new();
+        let mut ok = manifest.len() == view.values.len();
+        if ok {
+            for ((key, kind), value) in manifest.iter().zip(view.values.iter()) {
+                match (kind, value) {
+                    (SlotKind::Str, SlotValue::Str(s)) => strs.push((key.clone(), s.clone())),
+                    (SlotKind::Num, SlotValue::Num(n)) => nums.push((key.clone(), *n)),
+                    _ => {
+                        ok = false;
+                        break;
+                    }
                 }
             }
-            None => unresolved += 1,
+        }
+        if ok {
+            out.strings.extend(strs);
+            out.numbers.extend(nums);
+        } else {
+            unresolved += view.values.len();
         }
     }
     (out, unresolved)
@@ -745,17 +797,24 @@ mod tests {
 
     #[test]
     fn armed_pipeline_registers_resolves_applies() {
-        // The end-to-end path the release-gating bug broke: register (as the
-        // running UI does), extract (as the dev loop does), resolve, apply,
+        // The end-to-end path the release-gating bug broke: the running UI's
+        // tpl_* calls seed the manifest (P17: the macro's own table, no
+        // second counter), extract lists values, resolve zips, apply pushes,
         // read back through the slot. Would have failed unarmed.
         arm();
         clear_view_templates();
         clear_template_values();
-        note_view_template("examples/row.rs", 5, "[Group]");
+        // Seed exactly what the macro emitted for this body: radius first,
+        // then the text child (expansion order).
+        apply_template_delta(
+            &[("examples/row.rs:5:1".to_string(), "hi".to_string())],
+            &[("examples/row.rs:5:0".to_string(), 10.0)],
+        );
         let src = "a\nb\nc\nd\n view! { <Group radius={10.0}><Text>\"hi\"</Text></Group> }\n";
-        let slots = extract_view_literals(src).expect("scannable");
-        assert_eq!(slots.len(), 2);
-        let (resolved, unresolved) = resolve_slot_keys("row.rs", &slots);
+        let views = extract_view_literals(src).expect("scannable");
+        assert_eq!(views.len(), 1);
+        assert_eq!(views[0].line, 5);
+        let (resolved, unresolved) = resolve_slot_keys("row.rs", &views);
         assert_eq!(unresolved, 0);
         let n = apply_template_delta(&resolved.strings, &resolved.numbers);
         assert_eq!(n, 2);
@@ -806,53 +865,60 @@ mod tests {
     }
 
     #[test]
-    fn extractor_keys_text_literals_by_view_line_and_ordinal() {
+    fn extractor_lists_text_values_in_source_order_without_ordinals() {
+        // P17: no `{line}:{idx}` keys out of the extractor — one view, two
+        // values in source order; the macro's manifest owns numbering.
         let src = "fn p() {\n view! { <Group><Text>\"hi\"</Text><Text content=\"yo\"></Text></Group> }\n}";
-        let slots = extract_view_literals(src).expect("scannable");
-        assert_eq!(slots.len(), 2);
-        assert_eq!(slots[0].key, "2:0");
-        assert_eq!(slots[0].string.as_deref(), Some("hi"));
-        assert_eq!(slots[1].key, "2:1");
-        assert_eq!(slots[1].string.as_deref(), Some("yo"));
+        let views = extract_view_literals(src).expect("scannable");
+        assert_eq!(views.len(), 1);
+        assert_eq!(views[0].line, 2);
+        assert_eq!(
+            views[0].values,
+            vec![
+                SlotValue::Str("hi".to_string()),
+                SlotValue::Str("yo".to_string())
+            ]
+        );
     }
 
     #[test]
     fn extractor_ignores_expr_children() {
         let src = "fn p() {\n view! { <Group><Text>{name}</Text></Group> }\n}";
-        assert!(extract_view_literals(src).expect("scannable").is_empty());
+        let views = extract_view_literals(src).expect("scannable");
+        assert_eq!(views.len(), 1);
+        assert!(views[0].values.is_empty());
     }
 
     #[test]
     fn extractor_slots_attr_literals_in_source_order() {
-        // Mirrors the macro's expansion order: attrs in source order, then
-        // children — radius, label, gap, then the Text child.
+        // Radius, label, gap, then the Text child — kinds and values only.
         let src = "fn p() {\n view! { <Group gap={16.0} label=\"row\"><Text>\"hi\"</Text></Group> }\n}";
-        let slots = extract_view_literals(src).expect("scannable");
-        assert_eq!(slots.len(), 3);
-        assert_eq!(slots[0].key, "2:0");
-        assert_eq!(slots[0].number, Some(16.0));
-        assert_eq!(slots[1].key, "2:1");
-        assert_eq!(slots[1].string.as_deref(), Some("row"));
-        assert_eq!(slots[2].key, "2:2");
-        assert_eq!(slots[2].string.as_deref(), Some("hi"));
+        let views = extract_view_literals(src).expect("scannable");
+        assert_eq!(views.len(), 1);
+        assert_eq!(
+            views[0].values,
+            vec![
+                SlotValue::Num(16.0),
+                SlotValue::Str("row".to_string()),
+                SlotValue::Str("hi".to_string()),
+            ]
+        );
     }
 
     #[test]
     fn extractor_skips_expr_and_builder_attrs() {
         let src = "fn p() {\n view! { <Group element={group().x(x)} on_click={cb} count={n + 1} r={12.0}></Group> }\n}";
-        let slots = extract_view_literals(src).expect("scannable");
-        assert_eq!(slots.len(), 1);
-        assert_eq!(slots[0].number, Some(12.0));
+        let views = extract_view_literals(src).expect("scannable");
+        assert_eq!(views[0].values, vec![SlotValue::Num(12.0)]);
     }
 
     #[test]
     fn extractor_rejects_plain_ints_like_the_macro() {
         // `weight=500` lexes as LitInt: the macro slots nothing, so the
-        // extractor must count nothing either (else slot ordinals desync).
+        // extractor must list nothing either (else resolve mismatches).
         let src = "fn p() {\n view! { <Group weight={500} gap={16.0}></Group> }\n}";
-        let slots = extract_view_literals(src).expect("scannable");
-        assert_eq!(slots.len(), 1);
-        assert_eq!(slots[0].number, Some(16.0));
+        let views = extract_view_literals(src).expect("scannable");
+        assert_eq!(views[0].values, vec![SlotValue::Num(16.0)]);
     }
 
     #[test]
@@ -867,9 +933,12 @@ mod tests {
         let old = "fn p() {\n view! { <Group><Text>\"a — b\"</Text></Group> }\n}";
         let new = "fn p() {\n view! { <Group><Text>\"a — c\"</Text></Group> }\n}";
         assert_eq!(classify_edit(old, new), EditKind::TemplateOnly);
-        let slots = extract_view_literals(new).expect("scannable");
-        assert_eq!(slots.len(), 1);
-        assert_eq!(slots[0].string.as_deref(), Some("a — c"));
+        let views = extract_view_literals(new).expect("scannable");
+        assert_eq!(views.len(), 1);
+        assert_eq!(
+            views[0].values,
+            vec![SlotValue::Str("a — c".to_string())]
+        );
         // Multibyte outside any macro body is equally safe.
         let outside_old = "// café — déjà\nfn p() { view! { <Group/> } }";
         let outside_new = "// café — vu\nfn p() { view! { <Group/> } }";
@@ -900,21 +969,99 @@ mod tests {
     }
 
     #[test]
-    fn resolve_matches_registry_by_basename_and_line() {
+    fn resolve_matches_manifest_by_basename_and_line() {
+        // P17: resolve reads the macro's manifest (seeded here the way the
+        // running UI's tpl_* calls seed it), not a shape table.
         arm();
         clear_view_templates();
-        note_view_template("examples/text_smooth/view.rs", 10, "[Group]");
-        let slots = vec![TemplateSlot {
-            key: "10:0".to_string(),
-            string: Some("new".to_string()),
-            number: None,
+        clear_template_values();
+        apply_template_delta(
+            &[("examples/text_smooth/view.rs:10:0".to_string(), "new".to_string())],
+            &[],
+        );
+        let views = vec![ViewSlots {
+            line: 10,
+            values: vec![SlotValue::Str("new".to_string())],
         }];
-        let (resolved, unresolved) = resolve_slot_keys("view.rs", &slots);
+        let (resolved, unresolved) = resolve_slot_keys("view.rs", &views);
         assert_eq!(unresolved, 0);
         assert_eq!(resolved.strings.len(), 1);
-        assert_eq!(resolved.strings[0].0, "examples/text_smooth/view.rs:10:0");
+        assert_eq!(
+            resolved.strings[0].0,
+            "examples/text_smooth/view.rs:10:0"
+        );
         assert_eq!(resolved.strings[0].1, "new");
         clear_view_templates();
+        clear_template_values();
+    }
+
+    #[test]
+    fn resolve_rebuilds_on_kind_sequence_mismatch() {
+        // Manifest says [Str, Num]; extraction offers [Str, Str]. A partial
+        // push would misalign every later key — so the whole view counts
+        // unresolved and nothing is emitted.
+        arm();
+        clear_template_values();
+        apply_template_delta(
+            &[("w.rs:3:0".to_string(), "hi".to_string())],
+            &[("w.rs:3:1".to_string(), 1.0)],
+        );
+        let views = vec![ViewSlots {
+            line: 3,
+            values: vec![
+                SlotValue::Str("hi".to_string()),
+                SlotValue::Str("oops".to_string()),
+            ],
+        }];
+        let (resolved, unresolved) = resolve_slot_keys("w.rs", &views);
+        assert_eq!(unresolved, 2);
+        assert!(resolved.strings.is_empty());
+        assert!(resolved.numbers.is_empty());
+        clear_template_values();
+    }
+
+    #[test]
+    fn resolve_rebuilds_on_length_mismatch() {
+        // Recognition gap (extractor blind to a new slottable form): fewer
+        // values than manifest slots. Rebuild, never a shifted delta.
+        arm();
+        clear_template_values();
+        apply_template_delta(
+            &[("w.rs:3:0".to_string(), "hi".to_string())],
+            &[("w.rs:3:1".to_string(), 1.0)],
+        );
+        let views = vec![ViewSlots {
+            line: 3,
+            values: vec![SlotValue::Str("hi".to_string())],
+        }];
+        let (resolved, unresolved) = resolve_slot_keys("w.rs", &views);
+        assert_eq!(unresolved, 1);
+        assert!(resolved.strings.is_empty());
+        clear_template_values();
+    }
+
+    #[test]
+    fn slot_manifest_recovers_macro_ordinal_order() {
+        // Keys registered out of order still read back sorted by idx —
+        // the manifest is the macro's table, not insertion order.
+        arm();
+        clear_template_values();
+        apply_template_delta(
+            &[
+                ("w.rs:7:1".to_string(), "b".to_string()),
+                ("w.rs:7:0".to_string(), "a".to_string()),
+            ],
+            &[("w.rs:7:2".to_string(), 2.0)],
+        );
+        let manifest = slot_manifest("w.rs", 7);
+        assert_eq!(
+            manifest,
+            vec![
+                ("w.rs:7:0".to_string(), SlotKind::Str),
+                ("w.rs:7:1".to_string(), SlotKind::Str),
+                ("w.rs:7:2".to_string(), SlotKind::Num),
+            ]
+        );
         clear_template_values();
     }
 }
