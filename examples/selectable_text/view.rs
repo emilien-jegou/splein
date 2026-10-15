@@ -14,7 +14,7 @@ const LOREM: &str = "Drag across this paragraph to select it. \
     A plain click focuses a caret; arrows move it, Shift extends, \
     Ctrl+arrows jump words, Ctrl+A selects all, Ctrl+C copies, Escape collapses.";
 
-pub(crate) fn build_ui() -> impl IntoElement {
+pub(crate) fn Page() -> impl IntoElement {
     view! {
         <Group
             direction="vertical"

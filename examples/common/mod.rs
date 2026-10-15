@@ -69,7 +69,7 @@ impl ExampleCli {
 
         if args.iter().any(|a| a == "--help" || a == "-h") {
             println!("┌────────────────────────────────────────────────────────┐");
-            println!("│                AURORA EXAMPLE RUNNER                   │");
+            println!("│                RIODE EXAMPLE RUNNER                   │");
             println!("├────────────────────────────────────────────────────────┤");
             println!("│ [engine]             tiny-skia (default) | vello |     │");
             println!("│                      vello-cpu | wgpu | skia          │");
@@ -252,5 +252,37 @@ impl ExampleCli {
             RenderBackend::VelloCpu => config.backend_factory(riode_engine_vello::create_cpu_backend),
             RenderBackend::Wgpu => config.backend_factory(riode_engine_wgpu::create_backend),
         }
+    }
+}
+
+/// One-liner bootstrap for the standard demo shape (P14): parse CLI against the
+/// window defaults, init telemetry, load Inter, set background, run the root.
+///
+/// `root` is any element constructor — `view::Page`, `view::build_ui`, or a
+/// `move || …` closure. Demos with drivers, extensions, or hand-built runtimes
+/// (studio/moving/showcase/demo2/render_bench) keep custom mains.
+pub fn example_cli_run<E: IntoElement>(
+    title: &str,
+    default_w: u32,
+    default_h: u32,
+    background: impl Into<Color>,
+    multi_backend: bool,
+    root: impl Fn() -> E + 'static,
+) {
+    let cli = ExampleCli::parse(default_w, default_h);
+    cli.init_telemetry();
+    // `include_bytes!` resolves relative to *this* file, so the font path lives
+    // here once instead of once per example.
+    const INTER: &[u8] = include_bytes!("../../crates/core/riode/assets/inter-var.ttf");
+    if multi_backend {
+        cli.app_config_multi(title)
+            .font("Inter", INTER)
+            .background(background)
+            .run(root);
+    } else {
+        cli.app_config(title)
+            .font("Inter", INTER)
+            .background(background)
+            .run(root);
     }
 }

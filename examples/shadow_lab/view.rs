@@ -39,7 +39,7 @@ fn Card(label: &'static str, shadow: Shadow) -> impl IntoElement {
     }
 }
 
-pub(crate) fn build_ui() -> impl IntoElement {
+pub(crate) fn Page() -> impl IntoElement {
     // The pink panel is the full background: no outer card, just the
     // two labeled cards centered with the reference's 96v/48h breathing room.
     view! {

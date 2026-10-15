@@ -43,10 +43,6 @@ name = "moving"
 path = "moving/main.rs"
 
 [[example]]
-name = "gallery"
-path = "gallery/main.rs"
-
-[[example]]
 name = "motion_accordion"
 path = "motion_accordion/main.rs"
 

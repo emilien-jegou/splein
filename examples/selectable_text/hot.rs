@@ -11,7 +11,7 @@ mod motion_ui;
 mod view;
 
 riode::define_hot_ui! {
-    root: view::build_ui,
+    root: view::Page,
     title: view::HOT_TITLE,
     size: (view::HOT_WIDTH, view::HOT_HEIGHT),
     background: view::HOT_BG,

@@ -33,11 +33,14 @@ mod view;
 /// }
 /// ```
 ///
-/// The body runs once per mount inside a scope keyed by `module_path!()::Name`,
-/// so ordinal hooks survive remounts and rebuilds while call order is
-/// unchanged. Aurora does not re-run a component to animate it: a signal
-/// captured in a property binding is re-read every frame, so a component holds no state of
-/// its own beyond the signals it allocated.
+/// The body runs once per mount inside a scope keyed by file path plus name
+/// (`file!()::Name`, e.g. `examples/motion_press/view.rs::Button`), so ordinal
+/// hooks survive remounts and rebuilds while call order is unchanged — and file
+/// identity (not the crate/module prefix) is what disambiguates same-named
+/// components across demos sharing one process. Riode does not re-run a
+/// component to animate it: a signal captured in a property binding is re-read
+/// every frame, so a component holds no state of its own beyond the signals
+/// it allocated.
 ///
 /// An alternate engine can reuse the macro by naming its own scope entry point — a
 /// function taking the body closure the way `component_scope` does:
@@ -48,7 +51,7 @@ mod view;
 /// ```
 ///
 /// A `name = "…"` argument pins the stable hook identity explicitly instead of
-/// `module_path!()::Name`, so the component keeps its state across file moves and
+/// the file-relative default, so the component keeps its state across file moves and
 /// renames (hot-reload edits change paths; state must not follow them):
 ///
 /// ```ignore
@@ -114,7 +117,7 @@ pub fn include_svg(tokens: TokenStream) -> TokenStream {
 /// Optional `scope = ::path::to::scope_fn` and/or `name = "identity"` arguments.
 ///
 /// Empty means the defaults (`::riode::internal::component_scope` behavior and
-/// `module_path!()::Name` identity). `name` pins the stable hook identity explicitly, so
+/// `file!()::Name` identity). `name` pins the stable hook identity explicitly, so
 /// a component keeps its state across file moves and renames — which is exactly what a
 /// hot-reload edit cycle does to paths. Anything else is a compile error naming itself.
 fn parse_scope_arg(attr: TokenStream) -> syn::Result<ScopeArgs> {
@@ -229,15 +232,18 @@ fn expand(input: ItemFn, args: ScopeArgs) -> syn::Result<proc_macro2::TokenStrea
         scope_call = quote! { #path(|| #body_name(#(#arg_names),*)) };
     } else {
         wrapper_sig.output = syn::parse_quote!(-> ::riode::internal::Element);
-        // Stable identity: module path + component name, so ordinal hooks
+        // Stable identity: file path + component name, so ordinal hooks
         // survive remounts and rebuilds while call order is unchanged.
-        // Siblings disambiguate by child index; modules can't collide.
+        // File-relative (not module-path-relative): crate renames and module
+        // re-prefixing keep state, and same-named components in different
+        // files never share a scope — which is what lets many demos coexist
+        // in one hot-reload process. Siblings disambiguate by child index.
         // An explicit `name = "…"` pins the identity instead, surviving file moves
         // and renames (hot-reload edits change paths; state must not follow them).
         let identity = match args.name {
             Some(name) => quote! { #name },
             None => quote! {
-                ::std::concat!(::std::module_path!(), "::", ::std::stringify!(#name))
+                ::std::concat!(::std::file!(), "::", ::std::stringify!(#name))
             },
         };
         scope_call = quote! { ::riode::internal::component_scope_named(

@@ -9,7 +9,7 @@
 mod demo3;
 
 riode::define_hot_ui! {
-    root: demo3::view::build_ui,
+    root: demo3::view::Page,
     title: demo3::view::HOT_TITLE,
     size: (demo3::view::HOT_WIDTH, demo3::view::HOT_HEIGHT),
     background: demo3::view::HOT_BG,

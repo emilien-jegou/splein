@@ -206,7 +206,7 @@ pub fn menu_def() -> DemoDef {
 
 fn boot_demo1(ctx: &BootCtx) -> BootedDemo {
     BootedDemo {
-        root: mount_root(ctx, demo1::build_ui),
+        root: mount_root(ctx, demo1::Page),
         background: Color::WHITE,
         extensions: vec![],
     }
@@ -303,7 +303,7 @@ fn boot_text_smooth(ctx: &BootCtx) -> BootedDemo {
 
 fn boot_text_demo(ctx: &BootCtx) -> BootedDemo {
     BootedDemo {
-        root: mount_root(ctx, text_demo::build_ui),
+        root: mount_root(ctx, text_demo::Page),
         background: 0x0B1020.into(),
         extensions: vec![],
     }
@@ -311,7 +311,7 @@ fn boot_text_demo(ctx: &BootCtx) -> BootedDemo {
 
 fn boot_selectable_text(ctx: &BootCtx) -> BootedDemo {
     BootedDemo {
-        root: mount_root(ctx, selectable_text::build_ui),
+        root: mount_root(ctx, selectable_text::Page),
         background: Color::WHITE,
         extensions: vec![],
     }
@@ -319,7 +319,7 @@ fn boot_selectable_text(ctx: &BootCtx) -> BootedDemo {
 
 fn boot_shadow_lab(ctx: &BootCtx) -> BootedDemo {
     BootedDemo {
-        root: mount_root(ctx, shadow_lab::build_ui),
+        root: mount_root(ctx, shadow_lab::Page),
         background: shadow_lab::PANEL_BG.into(),
         extensions: vec![],
     }

@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 thread_local! {
     /// Build notes pushed by `component_scope_named` as components build.
     ///
-    /// The wrapper knows its stable identity (`module_path!()::Name`, emitted by
+    /// The wrapper knows its stable identity (`file!()::Name`, emitted by
     /// `#[component]`) and its source file (`file!()` at the expansion site), but it
     /// has no handle to the engine — so it files the note here and the engine's
     /// `HotReload` drains it at the start of the next frame. Filed from *inside* the
@@ -22,7 +22,7 @@ thread_local! {
 pub(crate) struct BuildNote {
     /// Full scope identity the body ran under (e.g. `root#0=shop::Card`).
     pub instance: Box<str>,
-    /// Component path (`module_path!()::Name` or an explicit `name = …`).
+    /// Component path (`file!()::Name` or an explicit `name = …`).
     pub path: &'static str,
     /// Source file at the expansion site.
     pub file: &'static str,
@@ -70,7 +70,7 @@ pub(crate) fn peek_note_instances_since(mark: usize) -> Vec<Box<str>> {
 
 /// Which components are mounted, and which source file each came from.
 ///
-/// Identity is the stable component path (`module_path!()::Name`); the file map answers
+/// Identity is the stable component path (`file!()::Name`); the file map answers
 /// "which components do I reload when this file changed". Both are best-effort dev-loop
 /// data: an unknown instance reloads as a no-op report, never an error.
 #[derive(Default)]

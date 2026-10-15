@@ -36,7 +36,7 @@ pub struct SubscriberId(pub usize);
 /// are never swept.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BuildTag {
-    /// Component scope ambient at registration (`module_path!()::Name`, possibly anonymous).
+    /// Component scope ambient at registration (`file!()::Name`, possibly anonymous).
     pub instance: std::rc::Rc<str>,
     /// Reload build generation that produced this registration.
     pub gen: u64,

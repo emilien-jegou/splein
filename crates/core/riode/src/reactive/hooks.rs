@@ -152,7 +152,7 @@ impl Cx {
 
     /// Runs `body` as a named component, combining [`Cx::enter_keyed`] stability
     /// with [`Cx::enter`] sibling disambiguation. This is what `#[component]`
-    /// expands to (with `path` = `module_path!()::Name`).
+    /// expands to (with `path` = `file!()::Name`).
     ///
     /// Identity rules, in order:
     /// - Under a stable parent: `{parent}#{child_index}={path}` — positional

@@ -125,7 +125,7 @@ pub enum DebugCommand {
     ///
     /// Queued for the next frame; a panicking rebuild keeps the previous tree.
     ReloadAll,
-    /// Reload scoped to one stable component identity (`module_path!()::Name`).
+    /// Reload scoped to one stable component identity (`file!()::Name`).
     ///
     /// Unknown or currently unmounted identities report without failing.
     ReloadComponent(String),

@@ -48,7 +48,7 @@
 //!    instead of teleporting (see `examples/motion_reorder.rs`).
 //!
 //! Identity rules (what "instance" means above): every `#[component]` runs in a
-//! scope keyed by `module_path!()::Name`, and `AppConfig::run` mounts the root
+//! scope keyed by file path plus name (`file!()::Name`), and `AppConfig::run` mounts the root
 //! under a stable `"root"` scope — so ordinal hooks survive remounts while call
 //! order is unchanged, and same-name siblings disambiguate by child index.
 //! Keyed hooks (`use_signal!("name", …)`) additionally survive reordering and

@@ -103,7 +103,7 @@ selectable_text, shadow_lab, shadow_studio, scroll_demo, text_demo,
 text_smooth, view_demo, wave1_repro, wrap_repro.
 
 Release-only (App-extension drivers the tree loop cannot host — extensions,
-switcher menus, winit plumbing, headless engines): gallery, moving, showcase,
+switcher menus, winit plumbing, headless engines): moving, showcase,
 selection_showcase, studio, render_bench.
 `nu scripts/toolbox.nu example <that-name>` refuses with the release command; it never half-boots.
 

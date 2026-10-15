@@ -1,7 +1,7 @@
 // Single responsibility: End-to-end proof that a real UI cdylib drives a headless engine.
 //
 // Loads the actual `libriode_hot_ui.so` through `DylibReloader` (the same path the
-// `hot_demo` host uses), interprets its description into a live tree, clicks through to
+// hot-reload host uses), interprets its description into a live tree, clicks through to
 // state writes, and rebuilds from re-resolved symbols with state intact. This pins the
 // dylib boundary — data across, signals host-side — without needing a window.
 //

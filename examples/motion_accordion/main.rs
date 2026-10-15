@@ -12,7 +12,6 @@ use std::rc::Rc;
 
 use riode::reactive::{ReactiveRuntime, Signal};
 use common::ExampleCli;
-use motion_ui::*;
 
 pub use view::Page;
 

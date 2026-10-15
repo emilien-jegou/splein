@@ -6,7 +6,7 @@
 // [`HotReload`](crate::hot_reload::HotReload) queue. Click actions from the previous frame
 // drain first, so interaction never waits for a build.
 //
-// Typical wiring (see `examples/hot_demo.rs`):
+// Typical wiring (see `nu scripts/toolbox.nu example <name>` and the `studio` launcher):
 //
 // ```ignore
 // use riode::hot_reload::{DevLoopConfig, RemoteReloadExtension};

@@ -302,7 +302,7 @@ impl HotReload {
         });
     }
 
-    /// Queues a reload scoped to `instance` (a stable `module_path!()::Name`).
+    /// Queues a reload scoped to `instance` (a stable `file!()::Name`).
     ///
     /// Unknown identities are reported, not errored: the component may be conditionally
     /// mounted (inside `<if>`) and simply absent right now.

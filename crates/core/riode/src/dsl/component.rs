@@ -174,7 +174,7 @@ pub fn component_scope<T: IntoElement>(body: impl FnOnce() -> T) -> Element {
 }
 
 /// Named variant of [`component_scope`]: the body runs in a scope keyed by a
-/// stable component identity (by convention `module_path!()::Name`, emitted by
+/// stable component identity (by convention `file!()::Name`, emitted by
 /// `#[component]`), so ordinal hooks survive remounts and rebuilds while call
 /// order is unchanged. Sibling instances of one component disambiguate by
 /// child index (see [`Cx::enter_named`]); distinct modules can't collide.

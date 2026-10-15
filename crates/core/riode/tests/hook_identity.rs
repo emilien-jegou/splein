@@ -42,7 +42,7 @@ fn Twin(first: bool) -> impl IntoElement {
 }
 
 /// Remounting a component recalls its ordinal hooks: the scope is keyed by
-/// `module_path!()::Name`, not by a throwaway counter.
+/// `file!()::Name`, not by a throwaway counter.
 #[test]
 #[ntest::timeout(5_000)]
 fn remount_recalls_ordinal_signal() {
