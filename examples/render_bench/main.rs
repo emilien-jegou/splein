@@ -51,7 +51,7 @@ fn row(label: &str) -> Element {
 
 fn main() {
     let mut engine = Engine::headless(760, 660);
-    engine.load_font(include_bytes!("../../crates/riode/assets/inter-var.ttf"));
+    engine.load_font(include_bytes!("../../crates/core/riode/assets/inter-var.ttf"));
     engine.mount(page());
     engine.frame();
     let mut raster = HeadlessRaster::new();

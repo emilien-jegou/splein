@@ -164,7 +164,7 @@ fn main() {
     cli.app_config_multi("Aurora — DVD Bounce Screensaver")
         .font(
             "Inter",
-            include_bytes!("../../crates/riode/assets/inter-var.ttf"),
+            include_bytes!("../../crates/core/riode/assets/inter-var.ttf"),
         )
         .runtime(runtime)
         .extension(driver)

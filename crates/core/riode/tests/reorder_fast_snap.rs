@@ -7,7 +7,7 @@
 // boundary with minimal frames between and assert live FLIP offsets.
 
 #[allow(dead_code)]
-#[path = "../../../examples/motion_reorder/main.rs"]
+#[path = "../../../../examples/motion_reorder/main.rs"]
 mod reorder;
 
 use std::cell::RefCell;

@@ -73,6 +73,7 @@ fn hero_fill(engine: &Engine) -> Option<riode::foundation::Fill> {
 }
 
 #[test]
+#[ignore = "targets the deleted `riode-hot-ui` package; port to generative `riode-hot-gen-ui` (see AGENTS.md)"]
 #[ntest::timeout(120_000)]
 fn real_dylib_drives_interaction_and_survives_rebuild() {
     ensure_built();

@@ -62,6 +62,7 @@ fn version_of(ui_path: &std::path::Path) -> u64 {
 /// extensions refuse to install exactly in this case; in shared-instance land the
 /// addresses are equal and activation proceeds).
 #[test]
+#[ignore = "targets the deleted `riode-hot-ui` package; port to generative `riode-hot-gen-ui` (see AGENTS.md)"]
 #[ntest::timeout(300_000)]
 fn foreign_image_binds_sentinel_elsewhere() {
     use riode::hot_reload::{host_sentinel_address, DylibReloader};
@@ -95,6 +96,7 @@ fn foreign_image_binds_sentinel_elsewhere() {
 }
 
 #[test]
+#[ignore = "targets the deleted `riode-hot-ui` package; port to generative `riode-hot-gen-ui` (see AGENTS.md)"]
 #[ntest::timeout(600_000)]
 fn dev_loop_cycles_and_handshake_agrees() {
     let root = workspace_root();

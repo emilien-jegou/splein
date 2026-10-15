@@ -321,7 +321,7 @@ fn non_selectable_text_ignores_selection() {
     assert!(highlight_rects(&engine).is_empty());
 }
 
-#[path = "../../../examples/motion_accordion/main.rs"]
+#[path = "../../../../examples/motion_accordion/main.rs"]
 mod accordion;
 
 use riode_tiny_skia::testing::Harness;

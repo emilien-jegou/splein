@@ -103,7 +103,7 @@ mod switch_tests {
             let booted = (demo.boot)(&ctx);
             let mut engine = Engine::with_runtime(Rc::clone(&runtime), booted.root, 1280, 800);
             engine.set_background(booted.background);
-            engine.load_font(include_bytes!("../../crates/riode/assets/inter-var.ttf"));
+            engine.load_font(include_bytes!("../../crates/core/riode/assets/inter-var.ttf"));
             engine.frame();
             engine.frame();
             Self {

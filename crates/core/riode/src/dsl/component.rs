@@ -21,11 +21,11 @@ impl IntoElement for Element {
     }
 }
 
-impl IntoElement for Vec<Element> {
-    fn into_element(self) -> Element {
-        crate::dsl::group().children(self).into_element()
-    }
-}
+// Note: there is deliberately no `IntoElement for Vec<Element>`. A vec in
+// element position used to wrap itself in an anonymous group, which silently
+// corrupted layout wherever `{children}`/`{rows}` was spliced (F1). Vectors
+// splice flat through `IntoSplice`; a body that wants a box says so with an
+// explicit `group().children(…)`.
 
 impl IntoElement for String {
     fn into_element(self) -> Element {
@@ -77,9 +77,39 @@ macro_rules! impl_display_element {
 
 impl_display_element!(f32, i32, u32, usize, isize, bool);
 
-/// Splices any `IntoElement` child in `view! { {expr} }` position.
-pub fn view_child(expr: impl IntoElement) -> Element {
-    expr.into_element()
+/// Splices one `view! { {expr} }` child into its parent's flat child list.
+///
+/// The distinguishing case is [`Vec<Element>`]: it contributes its elements as
+/// siblings — no wrapper node — so `<Panel>{children}</Panel>` and a `{rows}`
+/// splice forward flat by construction. Everything else contributes exactly
+/// one element, via its [`IntoElement`] impl.
+///
+/// The blanket impl is only coherent because `Vec<Element>` deliberately no
+/// longer implements `IntoElement` (see the note above); re-adding that impl
+/// would reintroduce the F1 wrapper bug *and* fail to compile here.
+pub trait IntoSplice {
+    fn splice_into(self, out: &mut Vec<Element>);
+}
+
+impl<T: IntoElement> IntoSplice for T {
+    fn splice_into(self, out: &mut Vec<Element>) {
+        out.push(self.into_element());
+    }
+}
+
+impl IntoSplice for Vec<Element> {
+    fn splice_into(self, out: &mut Vec<Element>) {
+        out.extend(self);
+    }
+}
+
+/// Splices any [`IntoSplice`] child in `view! { {expr} }` position: a
+/// `Vec<Element>` contributes its elements as siblings (no wrapper node);
+/// anything else contributes one element.
+pub fn view_child(expr: impl IntoSplice) -> Vec<Element> {
+    let mut out = Vec::new();
+    expr.splice_into(&mut out);
+    out
 }
 
 pub struct ComponentElement<C: Component>(pub C);

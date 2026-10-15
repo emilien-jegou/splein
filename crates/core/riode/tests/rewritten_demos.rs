@@ -5,22 +5,22 @@
 // that pass on nothing. See the note on `accent_area` for the bug that motivated that.
 
 #[allow(dead_code)]
-#[path = "../../../examples/motion_imperative/main.rs"]
+#[path = "../../../../examples/motion_imperative/main.rs"]
 mod imperative;
 #[allow(dead_code)]
-#[path = "../../../examples/motion_interruption/main.rs"]
+#[path = "../../../../examples/motion_interruption/main.rs"]
 mod interruption;
 #[allow(dead_code)]
-#[path = "../../../examples/motion_layout_split/main.rs"]
+#[path = "../../../../examples/motion_layout_split/main.rs"]
 mod layout_split;
 #[allow(dead_code)]
-#[path = "../../../examples/motion_press/main.rs"]
+#[path = "../../../../examples/motion_press/main.rs"]
 mod press;
 #[allow(dead_code)]
-#[path = "../../../examples/motion_reorder/main.rs"]
+#[path = "../../../../examples/motion_reorder/main.rs"]
 mod reorder;
 #[allow(dead_code)]
-#[path = "../../../examples/motion_signals/main.rs"]
+#[path = "../../../../examples/motion_signals/main.rs"]
 mod signals;
 
 use riode::foundation::Color;
@@ -187,8 +187,8 @@ fn a_reorder_uses_the_real_row_pitch() {
         .collect();
 
     // Nothing declares a row height any more: the rows fill the list and layout divides the space
-    // it was actually given. So the properties worth asserting are uniformity and agreement with
-    // the gap -- not equality with a constant.
+    // it was actually given. So the properties worth asserting are uniformity
+    // and agreement with the pitch -- not equality with a constant.
     //
     // Uniformity is what the drag maths depends on. It divides a pointer delta by a single pitch
     // to decide when to swap, so if the engine ever handed rows different heights that arithmetic
@@ -201,8 +201,9 @@ fn a_reorder_uses_the_real_row_pitch() {
         );
     }
 
-    // And the pitch must be exactly the row height plus the gap, for the same reason.
-    let pitch = row_height(&h) + reorder::GAP;
+    // And the pitch must be exactly the row height -- the list tiles edge to
+    // edge with no gap (see examples/motion_reorder/list.rs), so pitch == height.
+    let pitch = row_height(&h);
     for measured in ys.windows(2).map(|w| w[1] - w[0]) {
         assert!(
             (measured - pitch).abs() < 0.05,
@@ -222,7 +223,7 @@ fn a_drag_across_several_strides_lands_the_row_at_the_bottom() {
     h.drag_by(
         "row-Baseline",
         0.0,
-        4.0 * (row_height(&h) + reorder::GAP),
+        4.0 * row_height(&h),
         40,
     );
     assert!(h.settle(900), "the reordered list must settle");

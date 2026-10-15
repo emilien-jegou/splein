@@ -1,7 +1,7 @@
 // Regression tests: demo1's selectable text through the real PointerBridge
 // path, at 1x and at the physical size HiDPI windows start with.
 
-#[path = "../../../examples/demo1/main.rs"]
+#[path = "../../../../examples/demo1/main.rs"]
 mod demo1;
 
 use std::cell::RefCell;

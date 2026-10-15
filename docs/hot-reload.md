@@ -99,11 +99,12 @@ nu scripts/toolbox.nu example motion_press
 Hot-reloadable: demo1, demo2, demo3, motion_accordion, motion_playback,
 motion_imperative, motion_interruption, motion_layout_split, motion_press,
 motion_reorder, motion_signals, motion_transitions, motion_validate,
-selectable_text, shadow_lab, text_demo, text_smooth, view_demo.
+selectable_text, shadow_lab, shadow_studio, scroll_demo, text_demo,
+text_smooth, view_demo, wave1_repro, wrap_repro.
 
 Release-only (App-extension drivers the tree loop cannot host — extensions,
 switcher menus, winit plumbing, headless engines): gallery, moving, showcase,
-shadow_studio, selection_showcase, studio, render_bench, hot_demo.
+selection_showcase, studio, render_bench.
 `nu scripts/toolbox.nu example <that-name>` refuses with the release command; it never half-boots.
 
 Headless verification without a window:

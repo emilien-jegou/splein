@@ -160,7 +160,7 @@ fn main() {
         .fullscreen(true)
         .font(
             "Inter",
-            include_bytes!("../../crates/riode/assets/inter-var.ttf"),
+            include_bytes!("../../crates/core/riode/assets/inter-var.ttf"),
         )
         .background(PAGE)
         .runtime(runtime)

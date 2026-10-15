@@ -17,7 +17,7 @@ fn main() {
         .size(view::HOT_WIDTH, view::HOT_HEIGHT)
         .font(
             "Inter",
-            include_bytes!("../../crates/riode/assets/inter-var.ttf"),
+            include_bytes!("../../crates/core/riode/assets/inter-var.ttf"),
         )
         .background(view::HOT_BG)
         .run(move || view::build_ui(&icons));

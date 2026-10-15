@@ -12,10 +12,10 @@
 #   demo1 demo2 demo3 motion_accordion motion_playback
 #   motion_imperative motion_interruption motion_layout_split motion_press
 #   motion_reorder motion_signals motion_transitions motion_validate
-#   selectable_text shadow_lab shadow_studio scroll_demo text_demo text_smooth view_demo wrap_repro
+#   selectable_text shadow_lab shadow_studio scroll_demo text_demo text_smooth view_demo wave1_repro wrap_repro
 # Release-only (App-extension drivers the tree loop cannot host — extensions,
 # switcher menus, winit plumbing, headless engines):
-#   gallery moving showcase selection_showcase studio render_bench hot_demo
+#   gallery moving showcase selection_showcase studio render_bench
 set -euox pipefail
 # This script lives in scripts/: the workspace root is one level up.
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -25,7 +25,7 @@ NAME="${1:-demo1}"
 ENGINE="${2:-}"
 
 case "$NAME" in
-    gallery|moving|showcase|selection_showcase|studio|render_bench|hot_demo)
+    gallery|moving|showcase|selection_showcase|studio|render_bench)
         echo "example.sh: '$NAME' is release-only (App-extension driver, not a hot-reloadable tree)." >&2
         echo "example.sh: run: cargo run -p riode-examples --example $NAME" >&2
         exit 2 ;;

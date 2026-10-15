@@ -47,10 +47,6 @@ name = "gallery"
 path = "gallery/main.rs"
 
 [[example]]
-name = "hot_demo"
-path = "hot_demo/main.rs"
-
-[[example]]
 name = "motion_accordion"
 path = "motion_accordion/main.rs"
 
@@ -133,6 +129,10 @@ path = "text_smooth/main.rs"
 [[example]]
 name = "wrap_repro"
 path = "wrap_repro/main.rs"
+
+[[example]]
+name = "wave1_repro"
+path = "wave1_repro/main.rs"
 
 [[example]]
 name = "view_demo"

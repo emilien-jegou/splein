@@ -1,6 +1,6 @@
 // Single responsibility: Drag arithmetic that survives the window changing shape mid-gesture.
 
-#[path = "../../../examples/motion_reorder/main.rs"]
+#[path = "../../../../examples/motion_reorder/main.rs"]
 mod reorder;
 
 use std::cell::RefCell;
@@ -329,7 +329,9 @@ fn the_rows_divide_the_space_the_list_was_given() {
         .collect();
 
         let total: f32 = rows.iter().map(|r| r.height).sum();
-        let gaps = reorder::GAP * (rows.len() - 1) as f32;
+        // The list tiles rows edge to edge (no gap, no margins — see
+        // examples/motion_reorder/list.rs), so heights must sum exactly.
+        let gaps = 0.0_f32;
         assert!(
             (total + gaps - list.height).abs() < 0.5,
             "at {height}px the rows and gaps total {:.2} but the list is {:.2} tall: the rows must \

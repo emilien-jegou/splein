@@ -273,6 +273,51 @@ fn pose_bindings(def: &GroupDef) -> Option<PoseBindings> {
     pose.is_bound().then_some(pose)
 }
 
+/// Composes the pose components a group declared as plain values, if any.
+///
+/// A `Static` pose prop is a value, not a binding: the closure-only pose store
+/// (`pose_bindings` above) drops it, so without this fold `y={40.0}` would be
+/// never evaluated at all. Statics are baked into the declared half here; the
+/// dynamic half rides the paint subscriber and recomposes per frame from the
+/// same base ([`NodeBindings::update_transform`]), so mount and reactive
+/// updates agree by construction. Mirrors [`PoseBindings::compose`] exactly —
+/// same translate/rotate/scale order, same neutral-value skips.
+fn static_pose(def: &GroupDef) -> Option<Transform> {
+    let static_val = |p: &Option<DynamicProp<f32>>| match p {
+        Some(DynamicProp::Static(v)) => Some(*v),
+        _ => None,
+    };
+    let x = static_val(&def.x);
+    let y = static_val(&def.y);
+    let rotation = static_val(&def.rotate_degrees);
+    let scale = static_val(&def.scale);
+    if x.is_none() && y.is_none() && rotation.is_none() && scale.is_none() {
+        return None;
+    }
+    let mut out = Transform::IDENTITY;
+    if let Some(x) = x {
+        if x != 0.0 {
+            out.tx = x;
+        }
+    }
+    if let Some(y) = y {
+        if y != 0.0 {
+            out.ty = y;
+        }
+    }
+    if let Some(degrees) = rotation {
+        if degrees != 0.0 {
+            out = out.multiply(&Transform::from_rotation_degrees(degrees));
+        }
+    }
+    if let Some(scale) = scale {
+        if scale != 1.0 {
+            out = out.multiply(&Transform::from_scale(scale, scale));
+        }
+    }
+    Some(out)
+}
+
 /// Every reactive property of a group, read once before any of them is written.
 ///
 /// Grouping them matters for two reasons. Reconciliation has to decide *all* the change flags
@@ -327,6 +372,13 @@ impl ResolvedProps {
             composed
         });
         let declared_transform = declared.unwrap_or(Transform::IDENTITY);
+        // Static pose components are values, not bindings: fold them into the
+        // declared half so they compose at mount (and on every rebuild) rather
+        // than vanishing with the closure-only pose store.
+        let declared_transform = match static_pose(def) {
+            Some(statics) => declared_transform.multiply(&statics),
+            None => declared_transform,
+        };
 
         // Scroll offset reads under its own subscriber so it schedules SCROLL
         // rather than paint: same transform effect, cheaper damage downstream.

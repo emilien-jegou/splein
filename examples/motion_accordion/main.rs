@@ -26,7 +26,7 @@ fn main() {
     cli.app_config(view::HOT_TITLE)
         .font(
             "Inter",
-            include_bytes!("../../crates/riode/assets/inter-var.ttf"),
+            include_bytes!("../../crates/core/riode/assets/inter-var.ttf"),
         )
         .background(view::HOT_BG)
         .runtime(runtime)

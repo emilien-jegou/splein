@@ -98,9 +98,7 @@ fn slider(
                     radius={7.0}
                     fill={0x483050}
                     x={thumb_x}
-                    // Static pose values are dropped by the reconciler;
-                    // positions must be closures.
-                    y={{move || 4.0}}
+                    y={4.0}
                     hit_test={HitTest::Passthrough}
                 />
             </Group>

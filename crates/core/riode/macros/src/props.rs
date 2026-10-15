@@ -133,6 +133,15 @@ pub fn expand_props(input: &ItemFn) -> syn::Result<Option<TokenStream2>> {
             ));
         };
         let arg_name = pat.ident.clone();
+        // `key` is reserved for reconciliation identity (P3): the macro
+        // routes the call site's `key=` into a hidden builder field; a
+        // parameter of the same name would be a second, unrelated meaning.
+        if arg_name == "key" {
+            return Err(syn::Error::new_spanned(
+                &arg_name,
+                "#[component]: `key` is reserved for reconciliation identity — remove the parameter and pass `key=` at the call site (`<Tag key={…}>`)",
+            ));
+        }
         // `#[prop(...)]` hints live on the argument itself.
         let default = prop_default_attr(&pt.attrs)?;
         let ty = (*pt.ty).clone();
@@ -258,24 +267,39 @@ pub fn expand_props(input: &ItemFn) -> syn::Result<Option<TokenStream2>> {
         /// Typed props for [`#name`]. Prefer building through `view!`.
         pub struct #public_props #ty_g #where_c {
             #(#struct_fields,)*
+            /// Reconciliation identity from the call site's `key=` — applied
+            /// to the element the body returns; never a user parameter.
+            pub key: ::std::option::Option<::riode::foundation::Key>,
         }
 
         /// Builder for [`#public_props`]; `view!` targets this.
         pub struct #builder_name #ty_g #where_c {
             #(#builder_fields,)*
+            key: ::std::option::Option<::riode::foundation::Key>,
         }
 
         impl #impl_g #public_props #ty_g #where_c {
             pub fn builder() -> #builder_name #ty_g {
-                #builder_name { #(#builder_inits,)* }
+                #builder_name { #(#builder_inits,)* key: ::std::option::Option::None }
             }
         }
 
         impl #impl_g #builder_name #ty_g #where_c {
             #(#setters)*
+            /// Reconciliation identity, reserved on every component tag.
+            pub fn key(mut self, k: impl ::std::convert::Into<::riode::foundation::Key>) -> Self {
+                self.key = ::std::option::Option::Some(::std::convert::Into::into(k));
+                self
+            }
             pub fn build(self) -> ::riode::dsl::Element {
-                let props = #public_props { #(#takes,)* };
-                #name(#(#arg_names),*)
+                let props = #public_props { #(#takes,)* key: self.key };
+                let __riode_el = #name(#(#arg_names),*);
+                match props.key {
+                    ::std::option::Option::Some(__k) => {
+                        ::riode::dsl::Element::with_key(__riode_el, __k)
+                    }
+                    ::std::option::Option::None => __riode_el,
+                }
             }
         }
     }))

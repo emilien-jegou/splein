@@ -141,7 +141,7 @@ fn main() {
     cli.app_config_multi("Aurora — Text · Selection showcase")
         .font(
             "Inter",
-            include_bytes!("../../crates/riode/assets/inter-var.ttf"),
+            include_bytes!("../../crates/core/riode/assets/inter-var.ttf"),
         )
         .background(PAGE)
         .runtime(runtime)
@@ -167,15 +167,15 @@ pub fn Page(status: Signal<String>, clipboard: Signal<String>) -> impl IntoEleme
                     <Content>
                         <Group direction="vertical" width="fill" gap={12.0}>
                             <Para
-                                hk="show-a"
+                                key="show-a"
                                 copy="Aurora keeps one layout and compositor engine under a reactive DSL, so a paragraph is shaped once and every caret, word edge, and highlight rect derives from that same layout."
                             />
                             <Para
-                                hk="show-b"
+                                key="show-b"
                                 copy="Transforms and opacity are compositor overrides: they invalidate paint only and never reach the layout pass, which is why dragging a selection over animated chrome stays exact."
                             />
                             <Para
-                                hk="show-c"
+                                key="show-c"
                                 copy="A spring drives a signal, layout reads that signal, and the engine only lays out and paints what it is given — press into the copy while panels animate and the anchor still resolves."
                             />
                             <StatusCard />
@@ -189,10 +189,9 @@ pub fn Page(status: Signal<String>, clipboard: Signal<String>) -> impl IntoEleme
 }
 
 #[component]
-fn Para(hk: &'static str, copy: &'static str) -> impl IntoElement {
+fn Para(copy: &'static str) -> impl IntoElement {
     view! {
         <Text
-            key={hk}
             selectable={true}
             size={13.0}
             line_height={20.0}

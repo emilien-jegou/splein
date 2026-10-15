@@ -25,6 +25,21 @@ impl Element {
         }
     }
 
+    /// Returns this element with its reconciliation key set.
+    ///
+    /// The generated component builder applies it to the element the body
+    /// returned: the call site owns identity (`<Tag key={…}>`), so this
+    /// overwrites any key the body declared on its own root.
+    pub fn with_key(mut self, key: impl Into<Key>) -> Self {
+        let key = Some(key.into());
+        match &mut self {
+            Self::Group(g) => g.key = key,
+            Self::Text(t) => t.key = key,
+            Self::Custom(c) => c.key = key,
+        }
+        self
+    }
+
     /// Whether reconciling this element may read context (and therefore miss
     /// a provider). Reconcile wraps such children so a missing provider
     /// mounts an empty placeholder plus a console error instead of aborting the walk.

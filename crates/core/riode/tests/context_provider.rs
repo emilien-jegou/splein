@@ -42,10 +42,10 @@ fn surface_of(theme: &Ctx<Theme>) -> Ctx<Fill> {
 
 /// Card reading fill + label from context.
 #[component]
-fn ThemedCard(hk: &'static str) -> impl IntoElement {
+fn ThemedCard() -> impl IntoElement {
     let theme = THEME.get();
     view! {
-        <Group key={hk} width={100.0} height={100.0} fill={surface_of(&theme)} />
+        <Group width={100.0} height={100.0} fill={surface_of(&theme)} />
     }
 }
 
@@ -94,7 +94,7 @@ fn provided_value_reaches_consumer() {
     let view: Element = cx.enter(|| {
         view! {
             <Provider grant={THEME.provide(theme)} >
-                <ThemedCard hk="card" />
+                <ThemedCard key="card" />
             </Provider>
         }
     });
@@ -122,9 +122,9 @@ fn nearest_enclosing_provider_wins() {
     let view: Element = cx.enter(|| {
         view! {
             <Provider grant={THEME.provide(outer)} >
-                <ThemedCard hk="outer-card" />
+                <ThemedCard key="outer-card" />
                 <Provider grant={THEME.provide(inner)} >
-                    <ThemedCard hk="inner-card" />
+                    <ThemedCard key="inner-card" />
                 </Provider>
             </Provider>
         }
@@ -152,7 +152,7 @@ fn provider_signal_updates_propagate() {
     let view: Element = cx.enter(|| {
         view! {
             <Provider grant={THEME.provide(theme.clone())} >
-                <ThemedCard hk="card" />
+                <ThemedCard key="card" />
             </Provider>
         }
     });
@@ -178,7 +178,7 @@ fn missing_provider_mounts_placeholder_and_survives() {
     let view: Element = cx.enter(|| {
         view! {
             <Group direction="vertical" width={400.0} height={400.0}>
-                <ThemedCard hk="orphan" />
+                <ThemedCard key="orphan" />
                 <Group key="sibling" width={100.0} height={100.0} fill={Color::WHITE} />
             </Group>
         }

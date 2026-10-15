@@ -75,7 +75,7 @@ fn main() {
     cli.app_config_multi("Aurora — Mission Control Engine Showcase")
         .font(
             "Inter",
-            include_bytes!("../../crates/riode/assets/inter-var.ttf"),
+            include_bytes!("../../crates/core/riode/assets/inter-var.ttf"),
         )
         .background(0x06090F)
         .runtime(runtime)

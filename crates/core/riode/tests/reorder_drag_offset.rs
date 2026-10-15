@@ -10,7 +10,7 @@
 // that commands the same axis twice.
 
 #[allow(dead_code)]
-#[path = "../../../examples/motion_reorder/main.rs"]
+#[path = "../../../../examples/motion_reorder/main.rs"]
 mod reorder;
 
 use std::cell::RefCell;

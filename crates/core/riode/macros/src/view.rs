@@ -194,7 +194,15 @@ pub(crate) fn children_vec(children: &[ViewNode], flow: &FlowTables) -> syn::Res
     for c in children {
         items.push(child_expr(c, flow)?);
     }
-    Ok(quote! { ::std::vec![#(#items),*] })
+    // Every child yields a `Vec<Element>`; extend one flat list so a
+    // `{vec}` splice contributes siblings, never a wrapper node (F1).
+    Ok(quote! {
+        {
+            let mut __riode_kids: ::std::vec::Vec<::riode::dsl::Element> = ::std::vec::Vec::new();
+            #(::riode::dsl::IntoSplice::splice_into(#items, &mut __riode_kids);)*
+            __riode_kids
+        }
+    })
 }
 
 /// Whether a child is a control-flow placeholder (`{__riode_for_N}` etc.).
@@ -239,7 +247,9 @@ pub(crate) fn child_segment(node: &ViewNode, flow: &FlowTables) -> syn::Result<T
     }
     let e = child_expr(node, flow)?;
     let e = flow.splice(e)?;
-    Ok(quote! { ::riode::dsl::ChildSegment::Static(::std::vec![#e]) })
+    // `child_expr` yields a `Vec<Element>` per child; a static segment holds
+    // that list directly, so a `{vec}` splice inside a `<Group>` flattens too.
+    Ok(quote! { ::riode::dsl::ChildSegment::Static(#e) })
 }
 
 /// Emits already-parsed children as a `vec![…]` of segments, for `<Group>`
@@ -259,15 +269,17 @@ fn child_expr(node: &ViewNode, flow: &FlowTables) -> syn::Result<TokenStream2> {
     match node {
         Node::Element(el) => {
             let e = element_expr(el, flow)?;
-            Ok(quote! { ::riode::dsl::IntoElement::into_element(#e) })
+            Ok(quote! { ::std::vec![::riode::dsl::IntoElement::into_element(#e)] })
         }
         Node::Text(t) => {
             let s = t.value_string();
-            Ok(quote! { ::riode::dsl::IntoElement::into_element(::riode::dsl::text(#s)) })
+            Ok(quote! {
+                ::std::vec![::riode::dsl::IntoElement::into_element(::riode::dsl::text(#s))]
+            })
         }
         Node::Block(b) => {
-            // `{expr}` splices anything IntoElement: signals, strings, closures,
-            // nested Elements, Vec<Element> (children passthrough).
+            // `{expr}` splices anything IntoSplice: signals, strings, closures,
+            // nested Elements, Vec<Element> (flat children passthrough).
             let inner = match b {
                 rstml::node::NodeBlock::ValidBlock(block) => strip_braces(block),
                 other => quote! { #other },
@@ -709,8 +721,29 @@ fn expand_inner(tokens: TokenStream2) -> syn::Result<TokenStream2> {
                     "view!: control nodes (`<for>`, `<if>`, `<match>`) are never layout nodes — wrap them in a `<Group>`",
                 ));
             }
-            let e = child_expr(single, &flow)?;
-            let body = quote! { ::riode::dsl::IntoElement::into_element(#e) };
+            // A root fragment is syntactically multi-element; the single-root
+            // rule rejects it at compile time rather than at first frame.
+            if matches!(single, Node::Fragment(_)) {
+                return Err(syn::Error::new_spanned(
+                    single,
+                    "view!: fragment at the root — wrap it in a `<Group>` (single root)",
+                ));
+            }
+            let kids = child_expr(single, &flow)?;
+            // The root must be exactly one element; a `{expr}` splice is only
+            // knowable at runtime, so the flat list is checked there.
+            let body = quote! {
+                {
+                    let __riode_root_kids: ::std::vec::Vec<::riode::dsl::Element> = #kids;
+                    let mut __riode_root_iter = __riode_root_kids.into_iter();
+                    match (__riode_root_iter.next(), __riode_root_iter.next()) {
+                        (::std::option::Option::Some(one), ::std::option::Option::None) => one,
+                        _ => panic!(
+                            "view!: a root `{{expr}}` must splice exactly one element — wrap multi-element splices in a <Group>"
+                        ),
+                    }
+                }
+            };
             let body = flow.splice(body)?;
             // Shape registration: structure fingerprint for the Tier-1 gate
             // (literals excluded, so value edits keep it). No-op unless a dev

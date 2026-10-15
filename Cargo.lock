@@ -2679,6 +2679,8 @@ dependencies = [
  "parley",
  "rayon",
  "resvg",
+ "riode-engine-skia",
+ "riode-engine-tiny-skia",
  "riode-engine-vello",
  "riode-engine-wgpu",
  "riode-macros",
