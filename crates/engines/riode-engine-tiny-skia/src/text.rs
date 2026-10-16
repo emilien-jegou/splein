@@ -1,7 +1,7 @@
 // Single responsibility: Glyph bitmap Porter-Duff alpha compositing via TinySkia.
 
 use riode::foundation::{Color, Point};
-use riode::text::{TextContext, TextLayout};
+use riode::text::{GlyphBitmap, TextContext, TextLayout, SMALL_TEXT_HINT_CUTOFF_PX};
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
 use tiny_skia::{
@@ -300,51 +300,74 @@ fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: T
                           clip_now: Option<&Mask>,
                           clip_now_w: u32,
                           clip_now_h: u32| {
+        // Small text renders hinted per quantum on both axes (4x4 —
+        // the hinter grid-fits each variant at its true position, the
+        // dwrite/GPUI legibility mechanism, with Y gliding like X);
+        // display type keeps the shape-invariant analytic path. This path
+        // is translation-only by construction (rotation/scale dispatches
+        // to `render_text_transformed`), so hinting is always meaningful
+        // here.
+        let hinted_small = line.font_size <= SMALL_TEXT_HINT_CUTOFF_PX;
+        let (pw, ph) = (target.width(), target.height());
+        let mut paint_at = |img: &GlyphBitmap, px: i32, py: i32| {
+            let (w, h) = (img.width, img.height);
+            if w == 0 || h == 0 || img.data.len() < (w * h) as usize {
+                return;
+            }
+            blit_glyph(
+                target.pixels_mut(),
+                pw,
+                ph,
+                img.data,
+                w,
+                h,
+                px - space_x as i32,
+                py - space_y as i32,
+                ink_r,
+                ink_g,
+                ink_b,
+                alpha_lut,
+                clip_now,
+                clip_now_w,
+                clip_now_h,
+            );
+        };
         for g in &line.glyphs {
             // Device pen = layout pen + canvas translation; positions below
             // are rebased onto `space`/`draw`, so the same code paints canvas
             // space and line-local space.
             let dev_x = origin.x + line.align_offset + g.point.x + ttx;
             let dev_y = origin.y + g.point.y + tty;
-            // Quarter-quantize both axes; the analytic bitmap is
-            // integrated exactly at the quantum, so integer placement
-            // carries <=1/8px snap and no coverage smoothing on either
-            // axis. Rebasing onto `space` keeps canvas and line-local
-            // painting on the same code path.
+            // Both axes quantize to quarters (the hinter fits that
+            // quantum); integer placement carries <=1/8px snap per axis
+            // with no coverage smoothing. Rebasing onto `space` keeps
+            // canvas and line-local painting on the same code path.
             let (bx, qx) = quantize_quarter(dev_x);
             let (by, qy) = quantize_quarter(dev_y);
-            text_ctx.raster_glyph_exact(
-                g.cache_key,
-                qx,
-                qy,
-                |img_opt| {
-                    let Some(img) = img_opt else {
-                        return;
-                    };
-                    let (w, h) = (img.width, img.height);
-                    if w == 0 || h == 0 || img.data.len() < (w * h) as usize {
-                        return;
-                    }
-                    let (pw, ph) = (target.width(), target.height());
-                    blit_glyph(
-                        target.pixels_mut(),
-                        pw,
-                        ph,
-                        img.data,
-                        w,
-                        h,
-                        bx + img.left - space_x as i32,
-                        by - img.top - space_y as i32,
-                        ink_r,
-                        ink_g,
-                        ink_b,
-                        alpha_lut,
-                        clip_now,
-                        clip_now_w,
-                        clip_now_h,
-                    );
-                },
-            );
+            if hinted_small {
+                text_ctx.raster_glyph_hinted_scaled(
+                    g.cache_key,
+                    qx,
+                    qy,
+                    1.0,
+                    |img_opt| {
+                        if let Some(img) = img_opt {
+                            paint_at(&img, bx + img.left, by - img.top);
+                        }
+                    },
+                );
+            } else {
+                text_ctx.raster_glyph_exact(
+                    g.cache_key,
+                    qx,
+                    qy,
+                    |img_opt| {
+                        if let Some(img) = img_opt {
+                            paint_at(&img, bx + img.left, by - img.top);
+                        }
+                    },
+                );
+            }
         }
     };
     for (idx, line) in layout.lines.iter().enumerate() {
@@ -742,16 +765,28 @@ fn blend_source_over(pixel: &mut PremultipliedColorU8, r: u8, g: u8, b: u8, a: u
     let sa = a as f32 / 255.0;
     let inv_sa = 1.0 - sa;
 
-    let out_r = linear_to_srgb_byte(
-        srgb_to_linear(r) * sa + srgb_to_linear(pixel.red()) * inv_sa,
-    );
-    let out_g = linear_to_srgb_byte(
-        srgb_to_linear(g) * sa + srgb_to_linear(pixel.green()) * inv_sa,
-    );
-    let out_b = linear_to_srgb_byte(
-        srgb_to_linear(b) * sa + srgb_to_linear(pixel.blue()) * inv_sa,
-    );
+    // Un-premultiply first: the pixmap stores premultiplied sRGB, and
+    // decoding premultiplied channels as straight colors darkens every
+    // semi-transparent dst texel (white at a=128 decodes to 0.21 instead
+    // of 0.5) — fringe dirt over card edges, clips, and text-over-text.
+    // Opaque dst is unaffected (premult == straight at a=255), which is
+    // why dirt concentrates at edges rather than stem centers.
     let da = pixel.alpha() as f32;
+    let (dr, dg, db) = if da <= 0.0 {
+        (0.0, 0.0, 0.0)
+    } else {
+        (
+            srgb_to_linear(((pixel.red() as f32 * 255.0 / da).round() as u8).min(255)),
+            srgb_to_linear(((pixel.green() as f32 * 255.0 / da).round() as u8).min(255)),
+            srgb_to_linear(((pixel.blue() as f32 * 255.0 / da).round() as u8).min(255)),
+        )
+    };
+    // Dst alpha is itself the premultiplied weight: dst contribution is
+    // straight-linear dst times (da/255) times (1-sa).
+    let da01 = da / 255.0;
+    let out_r = linear_to_srgb_byte(srgb_to_linear(r) * sa + dr * da01 * inv_sa);
+    let out_g = linear_to_srgb_byte(srgb_to_linear(g) * sa + dg * da01 * inv_sa);
+    let out_b = linear_to_srgb_byte(srgb_to_linear(b) * sa + db * da01 * inv_sa);
     let out_a = ((a as f32) + (da * inv_sa)).round().min(255.0) as u8;
 
     if let Some(p) = PremultipliedColorU8::from_rgba(out_r, out_g, out_b, out_a) {

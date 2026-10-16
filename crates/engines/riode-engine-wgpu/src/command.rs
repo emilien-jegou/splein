@@ -5,7 +5,7 @@ use riode::foundation::{
     StrokeAlign, Transform,
 };
 use riode::scene::command::SceneCommand;
-use riode::text::{quantize_raster_scale, TextContext};
+use riode::text::{quantize_raster_scale, TextContext, SMALL_TEXT_HINT_CUTOFF_PX};
 use std::sync::Arc;
 
 use crate::clip::ClipStack;
@@ -813,30 +813,64 @@ impl Batch {
         // re-applies the scale.
         let q = quantize_raster_scale(self.scale);
         let sq16 = (q * 16.0).round() as u16;
+        // Hinted small-text path needs translation-only placement: the
+        // per-variant hinter grid-fits at the raster position, which is
+        // meaningless under rotation/scale (analytic stays correct there).
+        let rigid = t.is_translation();
         for line in layout.lines.iter() {
+            // Small text renders through the hinted per-variant path
+            // (hinter grid-fits each X quantum at its true position —
+            // the dwrite/GPUI legibility mechanism); display type and
+            // transformed text keep the shape-invariant analytic path.
+            let hinted = rigid && line.font_size <= SMALL_TEXT_HINT_CUTOFF_PX;
             for g in line.glyphs.iter() {
                 let pen_x = origin.x + g.point.x + line.align_offset;
                 let pen_y = origin.y + g.point.y;
                 let placed = t.transform_point(Point::new(pen_x, pen_y));
-                // Subpixel policy — exact analytic parity with the tiny-skia
-                // reference: both axes quantize to the nearest quarter of the
-                // device pen, and the shared analytic rasterizer integrates
-                // coverage at exactly that quantum. The outline is extracted
-                // once (hinted once), so glyph *shape* is identical at every
-                // subpixel position — no per-phase hinter re-fit (the P-top
-                // morph), no per-bin bbox churn. The quad integer-anchors at
-                // base+bearing (<=1/8px residual), so hinted stems never
-                // resample through fractional filtering either.
+                // Subpixel policy — 4x4 on both axes. Small hinted text
+                // renders each quantum through the hinter (grid-fit at the
+                // true position, the dwrite/GPUI legibility mechanism);
+                // display type keeps the shape-invariant analytic path
+                // (one hinted outline, identical shape at every quantum).
+                // The quad integer-anchors at base+bearing (<=1/8px
+                // residual), so stems never resample through fractional
+                // filtering either.
                 let (bx, qx) = quantize_quarter(placed.x);
                 let (by, qy) = quantize_quarter(placed.y);
                 let fx = placed.x - bx as f32;
                 let fy = placed.y - by as f32;
                 // Atlas slot distinctness only; the bitmap itself is keyed
-                // (key, qx, qy, scale) inside the analytic cache.
+                // (key, qx, qy, scale) inside the raster caches.
                 let phase = (qx as u8) | ((qy as u8) << 2);
                 // Single raster: bitmap + bearing together (no TOCTOU).
                 // Metrics arrive in scaled px (q==1.0 at unity scale).
-                let rastered =
+                let rastered = if hinted {
+                    text_ctx.raster_glyph_hinted_scaled(
+                        g.cache_key,
+                        qx,
+                        qy,
+                        self.scale,
+                        |bmp| {
+                            bmp.and_then(|b| {
+                                if b.width == 0 || b.height == 0 {
+                                    return None;
+                                }
+                                let entry = atlas.get(g.cache_key, phase, sq16).or_else(|| {
+                                    atlas.insert_from_coverage(
+                                        queue,
+                                        g.cache_key,
+                                        phase,
+                                        sq16,
+                                        b.width,
+                                        b.height,
+                                        b.data,
+                                    )
+                                })?;
+                                Some((entry, b.left, b.top))
+                            })
+                        },
+                    )
+                } else {
                     text_ctx.raster_glyph_exact_scaled(g.cache_key, qx, qy, self.scale, |bmp| {
                         bmp.and_then(|b| {
                             if b.width == 0 || b.height == 0 {
@@ -855,7 +889,8 @@ impl Batch {
                             })?;
                             Some((entry, b.left, b.top))
                         })
-                    });
+                    })
+                };
                 let Some((e, bl, bt)) = rastered else {
                     continue;
                 };

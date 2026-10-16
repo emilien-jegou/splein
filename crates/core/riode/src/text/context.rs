@@ -69,6 +69,10 @@ const NEARBY_TOLERANCE_QUANTA: u32 = 8;
 /// collide with phase-bitmap or scaled-bitmap slots sharing the cache.
 const ANALYTIC_TAG: u64 = 0x616E616C79746963;
 
+/// Tag mixed into hinted-variant cache keys so per-quantum swash bitmaps
+/// can never collide with analytic, phase-bitmap, or scaled-bitmap slots.
+const HINTED_TAG: u64 = 0x68696E7465640001;
+
 /// Miss threshold for parallel batch shaping: below this, thread
 /// spawn/sync costs exceed the shaping work itself.
 pub const PARALLEL_SHAPE_THRESHOLD: usize = 8;
@@ -440,6 +444,144 @@ impl TextContext {
         }
         let cache_key = Self::exact_cache_key(key, qx, qy, Some(sq));
         self.raster_exact_inner(cache_key, key, qx & 3, qy & 3, sq, f)
+    }
+
+    /// Rasterizes a glyph with the hinter engaged at a quarter-pixel
+    /// subpixel position, invoking the consumer closure with bitmap data.
+    ///
+    /// This is the GPUI/dwrite-shaped small-text path: unlike
+    /// [`Self::raster_glyph_exact`] (one hinted outline translated per
+    /// quantum), each variant re-renders through swash with a fractional
+    /// offset, so the hinter grid-fits stems at the true raster position —
+    /// the mechanism that keeps small web text legible. Sources prefer an
+    /// embedded strike at the exact size, then the hinted outline
+    /// (`[Bitmap(ExactSize), Outline]`). Both axes carry variants (4x4):
+    /// Y glides like X instead of snapping (GPUI's 4x1 Y-snap stepped
+    /// whole pixels during vertical motion — visibly worse, same cost
+    /// class, so we keep the quantum on both axes).
+    ///
+    /// Bitmaps are memoized per (key, qx, qy[, scale]) in tagged slots that
+    /// cannot collide with any other slot family. Non-grayscale results
+    /// (color outlines, bitmap-emoji strikes, empty/missing glyphs) fall
+    /// through to [`Self::raster_glyph_exact`] at the same quantum, which
+    /// itself falls back to the swash phase path — so behavior is total
+    /// and the caller needs no second call site.
+    ///
+    /// Callers must only use this for hinted sizes (at or below
+    /// [`SMALL_TEXT_HINT_CUTOFF_PX` in layout px) and translation-only
+    /// placement: hinting is meaningless under rotation/scale, where the
+    /// analytic path stays correct.
+    #[cfg(feature = "text-runtime")]
+    pub fn raster_glyph_hinted_scaled<R>(
+        &self,
+        key: GlyphKey,
+        qx: u8,
+        qy: u8,
+        scale: f32,
+        f: impl FnOnce(Option<GlyphBitmap>) -> R,
+    ) -> R {
+        let (qx, qy) = (qx & 3, qy & 3);
+        let sq = quantize_raster_scale(scale);
+        let sq_opt = (sq != 1.0).then_some(sq);
+        let cache_key = Self::hinted_cache_key(key, qx, qy, sq_opt);
+        if let Some(cached) = self.bitmaps.get(&cache_key, 0) {
+            return f(Some(GlyphBitmap {
+                left: cached.left,
+                top: cached.top,
+                width: cached.width,
+                height: cached.height,
+                data: &cached.data,
+            }));
+        }
+        let rk = self.engine.key_map.lock().unwrap().get(&key).cloned();
+        let Some(rk) = rk else {
+            self.bitmaps.note_miss();
+            return f(None);
+        };
+        let size = f32::from_bits(rk.size_bits) * sq;
+        let mut scaler = self.scaler.lock().unwrap();
+        let Some(font) = swash::FontRef::from_index(rk.font.data.data(), rk.font.index as usize)
+        else {
+            drop(scaler);
+            self.bitmaps.note_miss();
+            return f(None);
+        };
+        let mut context = scaler
+            .builder(font)
+            .size(size)
+            .hint(true)
+            .normalized_coords(&rk.coords)
+            .build();
+        let mut render = Render::new(&[
+            Source::Bitmap(StrikeWith::ExactSize),
+            Source::Outline,
+        ]);
+        render.format(swash::zeno::Format::Alpha);
+        // The outline is drawn at `size` (scaled px) and the offset lives
+        // in the same space, so q/4 output px == q/4 device px on each
+        // axis. (GPUI divides its variant offset by its scale factor and
+        // pins Y to one variant; at scale 1 the X forms agree —
+        // dimensionally this is the exact one for integer-anchor
+        // placement, and Y gliding needs the same treatment as X.)
+        render.offset(swash::zeno::Vector::new(
+            qx as f32 * 0.25,
+            qy as f32 * 0.25,
+        ));
+        let image = render.render(&mut context, rk.glyph_id as u16);
+        drop(scaler);
+        match image {
+            Some(ref img) if img.content == swash::scale::image::Content::Mask => {
+                self.bitmaps.store(
+                    cache_key,
+                    0,
+                    CachedBitmap::new(
+                        img.placement.left,
+                        img.placement.top,
+                        img.placement.width,
+                        img.placement.height,
+                        img.data.clone(),
+                    ),
+                );
+                match self.bitmaps.get(&cache_key, 0) {
+                    Some(cached) => f(Some(GlyphBitmap {
+                        left: cached.left,
+                        top: cached.top,
+                        width: cached.width,
+                        height: cached.height,
+                        data: &cached.data,
+                    })),
+                    None => f(Some(GlyphBitmap {
+                        left: img.placement.left,
+                        top: img.placement.top,
+                        width: img.placement.width,
+                        height: img.placement.height,
+                        data: &img.data,
+                    })),
+                }
+            }
+            _ => self.raster_exact_inner(
+                Self::exact_cache_key(key, qx, qy, sq_opt),
+                key,
+                qx,
+                qy,
+                sq,
+                f,
+            ),
+        }
+    }
+
+    /// Cache key for hinted-variant slots: (key, hinted tag, qx, qy[, scale]).
+    #[cfg(feature = "text-runtime")]
+    fn hinted_cache_key(key: GlyphKey, qx: u8, qy: u8, scale: Option<f32>) -> GlyphKey {
+        let mut h = FxHasher::default();
+        key.0.hash(&mut h);
+        HINTED_TAG.hash(&mut h);
+        (qx & 3).hash(&mut h);
+        (qy & 3).hash(&mut h);
+        if let Some(s) = scale {
+            ((s * 16.0).round() as u16).hash(&mut h);
+        }
+        GlyphKey(h.finish())
     }
 
     /// Cache key for exact-coverage slots: (key, analytic tag, qx, qy[,
