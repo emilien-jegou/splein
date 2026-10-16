@@ -9,6 +9,7 @@
 // intensity * color.a * layer opacity * node opacity) into color.a and
 // the sigma into params.x. Ordered Bayer dither on the final alpha
 // breaks banding of very soft falloffs (our addition; gpui lacks it).
+// Color composites encoded on the plain Unorm target (vello-like).
 struct Ortho {
     w: f32,
     h: f32,
@@ -58,12 +59,6 @@ fn sd_round_box(p: vec2<f32>, b: vec2<f32>, r: vec4<f32>) -> f32 {
     }
     let q = abs(p) - b + rad;
     return min(max(q.x, q.y), 0.0) + length(max(q, vec2<f32>(0.0))) - rad;
-}
-
-fn srgb_to_linear(c: vec3<f32>) -> vec3<f32> {
-    let lo = c / 12.92;
-    let hi = pow((c + vec3<f32>(0.055)) / vec3<f32>(1.055), vec3<f32>(2.4));
-    return select(hi, lo, c <= vec3<f32>(0.04045));
 }
 
 // Ordered Bayer 4x4, normalized to [0, 1).
@@ -163,5 +158,5 @@ fn fs_main(in: Vout) -> @location(0) vec4<f32> {
     if (a <= 0.0) {
         discard;
     }
-    return vec4<f32>(srgb_to_linear(in.color.rgb), a);
+    return vec4<f32>(in.color.rgb, a);
 }

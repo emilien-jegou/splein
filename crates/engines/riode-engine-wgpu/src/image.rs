@@ -6,10 +6,9 @@
 // sRGB-encoded per channel. Textures are plain `Rgba8Unorm` — NOT the sRGB
 // format: hardware sRGB decode would apply the transfer curve to the
 // premultiplied channels, and decode(rgb*a) != decode(rgb)*a, which darkens
-// and grays semi-transparent edges. The shader un-premultiplies, decodes,
-// and re-premultiplies (straight-alpha-in-encoded-space -> linear
-// premultiplied), then the pipeline blends with PREMULTIPLIED_ALPHA
-// into the sRGB target (hardware encodes on store).
+// and grays semi-transparent edges. The shader composites the premultiplied
+// bytes as-is on the plain Unorm target (vello-like, no transfer
+// handling), blending with PREMULTIPLIED_ALPHA.
 //
 // Keyed by allocation identity (`Arc::as_ptr` on the pixel buffer), the
 // same identity `hash_commands` uses — chunk-cache keys and texture keys

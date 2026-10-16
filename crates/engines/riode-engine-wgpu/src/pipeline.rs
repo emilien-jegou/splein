@@ -462,8 +462,8 @@ pub fn create_pipelines(
             entry_point: "fs_main",
             compilation_options: wgpu::PipelineCompilationOptions {
                 constants: &std::collections::HashMap::from([(
-                    "SRGB_ENCODE".to_string(),
-                    if swapchain_format.is_srgb() { 0.0 } else { 1.0 },
+                    "SRGB_DECODE".to_string(),
+                    if swapchain_format.is_srgb() { 1.0 } else { 0.0 },
                 )]),
                 ..Default::default()
             },
@@ -480,9 +480,21 @@ pub fn create_pipelines(
     });
 
     // Glyph pipeline (coverage atlas -> persistent target).
+    //
+    // Display correction is opt-in (dwrite/GPUI experiment): only with
+    // RIODE_TEXT_CORRECTION=on in the environment is the contrast+gamma
+    // shader selected; default is the passthrough shader (straight
+    // coverage × alpha, vello_cpu-like). No rebuild needed to flip, just
+    // restart. The CPU twin (text::gamma) honors the same variable, so
+    // both engines move together.
+    let glyph_src: &str = if *riode::text::gamma::CORRECTION_ON {
+        include_str!("shaders/glyph.wgsl")
+    } else {
+        include_str!("shaders/glyph_plain.wgsl")
+    };
     let glyph_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("riode-wgpu-glyph"),
-        source: wgpu::ShaderSource::Wgsl(include_str!("shaders/glyph.wgsl").into()),
+        source: wgpu::ShaderSource::Wgsl(glyph_src.into()),
     });
     let glyph_layout = glyph_bind_layout(device);
     let glyph_sampler_linear = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -527,10 +539,9 @@ pub fn create_pipelines(
         multiview: None,
     });
 
-    // Image pipeline: premultiplied sRGB bytes -> linear (shader un-
-    // premultiplies, decodes, re-premultiplies) -> persistent target,
-    // premultiplied alpha, per-image bind group on group 1 (same layout
-    // shape as the glyph atlas).
+    // Image pipeline: premultiplied sRGB bytes composited as-is onto the
+    // plain Unorm target, premultiplied alpha, per-image bind group on
+    // group 1 (same layout shape as the glyph atlas).
     let image_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("riode-wgpu-image"),
         source: wgpu::ShaderSource::Wgsl(include_str!("shaders/image.wgsl").into()),

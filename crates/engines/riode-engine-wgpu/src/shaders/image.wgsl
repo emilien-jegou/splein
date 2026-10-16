@@ -1,16 +1,11 @@
 // Image sampling: premultiplied sRGB-encoded bytes (ImageSource convention,
-// shared with tiny-skia/vello) -> linear premultiplied -> persistent target.
-// Full-quad UVs let the hardware pick the mip level from screen-space
-// derivatives (the CPU uploaded a full box-filtered mip chain), so
-// minified images resolve smoothly instead of shimmering.
-//
-// The texture is plain Unorm, not srgb: hardware decode would apply the
-// transfer curve to the *premultiplied* channels (decode(rgb*a) !=
-// decode(rgb)*a), graying semi-transparent edges. Un-premultiply in
-// encoded space, decode, re-premultiply — the standard correct path.
-// Pipeline blends PREMULTIPLIED_ALPHA into the sRGB target (encodes on
-// store). Vertex color is a straight-alpha tint: rgb modulates the
-// premultiplied sample, alpha multiplies.
+// shared with tiny-skia/vello) composited as-is on the plain Unorm target
+// (vello-like, no transfer handling). Full-quad UVs let the hardware pick
+// the mip level from screen-space derivatives (the CPU uploaded a full
+// box-filtered mip chain), so minified images resolve smoothly instead of
+// shimmering. Pipeline blends PREMULTIPLIED_ALPHA; vertex color is a
+// straight-alpha tint: rgb modulates the premultiplied sample, alpha
+// multiplies.
 struct Ortho {
     w: f32,
     h: f32,
@@ -44,21 +39,11 @@ fn vs_main(in: Vin) -> Vout {
     return out;
 }
 
-fn srgb_to_linear(c: vec3<f32>) -> vec3<f32> {
-    let lo = c / 12.92;
-    let hi = pow((c + vec3<f32>(0.055)) / vec3<f32>(1.055), vec3<f32>(2.4));
-    return select(hi, lo, c <= vec3<f32>(0.04045));
-}
-
 @fragment
 fn fs_main(in: Vout) -> @location(0) vec4<f32> {
     let s = textureSample(image, image_sampler, in.uv);
-    // Premultiplied invariant: rgb <= a, so a == 0 implies rgb == 0 and
-    // the max() below only guards the division.
-    let a = s.a;
-    let lin = srgb_to_linear(s.rgb / max(a, 1e-6)) * a;
     // Tint rgb modulates the premultiplied sample; tint alpha (opacity)
     // scales both color and alpha to keep the result premultiplied.
-    return vec4<f32>(lin * in.color.rgb, a * in.color.a);
+    return vec4<f32>(s.rgb * in.color.rgb, s.a * in.color.a);
 }
 

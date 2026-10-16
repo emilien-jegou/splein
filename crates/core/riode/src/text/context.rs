@@ -509,7 +509,13 @@ impl TextContext {
         let mut context = scaler
             .builder(font)
             .size(size)
-            .hint(true)
+            // Vello-mode: hinter off at all sizes. A once-fitted outline
+            // translated per quantum lands its sharpened stems fractionally
+            // off-grid (rough edges the boost then amplifies); linear
+            // outlines translate exactly and stay smooth like vello's
+            // unhinted coverage. (The legacy phase fallback below keeps
+            // its own hint policy for color/oversized glyphs.)
+            .hint(false)
             .normalized_coords(&rk.coords)
             .build();
         let mut render = Render::new(&[

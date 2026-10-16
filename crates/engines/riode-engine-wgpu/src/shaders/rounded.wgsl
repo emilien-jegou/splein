@@ -1,4 +1,4 @@
-// Rounded-rect SDF double-wall: fill + border in one pass, linear-space.
+// Rounded-rect SDF double-wall: fill + border in one pass, encoded-space.
 //
 // Vertices carry device-space geometry (CPU-resolved, translation and
 // uniform-scale exact; skewed transforms fall back to square solids).
@@ -6,8 +6,8 @@
 // outer wall (fill + border), `ibox`/`iradii` the inner wall (fill only).
 // The fragment paints fill inside the inner wall and the border in the
 // band between walls (gpui-style double-wall). Colors arrive
-// sRGB-encoded and are decoded to linear here; the sRGB persistent
-// target blends in linear and re-encodes on store.
+// sRGB-encoded and composite as-is on the plain Unorm target
+// (vello-like, no transfer handling).
 struct Ortho {
     w: f32,
     h: f32,
@@ -69,12 +69,6 @@ fn sd_round_box(p: vec2<f32>, b: vec2<f32>, r: vec4<f32>) -> f32 {
     return min(max(q.x, q.y), 0.0) + length(max(q, vec2<f32>(0.0))) - rad;
 }
 
-fn srgb_to_linear(c: vec3<f32>) -> vec3<f32> {
-    let lo = c / 12.92;
-    let hi = pow((c + vec3<f32>(0.055)) / vec3<f32>(1.055), vec3<f32>(2.4));
-    return select(hi, lo, c <= vec3<f32>(0.04045));
-}
-
 fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
     let lo = c * 12.92;
     let hi = 1.055 * pow(max(c, vec3<f32>(0.0)), vec3<f32>(1.0 / 2.4)) - vec3<f32>(0.055);
@@ -131,12 +125,12 @@ fn fs_main(in: Vout) -> @location(0) vec4<f32> {
     let ic = 1.0 - smoothstep(-aa, aa, isd);
     var fa = in.fill.a * ic;
     var sa = in.stroke.a * oc * (1.0 - ic);
-    var fill_lin = srgb_to_linear(in.fill.rgb);
+    var fill_enc = in.fill.rgb;
     // Gradient mode (grad.xy is the unit axis; solid fills leave it
     // zero): fill/stroke hold Oklab + alpha for the two stops; t is the
     // stop projection onto the axis from the outer-box origin. Alpha
-    // interpolates with the colors (CSS parity). Ordered dither is
-    // applied in encoded space, then decoded for linear compositing.
+    // interpolates with the colors (CSS parity). Oklab inverts to linear
+    // and re-encodes to sRGB; ordered dither applies in encoded space.
     let is_grad = in.grad.x != 0.0 || in.grad.y != 0.0;
     if (is_grad) {
         let tp = in.dpos - in.fbox.xy;
@@ -149,15 +143,15 @@ fn fs_main(in: Vout) -> @location(0) vec4<f32> {
         var col = linear_to_srgb(oklab_to_linear_srgb(lab));
         let dither = (bayer_4x4(vec2<u32>(floor(in.dpos))) - 0.5) / 255.0;
         col = clamp(col + vec3<f32>(dither), vec3<f32>(0.0), vec3<f32>(1.0));
-        fill_lin = srgb_to_linear(col);
+        fill_enc = col;
         fa = mix(in.fill.a, in.stroke.a, t) * ic;
         sa = 0.0; // stroke slot carries stop 1, not a border
     }
-    // Straight-alpha composite in linear: border over fill.
+    // Straight-alpha composite in encoded space: border over fill.
     let a = fa + sa * (1.0 - fa);
     if (a <= 0.0) { discard; }
-    let frgb = fill_lin * fa;
-    let brgb = srgb_to_linear(in.stroke.rgb) * sa * (1.0 - fa);
+    let frgb = fill_enc * fa;
+    let brgb = in.stroke.rgb * sa * (1.0 - fa);
     let rgb = (frgb + brgb) / max(a, 1e-4);
     return vec4<f32>(rgb, a);
 }

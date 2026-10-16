@@ -100,6 +100,18 @@ All `SceneCommand::DrawRect` with non-zero `stroke.width`. Per-edge widths suppo
 > - [x] Implement shader/format/blit/clear changes; compile green
 >   (`cargo check --workspace --examples`, 0 errors).
 > - [x] Human validation bundled with §1 (same demo pass) — **"looks good"**.
+> - [x] **REVERSED (vello-direction, text-led): hardware linear blending
+>   produced systematically wrong text vs the vello reference (fringe 0.5
+>   lands 0.735 through linear vs 0.5 encoded — a polarity-dependent
+>   weight shift no gamma table can fix), and vello_cpu pins
+>   premultiplied-sRGB compositing with no transfer handling anywhere.
+>   Persistent target is now plain `Rgba8Unorm`; all shaders composite
+>   sRGB-encoded values as-is; the blit is a raw copy (+premultiply, as
+>   in vello's BlitPipeline) with a decode only for sRGB-swapchain
+>   fallback. Readback now matches swapchain bytes by construction.
+>   Earlier "looks good" covered shapes at low scrutiny; border_lab,
+>   gradient_lab, shadow_lab, and image_lab all need one human re-pass
+>   under the new composite before this bundle re-closes.
 
 ### Why
 

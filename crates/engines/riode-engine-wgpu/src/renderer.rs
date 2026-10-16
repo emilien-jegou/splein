@@ -16,22 +16,13 @@ use crate::pipeline::{
 use crate::svg::SvgCache;
 use crate::text::GlyphAtlas;
 
-fn srgb_to_linear(c: f64) -> f64 {
-    if c <= 0.04045 {
-        c / 12.92
-    } else {
-        ((c + 0.055) / 1.055).powf(2.4)
-    }
-}
-
 fn to_wgpu(c: Color) -> wgpu::Color {
-    // WebGPU treats clearValue on an sRGB attachment as *linear* (encoded
-    // on store like fragment output). The CPU base color is sRGB-encoded;
-    // decode so the stored bytes match the logical color.
+    // The persistent target is plain Unorm: clearValue stores verbatim,
+    // so the sRGB-encoded CPU color rides through unchanged.
     wgpu::Color {
-        r: srgb_to_linear(c.r as f64),
-        g: srgb_to_linear(c.g as f64),
-        b: srgb_to_linear(c.b as f64),
+        r: c.r as f64,
+        g: c.g as f64,
+        b: c.b as f64,
         a: c.a as f64,
     }
 }
@@ -105,7 +96,7 @@ impl WgpuRenderer {
     pub fn new(gpu: WgpuContext, text_ctx: TextContext) -> Self {
         let pipes = create_pipelines(
             &gpu.device,
-            wgpu::TextureFormat::Rgba8UnormSrgb,
+            wgpu::TextureFormat::Rgba8Unorm,
             gpu.config.format,
         );
         let (ortho_buf, ortho_bg) = make_ortho(

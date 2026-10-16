@@ -64,9 +64,13 @@ impl AnalyticBitmap {
 /// Degenerate-guard: outlines larger than this fall back to the swash path.
 const MAX_DIM: u32 = 512;
 
-/// Curve flattening tolerance: 1e-4 px = effectively exact at f32 precision.
-/// Adaptive subdivision only refines where needed; no visible faceting.
-const FLAT_TOL: f32 = 1e-4;
+/// Curve flattening tolerance: 0.1 px, matching vello's
+/// DEFAULT_TOLERANCE. Area integration is insensitive below this (0.1 px
+/// deviation is sub-LSB after per-pixel area render), so a finer tolerance
+/// only multiplies segment counts 10-100x for no visible gain — the old
+/// 1e-4 value was pure cost. No visible faceting: adaptive subdivision
+/// still refines where needed.
+const FLAT_TOL: f32 = 0.1;
 /// Recursion cap (2^24 segments per curve worst-case, unreachable in practice).
 const FLAT_DEPTH: u8 = 24;
 

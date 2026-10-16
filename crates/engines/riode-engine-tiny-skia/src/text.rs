@@ -1,7 +1,7 @@
 // Single responsibility: Glyph bitmap Porter-Duff alpha compositing via TinySkia.
 
 use riode::foundation::{Color, Point};
-use riode::text::{GlyphBitmap, TextContext, TextLayout, SMALL_TEXT_HINT_CUTOFF_PX};
+use riode::text::{GlyphBitmap, TextContext, TextLayout};
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
 use tiny_skia::{
@@ -197,20 +197,13 @@ pub fn render_text(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: TextR
     render_text_aligned(pixmap, text_ctx, params);
 }
 
-/// Display correction for coverage-to-alpha conversion.
-///
-/// Coverage masks are linear-light fractions; compositing them raw as
-/// alpha darkens mid-tone fringe pixels. The correction applied is the
-/// grayscale contrast + gamma chain in [`riode::text::gamma`] (scalar
-/// twin of the wgpu glyph shader, ported from GPUI/MS-terminal
-/// `dwrite.hlsl`) — brightness-dependent contrast plus a quadratic
-/// alpha correction, evaluated here per run into one 256-entry table.
-/// One table at all sizes: the old `line.font_size <=
-/// SMALL_TEXT_HINT_CUTOFF_PX` split (linear below, gamma above) is
-/// gone — the chain is coverage-proportional, so dense hinted stems
-/// pass through nearly unchanged while faint fringes lift, with no
-/// size heuristic. Monotonic, so threshold tests and bounding boxes
-/// are unaffected.
+/// Coverage-to-alpha conversion: vello_cpu behavior — raw coverage ×
+/// opacity, no transfer handling. An optional dwrite grayscale
+/// contrast + gamma chain lives in [`riode::text::gamma`] (scalar twin
+/// of the wgpu glyph shader, ported from GPUI/MS-terminal `dwrite.hlsl`)
+/// and applies only with `RIODE_TEXT_CORRECTION=on`; default off, one
+/// table at all sizes either way. Monotonic, so threshold tests and
+/// bounding boxes are unaffected.
 
 /// Subpixel position quantum per pixel: the pen quantizes to quarters and
 /// the analytic rasterizer integrates exact coverage at the quantum (see
@@ -300,14 +293,11 @@ fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: T
                           clip_now: Option<&Mask>,
                           clip_now_w: u32,
                           clip_now_h: u32| {
-        // Small text renders hinted per quantum on both axes (4x4 —
-        // the hinter grid-fits each variant at its true position, the
-        // dwrite/GPUI legibility mechanism, with Y gliding like X);
-        // display type keeps the shape-invariant analytic path. This path
-        // is translation-only by construction (rotation/scale dispatches
-        // to `render_text_transformed`), so hinting is always meaningful
-        // here.
-        let hinted_small = line.font_size <= SMALL_TEXT_HINT_CUTOFF_PX;
+        // Shape-invariant analytic coverage on both axes: each quarter
+        // quantum integrates one hinter-fitted outline (identical shape
+        // at every position — no per-quantum hinter re-fit, no bearing
+        // breathing, no Y jiggle; per-variant re-rendering was tried in
+        // 6274e02 and reverted for exactly that motion bug).
         let (pw, ph) = (target.width(), target.height());
         let mut paint_at = |img: &GlyphBitmap, px: i32, py: i32| {
             let (w, h) = (img.width, img.height);
@@ -338,36 +328,23 @@ fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: T
             // space and line-local space.
             let dev_x = origin.x + line.align_offset + g.point.x + ttx;
             let dev_y = origin.y + g.point.y + tty;
-            // Both axes quantize to quarters (the hinter fits that
-            // quantum); integer placement carries <=1/8px snap per axis
-            // with no coverage smoothing. Rebasing onto `space` keeps
-            // canvas and line-local painting on the same code path.
+            // Both axes quantize to quarters; the analytic bitmap is
+            // integrated exactly at the quantum, so integer placement
+            // carries <=1/8px snap and no coverage smoothing on either
+            // axis. Rebasing onto `space` keeps canvas and line-local
+            // painting on the same code path.
             let (bx, qx) = quantize_quarter(dev_x);
             let (by, qy) = quantize_quarter(dev_y);
-            if hinted_small {
-                text_ctx.raster_glyph_hinted_scaled(
-                    g.cache_key,
-                    qx,
-                    qy,
-                    1.0,
-                    |img_opt| {
-                        if let Some(img) = img_opt {
-                            paint_at(&img, bx + img.left, by - img.top);
-                        }
-                    },
-                );
-            } else {
-                text_ctx.raster_glyph_exact(
-                    g.cache_key,
-                    qx,
-                    qy,
-                    |img_opt| {
-                        if let Some(img) = img_opt {
-                            paint_at(&img, bx + img.left, by - img.top);
-                        }
-                    },
-                );
-            }
+            text_ctx.raster_glyph_exact(
+                g.cache_key,
+                qx,
+                qy,
+                |img_opt| {
+                    if let Some(img) = img_opt {
+                        paint_at(&img, bx + img.left, by - img.top);
+                    }
+                },
+            );
         }
     };
     for (idx, line) in layout.lines.iter().enumerate() {
@@ -716,77 +693,29 @@ mod tests {
     }
 }
 
-/// sRGB byte → linear-light fraction, exact per byte (process-wide table).
-static SRGB_TO_LINEAR: std::sync::LazyLock<[f32; 256]> = std::sync::LazyLock::new(|| {
-    std::array::from_fn(|i| {
-        let c = i as f32 / 255.0;
-        if c <= 0.04045 {
-            c / 12.92
-        } else {
-            ((c + 0.055) / 1.055).powf(2.4)
-        }
-    })
-});
-
-/// Linear-light fraction → sRGB byte via a 12-bit table (quantization error
-/// far below 1 LSB on the output byte).
-static LINEAR_TO_SRGB: std::sync::LazyLock<[u8; 4096]> = std::sync::LazyLock::new(|| {
-    std::array::from_fn(|i| {
-        let c = (i as f32 / 4095.0).clamp(0.0, 1.0);
-        let s = if c <= 0.0031308 {
-            c * 12.92
-        } else {
-            1.055 * c.powf(1.0 / 2.4) - 0.055
-        };
-        (s * 255.0).round().clamp(0.0, 255.0) as u8
-    })
-});
-
-fn srgb_to_linear(byte: u8) -> f32 {
-    SRGB_TO_LINEAR[byte as usize]
-}
-
-fn linear_to_srgb_byte(linear: f32) -> u8 {
-    LINEAR_TO_SRGB[(linear.clamp(0.0, 1.0) * 4095.0).round() as usize]
-}
-
 fn blend_source_over(pixel: &mut PremultipliedColorU8, r: u8, g: u8, b: u8, a: u8) {
-    // Linear-space composite, matching the wgpu glyph shader: the ink and
-    // the destination decode to linear, blend there, and encode back.
-    // Encoded-space blending darkens light-on-dark fringes and lightens
-    // dark-on-light ones relative to wgpu (fringe 0.5 lands at 0.5 encoded
-    // vs 0.735 through linear) — a polarity-dependent weight shift far
-    // larger than any gamma-table difference, so the tables alone can never
-    // reach parity without this. LUTs keep it cheap: decode is exact per
-    // byte, encode quantizes linear to 12 bits (well under 1 LSB error).
-    // Alpha itself stays in encoded-space math (it is not a color).
-    // Only the glyph blit calls this; every other primitive keeps the old
-    // path, so the blast radius is text only.
+    // Encoded-space premultiplied source-over — the vello_cpu composite
+    // verbatim (premultiplied sRGB, W3C src-over, no linearization, no
+    // transfer handling). A prior revision blended here in linear light;
+    // that darkened every semi-transparent dst texel relative to vello
+    // (white at a=128 decoded to 0.21 instead of 0.5) and diverged from
+    // the reference on every fringe over a non-opaque background — so it
+    // was reverted. Linear blending also disagrees with vello_cpu
+    // systematically on opaque backgrounds (fringe 0.5 lands 0.5 encoded
+    // vs 0.735 through linear); encoded is the reference behavior.
+    // Only the glyph blit calls this; every other primitive keeps its
+    // own path, so the blast radius is text only.
     let sa = a as f32 / 255.0;
     let inv_sa = 1.0 - sa;
 
-    // Un-premultiply first: the pixmap stores premultiplied sRGB, and
-    // decoding premultiplied channels as straight colors darkens every
-    // semi-transparent dst texel (white at a=128 decodes to 0.21 instead
-    // of 0.5) — fringe dirt over card edges, clips, and text-over-text.
-    // Opaque dst is unaffected (premult == straight at a=255), which is
-    // why dirt concentrates at edges rather than stem centers.
+    let dr = pixel.red() as f32;
+    let dg = pixel.green() as f32;
+    let db = pixel.blue() as f32;
     let da = pixel.alpha() as f32;
-    let (dr, dg, db) = if da <= 0.0 {
-        (0.0, 0.0, 0.0)
-    } else {
-        (
-            srgb_to_linear(((pixel.red() as f32 * 255.0 / da).round() as u8).min(255)),
-            srgb_to_linear(((pixel.green() as f32 * 255.0 / da).round() as u8).min(255)),
-            srgb_to_linear(((pixel.blue() as f32 * 255.0 / da).round() as u8).min(255)),
-        )
-    };
-    // Dst alpha is itself the premultiplied weight: dst contribution is
-    // straight-linear dst times (da/255) times (1-sa).
-    let da01 = da / 255.0;
-    let out_r = linear_to_srgb_byte(srgb_to_linear(r) * sa + dr * da01 * inv_sa);
-    let out_g = linear_to_srgb_byte(srgb_to_linear(g) * sa + dg * da01 * inv_sa);
-    let out_b = linear_to_srgb_byte(srgb_to_linear(b) * sa + db * da01 * inv_sa);
+
+    let out_r = ((r as f32 * sa) + (dr * inv_sa)).round().min(255.0) as u8;
+    let out_g = ((g as f32 * sa) + (dg * inv_sa)).round().min(255.0) as u8;
+    let out_b = ((b as f32 * sa) + (db * inv_sa)).round().min(255.0) as u8;
     let out_a = ((a as f32) + (da * inv_sa)).round().min(255.0) as u8;
 
     if let Some(p) = PremultipliedColorU8::from_rgba(out_r, out_g, out_b, out_a) {

@@ -9,11 +9,13 @@
 // dwrite.hlsl, MIT), applied at ALL sizes: brightness-dependent
 // contrast boost plus a quadratic alpha correction driven by the
 // baked gamma-1.8 ratio row. There is deliberately no font-size
-// threshold — the chain is coverage-proportional, so dense hinted
-// stems pass through nearly unchanged while faint fringes lift.
+// threshold — the chain is coverage-proportional, so dense stems pass
+// through nearly unchanged while faint fringes lift.
 // Scalar twin of the correction lives in riode's text::gamma
 // (tiny-skia builds its per-run table from it); this WGSL is a
-// transliteration of that module.
+// transliteration of that module. Selected only with
+// RIODE_TEXT_CORRECTION=on (see pipeline.rs); default is the
+// passthrough shader glyph_plain.wgsl.
 struct Ortho {
     w: f32,
     h: f32,
@@ -47,15 +49,10 @@ fn vs_main(in: Vin) -> Vout {
     return out;
 }
 
-fn srgb_to_linear(c: vec3<f32>) -> vec3<f32> {
-    let lo = c / 12.92;
-    let hi = pow((c + vec3<f32>(0.055)) / vec3<f32>(1.055), vec3<f32>(2.4));
-    return select(hi, lo, c <= vec3<f32>(0.04045));
-}
-
 // Grayscale contrast + gamma correction, verbatim port of GPUI's
 // shaders.wgsl chain (itself adapted from microsoft/terminal
-// dwrite.hlsl, MIT).
+// dwrite.hlsl, MIT). Opt-in via RIODE_TEXT_CORRECTION=on; default is
+// the passthrough shader (glyph_plain.wgsl).
 //
 // Defaults match GPUI: gamma 1.8 ratio row baked below,
 // grayscale enhanced contrast 1.0 (override via uniform later).
@@ -103,8 +100,6 @@ fn fs_main(in: Vout) -> @location(0) vec4<f32> {
         GRAYSCALE_ENHANCED_CONTRAST,
         GAMMA_RATIOS,
     );
-    // Vertex color is sRGB-encoded; decode to linear so the sRGB
-    // persistent target blends in linear. Coverage stays a plain alpha
-    // multiplier (it is a coverage correction, not a color space one).
-    return vec4<f32>(srgb_to_linear(in.color.rgb), in.color.a * cov);
+    // Encoded-space composite on the plain Unorm target (vello-like).
+    return vec4<f32>(in.color.rgb, in.color.a * cov);
 }
