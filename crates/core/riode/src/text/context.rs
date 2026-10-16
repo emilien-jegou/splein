@@ -24,6 +24,29 @@ use swash::scale::{Render, ScaleContext, Source, StrikeWith};
 /// small UI text, while display type above it stays linear and smooth.
 pub const SMALL_TEXT_HINT_CUTOFF_PX: f32 = 16.0;
 
+/// Baseline snap for text Y placement (debug A/B, `B` key): when set,
+/// glyph pens snap Y to whole device pixels (X keeps quarter quanta) —
+/// GPUI's 4x1 policy — instead of quantizing both axes to quarters.
+/// Read by the bitmap engines on every emit; cache keys on both sides
+/// include the flag, so toggling never replays stale verts. Vello
+/// engines ignore it (exact positions are their reference behavior).
+pub static BASELINE_SNAP_Y: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Whether baseline Y-snap is currently armed (see [`BASELINE_SNAP_Y`]).
+pub fn baseline_snap_y() -> bool {
+    BASELINE_SNAP_Y.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Flips baseline Y-snap, returning the new state. Called by the `B`
+/// debug key; logs so the terminal shows which mode rendered.
+pub fn toggle_baseline_snap_y() -> bool {
+    let next = !baseline_snap_y();
+    BASELINE_SNAP_Y.store(next, std::sync::atomic::Ordering::Relaxed);
+    tracing::info!(snap = next, "baseline Y-snap {}", if next { "ON" } else { "OFF" });
+    next
+}
+
 /// Quantizes a device scale factor for raster identity: 1/16 steps over
 /// [0.5, 4.0], with near-unity scales snapping to exactly 1.0 so the
 /// scale-aware path shares cache slots with the unscaled path.

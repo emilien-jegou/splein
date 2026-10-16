@@ -820,20 +820,25 @@ impl Batch {
                 let pen_y = origin.y + g.point.y;
                 let placed = t.transform_point(Point::new(pen_x, pen_y));
                 // Subpixel policy — shape-invariant analytic on both axes:
-                // each quarter quantum integrates coverage from one hinter-
-                // fitted outline, so glyph *shape* is identical at every
-                // subpixel position — no per-phase hinter re-fit (the P-top
-                // morph, the Y jiggle), no per-bin bbox churn. The quad
-                // integer-anchors at base+bearing (<=1/8px residual), so
-                // stems never resample through fractional filtering either.
-                // (Per-variant hinter re-rendering was tried in 6274e02 and
-                // reverted: swash bearings breathe per quantum under
-                // integer-anchor placement, jiggling Y motion. The hinted
-                // path survives in TextContext for future A/B.)
+                // each quarter quantum integrates coverage from one
+                // hinter-free linear outline, so glyph *shape* is identical
+                // at every subpixel position — no per-phase hinter re-fit
+                // (the P-top morph, the Y jiggle), no per-bin bbox churn.
+                // The quad integer-anchors at base+bearing (<=1/8px
+                // residual), so stems never resample through fractional
+                // filtering either. With baseline Y-snap armed (`B` key,
+                // GPUI's 4x1), Y snaps to whole device pixels instead —
+                // qy is forced 0 and the true fraction still backs out of
+                // the anchor below, so quads never drift.
                 let (bx, qx) = quantize_quarter(placed.x);
-                let (by, qy) = quantize_quarter(placed.y);
                 let fx = placed.x - bx as f32;
-                let fy = placed.y - by as f32;
+                let (qy, fy) = if riode::text::baseline_snap_y() {
+                    let by = placed.y.round() as i32;
+                    (0u8, placed.y - by as f32)
+                } else {
+                    let (by, qy) = quantize_quarter(placed.y);
+                    (qy, placed.y - by as f32)
+                };
                 // Atlas slot distinctness only; the bitmap itself is keyed
                 // (key, qx, qy, scale) inside the analytic cache.
                 let phase = (qx as u8) | ((qy as u8) << 2);

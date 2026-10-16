@@ -42,5 +42,5 @@ pub fn time_scale_color(scale: f32) -> u32 {
 
 /// Always-on keybind strip for the demo runner (switch + time controls).
 pub fn keybind_hint() -> &'static str {
-    "F5 DEMOS  F7 ENGINE  F8 FREEZE  . STEP  [ ] SPEED  F9/F11/F12 VIEW  S CAP  T TRACY  ESC EXIT"
+    "F5 DEMOS  F7 ENGINE  F8 FREEZE  . STEP  [ ] SPEED  B SNAP-Y  F9/F11/F12 VIEW  S CAP  T TRACY  ESC EXIT"
 }

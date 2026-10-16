@@ -65,6 +65,10 @@ pub fn chunk_key(chunk: &SceneChunk, scale_q16: u16) -> u64 {
         .hash(&mut h);
     transform_bits(&chunk.placement).hash(&mut h);
     scale_q16.hash(&mut h);
+    // Text placement policy (baseline Y-snap) changes emitted glyph verts
+    // for identical commands: without this bit, toggling snap replays
+    // stale verts from the other mode.
+    riode::text::baseline_snap_y().hash(&mut h);
     chunk.inherited_clips.len().hash(&mut h);
     for clip in chunk.inherited_clips.iter() {
         rect_key(&clip.rect, &mut h);

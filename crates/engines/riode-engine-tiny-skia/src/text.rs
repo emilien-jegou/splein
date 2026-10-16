@@ -32,8 +32,9 @@ pub struct TextRenderParams<'a> {
 }
 
 /// Identity of one cached composited line: same shaped content, same ink,
-/// same device integer origin. The clip is deliberately excluded — it applies
-/// at draw time, so one entry serves every clip state.
+/// same device integer origin, same baseline-snap mode. The clip is
+/// deliberately excluded — it applies at draw time, so one entry serves
+/// every clip state.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 struct LineKey {
     /// `Arc::as_ptr` of the retained layout: the entry holds the `Arc`, so
@@ -44,6 +45,10 @@ struct LineKey {
     opacity_q: u32,
     ox: i32,
     oy: i32,
+    /// Baseline Y-snap mode: snapped and gliding verts differ for
+    /// identical origins, so the flag rides the key (toggling repaints
+    /// instead of replaying the other mode).
+    snap: bool,
 }
 
 /// One composited line bitmap plus its device integer origin.
@@ -331,10 +336,16 @@ fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: T
             // Both axes quantize to quarters; the analytic bitmap is
             // integrated exactly at the quantum, so integer placement
             // carries <=1/8px snap and no coverage smoothing on either
-            // axis. Rebasing onto `space` keeps canvas and line-local
-            // painting on the same code path.
+            // axis. With baseline Y-snap armed (`B` key, GPUI's 4x1), Y
+            // snaps to whole device pixels instead (qy forced 0).
+            // Rebasing onto `space` keeps canvas and line-local painting
+            // on the same code path.
             let (bx, qx) = quantize_quarter(dev_x);
-            let (by, qy) = quantize_quarter(dev_y);
+            let (by, qy) = if riode::text::baseline_snap_y() {
+                (dev_y.round() as i32, 0u8)
+            } else {
+                quantize_quarter(dev_y)
+            };
             text_ctx.raster_glyph_exact(
                 g.cache_key,
                 qx,
@@ -395,6 +406,7 @@ fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: T
                     opacity_q,
                     ox,
                     oy,
+                    snap: riode::text::baseline_snap_y(),
                 };
                 if let Some(entry) = cache.hit(&key) {
                     let (ew, eh) = (entry.width(), entry.height());

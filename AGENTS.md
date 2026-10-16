@@ -62,7 +62,9 @@ they may never declare a fix correct.
 - **Debug tooling the human operates**: `F8` freeze/unfreeze the clock,
   `.` advance exactly one animation quantum (1/120 s) while frozen,
    `[` / `]` slow-motion time scale, `s` write presented pixels to
-   `$RIODE_CAPTURE_DIR/riode-frame-N.png` for zoomed pixel-diffing.
+   `$RIODE_CAPTURE_DIR/riode-frame-N.png` for zoomed pixel-diffing,
+  `B` toggle baseline Y-snap for text (bitmap engines only; GPUI's 4x1
+  policy vs quarter glide — terminal logs ON/OFF).
   Point the human at these instead of inventing new ones.
 - **External debug window**: `F5` opens the demo menu, `F7` cycles raster
   engines, `F10` toggles the separate debug panel window (telemetry,

@@ -144,6 +144,17 @@ fn toggle_key(
             *step = true;
             true
         }
+        // Baseline Y-snap A/B for text: toggles the process-wide placement
+        // policy the bitmap engines read on every emit (GPUI's 4x1: Y snaps
+        // to whole device pixels, X keeps quarter quanta). Cache keys on
+        // both engines include the flag, so toggling re-emits instead of
+        // replaying stale verts. Vello engines ignore it (exact positions
+        // are their reference). Like `s`/`t`, this fires globally: text
+        // runs are mouse-only and readonly, so no key target swallows it.
+        Key::Character(c) if c.as_str() == "b" => {
+            crate::text::toggle_baseline_snap_y();
+            true
+        }
         _ => false,
     }
 }

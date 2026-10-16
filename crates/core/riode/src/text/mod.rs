@@ -90,7 +90,10 @@ pub mod wrap;
 pub use align::TextAlign;
 pub use cache::ShapedTextCache;
 pub use config::{LineHeight, TextConfig};
-pub use context::{quantize_raster_scale, GlyphBitmap, TextContext, SMALL_TEXT_HINT_CUTOFF_PX};
+pub use context::{
+    baseline_snap_y, quantize_raster_scale, toggle_baseline_snap_y, GlyphBitmap, TextContext,
+    BASELINE_SNAP_Y, SMALL_TEXT_HINT_CUTOFF_PX,
+};
 pub use decoration::TextDecoration;
 pub use engine::ParleyEngine;
 pub use fonts::{FontData, FontId, FontStyle, FontVariation};
