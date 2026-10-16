@@ -48,6 +48,7 @@
 //! | [`layout`] | [`TextLayout`]: shaped lines + total size (the unit everything passes around) |
 //! | [`runs`] / [`shape`] / [`shaper`] | Line extraction, shaping entry, [`TextShapeParams`]/[`TextShaper`] trait |
 //! | [`glyph`] / [`glyph_cache`] | [`ShapedGlyph`], bitmap memoization |
+//! | [`gamma`] | Display correction for coverage (scalar twin of the wgpu glyph shader) |
 //! | [`cache`] | [`ShapedTextCache`]: shaped-layout memoization |
 //! | [`fonts`] | [`FontId`], [`FontStyle`], font data |
 //! | [`leaf`] | The layout-leaf bridge: wrap widths, min-content, paint emission |
@@ -72,6 +73,7 @@ pub mod context;
 pub mod decoration;
 pub mod engine;
 pub mod fonts;
+pub mod gamma;
 pub mod glyph;
 pub mod glyph_cache;
 pub mod layout;
@@ -92,6 +94,7 @@ pub use context::{quantize_raster_scale, GlyphBitmap, TextContext, SMALL_TEXT_HI
 pub use decoration::TextDecoration;
 pub use engine::ParleyEngine;
 pub use fonts::{FontData, FontId, FontStyle, FontVariation};
+pub use gamma::{corrected_alpha_table, correct_coverage};
 pub use glyph::{GlyphKey, ShapedGlyph, ShapedLine};
 pub use glyph_cache::{GlyphBitmapCache, GlyphCacheBudget, GlyphCacheStats};
 pub use layout::TextLayout;

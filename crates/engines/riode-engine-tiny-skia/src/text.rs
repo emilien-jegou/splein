@@ -197,26 +197,20 @@ pub fn render_text(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: TextR
     render_text_aligned(pixmap, text_ctx, params);
 }
 
-/// Display gamma assumed for coverage-to-alpha conversion.
+/// Display correction for coverage-to-alpha conversion.
 ///
-/// Coverage masks are linear-light fractions, but compositing happens in
-/// sRGB-encoded space. Blending raw coverage as alpha darkens mid-tone fringe
-/// pixels (stems render heavier than specified). The LUT below folds the
-/// transfer function in: `alpha = 1 - (1 - coverage)^(1/gamma)`, so a
-/// half-covered pixel blends to the sRGB encoding of half light instead of
-/// half ink. Monotonic, so threshold tests and bounding boxes are unaffected.
-pub const COVERAGE_GAMMA: f32 = 2.2;
-
-/// Gamma table at full opacity, computed once: 256 `powf` calls per `DrawText`
-/// showed up as a real cost with many small runs on screen, so the curve is
-/// process-wide and each run only folds in its scalar opacity (integer math).
-static GAMMA_LUT: std::sync::LazyLock<[u8; 256]> = std::sync::LazyLock::new(|| {
-    let inv_gamma = 1.0 / COVERAGE_GAMMA;
-    std::array::from_fn(|i| {
-        let linear = 1.0 - (1.0 - i as f32 / 255.0).powf(inv_gamma);
-        (linear * 255.0).round() as u8
-    })
-});
+/// Coverage masks are linear-light fractions; compositing them raw as
+/// alpha darkens mid-tone fringe pixels. The correction applied is the
+/// grayscale contrast + gamma chain in [`riode::text::gamma`] (scalar
+/// twin of the wgpu glyph shader, ported from GPUI/MS-terminal
+/// `dwrite.hlsl`) — brightness-dependent contrast plus a quadratic
+/// alpha correction, evaluated here per run into one 256-entry table.
+/// One table at all sizes: the old `line.font_size <=
+/// SMALL_TEXT_HINT_CUTOFF_PX` split (linear below, gamma above) is
+/// gone — the chain is coverage-proportional, so dense hinted stems
+/// pass through nearly unchanged while faint fringes lift, with no
+/// size heuristic. Monotonic, so threshold tests and bounding boxes
+/// are unaffected.
 
 /// Subpixel position quantum per pixel: the pen quantizes to quarters and
 /// the analytic rasterizer integrates exact coverage at the quantum (see
@@ -259,15 +253,14 @@ fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: T
         return;
     }
 
-    // Coverage-to-alpha tables for this run: small text composites raw
-    // coverage (density carries grid-fit stems), display type folds the
-    // gamma curve in. Threshold mirrors the hinter cutoff in riode
-    // (`SMALL_TEXT_HINT_CUTOFF_PX`): hinted bitmaps want linear density,
-    // linear outlines want corrected fringes.
+    // Corrected alpha table for this run: the gamma module folds the
+    // display chain (keyed off the run ink) and the scalar opacity into
+    // 256 bytes. `opacity_q` survives only as part of the line-cache key.
     let opacity_q = (total_opacity.clamp(0.0, 1.0) * 255.0).round() as u32;
-    let linear_lut: [u8; 256] = std::array::from_fn(|i| ((i as u32 * opacity_q + 127) / 255) as u8);
-    let gamma_lut: [u8; 256] =
-        std::array::from_fn(|i| ((GAMMA_LUT[i] as u32 * opacity_q + 127) / 255) as u8);
+    let alpha_table: [u8; 256] = riode::text::corrected_alpha_table(
+        [params.color.r, params.color.g, params.color.b],
+        total_opacity,
+    );
     let paint = PixmapPaint {
         opacity: 1.0,
         // Nearest: placement below is always integral (fractions are blended
@@ -358,11 +351,7 @@ fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: T
         if line.glyphs.is_empty() {
             continue;
         }
-        let alpha_lut: &[u8; 256] = if line.font_size <= riode::text::SMALL_TEXT_HINT_CUTOFF_PX {
-            &linear_lut
-        } else {
-            &gamma_lut
-        };
+        let alpha_lut: &[u8; 256] = &alpha_table;
         let dev_lx = origin.x + line.align_offset + ttx;
         let dev_top = origin.y + tty + idx as f32 * line.height;
         let integral = dev_lx.fract() == 0.0 && dev_top.fract() == 0.0 && line_cache.is_some();
@@ -485,7 +474,9 @@ fn render_text_transformed(
         return;
     }
     let paint = PixmapPaint {
-        opacity,
+        // Opacity already lives in `alpha_table` below; the draw itself
+        // must not apply it a second time.
+        opacity: 1.0,
         quality: FilterQuality::Bilinear,
         ..Default::default()
     };
@@ -493,6 +484,14 @@ fn render_text_transformed(
     // Staging buffer for glyph coverage, copied out from under the
     // font-system locks like the aligned path does.
     let mut coverage = Vec::with_capacity(256);
+
+    // Corrected alpha table shared by every glyph below: same chain as
+    // the aligned path (correct-then-premultiply, matching wgpu's
+    // correct-then-blend order).
+    let alpha_table: [u8; 256] = riode::text::corrected_alpha_table(
+        [params.color.r, params.color.g, params.color.b],
+        opacity,
+    );
 
     // One-entry tint pixmap reuse (M7): same-size glyphs (the common case
     // within one run) skip malloc+zero per glyph. Exact-size match only —
@@ -553,9 +552,10 @@ fn render_text_transformed(
                 if cov == 0 {
                     continue;
                 }
-                let tint = |c: u8| ((c as u32 * cov as u32 + 127) / 255) as u8;
+                let a = alpha_table[cov as usize];
+                let tint = |c: u8| ((c as u32 * a as u32 + 127) / 255) as u8;
                 if let Some(px) =
-                    PremultipliedColorU8::from_rgba(tint(ink_r), tint(ink_g), tint(ink_b), cov)
+                    PremultipliedColorU8::from_rgba(tint(ink_r), tint(ink_g), tint(ink_b), a)
                 {
                     *dst = px;
                 }
@@ -693,18 +693,65 @@ mod tests {
     }
 }
 
+/// sRGB byte → linear-light fraction, exact per byte (process-wide table).
+static SRGB_TO_LINEAR: std::sync::LazyLock<[f32; 256]> = std::sync::LazyLock::new(|| {
+    std::array::from_fn(|i| {
+        let c = i as f32 / 255.0;
+        if c <= 0.04045 {
+            c / 12.92
+        } else {
+            ((c + 0.055) / 1.055).powf(2.4)
+        }
+    })
+});
+
+/// Linear-light fraction → sRGB byte via a 12-bit table (quantization error
+/// far below 1 LSB on the output byte).
+static LINEAR_TO_SRGB: std::sync::LazyLock<[u8; 4096]> = std::sync::LazyLock::new(|| {
+    std::array::from_fn(|i| {
+        let c = (i as f32 / 4095.0).clamp(0.0, 1.0);
+        let s = if c <= 0.0031308 {
+            c * 12.92
+        } else {
+            1.055 * c.powf(1.0 / 2.4) - 0.055
+        };
+        (s * 255.0).round().clamp(0.0, 255.0) as u8
+    })
+});
+
+fn srgb_to_linear(byte: u8) -> f32 {
+    SRGB_TO_LINEAR[byte as usize]
+}
+
+fn linear_to_srgb_byte(linear: f32) -> u8 {
+    LINEAR_TO_SRGB[(linear.clamp(0.0, 1.0) * 4095.0).round() as usize]
+}
+
 fn blend_source_over(pixel: &mut PremultipliedColorU8, r: u8, g: u8, b: u8, a: u8) {
+    // Linear-space composite, matching the wgpu glyph shader: the ink and
+    // the destination decode to linear, blend there, and encode back.
+    // Encoded-space blending darkens light-on-dark fringes and lightens
+    // dark-on-light ones relative to wgpu (fringe 0.5 lands at 0.5 encoded
+    // vs 0.735 through linear) — a polarity-dependent weight shift far
+    // larger than any gamma-table difference, so the tables alone can never
+    // reach parity without this. LUTs keep it cheap: decode is exact per
+    // byte, encode quantizes linear to 12 bits (well under 1 LSB error).
+    // Alpha itself stays in encoded-space math (it is not a color).
+    // Only the glyph blit calls this; every other primitive keeps the old
+    // path, so the blast radius is text only.
     let sa = a as f32 / 255.0;
     let inv_sa = 1.0 - sa;
 
-    let dr = pixel.red() as f32;
-    let dg = pixel.green() as f32;
-    let db = pixel.blue() as f32;
+    let out_r = linear_to_srgb_byte(
+        srgb_to_linear(r) * sa + srgb_to_linear(pixel.red()) * inv_sa,
+    );
+    let out_g = linear_to_srgb_byte(
+        srgb_to_linear(g) * sa + srgb_to_linear(pixel.green()) * inv_sa,
+    );
+    let out_b = linear_to_srgb_byte(
+        srgb_to_linear(b) * sa + srgb_to_linear(pixel.blue()) * inv_sa,
+    );
     let da = pixel.alpha() as f32;
-
-    let out_r = ((r as f32 * sa) + (dr * inv_sa)).round().min(255.0) as u8;
-    let out_g = ((g as f32 * sa) + (dg * inv_sa)).round().min(255.0) as u8;
-    let out_b = ((b as f32 * sa) + (db * inv_sa)).round().min(255.0) as u8;
     let out_a = ((a as f32) + (da * inv_sa)).round().min(255.0) as u8;
 
     if let Some(p) = PremultipliedColorU8::from_rgba(out_r, out_g, out_b, out_a) {

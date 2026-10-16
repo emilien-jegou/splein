@@ -1,12 +1,19 @@
 // Glyph coverage sampling: plain alpha coverage from the R8 atlas,
-// then through the display transfer function, then * vertex alpha.
+// corrected for display, then * vertex alpha.
 //
 // Stores the exact coverage bitmap from the analytic rasterizer.
-// No MSDF decoding needed -- just multiply alpha by the sampled value.
+// No MSDF decoding needed.
 //
-// Transfer matches tiny-skia's GAMMA_LUT (COVERAGE_GAMMA=2.2):
-// small hinted text (<=16px, gam flag 0) composites raw coverage;
-// display type (gam flag 1) remaps coverage so stem weights match.
+// Display correction is the grayscale contrast + gamma chain ported
+// from GPUI's shaders.wgsl (itself adapted from microsoft/terminal
+// dwrite.hlsl, MIT), applied at ALL sizes: brightness-dependent
+// contrast boost plus a quadratic alpha correction driven by the
+// baked gamma-1.8 ratio row. There is deliberately no font-size
+// threshold — the chain is coverage-proportional, so dense hinted
+// stems pass through nearly unchanged while faint fringes lift.
+// Scalar twin of the correction lives in riode's text::gamma
+// (tiny-skia builds its per-run table from it); this WGSL is a
+// transliteration of that module.
 struct Ortho {
     w: f32,
     h: f32,
@@ -22,13 +29,11 @@ struct Vin {
     @location(0) pos: vec2<f32>,
     @location(1) uv: vec2<f32>,
     @location(2) color: vec4<f32>,
-    @location(3) gam: f32,
 };
 struct Vout {
     @builtin(position) pos: vec4<f32>,
     @location(0) uv: vec2<f32>,
     @location(1) color: vec4<f32>,
-    @location(2) gam: f32,
 };
 
 @vertex
@@ -39,12 +44,7 @@ fn vs_main(in: Vin) -> Vout {
     out.pos = vec4<f32>(nx, ny, 0.0, 1.0);
     out.uv = in.uv;
     out.color = in.color;
-    out.gam = in.gam;
     return out;
-}
-
-fn gamma_lut(cov: f32) -> f32 {
-    return 1.0 - pow(1.0 - cov, 1.0 / 2.2);
 }
 
 fn srgb_to_linear(c: vec3<f32>) -> vec3<f32> {
@@ -53,12 +53,56 @@ fn srgb_to_linear(c: vec3<f32>) -> vec3<f32> {
     return select(hi, lo, c <= vec3<f32>(0.04045));
 }
 
+// Grayscale contrast + gamma correction, verbatim port of GPUI's
+// shaders.wgsl chain (itself adapted from microsoft/terminal
+// dwrite.hlsl, MIT).
+//
+// Defaults match GPUI: gamma 1.8 ratio row baked below,
+// grayscale enhanced contrast 1.0 (override via uniform later).
+const GAMMA_RATIOS = vec4<f32>(0.14805442, -0.89459451, 1.47590801, -0.32466824);
+const GRAYSCALE_ENHANCED_CONTRAST = 1.0;
+
+fn color_brightness(color: vec3<f32>) -> f32 {
+    return dot(color, vec3<f32>(0.30, 0.59, 0.11));
+}
+
+fn light_on_dark_contrast(enhanced_contrast: f32, color: vec3<f32>) -> f32 {
+    let brightness = color_brightness(color);
+    let multiplier = saturate(4.0 * (0.75 - brightness));
+    return enhanced_contrast * multiplier;
+}
+
+fn enhance_contrast(alpha: f32, k: f32) -> f32 {
+    return alpha * (k + 1.0) / (alpha * k + 1.0);
+}
+
+fn apply_alpha_correction(a: f32, b: f32, g: vec4<f32>) -> f32 {
+    let brightness_adjustment = g.x * b + g.y;
+    let correction = brightness_adjustment * a + (g.z * b + g.w);
+    return a + a * (1.0 - a) * correction;
+}
+
+fn apply_contrast_and_gamma_correction(
+    sample: f32,
+    color: vec3<f32>,
+    enhanced_contrast_factor: f32,
+    gamma_ratios: vec4<f32>,
+) -> f32 {
+    let enhanced_contrast = light_on_dark_contrast(enhanced_contrast_factor, color);
+    let brightness = color_brightness(color);
+    let contrasted = enhance_contrast(sample, enhanced_contrast);
+    return apply_alpha_correction(contrasted, brightness, gamma_ratios);
+}
+
 @fragment
 fn fs_main(in: Vout) -> @location(0) vec4<f32> {
-    var cov = textureSample(atlas, atlas_sampler, in.uv).r;
-    if (in.gam > 0.5) {
-        cov = gamma_lut(cov);
-    }
+    let sample = textureSample(atlas, atlas_sampler, in.uv).r;
+    let cov = apply_contrast_and_gamma_correction(
+        sample,
+        in.color.rgb,
+        GRAYSCALE_ENHANCED_CONTRAST,
+        GAMMA_RATIOS,
+    );
     // Vertex color is sRGB-encoded; decode to linear so the sRGB
     // persistent target blends in linear. Coverage stays a plain alpha
     // multiplier (it is a coverage correction, not a color space one).

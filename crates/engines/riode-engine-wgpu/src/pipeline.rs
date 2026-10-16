@@ -31,15 +31,13 @@ impl RectVertex {
     }
 }
 
-/// CPU-transformed glyph vertex: screen-space pixels + atlas UV + color
-/// + gamma flag (1.0 = display transfer, 0.0 = linear small text).
+/// CPU-transformed glyph vertex: screen-space pixels + atlas UV + color.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct GlyphVertex {
     pub pos: [f32; 2],
     pub uv: [f32; 2],
     pub color: [f32; 4],
-    pub gam: f32,
 }
 
 impl GlyphVertex {
@@ -62,11 +60,6 @@ impl GlyphVertex {
                     offset: 16,
                     shader_location: 2,
                     format: wgpu::VertexFormat::Float32x4,
-                },
-                wgpu::VertexAttribute {
-                    offset: 32,
-                    shader_location: 3,
-                    format: wgpu::VertexFormat::Float32,
                 },
             ],
         }

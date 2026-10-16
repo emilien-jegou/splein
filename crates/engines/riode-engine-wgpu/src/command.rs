@@ -814,9 +814,6 @@ impl Batch {
         let q = quantize_raster_scale(self.scale);
         let sq16 = (q * 16.0).round() as u16;
         for line in layout.lines.iter() {
-            // Size-split transfer: hinted small text composites raw
-            // coverage; display type remaps through the gamma LUT.
-            let gam = if line.font_size <= 16.0 { 0.0 } else { 1.0 };
             for g in line.glyphs.iter() {
                 let pen_x = origin.x + g.point.x + line.align_offset;
                 let pen_y = origin.y + g.point.y;
@@ -889,7 +886,6 @@ impl Batch {
                         pos: q[i].0,
                         uv: q[i].1,
                         color: c,
-                        gam,
                     });
                 }
                 self.push_glyph_run(6, true);
