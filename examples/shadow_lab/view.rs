@@ -63,40 +63,6 @@ pub(crate) fn Page() -> impl IntoElement {
                     label="Typical Shadow"
                     shadow={Shadow::web_like(3.0, 6.0, 6.0, 0.0, Color::rgba(0.0, 0.0, 0.0, 0.35))}
                 />
-                // TEMPORARY diagnostics (remove after): zero offset isolates
-                // whether the bottom band follows the offset; big offset
-                // tests whether any hole scales with oy.
-                <Card
-                    label="probe zero-offset"
-                    shadow={Shadow::web_like(0.0, 0.0, 6.0, 0.0, Color::rgba(0.0, 0.0, 0.0, 0.35))}
-                />
-                <Card
-                    label="probe big-offset"
-                    shadow={Shadow::web_like(0.0, 20.0, 6.0, 0.0, Color::rgba(0.0, 0.0, 0.0, 0.35))}
-                />
-                // TEMPORARY isolation (remove after): single layers tell
-                // whether squareness lives in one layer (geometry) or only
-                // in the stack (profile/stacking interaction).
-                <Card
-                    label="probe single big"
-                    shadow={Shadow::layered(Color::rgba(
-                        122.0 / 255.0,
-                        61.0 / 255.0,
-                        143.0 / 255.0,
-                        0.15,
-                    ))
-                    .drop(8.0, 16.0, 16.0)}
-                />
-                <Card
-                    label="probe single small"
-                    shadow={Shadow::layered(Color::rgba(
-                        122.0 / 255.0,
-                        61.0 / 255.0,
-                        143.0 / 255.0,
-                        0.15,
-                    ))
-                    .drop(0.5, 1.0, 1.0)}
-                />
                 <Card
                     label="Optimized Shadow"
                     shadow={Shadow::layered(Color::rgba(

@@ -5,6 +5,7 @@
 !cliff.toml
 !CHANGELOG.md
 !optimization_plan.md
+!plan_wgpu.md
 !.gitignore
 !Cargo.lock
 !Cargo.toml

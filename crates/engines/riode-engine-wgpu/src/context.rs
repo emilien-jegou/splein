@@ -31,7 +31,7 @@ fn make_persistent(device: &Device, width: u32, height: u32) -> (Texture, Textur
         mip_level_count: 1,
         sample_count: 1,
         dimension: TextureDimension::D2,
-        format: TextureFormat::Rgba8Unorm,
+        format: TextureFormat::Rgba8UnormSrgb,
         usage: TextureUsages::RENDER_ATTACHMENT
             | TextureUsages::TEXTURE_BINDING
             | TextureUsages::COPY_DST
@@ -42,11 +42,13 @@ fn make_persistent(device: &Device, width: u32, height: u32) -> (Texture, Textur
     (texture, view)
 }
 
-/// Gamma-agnostic format pick: scene bytes are sRGB-encoded and must
-/// reach the compositor unmodified. Writing to an `*Srgb` surface would
-/// hardware-encode linear->sRGB on store (double gamma), so prefer plain
-/// Unorm formats. Only if none exists, take sRGB and let the blit decode
-/// first so the hardware re-encode nets identity.
+/// Gamma-agnostic format pick: the persistent scene target is *Srgb
+/// (hardware blends in linear — fragment shaders output linear values and
+/// the store re-encodes). The blit reads linear off that target and must
+/// emit sRGB-encoded bytes: it encodes itself on a plain Unorm swapchain,
+/// or hands linear to an sRGB swapchain whose hardware OETF encodes on
+/// store. Either pairing nets correct output; prefer plain Unorm (the
+/// blit path is exact byte control) and only fall back to sRGB surfaces.
 fn pick_format(formats: &[TextureFormat]) -> TextureFormat {
     let picked = [TextureFormat::Bgra8Unorm, TextureFormat::Rgba8Unorm]
         .into_iter()
@@ -60,9 +62,9 @@ fn pick_format(formats: &[TextureFormat]) -> TextureFormat {
                 .unwrap_or(TextureFormat::Bgra8Unorm),
         );
     if picked.is_srgb() {
-        tracing::warn!(
+        tracing::info!(
             ?picked,
-            "no Unorm swapchain format available; blit will decode so the HW re-encode nets identity",
+            "sRGB swapchain: blit hands linear values to the hardware OETF",
         );
     }
     picked

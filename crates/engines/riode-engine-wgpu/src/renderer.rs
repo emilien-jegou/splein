@@ -4,18 +4,34 @@ use riode::foundation::{Color, DamageRegion, ResolvedRect};
 use riode::render::BackendError;
 use riode::scene::scene::Scene;
 use riode::text::TextContext;
+use std::sync::Arc;
 
 use crate::cache::{chunk_base, chunk_key, ChunkCache};
 use crate::command::{Batch, Op};
 use crate::context::WgpuContext;
-use crate::pipeline::{create_pipelines, GlyphVertex, Pipelines, RRectVertex, RectVertex};
+use crate::image::ImageCache;
+use crate::pipeline::{
+    create_pipelines, GlyphVertex, ImageVertex, Pipelines, RRectVertex, RectVertex, ShadowVertex,
+};
+use crate::svg::SvgCache;
 use crate::text::GlyphAtlas;
 
+fn srgb_to_linear(c: f64) -> f64 {
+    if c <= 0.04045 {
+        c / 12.92
+    } else {
+        ((c + 0.055) / 1.055).powf(2.4)
+    }
+}
+
 fn to_wgpu(c: Color) -> wgpu::Color {
+    // WebGPU treats clearValue on an sRGB attachment as *linear* (encoded
+    // on store like fragment output). The CPU base color is sRGB-encoded;
+    // decode so the stored bytes match the logical color.
     wgpu::Color {
-        r: c.r as f64,
-        g: c.g as f64,
-        b: c.b as f64,
+        r: srgb_to_linear(c.r as f64),
+        g: srgb_to_linear(c.g as f64),
+        b: srgb_to_linear(c.b as f64),
         a: c.a as f64,
     }
 }
@@ -36,6 +52,12 @@ pub struct WgpuRenderer {
     glyph_cap: u64,
     rrect_buf: wgpu::Buffer,
     rrect_cap: u64,
+    shadow_buf: wgpu::Buffer,
+    shadow_cap: u64,
+    image_buf: wgpu::Buffer,
+    image_cap: u64,
+    images: ImageCache,
+    svgs: SvgCache,
     scale: f32,
     chunks: ChunkCache,
     /// Force a Clear of the persistent target on the next frame. Set at
@@ -83,7 +105,7 @@ impl WgpuRenderer {
     pub fn new(gpu: WgpuContext, text_ctx: TextContext) -> Self {
         let pipes = create_pipelines(
             &gpu.device,
-            wgpu::TextureFormat::Rgba8Unorm,
+            wgpu::TextureFormat::Rgba8UnormSrgb,
             gpu.config.format,
         );
         let (ortho_buf, ortho_bg) = make_ortho(
@@ -139,6 +161,20 @@ impl WgpuRenderer {
             "riode-wgpu-rrects",
             rrect_cap * std::mem::size_of::<RRectVertex>() as u64,
         );
+        let shadow_cap = 512u64;
+        let shadow_buf = make_vert_buf(
+            &gpu.device,
+            "riode-wgpu-shadows",
+            shadow_cap * std::mem::size_of::<ShadowVertex>() as u64,
+        );
+        let image_cap = 512u64;
+        let image_buf = make_vert_buf(
+            &gpu.device,
+            "riode-wgpu-images",
+            image_cap * std::mem::size_of::<ImageVertex>() as u64,
+        );
+        let images = ImageCache::new(&gpu.device);
+        let svgs = SvgCache::new();
         Self {
             gpu,
             pipes,
@@ -155,6 +191,12 @@ impl WgpuRenderer {
             glyph_cap,
             rrect_buf,
             rrect_cap,
+            shadow_buf,
+            shadow_cap,
+            image_buf,
+            image_cap,
+            images,
+            svgs,
             scale: 1.0,
             chunks: ChunkCache::default(),
             clear_next: true,
@@ -244,6 +286,38 @@ impl WgpuRenderer {
             cap * std::mem::size_of::<RRectVertex>() as u64,
         );
         self.rrect_cap = cap;
+    }
+
+    fn ensure_shadow_cap(&mut self, need: u64) {
+        if need <= self.shadow_cap {
+            return;
+        }
+        let mut cap = self.shadow_cap.max(1);
+        while cap < need {
+            cap *= 2;
+        }
+        self.shadow_buf = make_vert_buf(
+            &self.gpu.device,
+            "riode-wgpu-shadows",
+            cap * std::mem::size_of::<ShadowVertex>() as u64,
+        );
+        self.shadow_cap = cap;
+    }
+
+    fn ensure_image_cap(&mut self, need: u64) {
+        if need <= self.image_cap {
+            return;
+        }
+        let mut cap = self.image_cap.max(1);
+        while cap < need {
+            cap *= 2;
+        }
+        self.image_buf = make_vert_buf(
+            &self.gpu.device,
+            "riode-wgpu-images",
+            cap * std::mem::size_of::<ImageVertex>() as u64,
+        );
+        self.image_cap = cap;
     }
 
     /// Bounds culling viewport in layout px: chunk bounds and damage are
@@ -337,15 +411,19 @@ impl WgpuRenderer {
         // glyph re-raster entirely) or fresh emission on miss.
         // Disjoint field borrows keep borrowck happy.
         {
-            let (batch, atlas, text_ctx, gpu, chunks) = (
+            let (batch, atlas, text_ctx, gpu, chunks, images, svgs) = (
                 &mut self.batch,
                 &mut self.atlas,
                 &self.text_ctx,
                 &self.gpu,
                 &mut self.chunks,
+                &mut self.images,
+                &mut self.svgs,
             );
             atlas.next_frame();
             chunks.next_frame();
+            images.next_frame();
+            svgs.next_frame();
             batch.set_scale(self.scale);
             batch.reset();
             // Tile semantics for partial damage: repaint the damaged area
@@ -386,13 +464,23 @@ impl WgpuRenderer {
                             let rb = batch.rect_verts.len() as u32;
                             let gb = batch.glyph_verts.len() as u32;
                             let qb = batch.rrect_verts.len() as u32;
+                            let sb = batch.shadow_verts.len() as u32;
+                            let ib = batch.image_verts.len() as u32;
+                            let ibb = batch.image_binds.len() as u32;
                             batch.rect_verts.extend_from_slice(&hit.rects);
                             batch.glyph_verts.extend_from_slice(&hit.glyphs);
                             batch.rrect_verts.extend_from_slice(&hit.rrects);
+                            batch.shadow_verts.extend_from_slice(&hit.shadows);
+                            batch.image_verts.extend_from_slice(&hit.images);
+                            batch
+                                .image_binds
+                                .extend(hit.image_binds.iter().map(Arc::clone));
                             // Extend in place (N2): the temp Vec was a per-chunk
                             // alloc on the replay path.
                             batch.ops.extend(
-                                hit.ops.iter().map(|op| ChunkCache::rebased(op, rb, gb, qb)),
+                                hit.ops
+                                    .iter()
+                                    .map(|op| ChunkCache::rebased(op, rb, gb, qb, sb, ib, ibb)),
                             );
                             true
                         }
@@ -400,17 +488,27 @@ impl WgpuRenderer {
                             let rb = batch.rect_verts.len() as u32;
                             let gb = batch.glyph_verts.len() as u32;
                             let qb = batch.rrect_verts.len() as u32;
+                            let sb = batch.shadow_verts.len() as u32;
+                            let ib = batch.image_verts.len() as u32;
+                            let ibb = batch.image_binds.len() as u32;
                             hit.append_rebased(
                                 dx,
                                 dy,
                                 &mut batch.rect_verts,
                                 &mut batch.glyph_verts,
                                 &mut batch.rrect_verts,
+                                &mut batch.shadow_verts,
+                                &mut batch.image_verts,
                             );
+                            batch
+                                .image_binds
+                                .extend(hit.image_binds.iter().map(Arc::clone));
                             // Extend in place (N2): the temp Vec was a per-chunk
                             // alloc on the replay path.
                             batch.ops.extend(
-                                hit.ops.iter().map(|op| ChunkCache::rebased(op, rb, gb, qb)),
+                                hit.ops
+                                    .iter()
+                                    .map(|op| ChunkCache::rebased(op, rb, gb, qb, sb, ib, ibb)),
                             );
                             true
                         }
@@ -421,17 +519,28 @@ impl WgpuRenderer {
                 if replayed {
                     continue;
                 }
-                let (r0, g0, q0, o0) = (
+                let (r0, g0, q0, s0, i0, ib0, o0) = (
                     batch.rect_verts.len(),
                     batch.glyph_verts.len(),
                     batch.rrect_verts.len(),
+                    batch.shadow_verts.len(),
+                    batch.image_verts.len(),
+                    batch.image_binds.len(),
                     batch.ops.len(),
                 );
                 for clip in chunk.inherited_clips.iter() {
                     batch.push_clip_device(&clip.rect, clip.radius);
                 }
                 batch.push_base(chunk_base(chunk));
-                batch.commands(&chunk.commands, text_ctx, atlas, &gpu.queue);
+                batch.commands(
+                    &chunk.commands,
+                    text_ctx,
+                    atlas,
+                    &gpu.queue,
+                    &gpu.device,
+                    images,
+                    svgs,
+                );
                 batch.pop_base();
                 for _ in chunk.inherited_clips.iter() {
                     batch.clip.pop();
@@ -440,9 +549,15 @@ impl WgpuRenderer {
                 let r0u = r0 as u32;
                 let g0u = g0 as u32;
                 let q0u = q0 as u32;
+                let s0u = s0 as u32;
+                let i0u = i0 as u32;
+                let ib0u = ib0 as u32;
                 let rects = batch.rect_verts[r0..].to_vec();
                 let glyphs = batch.glyph_verts[g0..].to_vec();
                 let rrects = batch.rrect_verts[q0..].to_vec();
+                let shadows = batch.shadow_verts[s0..].to_vec();
+                let images_v = batch.image_verts[i0..].to_vec();
+                let image_binds = batch.image_binds[ib0..].to_vec();
                 let ops: Vec<Op> = batch.ops[o0..]
                     .iter()
                     .map(|op| match *op {
@@ -482,6 +597,26 @@ impl WgpuRenderer {
                             scissor,
                             linear,
                         },
+                        Op::Shadows {
+                            start,
+                            count,
+                            scissor,
+                        } => Op::Shadows {
+                            start: start - s0u,
+                            count,
+                            scissor,
+                        },
+                        Op::Images {
+                            start,
+                            count,
+                            scissor,
+                            bind,
+                        } => Op::Images {
+                            start: start - i0u,
+                            count,
+                            scissor,
+                            bind: bind - ib0u,
+                        },
                     })
                     .collect();
                 chunks.insert(
@@ -490,6 +625,9 @@ impl WgpuRenderer {
                         rects,
                         glyphs,
                         rrects,
+                        shadows,
+                        images_v,
+                        image_binds,
                         ops,
                         atlas.generation(),
                         chunk.abs_origin,
@@ -523,6 +661,22 @@ impl WgpuRenderer {
                 &self.rrect_buf,
                 0,
                 bytemuck::cast_slice(&self.batch.rrect_verts),
+            );
+        }
+        if !self.batch.shadow_verts.is_empty() {
+            self.ensure_shadow_cap(self.batch.shadow_verts.len() as u64);
+            self.gpu.queue.write_buffer(
+                &self.shadow_buf,
+                0,
+                bytemuck::cast_slice(&self.batch.shadow_verts),
+            );
+        }
+        if !self.batch.image_verts.is_empty() {
+            self.ensure_image_cap(self.batch.image_verts.len() as u64);
+            self.gpu.queue.write_buffer(
+                &self.image_buf,
+                0,
+                bytemuck::cast_slice(&self.batch.image_verts),
             );
         }
         {
@@ -605,6 +759,19 @@ impl WgpuRenderer {
                         pass.set_vertex_buffer(0, self.rrect_buf.slice(..));
                         pass.draw(*start..*start + *count, 0..1);
                     }
+                    Op::Shadows {
+                        start,
+                        count,
+                        scissor,
+                    } => {
+                        if !Self::apply_scissor(&mut pass, scissor, sw, sh) {
+                            continue;
+                        }
+                        pass.set_pipeline(&self.pipes.shadow_pipeline);
+                        pass.set_bind_group(0, &self.ortho_bg, &[]);
+                        pass.set_vertex_buffer(0, self.shadow_buf.slice(..));
+                        pass.draw(*start..*start + *count, 0..1);
+                    }
                     Op::Glyphs {
                         start,
                         count,
@@ -626,6 +793,24 @@ impl WgpuRenderer {
                             &[],
                         );
                         pass.set_vertex_buffer(0, self.glyph_buf.slice(..));
+                        pass.draw(*start..*start + *count, 0..1);
+                    }
+                    Op::Images {
+                        start,
+                        count,
+                        scissor,
+                        bind,
+                    } => {
+                        if !Self::apply_scissor(&mut pass, scissor, sw, sh) {
+                            continue;
+                        }
+                        let Some(img) = self.batch.image_binds.get(*bind as usize) else {
+                            continue;
+                        };
+                        pass.set_pipeline(&self.pipes.image_pipeline);
+                        pass.set_bind_group(0, &self.ortho_bg, &[]);
+                        pass.set_bind_group(1, &img.bind, &[]);
+                        pass.set_vertex_buffer(0, self.image_buf.slice(..));
                         pass.draw(*start..*start + *count, 0..1);
                     }
                 }

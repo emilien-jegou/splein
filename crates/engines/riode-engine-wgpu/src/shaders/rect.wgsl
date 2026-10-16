@@ -1,5 +1,7 @@
 // Batched solid rects: CPU-transformed screen-space verts + per-vertex color.
-// Ortho uniform maps pixels -> NDC. Alpha blending handles opacity.
+// Ortho uniform maps pixels -> NDC. Vertex colors arrive sRGB-encoded and
+// are decoded to linear here: the sRGB persistent target blends in linear
+// and re-encodes on store (hardware linear compositing).
 struct Ortho {
     w: f32,
     h: f32,
@@ -26,7 +28,13 @@ fn vs_main(in: Vin) -> Vout {
     return out;
 }
 
+fn srgb_to_linear(c: vec3<f32>) -> vec3<f32> {
+    let lo = c / 12.92;
+    let hi = pow((c + vec3<f32>(0.055)) / vec3<f32>(1.055), vec3<f32>(2.4));
+    return select(hi, lo, c <= vec3<f32>(0.04045));
+}
+
 @fragment
 fn fs_main(in: Vout) -> @location(0) vec4<f32> {
-    return in.color;
+    return vec4<f32>(srgb_to_linear(in.color.rgb), in.color.a);
 }

@@ -18,7 +18,7 @@ pub use crate::dsl::{
     VirtualScrollView, VirtualScrollViewProps,
 };
 pub use crate::foundation::{
-    Alignment, Anchor, BlendMode, Color, Direction, Distribution, FalloffCurve, Fill, Gap,
+    Alignment, Anchor, BlendMode, Color, Direction, Distribution, Edges, FalloffCurve, Fill, Gap,
     LayoutPresence, LightEnvironment, Margin, Padding, Radius, RenderDriver, Shadow,
     ShadowOffset, ShadowShape, Size, Stroke, StrokeAlign, Transform,
 };

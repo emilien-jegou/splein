@@ -9,7 +9,7 @@
 # Release (no hot-reload, statically linked):
 #   cargo run -p riode-examples --example <name> --release
 # Hot-reloadable names (tree-only views: any examples/<name>/ dir with hot.rs):
-#   demo1 demo2 demo3 motion_accordion motion_playback
+#   border_lab gradient_lab image_lab demo1 demo2 demo3 motion_accordion motion_playback
 #   motion_imperative motion_interruption motion_layout_split motion_press
 #   motion_reorder motion_signals motion_transitions motion_validate
 #   selectable_text shadow_lab shadow_studio scroll_demo text_demo text_smooth view_demo wave1_repro wrap_repro

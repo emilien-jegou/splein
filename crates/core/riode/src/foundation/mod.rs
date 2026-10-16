@@ -9,7 +9,7 @@
 //!
 //! | Concern | Types |
 //! |---------|-------|
-//! | Color & paint | [`Color`], [`Fill`], [`Stroke`], [`Radius`], [`Appearance`] |
+//! | Color & paint | [`Color`], [`Fill`], [`Stroke`], [`Edges`], [`Radius`], [`Appearance`] |
 //! | Geometry | [`Point`], [`ResolvedRect`], [`Transform`], [`Margin`], [`Gap`] |
 //! | Layout intent | [`Size`], [`Constraints`], [`Alignment`], [`Direction`], [`Distribution`], [`LayoutPresence`] |
 //! | Depth & light | [`Shadow`], [`LightEnvironment`], [`FalloffCurve`] |
@@ -52,6 +52,7 @@ pub mod appearance;
 pub mod color;
 pub mod constraints;
 pub mod content;
+pub mod edges;
 pub mod falloff;
 pub mod fill;
 pub mod geometry;
@@ -73,6 +74,7 @@ pub use appearance::*;
 pub use color::*;
 pub use constraints::*;
 pub use content::*;
+pub use edges::*;
 pub use falloff::*;
 pub use fill::*;
 pub use geometry::*;

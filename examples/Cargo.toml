@@ -27,6 +27,18 @@ os-clipboard = ["riode/os-clipboard"]
 tracy = ["riode/tracy"]
 
 [[example]]
+name = "border_lab"
+path = "border_lab/main.rs"
+
+[[example]]
+name = "gradient_lab"
+path = "gradient_lab/main.rs"
+
+[[example]]
+name = "image_lab"
+path = "image_lab/main.rs"
+
+[[example]]
 name = "demo1"
 path = "demo1/main.rs"
 

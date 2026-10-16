@@ -73,17 +73,26 @@ impl GlyphVertex {
     }
 }
 
-/// Rounded-rect vertex: device-space fill box + corner radii + fill /
-/// stroke colors + (stroke_width, ring_expand, unused, unused).
+/// Rounded-rect vertex: device-space outer box + inner (fill) box +
+/// corner radii for both walls + fill / stroke colors + gradient slot.
+///
+/// StrokeAlign is fully resolved CPU-side: `fbox`/`radii` are the outer
+/// wall (fill + border), `ibox`/`iradii` the inner wall (fill only). The
+/// fragment paints fill inside the inner wall and border between walls
+/// (SDF double-wall). `grad` is reserved for gradient fills
+/// (dir.x, dir.y, stop0_t, stop1_t) with the mode flag in `grad.w`;
+/// zeroed for solid fills.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct RRectVertex {
     pub pos: [f32; 2],
     pub fbox: [f32; 4],
     pub radii: [f32; 4],
+    pub ibox: [f32; 4],
+    pub iradii: [f32; 4],
     pub fill: [f32; 4],
     pub stroke: [f32; 4],
-    pub params: [f32; 4],
+    pub grad: [f32; 4],
 }
 
 impl RRectVertex {
@@ -122,6 +131,107 @@ impl RRectVertex {
                     shader_location: 5,
                     format: wgpu::VertexFormat::Float32x4,
                 },
+                wgpu::VertexAttribute {
+                    offset: 88,
+                    shader_location: 6,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    offset: 104,
+                    shader_location: 7,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+            ],
+        }
+    }
+}
+
+/// Shadow quad: device-space spread+offset box + corner radii + color
+/// with layer alpha pre-baked (intensity * color.a * layer.opacity *
+/// node opacity) + sigma in `params.x`.
+///
+/// One vertex run per shadow *layer* (multi-layer shadows emit several
+/// runs) — keeps the attribute count low and the CPU order (extent
+/// descending, tighter over softer) identical to the other engines.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct ShadowVertex {
+    pub pos: [f32; 2],
+    pub fbox: [f32; 4],
+    pub radii: [f32; 4],
+    pub color: [f32; 4],
+    pub params: [f32; 4],
+}
+
+impl ShadowVertex {
+    pub fn layout() -> wgpu::VertexBufferLayout<'static> {
+        wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<Self>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    shader_location: 0,
+                    format: wgpu::VertexFormat::Float32x2,
+                },
+                wgpu::VertexAttribute {
+                    offset: 8,
+                    shader_location: 1,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    offset: 24,
+                    shader_location: 2,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    offset: 40,
+                    shader_location: 3,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    offset: 56,
+                    shader_location: 4,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+            ],
+        }
+    }
+}
+
+/// Textured image quad: device-space corners + full-texture UV + tint
+/// (straight-alpha, premultiplied in the shader) + current opacity in
+/// `color.a`. Full-quad UVs let the hardware pick the mip level from
+/// screen-space derivatives.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct ImageVertex {
+    pub pos: [f32; 2],
+    pub uv: [f32; 2],
+    pub color: [f32; 4],
+}
+
+impl ImageVertex {
+    pub fn layout() -> wgpu::VertexBufferLayout<'static> {
+        wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<Self>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    shader_location: 0,
+                    format: wgpu::VertexFormat::Float32x2,
+                },
+                wgpu::VertexAttribute {
+                    offset: 8,
+                    shader_location: 1,
+                    format: wgpu::VertexFormat::Float32x2,
+                },
+                wgpu::VertexAttribute {
+                    offset: 16,
+                    shader_location: 2,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
             ],
         }
     }
@@ -133,6 +243,7 @@ pub struct Pipelines {
     /// damage-base quads replace stale pixels instead of blending over.
     pub rect_replace_pipeline: wgpu::RenderPipeline,
     pub rrect_pipeline: wgpu::RenderPipeline,
+    pub shadow_pipeline: wgpu::RenderPipeline,
     pub ortho_layout: wgpu::BindGroupLayout,
     pub blit_layout: wgpu::BindGroupLayout,
     pub blit_pipeline: wgpu::RenderPipeline,
@@ -140,6 +251,7 @@ pub struct Pipelines {
     pub glyph_layout: wgpu::BindGroupLayout,
     pub glyph_sampler_linear: wgpu::Sampler,
     pub glyph_sampler_nearest: wgpu::Sampler,
+    pub image_pipeline: wgpu::RenderPipeline,
 }
 
 fn ortho_bind_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
@@ -158,7 +270,7 @@ fn ortho_bind_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
     })
 }
 
-fn glyph_bind_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+pub(crate) fn glyph_bind_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
     device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("riode-wgpu-glyph-layout"),
         entries: &[
@@ -284,6 +396,42 @@ pub fn create_pipelines(
         multiview: None,
     });
 
+    // Shadow pipeline: SDF box blurred by a 4-tap Gaussian integral
+    // along the distance axis (same target, straight alpha).
+    let shadow_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("riode-wgpu-shadow"),
+        source: wgpu::ShaderSource::Wgsl(include_str!("shaders/shadow.wgsl").into()),
+    });
+    let shadow_pipe_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("riode-wgpu-shadow-pipe-layout"),
+        bind_group_layouts: &[&ortho_layout],
+        push_constant_ranges: &[],
+    });
+    let shadow_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("riode-wgpu-shadow-pipeline"),
+        layout: Some(&shadow_pipe_layout),
+        vertex: wgpu::VertexState {
+            module: &shadow_shader,
+            entry_point: "vs_main",
+            compilation_options: Default::default(),
+            buffers: &[ShadowVertex::layout()],
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &shadow_shader,
+            entry_point: "fs_main",
+            compilation_options: Default::default(),
+            targets: &[Some(wgpu::ColorTargetState {
+                format: target_format,
+                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
+        primitive: wgpu::PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        multiview: None,
+    });
+
     // Blit pipeline (persistent target -> swapchain).
     let blit_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("riode-wgpu-blit"),
@@ -321,8 +469,8 @@ pub fn create_pipelines(
             entry_point: "fs_main",
             compilation_options: wgpu::PipelineCompilationOptions {
                 constants: &std::collections::HashMap::from([(
-                    "SRGB_DECODE".to_string(),
-                    if swapchain_format.is_srgb() { 1.0 } else { 0.0 },
+                    "SRGB_ENCODE".to_string(),
+                    if swapchain_format.is_srgb() { 0.0 } else { 1.0 },
                 )]),
                 ..Default::default()
             },
@@ -386,10 +534,49 @@ pub fn create_pipelines(
         multiview: None,
     });
 
+    // Image pipeline: premultiplied sRGB bytes -> linear (shader un-
+    // premultiplies, decodes, re-premultiplies) -> persistent target,
+    // premultiplied alpha, per-image bind group on group 1 (same layout
+    // shape as the glyph atlas).
+    let image_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("riode-wgpu-image"),
+        source: wgpu::ShaderSource::Wgsl(include_str!("shaders/image.wgsl").into()),
+    });
+    let image_pipe_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("riode-wgpu-image-pipe-layout"),
+        bind_group_layouts: &[&ortho_layout, &glyph_layout],
+        push_constant_ranges: &[],
+    });
+    let image_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("riode-wgpu-image-pipeline"),
+        layout: Some(&image_pipe_layout),
+        vertex: wgpu::VertexState {
+            module: &image_shader,
+            entry_point: "vs_main",
+            compilation_options: Default::default(),
+            buffers: &[ImageVertex::layout()],
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &image_shader,
+            entry_point: "fs_main",
+            compilation_options: Default::default(),
+            targets: &[Some(wgpu::ColorTargetState {
+                format: target_format,
+                blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
+        primitive: wgpu::PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        multiview: None,
+    });
+
     Pipelines {
         rect_pipeline,
         rect_replace_pipeline,
         rrect_pipeline,
+        shadow_pipeline,
         ortho_layout,
         blit_layout,
         blit_pipeline,
@@ -397,5 +584,6 @@ pub fn create_pipelines(
         glyph_layout,
         glyph_sampler_linear,
         glyph_sampler_nearest,
+        image_pipeline,
     }
 }

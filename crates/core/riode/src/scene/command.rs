@@ -314,6 +314,18 @@ fn appearance_bits(a: &Appearance) -> Vec<u32> {
                 StrokeAlign::Center => 1,
                 StrokeAlign::Outside => 2,
             });
+            match &s.per_edge {
+                None => v.push(0),
+                Some(e) => {
+                    v.push(1);
+                    v.extend([
+                        e.top.to_bits(),
+                        e.right.to_bits(),
+                        e.bottom.to_bits(),
+                        e.left.to_bits(),
+                    ]);
+                }
+            }
             v.extend(fill_bits(&s.fill));
         }
     }

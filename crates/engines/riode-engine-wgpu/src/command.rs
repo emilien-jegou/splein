@@ -1,15 +1,20 @@
 // Single responsibility: SceneCommand -> batched rect + glyph vertex emission.
 
-use riode::foundation::{Color, Fill, Point, Radius, ResolvedRect, StrokeAlign, Transform};
+use riode::foundation::{
+    Color, Fill, LightEnvironment, Point, Radius, ResolvedRect, Shadow, ShadowShape,
+    StrokeAlign, Transform,
+};
 use riode::scene::command::SceneCommand;
 use riode::text::{quantize_raster_scale, TextContext};
 use std::sync::Arc;
 
 use crate::clip::ClipStack;
-use crate::pipeline::{GlyphVertex, RRectVertex, RectVertex};
+use crate::image::ImageGpu;
+use crate::pipeline::{GlyphVertex, ImageVertex, RRectVertex, RectVertex, ShadowVertex};
 use crate::text::GlyphAtlas;
 
 static WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static WARNED_MULTIPLY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 fn warn_once(msg: &str) {
     if !WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
@@ -17,7 +22,44 @@ fn warn_once(msg: &str) {
     }
 }
 
-/// One draw op over the rect, glyph, or rounded-rect vertex buffers.
+/// Separate flag so the blend approximation isn't silenced by an
+/// earlier unrelated skip warning (elevation shadows are common).
+fn warn_multiply_once() {
+    if !WARNED_MULTIPLY.swap(true, std::sync::atomic::Ordering::Relaxed) {
+        tracing::warn!(
+            "riode-wgpu: Shadow BlendMode::Multiply approximated as Normal (further silent)"
+        );
+    }
+}
+
+/// Exact sRGB EOTF (encoded -> linear), matching the shader decode.
+fn srgb_to_linear1(c: f32) -> f32 {
+    if c <= 0.04045 {
+        c / 12.92
+    } else {
+        ((c + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+/// sRGB (encoded) -> Oklab (Bjorn Ottosson). Linear-ized first: the LMS
+/// matrices take linear RGB. `cbrt` is sign-preserving, so the (always
+/// non-negative) LMS cube roots are exact.
+fn srgb_to_oklab(c: [f32; 3]) -> [f32; 3] {
+    let r = srgb_to_linear1(c[0]);
+    let g = srgb_to_linear1(c[1]);
+    let b = srgb_to_linear1(c[2]);
+    let l = 0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b;
+    let m = 0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b;
+    let s = 0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b;
+    let (l_, m_, s_) = (l.cbrt(), m.cbrt(), s.cbrt());
+    [
+        0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_,
+        1.9779984951 * l_ - 2.4285922050 * m_ + 0.4505937099 * s_,
+        0.0259040371 * l_ + 0.7827717662 * m_ - 0.8086757660 * s_,
+    ]
+}
+
+/// One draw op over the rect, glyph, rounded-rect, or shadow vertex buffers.
 #[derive(Clone, Copy)]
 pub enum Op {
     Rects {
@@ -30,10 +72,23 @@ pub enum Op {
         count: u32,
         scissor: Option<ResolvedRect>,
     },
+    Shadows {
+        start: u32,
+        count: u32,
+        scissor: Option<ResolvedRect>,
+    },
     /// Opaque base-color quads repainting the damaged area on partial
     /// frames. Always emitted first; drawn with blending disabled so they
     /// replace stale pixels instead of blending over them.
     BaseQuads { start: u32, count: u32 },
+    /// One textured quad; `bind` indexes the batch's `image_binds`
+    /// (each image has its own texture, so ops never merge).
+    Images {
+        start: u32,
+        count: u32,
+        scissor: Option<ResolvedRect>,
+        bind: u32,
+    },
     Glyphs {
         start: u32,
         count: u32,
@@ -51,7 +106,13 @@ pub struct Batch {
     pub clip: ClipStack,
     pub rect_verts: Vec<RectVertex>,
     pub rrect_verts: Vec<RRectVertex>,
+    pub shadow_verts: Vec<ShadowVertex>,
     pub glyph_verts: Vec<GlyphVertex>,
+    pub image_verts: Vec<ImageVertex>,
+    /// GPU textures referenced by `Op::Images.bind` indices. Arc-held so
+    /// a cached chunk's replayed ops stay valid past LRU eviction from
+    /// the texture cache (the Arc is the refcount).
+    pub image_binds: Vec<Arc<ImageGpu>>,
     pub ops: Vec<Op>,
     /// Device scale: layout px -> device px. Baked as the root transform
     /// so all command coords land in device pixels; bin math then operates
@@ -75,7 +136,10 @@ impl Batch {
             clip: ClipStack::default(),
             rect_verts: Vec::with_capacity(1024),
             rrect_verts: Vec::with_capacity(256),
+            shadow_verts: Vec::with_capacity(256),
             glyph_verts: Vec::with_capacity(1024),
+            image_verts: Vec::with_capacity(256),
+            image_binds: Vec::new(),
             ops: Vec::new(),
             scale: 1.0,
             barrier: false,
@@ -100,7 +164,10 @@ impl Batch {
         self.clip.reset();
         self.rect_verts.clear();
         self.rrect_verts.clear();
+        self.shadow_verts.clear();
         self.glyph_verts.clear();
+        self.image_verts.clear();
+        self.image_binds.clear();
         self.ops.clear();
         self.barrier = false;
     }
@@ -221,16 +288,37 @@ impl Batch {
         }
     }
 
+    fn push_shadow_run(&mut self, count: u32) {
+        let sc = self.clip.current();
+        let fresh = std::mem::replace(&mut self.barrier, false);
+        let extend = match self.ops.last_mut() {
+            Some(Op::Shadows {
+                count: c,
+                scissor: s,
+                ..
+            }) if *s == sc && !fresh => Some(c),
+            _ => None,
+        };
+        match extend {
+            Some(c) => *c += count,
+            None => self.ops.push(Op::Shadows {
+                start: self.shadow_verts.len() as u32 - count,
+                count,
+                scissor: sc,
+            }),
+        }
+    }
+
     /// Translation + uniform positive scale (within epsilon): the SDF box
     /// stays axis-aligned and radii scale uniformly.
     fn tx_is_rigid(t: &Transform) -> bool {
         t.b.abs() < 1e-6 && t.c.abs() < 1e-6 && t.a > 1e-6 && (t.a - t.d).abs() < 1e-6
     }
 
-    /// Emits a rounded-rect fill + stroke through the SDF pipeline.
-    /// Returns false when the appearance or transform isn't representable
-    /// (gradient paints, skewed transform); the caller falls back to a
-    /// square solid base instead of dropping the rect.
+    /// Emits a rounded-rect fill + border through the SDF double-wall
+    /// pipeline. Returns false when the appearance or transform isn't
+    /// representable (gradient paints, skewed transform); the caller falls
+    /// back to a square solid base instead of dropping the rect.
     fn emit_rrect(
         &mut self,
         rect: &ResolvedRect,
@@ -244,8 +332,10 @@ impl Batch {
             return false;
         }
         let op = self.cur_op() * appearance.opacity;
-        // Fill: solid only.
+        // Fill: solid, or a 2-stop linear gradient (Oklab on the GPU).
+        // Radial/N-stop gradients stay unsupported (vello fallback).
         let mut fill = [0.0, 0.0, 0.0, 0.0];
+        let mut grad_fill: Option<&riode::foundation::LinearGradient> = None;
         match &appearance.fill {
             Some(Fill::Solid(c)) => {
                 let a = (c.a * op).clamp(0.0, 1.0);
@@ -253,34 +343,35 @@ impl Batch {
                     fill = [c.r, c.g, c.b, a];
                 }
             }
+            Some(Fill::LinearGradient(g)) if g.stops.len() == 2 => {
+                grad_fill = Some(g);
+            }
             Some(_) => return false,
             None => {}
         }
-        // Stroke: solid only; ring placement follows alignment.
-        let mut stroke = [0.0, 0.0, 0.0, 0.0];
-        let mut width = 0.0f32;
-        let mut expand = 0.0f32;
+        // Border: solid only; per-edge widths resolved CPU-side into the
+        // outer/inner walls below (the shader never sees alignment).
+        // Kept separate from the vertex stroke slot: a gradient fill uses
+        // that slot for stop 1 and emits the border as a second vertex.
+        let mut border = [0.0, 0.0, 0.0, 0.0];
+        // Device-space per-edge border widths (top, right, bottom, left).
+        let mut ew = [0.0f32; 4];
         if let Some(s) = &appearance.stroke {
             let Fill::Solid(c) = &s.fill else {
                 return false;
             };
             let a = (c.a * op).clamp(0.0, 1.0);
-            if a <= 0.0 || s.width <= 0.0 {
-                // Invisible stroke: fill-only disc.
-            } else {
-                width = s.width * t.a;
-                expand = match s.align {
-                    StrokeAlign::Inside => 0.0,
-                    StrokeAlign::Center => width * 0.5,
-                    StrokeAlign::Outside => width,
-                };
-                stroke = [c.r, c.g, c.b, a];
+            let w = s.widths();
+            let edges = [w.top * t.a, w.right * t.a, w.bottom * t.a, w.left * t.a];
+            if a > 0.0 && !edges.iter().all(|e| *e <= 0.0) {
+                ew = edges;
+                border = [c.r, c.g, c.b, a];
             }
         }
-        if fill[3] <= 0.0 && stroke[3] <= 0.0 {
+        if fill[3] <= 0.0 && border[3] <= 0.0 && grad_fill.is_none() {
             return true;
         }
-        // Device-space fill box + uniformly scaled corner radii.
+        // Device-space layout box + uniformly scaled corner radii.
         let corners = [
             (rect.x, rect.y),
             (rect.x + rect.width, rect.y + rect.height),
@@ -297,30 +388,295 @@ impl Batch {
             rc.bottom_right * s,
             rc.bottom_left * s,
         ];
-        // Cover the stroke ring + 1px AA fringe.
-        let pad = expand + 1.5;
-        let (qx0, qy0, qx1, qy1) = (dx0 - pad, dy0 - pad, dx1 + pad, dy1 + pad);
-        let fbox = [dx0, dy0, dx1 - dx0, dy1 - dy0];
-        let params = [width, expand, 0.0, 0.0];
-        for (px, py) in [
+        // Alignment resolves into two walls per edge: how far the OUTER
+        // wall extends past the layout box (expand), and how far the
+        // INNER wall sits inside it (inset). The painted region is the
+        // outer box for every alignment, so quad padding is AA-only.
+        let align = appearance.stroke.as_ref().map(|st| st.align);
+        let (out, ins): ([f32; 4], [f32; 4]) = match align {
+            None => ([0.0; 4], [0.0; 4]),
+            Some(StrokeAlign::Inside) => ([0.0; 4], ew),
+            Some(StrokeAlign::Center) => (ew.map(|w| w * 0.5), ew.map(|w| w * 0.5)),
+            Some(StrokeAlign::Outside) => (ew, [0.0; 4]),
+        };
+        // Invisible border (zero/transparent): fill-only disc (ibox == fbox).
+        let (out, ins) = if border[3] <= 0.0 {
+            ([0.0; 4], [0.0; 4])
+        } else {
+            (out, ins)
+        };
+        let fbox = [
+            dx0 - out[3],
+            dy0 - out[0],
+            (dx1 - dx0) + out[1] + out[3],
+            (dy1 - dy0) + out[0] + out[2],
+        ];
+        let ibox = [
+            dx0 + ins[3],
+            dy0 + ins[0],
+            ((dx1 - dx0) - ins[1] - ins[3]).max(0.0),
+            ((dy1 - dy0) - ins[0] - ins[2]).max(0.0),
+        ];
+        // Inner radius per corner: outer radius minus the two adjacent
+        // insets, clamped >= 0 (CSS-like: thick borders eat the curve).
+        let iradii = [
+            (radii[0] - ins[0].max(ins[3])).max(0.0),
+            (radii[1] - ins[0].max(ins[1])).max(0.0),
+            (radii[2] - ins[1].max(ins[2])).max(0.0),
+            (radii[3] - ins[2].max(ins[3])).max(0.0),
+        ];
+        let pad = 1.5;
+        let (qx0, qy0, qx1, qy1) = (
+            fbox[0] - pad,
+            fbox[1] - pad,
+            fbox[0] + fbox[2] + pad,
+            fbox[1] + fbox[3] + pad,
+        );
+        let quad = [
             (qx0, qy0),
             (qx1, qy0),
             (qx0, qy1),
             (qx1, qy0),
             (qx1, qy1),
             (qx0, qy1),
-        ] {
+        ];
+        // Resolve a 2-stop linear gradient into the reserved slot: unit
+        // direction (rigid transforms keep layout-space direction) and
+        // the stop points projected onto that axis from the outer-box
+        // origin (the shader's t reference). Colors ride Oklab + alpha in
+        // fill/stroke. Degenerate axis/stops collapse to solid stop-1.
+        let mut grad = [0.0f32; 4];
+        let mut grad_ok = false;
+        let mut stroke = border;
+        if let Some(g) = grad_fill {
+            let (dx, dy) = (g.end.x - g.start.x, g.end.y - g.start.y);
+            let len = (dx * dx + dy * dy).sqrt();
+            let mut resolved = false;
+            if len > 1e-4 {
+                let dir = [dx / len, dy / len];
+                let at = |u: f32| {
+                    t.transform_point(Point::new(
+                        g.start.x + dx * u,
+                        g.start.y + dy * u,
+                    ))
+                };
+                let es = at(g.stops[0].position);
+                let ee = at(g.stops[1].position);
+                let (ox, oy) = (fbox[0], fbox[1]);
+                let stop0_t = (es.x - ox) * dir[0] + (es.y - oy) * dir[1];
+                let stop1_t = (ee.x - ox) * dir[0] + (ee.y - oy) * dir[1];
+                if (stop1_t - stop0_t).abs() > 1e-4 {
+                    let c0 = g.stops[0].color;
+                    let c1 = g.stops[1].color;
+                    let l0 = srgb_to_oklab([c0.r, c0.g, c0.b]);
+                    let l1 = srgb_to_oklab([c1.r, c1.g, c1.b]);
+                    fill = [l0[0], l0[1], l0[2], (c0.a * op).clamp(0.0, 1.0)];
+                    stroke = [l1[0], l1[1], l1[2], (c1.a * op).clamp(0.0, 1.0)];
+                    grad = [dir[0], dir[1], stop0_t, stop1_t];
+                    grad_ok = true;
+                    resolved = true;
+                }
+            }
+            if !resolved {
+                // Zero-length axis or collapsed stops: solid stop-1 (CSS).
+                let c1 = g.stops[1].color;
+                let a = (c1.a * op).clamp(0.0, 1.0);
+                fill = [c1.r, c1.g, c1.b, a];
+                stroke = [0.0; 4];
+            }
+        }
+        // Gradient fill + border: the gradient vertex fills the whole
+        // outer box; the border rides a second vertex painted over it.
+        // Solid fill keeps the single double-wall vertex below.
+        let (gbox, gradii) = if grad_ok {
+            (fbox, radii)
+        } else {
+            (ibox, iradii)
+        };
+        for (px, py) in quad {
             self.rrect_verts.push(RRectVertex {
                 pos: [px, py],
                 fbox,
                 radii,
+                ibox: gbox,
+                iradii: gradii,
                 fill,
                 stroke,
-                params,
+                grad,
             });
         }
-        self.push_rrect_run(6);
+        if grad_ok && border[3] > 0.0 {
+            for (px, py) in quad {
+                self.rrect_verts.push(RRectVertex {
+                    pos: [px, py],
+                    fbox,
+                    radii,
+                    ibox,
+                    iradii,
+                    fill: [0.0, 0.0, 0.0, 0.0],
+                    stroke: border,
+                    grad: [0.0; 4],
+                });
+            }
+            self.push_rrect_run(12);
+        } else {
+            self.push_rrect_run(6);
+        }
         true
+    }
+
+    /// Emits one quad run per shadow layer through the shadow SDF
+    /// pipeline. Layers arrive extent-descending (tighter over softer),
+    /// the exact order the vello and tiny-skia renderers use, with the
+    /// per-layer alpha (light intensity * color.a * layer opacity *
+    /// node opacity) baked into the vertex. Returns false on a skewed
+    /// transform; the caller drops the shadow with a warning.
+    fn emit_shadow(
+        &mut self,
+        rect: &ResolvedRect,
+        radius: Radius,
+        shadow: &Shadow,
+        light: &LightEnvironment,
+    ) -> bool {
+        if rect.width <= 0.0 || rect.height <= 0.0 {
+            return true;
+        }
+        if shadow.layers().is_empty() || light.intensity <= 0.0 {
+            return true;
+        }
+        if matches!(shadow.shape, ShadowShape::Alpha) {
+            warn_once("ShadowShape::Alpha rasterized as Box on wgpu");
+        }
+        if matches!(shadow.blend, riode::foundation::BlendMode::Multiply) {
+            warn_multiply_once();
+        }
+        let t = self.cur_tx();
+        if !Self::tx_is_rigid(&t) {
+            return false;
+        }
+        let op = self.cur_op();
+        // Device-space layout box (same corner transform as emit_rrect;
+        // rigid tx keeps the silhouette axis-aligned).
+        let p0 = t.transform_point(Point::new(rect.x, rect.y));
+        let p1 = t.transform_point(Point::new(rect.x + rect.width, rect.y + rect.height));
+        let (dx0, dy0) = (p0.x.min(p1.x), p0.y.min(p1.y));
+        let (dx1, dy1) = (p0.x.max(p1.x), p0.y.max(p1.y));
+        let rc = radius.resolve_corners(rect.width, rect.height);
+        let s = t.a;
+        let radii = [
+            rc.top_left * s,
+            rc.top_right * s,
+            rc.bottom_right * s,
+            rc.bottom_left * s,
+        ];
+        let spread_d = shadow.spread * s;
+        // Largest extent first so tighter layers paint over softer ones
+        // (identical order to the reference engines).
+        let mut order: Vec<usize> = (0..shadow.layers().len()).collect();
+        order.sort_by(|&a, &b| {
+            shadow.layers()[b]
+                .extent
+                .partial_cmp(&shadow.layers()[a]
+                    .extent)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        let mut count = 0u32;
+        for i in order {
+            let layer = &shadow.layers()[i];
+            let a = (light.intensity * shadow.color.a * layer.opacity * op).clamp(0.0, 1.0);
+            if a <= 0.0 || layer.extent <= 0.0 {
+                continue;
+            }
+            let (ox, oy) = shadow.layer_offset(light, layer);
+            // Spread expands the occluder before the blur; the layer
+            // offset translates it (layout px scaled to device px).
+            let (bx, by) = (dx0 - spread_d + ox * s, dy0 - spread_d + oy * s);
+            let (bw, bh) = (
+                (dx1 - dx0) + 2.0 * spread_d,
+                (dy1 - dy0) + 2.0 * spread_d,
+            );
+            if bw <= 0.0 || bh <= 0.0 {
+                continue;
+            }
+            // Core softness is already CSS blur/2 = sigma (web_like).
+            let sigma = (layer.softness * s).max(0.0);
+            // Blur reach from the already spread-expanded box: the
+            // extent/kernel term of the shared layer_pad (the spread
+            // term would double-count here), +1.5px AA margin (rrect
+            // parity). layer_pad's 3*softness >= 2*sigma always covers
+            // the shader's +-2sigma support.
+            let pad = layer.extent.max(3.0 * layer.softness.max(0.5)) * s + 1.5;
+            let color = [shadow.color.r, shadow.color.g, shadow.color.b, a];
+            let params = [sigma, 0.0, 0.0, 0.0];
+            let fbox = [bx, by, bw, bh];
+            let quad = [
+                (bx - pad, by - pad),
+                (bx + bw + pad, by - pad),
+                (bx - pad, by + bh + pad),
+                (bx + bw + pad, by - pad),
+                (bx + bw + pad, by + bh + pad),
+                (bx - pad, by + bh + pad),
+            ];
+            for (px, py) in quad {
+                self.shadow_verts.push(ShadowVertex {
+                    pos: [px, py],
+                    fbox,
+                    radii,
+                    color,
+                    params,
+                });
+            }
+            count += 6;
+        }
+        if count > 0 {
+            self.push_shadow_run(count);
+        }
+        true
+    }
+
+    /// Emits one textured quad for an already-resolved GPU image. Corners
+    /// ride the current affine (any transform is fine: the UVs stay
+    /// 0..1 over the transformed quad, so bilinear sampling remains
+    /// correct under skew/rotation); opacity bakes into `color.a`.
+    fn emit_image_quad(&mut self, rect: &ResolvedRect, gpu: Arc<ImageGpu>) {
+        if rect.width <= 0.0 || rect.height <= 0.0 || gpu.w == 0 || gpu.h == 0 {
+            return;
+        }
+        let t = self.cur_tx();
+        let op = self.cur_op();
+        let corners = [
+            (rect.x, rect.y),
+            (rect.x + rect.width, rect.y),
+            (rect.x, rect.y + rect.height),
+            (rect.x + rect.width, rect.y),
+            (rect.x + rect.width, rect.y + rect.height),
+            (rect.x, rect.y + rect.height),
+        ];
+        let uvs = [
+            [0.0, 0.0],
+            [1.0, 0.0],
+            [0.0, 1.0],
+            [1.0, 0.0],
+            [1.0, 1.0],
+            [0.0, 1.0],
+        ];
+        let start = self.image_verts.len() as u32;
+        for ((px, py), uv) in corners.into_iter().zip(uvs) {
+            let p = t.transform_point(Point::new(px, py));
+            self.image_verts.push(ImageVertex {
+                pos: [p.x, p.y],
+                uv,
+                color: [1.0, 1.0, 1.0, op],
+            });
+        }
+        let bind = self.image_binds.len() as u32;
+        self.image_binds.push(gpu);
+        self.ops.push(Op::Images {
+            start,
+            count: 6,
+            scissor: self.clip.current(),
+            bind,
+        });
     }
 
     fn push_glyph_run(&mut self, count: u32, linear: bool) {
@@ -534,6 +890,9 @@ impl Batch {
         text_ctx: &TextContext,
         atlas: &mut GlyphAtlas,
         queue: &wgpu::Queue,
+        device: &wgpu::Device,
+        images: &mut crate::image::ImageCache,
+        svgs: &mut crate::svg::SvgCache,
     ) {
         for cmd in commands {
             match cmd {
@@ -590,12 +949,12 @@ impl Batch {
                             }
                         }
                         Some(_) => {
-                            // Gradient + radius/stroke: SDF path needs a
-                            // solid paint; skip rather than misrender.
-                            if plain_square {
-                                warn_once("gradient fill unsupported, skipped");
-                            } else if !self.emit_rrect(rect, appearance) {
-                                warn_once("gradient rrect unsupported, skipped");
+                            // 2-stop linear gradients ride the SDF pipeline
+                            // (emit_rrect, Oklab + dither on the GPU);
+                            // radial/N-stop fall through unsupported
+                            // (existing vello fallback at the app level).
+                            if !self.emit_rrect(rect, appearance) {
+                                warn_once("gradient unsupported (radial/N-stop), skipped");
                             }
                         }
                         None => {
@@ -606,9 +965,28 @@ impl Batch {
                         }
                     }
                 }
-                SceneCommand::DrawImage { .. } => warn_once("DrawImage unsupported, skipped"),
-                SceneCommand::DrawSvg { .. } => warn_once("DrawSvg unsupported, skipped"),
-                SceneCommand::DrawShadow { .. } => warn_once("DrawShadow unsupported, skipped"),
+                SceneCommand::DrawImage { rect, image } => {
+                    if let Some(gpu) = images.get_or_insert(device, queue, image) {
+                        self.emit_image_quad(rect, gpu);
+                    }
+                }
+                SceneCommand::DrawSvg { rect, graphic } => {
+                    if let Some(gpu) =
+                        svgs.get_or_insert(device, queue, images, graphic, rect, self.scale)
+                    {
+                        self.emit_image_quad(rect, gpu);
+                    }
+                }
+                SceneCommand::DrawShadow {
+                    rect,
+                    radius,
+                    shadow,
+                    light,
+                } => {
+                    if !self.emit_shadow(rect, *radius, shadow, light) {
+                        warn_once("shadow unsupported (skewed transform), skipped");
+                    }
+                }
                 SceneCommand::DrawText {
                     origin,
                     layout,

@@ -11,9 +11,11 @@ use riode::scene::chunk::SceneChunk;
 use riode::scene::command::{hash_commands, transform_bits, SceneCommand};
 use rustc_hash::FxHashMap;
 use std::hash::{Hash, Hasher};
+use std::sync::Arc;
 
 use crate::command::Op;
-use crate::pipeline::{GlyphVertex, RRectVertex, RectVertex};
+use crate::image::ImageGpu;
+use crate::pipeline::{GlyphVertex, ImageVertex, RRectVertex, RectVertex, ShadowVertex};
 
 /// Cap on retained chunks; eviction drops the least-recently-used frame.
 const MAX_CHUNKS: usize = 512;
@@ -95,6 +97,11 @@ pub struct CachedChunk {
     pub rects: Vec<RectVertex>,
     pub glyphs: Vec<GlyphVertex>,
     pub rrects: Vec<RRectVertex>,
+    pub shadows: Vec<ShadowVertex>,
+    pub images: Vec<ImageVertex>,
+    /// GPU textures for this chunk's image ops, Arc-held so replay stays
+    /// valid past LRU eviction from the ImageCache map.
+    pub image_binds: Vec<Arc<ImageGpu>>,
     /// Ops with starts relative to the range beginnings (rebase on replay).
     pub ops: Vec<Op>,
     pub atlas_gen: u64,
@@ -109,10 +116,14 @@ pub struct CachedChunk {
 }
 
 impl CachedChunk {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         rects: Vec<RectVertex>,
         glyphs: Vec<GlyphVertex>,
         rrects: Vec<RRectVertex>,
+        shadows: Vec<ShadowVertex>,
+        images: Vec<ImageVertex>,
+        image_binds: Vec<Arc<ImageGpu>>,
         ops: Vec<Op>,
         atlas_gen: u64,
         origin: Point,
@@ -124,6 +135,9 @@ impl CachedChunk {
             rects,
             glyphs,
             rrects,
+            shadows,
+            images,
+            image_binds,
             ops,
             atlas_gen,
             has_glyphs,
@@ -170,6 +184,8 @@ impl CachedChunk {
         rects: &mut Vec<RectVertex>,
         glyphs: &mut Vec<GlyphVertex>,
         rrects: &mut Vec<RRectVertex>,
+        shadows: &mut Vec<ShadowVertex>,
+        images: &mut Vec<ImageVertex>,
     ) {
         rects.extend(self.rects.iter().map(|v| RectVertex {
             pos: [v.pos[0] + dx, v.pos[1] + dy],
@@ -182,6 +198,16 @@ impl CachedChunk {
         rrects.extend(self.rrects.iter().map(|v| RRectVertex {
             pos: [v.pos[0] + dx, v.pos[1] + dy],
             fbox: [v.fbox[0] + dx, v.fbox[1] + dy, v.fbox[2], v.fbox[3]],
+            ibox: [v.ibox[0] + dx, v.ibox[1] + dy, v.ibox[2], v.ibox[3]],
+            ..*v
+        }));
+        shadows.extend(self.shadows.iter().map(|v| ShadowVertex {
+            pos: [v.pos[0] + dx, v.pos[1] + dy],
+            fbox: [v.fbox[0] + dx, v.fbox[1] + dy, v.fbox[2], v.fbox[3]],
+            ..*v
+        }));
+        images.extend(self.images.iter().map(|v| ImageVertex {
+            pos: [v.pos[0] + dx, v.pos[1] + dy],
             ..*v
         }));
     }
@@ -252,7 +278,17 @@ impl ChunkCache {
     }
 
     /// Rebase a cached op's vertex range onto the live buffer lengths.
-    pub fn rebased(op: &Op, rect_base: u32, glyph_base: u32, rrect_base: u32) -> Op {
+    /// Image ops shift by both the vertex base and the bind base (the
+    /// live batch's `image_binds` was extended before the ops).
+    pub fn rebased(
+        op: &Op,
+        rect_base: u32,
+        glyph_base: u32,
+        rrect_base: u32,
+        shadow_base: u32,
+        image_base: u32,
+        image_bind_base: u32,
+    ) -> Op {
         match *op {
             Op::BaseQuads { start, count } => Op::BaseQuads {
                 start: start + rect_base,
@@ -286,6 +322,26 @@ impl ChunkCache {
                 start: start + rrect_base,
                 count,
                 scissor,
+            },
+            Op::Shadows {
+                start,
+                count,
+                scissor,
+            } => Op::Shadows {
+                start: start + shadow_base,
+                count,
+                scissor,
+            },
+            Op::Images {
+                start,
+                count,
+                scissor,
+                bind,
+            } => Op::Images {
+                start: start + image_base,
+                count,
+                scissor,
+                bind: bind + image_bind_base,
             },
         }
     }

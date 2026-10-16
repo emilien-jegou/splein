@@ -47,11 +47,20 @@ fn gamma_lut(cov: f32) -> f32 {
     return 1.0 - pow(1.0 - cov, 1.0 / 2.2);
 }
 
+fn srgb_to_linear(c: vec3<f32>) -> vec3<f32> {
+    let lo = c / 12.92;
+    let hi = pow((c + vec3<f32>(0.055)) / vec3<f32>(1.055), vec3<f32>(2.4));
+    return select(hi, lo, c <= vec3<f32>(0.04045));
+}
+
 @fragment
 fn fs_main(in: Vout) -> @location(0) vec4<f32> {
     var cov = textureSample(atlas, atlas_sampler, in.uv).r;
     if (in.gam > 0.5) {
         cov = gamma_lut(cov);
     }
-    return vec4<f32>(in.color.rgb, in.color.a * cov);
+    // Vertex color is sRGB-encoded; decode to linear so the sRGB
+    // persistent target blends in linear. Coverage stays a plain alpha
+    // multiplier (it is a coverage correction, not a color space one).
+    return vec4<f32>(srgb_to_linear(in.color.rgb), in.color.a * cov);
 }
