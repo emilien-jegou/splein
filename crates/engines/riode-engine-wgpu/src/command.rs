@@ -37,9 +37,20 @@ fn warn_multiply_once() {
 /// byte-for-byte the reference's `quantize_quarter` (tiny-skia), so both
 /// engines derive identical bases and quanta.
 fn quantize_quarter(pos: f32) -> (i32, u8) {
+    quantize_nths(pos, 4)
+}
+
+/// Nearest-eighth split of a device pen (Y axis): integer base + quantum
+/// in [0, 8), 1/16px residue so horizontal features never read as doubled
+/// rows. Quantum 8 wraps to the next pixel.
+fn quantize_eighth(pos: f32) -> (i32, u8) {
+    quantize_nths(pos, 8)
+}
+
+fn quantize_nths(pos: f32, quanta: u8) -> (i32, u8) {
     let base = pos.floor() as i32;
-    let qq = (((pos - base as f32) * 4.0) + 0.5).floor() as i32;
-    if qq >= 4 {
+    let qq = (((pos - base as f32) * quanta as f32) + 0.5).floor() as i32;
+    if qq >= quanta as i32 {
         (base + 1, 0)
     } else {
         (base, qq.max(0) as u8)
@@ -819,28 +830,31 @@ impl Batch {
                 let pen_x = origin.x + g.point.x + line.align_offset;
                 let pen_y = origin.y + g.point.y;
                 let placed = t.transform_point(Point::new(pen_x, pen_y));
-                // Subpixel policy — shape-invariant analytic on both axes:
-                // each quarter quantum integrates coverage from one
-                // hinter-free linear outline, so glyph *shape* is identical
-                // at every subpixel position — no per-phase hinter re-fit
-                // (the P-top morph, the Y jiggle), no per-bin bbox churn.
-                // The quad integer-anchors at base+bearing (<=1/8px
-                // residual), so stems never resample through fractional
-                // filtering either. With baseline Y-snap armed (`B` key,
-                // GPUI's 4x1), Y snaps to whole device pixels instead —
-                // qy is forced 0 and the true fraction still backs out of
-                // the anchor below, so quads never drift.
+                // Subpixel policy — asymmetric quanta, shared with the
+                // tiny-skia reference: X quarters (validated-smooth,
+                // matching the legacy phase bins), Y eighths (1/16px
+                // residue, so horizontal features never read as doubled
+                // rows). The analytic rasterizer integrates coverage at
+                // exactly that quantum from one linear outline, so glyph
+                // *shape* is identical at every subpixel position — no
+                // per-phase hinter re-fit, no per-bin bbox churn. The quad
+                // integer-anchors at base+bearing, so stems never resample
+                // through fractional filtering either. With baseline
+                // Y-snap armed (`B` key, GPUI's 4x1), Y snaps to whole
+                // device pixels instead (qy forced 0).
                 let (bx, qx) = quantize_quarter(placed.x);
                 let fx = placed.x - bx as f32;
                 let (qy, fy) = if riode::text::baseline_snap_y() {
                     let by = placed.y.round() as i32;
                     (0u8, placed.y - by as f32)
                 } else {
-                    let (by, qy) = quantize_quarter(placed.y);
+                    let (by, qy) = quantize_eighth(placed.y);
                     (qy, placed.y - by as f32)
                 };
                 // Atlas slot distinctness only; the bitmap itself is keyed
-                // (key, qx, qy, scale) inside the analytic cache.
+                // (key, qx, qy, scale) inside the analytic cache. X fits
+                // the legacy low 2 bits, Y the next 3 — the phase packs
+                // both natively.
                 let phase = (qx as u8) | ((qy as u8) << 2);
                 // Single raster: bitmap + bearing together (no TOCTOU).
                 // Metrics arrive in scaled px (q==1.0 at unity scale).

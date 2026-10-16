@@ -135,6 +135,10 @@ name = "text_smooth"
 path = "text_smooth/main.rs"
 
 [[example]]
+name = "phase_grid"
+path = "phase_grid/main.rs"
+
+[[example]]
 name = "wrap_repro"
 path = "wrap_repro/main.rs"
 

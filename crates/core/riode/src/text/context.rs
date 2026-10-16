@@ -418,17 +418,20 @@ impl TextContext {
         self.raster_inner(GlyphKey(h.finish()), key, phase, sq, f)
     }
 
-    /// Rasterizes a glyph with exact analytic coverage at a quarter-pixel
-    /// subpixel position, invoking the consumer closure with bitmap data.
+    /// Rasterizes a glyph with exact analytic coverage at a subpixel
+    /// position, invoking the consumer closure with bitmap data.
     ///
     /// Unlike [`Self::raster_glyph`] (which rasterizes swash bitmaps at phase
     /// bins and leaves the caller to interpolate the remainder), this path
     /// flattens the glyph outline and integrates exact pixel coverage at
-    /// `(qx/4, qy/4)` via [`analytic`](crate::text::analytic). The caller
-    /// integer-places the result: residual placement error is at most 1/8px
-    /// with no coverage smoothing, so subpixel text stays as sharp as
-    /// pixel-aligned text. Bitmaps are memoized per (key, qx, qy) in distinct
-    /// cache slots that cannot collide with phase or scaled slots.
+    /// `(qx/4, qy/8)` via [`analytic`](crate::text::analytic): X quarters
+    /// (validated-smooth axes, matching the legacy phase bins), Y eighths
+    /// (1/16px residue, so horizontal features never read as doubled rows).
+    /// The caller integer-places the result: residual placement error is at
+    /// most 1/8px on X and 1/16px on Y with no coverage smoothing, so
+    /// subpixel text stays as sharp as pixel-aligned text. Bitmaps are
+    /// memoized per (key, qx, qy) in distinct cache slots that cannot
+    /// collide with phase or scaled slots.
     ///
     /// Glyphs with no scalable outline (bitmap-emoji strikes), color
     /// outlines, or outlines larger than the analytic cap fall back to
@@ -442,7 +445,7 @@ impl TextContext {
         f: impl FnOnce(Option<GlyphBitmap>) -> R,
     ) -> R {
         let cache_key = Self::exact_cache_key(key, qx, qy, None);
-        self.raster_exact_inner(cache_key, key, qx & 3, qy & 3, 1.0, f)
+        self.raster_exact_inner(cache_key, key, qx & 3, qy & 7, 1.0, f)
     }
 
     /// Scaled sibling of [`Self::raster_glyph_exact`] for device-pixel
@@ -466,7 +469,7 @@ impl TextContext {
             return self.raster_glyph_exact(key, qx, qy, f);
         }
         let cache_key = Self::exact_cache_key(key, qx, qy, Some(sq));
-        self.raster_exact_inner(cache_key, key, qx & 3, qy & 3, sq, f)
+        self.raster_exact_inner(cache_key, key, qx & 3, qy & 7, sq, f)
     }
 
     /// Rasterizes a glyph with the hinter engaged at a quarter-pixel
@@ -478,10 +481,10 @@ impl TextContext {
     /// offset, so the hinter grid-fits stems at the true raster position —
     /// the mechanism that keeps small web text legible. Sources prefer an
     /// embedded strike at the exact size, then the hinted outline
-    /// (`[Bitmap(ExactSize), Outline]`). Both axes carry variants (4x4):
-    /// Y glides like X instead of snapping (GPUI's 4x1 Y-snap stepped
-    /// whole pixels during vertical motion — visibly worse, same cost
-    /// class, so we keep the quantum on both axes).
+    /// (`[Bitmap(ExactSize), Outline]`). X carries quarters, Y eighths
+    /// (matching the analytic policy: no Y snap, no jiggle-prone
+    /// per-variant Y bearings — currently no callers, kept coherent as
+    /// the A/B spare).
     ///
     /// Bitmaps are memoized per (key, qx, qy[, scale]) in tagged slots that
     /// cannot collide with any other slot family. Non-grayscale results
@@ -503,7 +506,7 @@ impl TextContext {
         scale: f32,
         f: impl FnOnce(Option<GlyphBitmap>) -> R,
     ) -> R {
-        let (qx, qy) = (qx & 3, qy & 3);
+        let (qx, qy) = (qx & 3, qy & 7);
         let sq = quantize_raster_scale(scale);
         let sq_opt = (sq != 1.0).then_some(sq);
         let cache_key = Self::hinted_cache_key(key, qx, qy, sq_opt);
@@ -551,10 +554,10 @@ impl TextContext {
         // axis. (GPUI divides its variant offset by its scale factor and
         // pins Y to one variant; at scale 1 the X forms agree —
         // dimensionally this is the exact one for integer-anchor
-        // placement, and Y gliding needs the same treatment as X.)
+        // placement; X stays quarters, Y eighths per the shared policy.)
         render.offset(swash::zeno::Vector::new(
             qx as f32 * 0.25,
-            qy as f32 * 0.25,
+            qy as f32 * 0.125,
         ));
         let image = render.render(&mut context, rk.glyph_id as u16);
         drop(scaler);
@@ -606,7 +609,7 @@ impl TextContext {
         key.0.hash(&mut h);
         HINTED_TAG.hash(&mut h);
         (qx & 3).hash(&mut h);
-        (qy & 3).hash(&mut h);
+        (qy & 7).hash(&mut h);
         if let Some(s) = scale {
             ((s * 16.0).round() as u16).hash(&mut h);
         }
@@ -614,11 +617,12 @@ impl TextContext {
     }
 
     /// Cache key for exact-coverage slots: (key, analytic tag, qx, qy[,
-    /// scale]). The unscaled form must stay byte-identical to the key the
-    /// CPU reference has always derived, so its slots stay shared.
+    /// scale]), with X quarters and Y eighths. Re-keyed when Y went from
+    /// quarters to eighths (old quarter slots simply miss once and
+    /// repopulate — no migration, no collision by construction).
     #[cfg(feature = "text-runtime")]
     fn exact_cache_key(key: GlyphKey, qx: u8, qy: u8, scale: Option<f32>) -> GlyphKey {
-        let (qx, qy) = (qx & 3, qy & 3);
+        let (qx, qy) = (qx & 3, qy & 7);
         let mut h = FxHasher::default();
         key.0.hash(&mut h);
         ANALYTIC_TAG.hash(&mut h);
@@ -667,10 +671,10 @@ impl TextContext {
                 data: &cached.data,
             }));
         }
-        // Exact-phase fallback for non-analytic glyphs: the quarter quantum
-        // maps onto eighth bins (2 per quarter) so the baked swash offset
-        // matches the analytic translation.
-        let fallback_phase = qx | ((qy * 2) << 2);
+        // Exact-phase fallback for non-analytic glyphs: the legacy phase
+        // packs X quarters (low 2 bits) and Y eighths (next 3) natively,
+        // so the asymmetric quanta map exactly with no coarsening.
+        let fallback_phase = (qx & 3) | ((qy & 7) << 2);
 
         let rk = self.engine.key_map.lock().unwrap().get(&map_key).cloned();
         let Some(rk) = rk else {
@@ -712,7 +716,9 @@ impl TextContext {
         if bounds.width() > 512.0 || bounds.height() > 512.0 {
             return self.raster_exact_fallback(map_key, fallback_phase, size_mul, f);
         }
-        let (tx, ty) = (qx as f32 * 0.25, qy as f32 * 0.25);
+        // Translation lives in scaled-path units: X quarters, Y eighths
+        // (shared asymmetric-quanta policy — see exact_cache_key).
+        let (tx, ty) = (qx as f32 * 0.25, qy as f32 * 0.125);
         let mut acc = analytic::AnalyticBitmap::empty();
         let mut first = true;
         for i in 0..outline.len() {

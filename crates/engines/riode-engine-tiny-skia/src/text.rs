@@ -210,19 +210,31 @@ pub fn render_text(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: TextR
 /// table at all sizes either way. Monotonic, so threshold tests and
 /// bounding boxes are unaffected.
 
-/// Subpixel position quantum per pixel: the pen quantizes to quarters and
-/// the analytic rasterizer integrates exact coverage at the quantum (see
-/// `raster_glyph_exact`). Integer placement then carries at most 1/8px snap
-/// and no coverage smoothing, on both axes alike.
-pub const POS_QUANTA: u8 = 4;
+/// Subpixel position quanta per pixel: X quantizes to quarters (validated
+/// smooth, matching the legacy phase bins), Y to eighths (1/16px residue,
+/// so horizontal features never read as doubled rows). Asymmetric by
+/// design — see `quantize_eighth`.
+pub const POS_QUANTA_X: u8 = 4;
+pub const POS_QUANTA_Y: u8 = 8;
 
 /// Splits a pen position into an integer base plus a quarter-pixel quantum
 /// in [0, 4): the quantum selects the analytic raster variant, the base
 /// anchors integer placement. Quantum 4 wraps to the next pixel.
 fn quantize_quarter(pos: f32) -> (i32, u8) {
+    quantize_nths(pos, 4)
+}
+
+/// Splits a pen position into an integer base plus an eighth-pixel quantum
+/// in [0, 8): Y-axis counterpart of [`quantize_quarter`]. Quantum 8 wraps
+/// to the next pixel.
+fn quantize_eighth(pos: f32) -> (i32, u8) {
+    quantize_nths(pos, 8)
+}
+
+fn quantize_nths(pos: f32, quanta: u8) -> (i32, u8) {
     let base = pos.floor() as i32;
-    let q = ((pos - base as f32) * POS_QUANTA as f32 + 0.5).floor() as i32;
-    if q >= POS_QUANTA as i32 {
+    let q = ((pos - base as f32) * quanta as f32 + 0.5).floor() as i32;
+    if q >= quanta as i32 {
         (base + 1, 0)
     } else {
         (base, q.max(0) as u8)
@@ -333,18 +345,18 @@ fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: T
             // space and line-local space.
             let dev_x = origin.x + line.align_offset + g.point.x + ttx;
             let dev_y = origin.y + g.point.y + tty;
-            // Both axes quantize to quarters; the analytic bitmap is
-            // integrated exactly at the quantum, so integer placement
-            // carries <=1/8px snap and no coverage smoothing on either
-            // axis. With baseline Y-snap armed (`B` key, GPUI's 4x1), Y
-            // snaps to whole device pixels instead (qy forced 0).
+            // X quantizes to quarters, Y to eighths; the analytic bitmap
+            // is integrated exactly at the quantum, so integer placement
+            // carries <=1/8px snap on X, <=1/16px on Y, with no coverage
+            // smoothing. With baseline Y-snap armed (`B` key, GPUI's 4x1),
+            // Y snaps to whole device pixels instead (qy forced 0).
             // Rebasing onto `space` keeps canvas and line-local painting
             // on the same code path.
             let (bx, qx) = quantize_quarter(dev_x);
             let (by, qy) = if riode::text::baseline_snap_y() {
                 (dev_y.round() as i32, 0u8)
             } else {
-                quantize_quarter(dev_y)
+                quantize_eighth(dev_y)
             };
             text_ctx.raster_glyph_exact(
                 g.cache_key,
@@ -512,15 +524,15 @@ fn render_text_transformed(
 
     for line in &params.layout.lines {
         for g in &line.glyphs {
-            // Quarter-quantized analytic coverage on both axes; placement
-            // stays exact (the fractional origin under the transform is
-            // legitimate filtering of a sharp source). Matches the
-            // aligned path.
+            // Analytic coverage quantized X-quarters / Y-eighths;
+            // placement stays exact (the fractional origin under the
+            // transform is legitimate filtering of a sharp source).
+            // Matches the aligned path.
             let pen_x = params.origin.x + line.align_offset + g.point.x;
             let pen_y = params.origin.y + g.point.y;
             let (qx, qy) = (
                 quantize_quarter(pen_x).1,
-                quantize_quarter(pen_y).1,
+                quantize_eighth(pen_y).1,
             );
 
             let mut placed: Option<(f32, f32, u32, u32)> = None;
@@ -533,7 +545,7 @@ fn render_text_transformed(
                     // out of the exact pen.
                     placed = Some((
                         pen_x - qx as f32 * 0.25 + img.left as f32,
-                        pen_y - qy as f32 * 0.25 - img.top as f32,
+                        pen_y - qy as f32 * 0.125 - img.top as f32,
                         img.width,
                         img.height,
                     ));
@@ -672,6 +684,26 @@ mod tests {
             assert!(
                 (snapped - pos).abs() <= 1.0 / 8.0 + 1e-6,
                 "pos {pos} snaps within 1/8px (got {snapped})"
+            );
+        }
+    }
+
+    /// Eighth quantization covers the pixel exactly once: base plus
+    /// quantum reconstructs the pen within 1/16px, quantum in [0, 8).
+    #[test]
+    fn quantize_eighth_covers_the_pixel() {
+        assert_eq!(quantize_eighth(4.0), (4, 0));
+        assert_eq!(quantize_eighth(4.5), (4, 4));
+        assert_eq!(quantize_eighth(4.9), (4, 7));
+        assert_eq!(quantize_eighth(4.95), (5, 0));
+        for hundredths in -200..200 {
+            let pos = hundredths as f32 / 100.0;
+            let (b, q) = quantize_eighth(pos);
+            assert!(q < 8, "pos {pos}: quantum {q}");
+            let snapped = b as f32 + q as f32 / 8.0;
+            assert!(
+                (snapped - pos).abs() <= 1.0 / 16.0 + 1e-6,
+                "pos {pos} snaps within 1/16px (got {snapped})"
             );
         }
     }
