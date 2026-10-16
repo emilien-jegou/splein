@@ -451,7 +451,18 @@ fn run_multi<E: IntoElement, F: Fn() -> E + 'static>(config: MultiBackendConfig,
                     }
                 }
                 need_redraw |= debugger.on_event(&event);
-                need_redraw |= extensions.iter_mut().any(|ext| ext.on_event(&event));
+                // The loop owns one debugger (above); a config-registered
+                // debugger would double-handle every edge-triggered key
+                // (B toggles twice = no-op, '.' steps twice), so only
+                // non-debugger extensions run here. Level-state keys
+                // (F8, F9-F12, brackets) converge either way, which is why
+                // this went unnoticed until B.
+                for ext in extensions.iter_mut() {
+                    let is_debugger = ext.as_debugger().is_some();
+                    if !is_debugger && ext.on_event(&event) {
+                        need_redraw = true;
+                    }
+                }
                 match event {
                     WindowEvent::CloseRequested => {
                         surfaces.remove(&slot);
