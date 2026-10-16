@@ -388,13 +388,36 @@ struct ImageEntry {
 
 ## 6. Subpixel Bin Tuning
 
-> **Progress — Bundle 5 (small, standalone)**
+> **Progress — Bundle 5 (redefined by the human report)**
 > - [x] Kept as its own bundle despite being small: the human A/B (4×1 vs
 >   4×4 at 8–14px during smooth scroll) is a distinct observation that
 >   shouldn't share a review with a visual feature.
-> - [x] Plan's configurable `SUBPIXEL_BINS_X/Y` approach accepted; ship
->   4×1, upgrade to 8×1 only on reported vertical shimmer.
-> - [ ] Parameterize `command.rs:461-465`; human A/B on `text_smooth`.
+> - [x] Bin parameterization (4×1 default + `RIODE_SUBPIXEL_BINS` env)
+>   was implemented, then **superseded** — bin *count* was never the root
+>   cause (see below); the knob is removed.
+> - [x] Human report on `text_smooth wgpu`: transitions worse than
+>   tiny-skia/vello; glyphs "get taller or shorter by 1px or 2" between
+>   subpixel positions; screenshot showed a deformed "P" top. Investigation
+>   (git archaeology + path trace): `4fdff23c` had replaced the
+>   human-validated axis-split policy with 4×4 binning, deleting the very
+>   comment that predicted this ("every Y phase change re-fits the outline
+>   (morphing/popping per glyph)"). Deeper cause, independent of bin count:
+>   **wgpu rasterized a fresh hinted swash bitmap per phase** (the offset
+>   is applied *before* hinting → shape refit on every bin swap → bbox
+>   height churn = the 1–2px growth) **and glided Y through fractional
+>   bilinear filtering of hinted stems**. References are shape-invariant:
+>   tiny-skia integrates analytic coverage at each quarter quantum from ONE
+>   hinted outline; vello is vector.
+> - [x] Fix: wgpu text now calls `raster_glyph_exact_scaled` (new scaled
+>   sibling of the shared analytic path in `text/context.rs`; unscaled
+>   keys stay byte-identical, so tiny-skia slots and behavior are
+>   untouched), both axes quantize via `quantize_quarter` on the device
+>   pen (reference-identical wrap semantics), placement integer-anchors at
+>   `bx+left / by-top` (reference-identical blit math), atlas slots keyed
+>   (key, qx, qy, scale). Compile green: default + `--no-default-features`,
+>   0 errors.
+> - [ ] Human validation of the fix: P top, all four rows, F7 against
+>   tiny-skia/vello — **awaiting**.
 
 ### Why
 

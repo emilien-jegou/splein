@@ -32,6 +32,20 @@ fn warn_multiply_once() {
     }
 }
 
+/// Nearest-quarter split of a device pen: integer base + quantum in
+/// [0, 4). A quantum that rounds up to 4 wraps to the next pixel —
+/// byte-for-byte the reference's `quantize_quarter` (tiny-skia), so both
+/// engines derive identical bases and quanta.
+fn quantize_quarter(pos: f32) -> (i32, u8) {
+    let base = pos.floor() as i32;
+    let qq = (((pos - base as f32) * 4.0) + 0.5).floor() as i32;
+    if qq >= 4 {
+        (base + 1, 0)
+    } else {
+        (base, qq.max(0) as u8)
+    }
+}
+
 /// Exact sRGB EOTF (encoded -> linear), matching the shader decode.
 fn srgb_to_linear1(c: f32) -> f32 {
     if c <= 0.04045 {
@@ -789,14 +803,14 @@ impl Batch {
         }
         let t = self.cur_tx();
         let c = [color.r, color.g, color.b, a];
-        // Coverage quads always filter linearly: glyph rects land on
-        // quarter-pixel boundaries (bin math below) and scaled metrics
-        // divide by q, so nearest sampling snaps fractional texel taps to
-        // blocky steps ("barely readable"). The 2px replicated atlas gutter
-        // keeps linear border taps inside the owning cell.
-        // Device scale: coverage rasters at size*q (engine scaled slots),
-        // metrics below arrive in scaled px and are unscaled to layout
-        // units before the root transform re-applies the scale.
+        // Coverage quads keep linear filtering: the 2px replicated atlas
+        // gutter guarantees border taps read the owning cell, and linear
+        // covers the epsilon between the integer device anchors (below)
+        // and texel centers — nearest snaps that epsilon to blocky steps
+        // ("barely readable"). Device scale: coverage rasters at size*q
+        // (engine scaled slots), metrics below arrive in scaled px and
+        // are unscaled to layout units before the root transform
+        // re-applies the scale.
         let q = quantize_raster_scale(self.scale);
         let sq16 = (q * 16.0).round() as u16;
         for line in layout.lines.iter() {
@@ -807,22 +821,26 @@ impl Batch {
                 let pen_x = origin.x + g.point.x + line.align_offset;
                 let pen_y = origin.y + g.point.y;
                 let placed = t.transform_point(Point::new(pen_x, pen_y));
-                // Subpixel policy: 4x4 = 16 raster variants (gpui-style).
-                // The X and Y bins select the raster variant (nearest quarter)
-                // while *placement stays exact* — quantizing placement drops a
-                // per-glyph residual, and glyphs crossing bin edges on
-                // different frames visibly drift at different speeds.
-                // With R8 coverage (4x less memory than MSDF), we can afford
-                // 16 subpixel phases for smoother subpixel positioning.
-                let fx = placed.x - placed.x.floor();
-                let fy = placed.y - placed.y.floor();
-                let binx = (((fx * 4.0) + 0.5).floor() as i32).clamp(0, 3);
-                let biny = (((fy * 4.0) + 0.5).floor() as i32).clamp(0, 3);
-                let phase = (binx as u8) | ((biny as u8) << 2);
+                // Subpixel policy — exact analytic parity with the tiny-skia
+                // reference: both axes quantize to the nearest quarter of the
+                // device pen, and the shared analytic rasterizer integrates
+                // coverage at exactly that quantum. The outline is extracted
+                // once (hinted once), so glyph *shape* is identical at every
+                // subpixel position — no per-phase hinter re-fit (the P-top
+                // morph), no per-bin bbox churn. The quad integer-anchors at
+                // base+bearing (<=1/8px residual), so hinted stems never
+                // resample through fractional filtering either.
+                let (bx, qx) = quantize_quarter(placed.x);
+                let (by, qy) = quantize_quarter(placed.y);
+                let fx = placed.x - bx as f32;
+                let fy = placed.y - by as f32;
+                // Atlas slot distinctness only; the bitmap itself is keyed
+                // (key, qx, qy, scale) inside the analytic cache.
+                let phase = (qx as u8) | ((qy as u8) << 2);
                 // Single raster: bitmap + bearing together (no TOCTOU).
                 // Metrics arrive in scaled px (q==1.0 at unity scale).
                 let rastered =
-                    text_ctx.raster_glyph_scaled(g.cache_key, phase, self.scale, |bmp| {
+                    text_ctx.raster_glyph_exact_scaled(g.cache_key, qx, qy, self.scale, |bmp| {
                         bmp.and_then(|b| {
                             if b.width == 0 || b.height == 0 {
                                 return None;
@@ -845,21 +863,16 @@ impl Batch {
                     continue;
                 };
                 // Layout-space glyph rect. Placement backs out the *exact*
-                // device fractions, not the bin centers: X removes fx (the
-                // bin's baked offset plus the <=1/8px leftover, which rides
-                // the fractional quad position through linear filtering);
-                // Y removes nothing but the bearing — the baked Y offset is
-                // always zero (frozen bin), exactly like the reference
-                // gy_exact = dev_y - top, and fy rides the quad position.
-                // UVs arrive edge-exact from the atlas (2px gutter, no inset).
+                // device fractions from the quantized base, collapsing to the
+                // reference's integer anchors: device content = (bx + left,
+                // by - top), <=1/8px residual — identical math to the CPU
+                // blit (tiny-skia `render_text_aligned`). UVs arrive
+                // edge-exact from the atlas (2px gutter, no inset).
                 let (u0, v0) = (e.u0, e.v0);
                 let (u1, v1) = (e.u1, e.v1);
                 let (bw, bh) = (e.w as f32 / q, e.h as f32 / q);
                 let lx0 = pen_x + (bl as f32 - fx) / q;
-                let ly0 = pen_y - bt as f32 / q;
-                // Translation-only collapses to (dev - fx + left,
-                // dev.y - fy - top): the exact pen, so every `.` press moves
-                // each glyph by exactly 1/8px like the reference.
+                let ly0 = pen_y - (bt as f32 + fy) / q;
                 let corners = [
                     (lx0, ly0, u0, v0),
                     (lx0 + bw, ly0, u1, v0),

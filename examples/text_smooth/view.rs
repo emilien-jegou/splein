@@ -2,11 +2,12 @@
 //
 // Four runs drift at ~15px/s (subpixel per frame) to judge animation
 // smoothness: X-only, Y-only and diagonal at 15px (hinted outlines), plus
-// Y-only at 22px (unhinted, above the 16px hint cutoff). The rasterizer uses
-// an axis-split phase policy — X renders at its nearest quarter-pixel bin,
-// Y frozen at bin zero — with the fractional remainder blended explicitly
-// and placed at integer pixels, so motion glides without morphing and rest
-// frames stay crisp. Human judges shimmer; no test asserts.
+// Y-only at 22px (unhinted, above the 16px hint cutoff). All engines
+// quantize both axes to the nearest quarter-pixel and integer-anchor the
+// glyph there: wgpu rasterizes the shared analytic coverage at that quantum
+// (one hinted outline, shape identical at every position), so motion steps
+// in quarter-pixel quanta without morphing and rest frames stay pixel-crisp.
+// Human judges shimmer; no test asserts.
 
 use super::motion_ui::*;
 use riode::prelude::*;
@@ -48,7 +49,7 @@ pub fn Page() -> impl IntoElement {
         <Shell
             eyebrow_label="TEXT · SMOOTH DRIFT"
             title="Slow text repro."
-            copy="Four runs drift at ~15px/s: X, Y and diagonal at 15px (hinted), Y at 22px (unhinted). Step a frame at a time (F8, then '.') — each press advances 1/8px, so every press should visibly blend, never jump. Rest frames stay pixel-crisp."
+                copy="Four runs drift at ~15px/s: X, Y and diagonal at 15px (hinted), Y at 22px (unhinted). Step a frame at a time (F8, then '.') — each press advances 1/8px of true position; renders land on quarter-pixel quanta like the CPU engines, so a press either steps 1/4px or holds until the next. Rest frames stay pixel-crisp."
         >
             <Content>
                 <Group direction="vertical" width="fill" height="fill" gap={16.0}>

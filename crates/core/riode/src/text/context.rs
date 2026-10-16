@@ -414,13 +414,79 @@ impl TextContext {
         qy: u8,
         f: impl FnOnce(Option<GlyphBitmap>) -> R,
     ) -> R {
+        let cache_key = Self::exact_cache_key(key, qx, qy, None);
+        self.raster_exact_inner(cache_key, key, qx & 3, qy & 3, 1.0, f)
+    }
+
+    /// Scaled sibling of [`Self::raster_glyph_exact`] for device-pixel
+    /// engines (wgpu): the outline rasterizes at
+    /// `size * quantize_raster_scale(scale)` and metrics arrive in scaled
+    /// px (divide by q to recover layout units). Near-unity scales
+    /// delegate to [`Self::raster_glyph_exact`] exactly (shared slot,
+    /// shared bitmap). Slots hash an extra scale term, so they never
+    /// collide with unscaled exact slots or any phase slot.
+    #[cfg(feature = "text-runtime")]
+    pub fn raster_glyph_exact_scaled<R>(
+        &self,
+        key: GlyphKey,
+        qx: u8,
+        qy: u8,
+        scale: f32,
+        f: impl FnOnce(Option<GlyphBitmap>) -> R,
+    ) -> R {
+        let sq = quantize_raster_scale(scale);
+        if sq == 1.0 {
+            return self.raster_glyph_exact(key, qx, qy, f);
+        }
+        let cache_key = Self::exact_cache_key(key, qx, qy, Some(sq));
+        self.raster_exact_inner(cache_key, key, qx & 3, qy & 3, sq, f)
+    }
+
+    /// Cache key for exact-coverage slots: (key, analytic tag, qx, qy[,
+    /// scale]). The unscaled form must stay byte-identical to the key the
+    /// CPU reference has always derived, so its slots stay shared.
+    #[cfg(feature = "text-runtime")]
+    fn exact_cache_key(key: GlyphKey, qx: u8, qy: u8, scale: Option<f32>) -> GlyphKey {
         let (qx, qy) = (qx & 3, qy & 3);
         let mut h = FxHasher::default();
         key.0.hash(&mut h);
         ANALYTIC_TAG.hash(&mut h);
         qx.hash(&mut h);
         qy.hash(&mut h);
-        let cache_key = GlyphKey(h.finish());
+        if let Some(s) = scale {
+            ((s * 16.0).round() as u16).hash(&mut h);
+        }
+        GlyphKey(h.finish())
+    }
+
+    /// Total fallback for non-analytic glyphs (bitmap-emoji strikes, color
+    /// outlines, oversized outlines): the swash phase path at the matching
+    /// phase, at the same raster scale as the caller.
+    #[cfg(feature = "text-runtime")]
+    fn raster_exact_fallback<R>(
+        &self,
+        key: GlyphKey,
+        fallback_phase: u8,
+        size_mul: f32,
+        f: impl FnOnce(Option<GlyphBitmap>) -> R,
+    ) -> R {
+        if size_mul == 1.0 {
+            self.raster_glyph(key, fallback_phase, f)
+        } else {
+            self.raster_glyph_scaled(key, fallback_phase, size_mul, f)
+        }
+    }
+
+    #[cfg(feature = "text-runtime")]
+    fn raster_exact_inner<R>(
+        &self,
+        cache_key: GlyphKey,
+        map_key: GlyphKey,
+        qx: u8,
+        qy: u8,
+        size_mul: f32,
+        f: impl FnOnce(Option<GlyphBitmap>) -> R,
+    ) -> R {
         if let Some(cached) = self.bitmaps.get(&cache_key, 0) {
             return f(Some(GlyphBitmap {
                 left: cached.left,
@@ -435,12 +501,12 @@ impl TextContext {
         // matches the analytic translation.
         let fallback_phase = qx | ((qy * 2) << 2);
 
-        let rk = self.engine.key_map.lock().unwrap().get(&key).cloned();
+        let rk = self.engine.key_map.lock().unwrap().get(&map_key).cloned();
         let Some(rk) = rk else {
             self.bitmaps.note_miss();
             return f(None);
         };
-        let size = f32::from_bits(rk.size_bits);
+        let size = f32::from_bits(rk.size_bits) * size_mul;
         let mut scaler = self.scaler.lock().unwrap();
         let Some(font) = swash::FontRef::from_index(rk.font.data.data(), rk.font.index as usize)
         else {
@@ -463,17 +529,17 @@ impl TextContext {
         };
         drop(scaler);
         let Some(outline) = outline else {
-            return self.raster_glyph(key, fallback_phase, f);
+            return self.raster_exact_fallback(map_key, fallback_phase, size_mul, f);
         };
         if outline.is_color() || outline.is_empty() {
-            return self.raster_glyph(key, fallback_phase, f);
+            return self.raster_exact_fallback(map_key, fallback_phase, size_mul, f);
         }
         // Oversized outlines bypass the analytic path (bounded work per
         // miss): the swash bitmap path handles them, including its own
         // oversized-bypass convention.
         let bounds = outline.bounds();
         if bounds.width() > 512.0 || bounds.height() > 512.0 {
-            return self.raster_glyph(key, fallback_phase, f);
+            return self.raster_exact_fallback(map_key, fallback_phase, size_mul, f);
         }
         let (tx, ty) = (qx as f32 * 0.25, qy as f32 * 0.25);
         let mut acc = analytic::AnalyticBitmap::empty();
@@ -674,6 +740,18 @@ impl TextContext {
         _key: GlyphKey,
         _qx: u8,
         _qy: u8,
+        f: impl FnOnce(Option<GlyphBitmap>) -> R,
+    ) -> R {
+        self.bitmaps.note_miss();
+        f(None)
+    }
+
+    pub fn raster_glyph_exact_scaled<R>(
+        &self,
+        _key: GlyphKey,
+        _qx: u8,
+        _qy: u8,
+        _scale: f32,
         f: impl FnOnce(Option<GlyphBitmap>) -> R,
     ) -> R {
         self.bitmaps.note_miss();
