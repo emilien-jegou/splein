@@ -17,10 +17,9 @@ pub mod sink;
 use riode::foundation::DamageRegion;
 use riode::render::error::BackendError;
 use riode::scene::scene::Scene;
-use riode::scene::SceneStack;
 use riode::text::TextContext;
 use crate::clip::ClipStack;
-use crate::command::{execute_commands, CommandContext};
+use crate::command::{execute_chunk, ChunkSinkContext};
 use crate::image::ImageCache;
 use crate::shadow::ShadowRasterizer;
 use crate::svg::SvgCache;
@@ -38,7 +37,6 @@ pub struct LineBufferBackend {
     image_cache: ImageCache,
     shadow_rasterizer: ShadowRasterizer,
     line_cache: LineCompositeCache,
-    stack: SceneStack,
     row: Pixmap,
 }
 
@@ -57,10 +55,6 @@ impl LineBufferBackend {
             image_cache: ImageCache::new(),
             shadow_rasterizer: ShadowRasterizer::new(),
             line_cache: LineCompositeCache::new(),
-            stack: SceneStack::new(
-                riode::foundation::Transform::IDENTITY,
-                1.0,
-            ),
             row,
         }
     }
@@ -136,55 +130,24 @@ impl LineBufferBackend {
         let w = self.width;
         self.row.fill(tiny_skia::Color::TRANSPARENT);
         self.clip_stack.reset();
-        self.stack = SceneStack::new(
-            riode::foundation::Transform::from_translation(0.0, -(y as f32)),
-            1.0,
-        );
-        let mut ctx = CommandContext {
+        // Row-local frame: x stays, y maps the scanline to row 0.
+        let tile_tx = tiny_skia::Transform::from_translate(0.0, -(y as f32));
+        let mut ctx = ChunkSinkContext {
             clip_stack: &mut self.clip_stack,
             text_ctx: &self.text_ctx,
             svg_cache: &mut self.svg_cache,
             image_cache: &mut self.image_cache,
             shadow_rasterizer: &mut self.shadow_rasterizer,
-            stack: &mut self.stack,
             line_cache: &mut self.line_cache,
+            tile_w: w as f32,
+            tile_h: 1.0,
         };
         // A chunk covering the scanline (half-open [top, bottom) in the
         // chunk's absolute bounds) paints into the row.
         for chunk in scene.chunks.iter().filter(|c| {
             (y as f32) >= c.bounds.y && (y as f32) < c.bounds.bottom()
         }) {
-            let base = crate::path::skia_tx(&ctx.stack.transform());
-            for clip in chunk.inherited_clips.iter() {
-                ctx.clip_stack.push(
-                    &clip.rect,
-                    clip.radius,
-                    base,
-                    w,
-                    1,
-                    w,
-                    1,
-                );
-            }
-            let checkpoint = ctx.stack.checkpoint();
-            ctx.stack.push_transform(
-                &riode::foundation::Transform::from_translation(
-                    chunk.abs_origin.x,
-                    chunk.abs_origin.y,
-                ),
-            );
-            ctx.stack.push_transform(&chunk.placement);
-            execute_commands(
-                &chunk.commands,
-                &mut self.row.as_mut(),
-                &mut ctx,
-                w as f32,
-                1.0,
-            );
-            ctx.stack.restore(checkpoint);
-            for _ in chunk.inherited_clips.iter() {
-                ctx.clip_stack.pop();
-            }
+            execute_chunk(self.row.as_mut(), tile_tx, chunk, &mut ctx);
         }
         self.clip_stack.reset();
         sink.push_line(y, self.row.data());

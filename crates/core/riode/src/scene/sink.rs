@@ -148,10 +148,18 @@ pub fn chunk_base(chunk: &SceneChunk) -> Transform {
 }
 
 /// Lowers one chunk's command stream into sink calls — the single stack walk
-/// in the codebase. Opacity is folded per item, transforms are absolute in
-/// chunk-local space, text carries its settle rounding and raster path.
-pub fn lower_chunk(commands: &[SceneCommand], sink: &mut impl SceneSink) {
+/// in the codebase. `base` is the chunk base (`translate(abs_origin) *
+/// placement`, see [`chunk_base`]); it is the walk's root frame, so absolute
+/// transforms — including the text raster verdict — account for placement
+/// scale. Opacity is folded per item, transforms are absolute in chunk-local
+/// space, text carries its settle rounding and raster path.
+pub fn lower_chunk(
+    commands: &[SceneCommand],
+    base: &Transform,
+    sink: &mut impl SceneSink,
+) {
     let mut stack = SceneStack::new(Transform::IDENTITY, 1.0);
+    stack.push_transform(base);
     let checkpoint = stack.checkpoint();
     for cmd in commands {
         match cmd {

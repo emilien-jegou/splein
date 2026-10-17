@@ -231,7 +231,11 @@ pub const POS_QUANTA_Y: u8 = 8;
 /// Cost notes: alphas fold opacity/gamma once per run, coverage blits
 /// straight out of the cache handle (no staging copy, no per-glyph alloc).
 /// At integer pens output matches the old exact integer blit.
-fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: TextRenderParams) {
+pub(crate) fn render_text_aligned(
+    pixmap: &mut PixmapMut,
+    text_ctx: &TextContext,
+    params: TextRenderParams,
+) {
     let ink_r = (params.color.r * 255.0).round() as u8;
     let ink_g = (params.color.g * 255.0).round() as u8;
     let ink_b = (params.color.b * 255.0).round() as u8;
@@ -464,7 +468,7 @@ fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: T
 /// glyphs themselves. Each glyph becomes a tinted coverage pixmap drawn with
 /// the full transform from its exact origin: the engine carries
 /// origin + transform, tiny-skia does the filtering and clipping.
-fn render_text_transformed(
+pub(crate) fn render_text_transformed(
     pixmap: &mut PixmapMut,
     text_ctx: &TextContext,
     params: TextRenderParams,

@@ -3,16 +3,14 @@
 use tiny_skia::Pixmap;
 
 use crate::clip::ClipStack;
-use crate::command::{execute_commands, CommandContext};
+use crate::command::{execute_chunk, ChunkSinkContext};
 use crate::image::ImageCache;
-use crate::path::skia_tx;
 use crate::shadow::ShadowRasterizer;
 use crate::svg::SvgCache;
 use crate::text::LineCompositeCache;
-use riode::foundation::{DamageRegion, Transform};
+use riode::foundation::DamageRegion;
 use riode::render::error::BackendError;
 use riode::scene::scene::Scene;
-use riode::scene::SceneStack;
 use riode::text::TextContext;
 use riode::scene::SceneChunk;
 use riode::foundation::ResolvedRect;
@@ -28,7 +26,6 @@ pub struct TinySkiaRenderer {
     image_cache: ImageCache,
     shadow_rasterizer: ShadowRasterizer,
     line_cache: LineCompositeCache,
-    stack: SceneStack,
     scratch_pixmap: Option<Pixmap>,
 }
 
@@ -45,7 +42,6 @@ impl TinySkiaRenderer {
             image_cache: ImageCache::new(),
             shadow_rasterizer: ShadowRasterizer::new(),
             line_cache: LineCompositeCache::new(),
-            stack: SceneStack::new(Transform::IDENTITY, 1.0),
             scratch_pixmap: None,
         }
     }
@@ -120,7 +116,6 @@ impl TinySkiaRenderer {
                 || TileWorker {
                     scratch: None,
                     clip_stack: ClipStack::new(),
-                    stack: SceneStack::new(Transform::IDENTITY, 1.0),
                     text_ctx: text_ctx.clone(),
                     svg_cache: SvgCache::new(),
                     image_cache: ImageCache::new(),
@@ -153,49 +148,25 @@ impl TinySkiaRenderer {
                     scratch.fill(tiny_skia::Color::TRANSPARENT);
                     worker.clip_stack.reset();
                     // Tile-local frame plus clean opacity, matching serial.
-                    worker.stack = SceneStack::new(
-                        Transform::from_translation(-(x as f32), -(y as f32)),
-                        1.0,
-                    );
-                    let mut ctx = CommandContext {
+                    let tile_tx =
+                        tiny_skia::Transform::from_translate(-(x as f32), -(y as f32));
+                    let mut ctx = ChunkSinkContext {
                         clip_stack: &mut worker.clip_stack,
                         text_ctx: &worker.text_ctx,
                         svg_cache: &mut worker.svg_cache,
                         image_cache: &mut worker.image_cache,
                         shadow_rasterizer: &mut worker.shadow_rasterizer,
-                        stack: &mut worker.stack,
                         line_cache: &mut worker.line_cache,
+                        tile_w: rw as f32,
+                        tile_h: rh as f32,
                     };
                     for chunk in &tile.1 {
-                        let base = skia_tx(&ctx.stack.transform());
-                        for clip in chunk.inherited_clips.iter() {
-                            ctx.clip_stack.push(
-                                &clip.rect,
-                                clip.radius,
-                                base,
-                                rw,
-                                rh,
-                                scratch.width(),
-                                scratch.height(),
-                            );
-                        }
-                        let checkpoint = ctx.stack.checkpoint();
-                        ctx.stack.push_transform(&Transform::from_translation(
-                            chunk.abs_origin.x,
-                            chunk.abs_origin.y,
-                        ));
-                        ctx.stack.push_transform(&chunk.placement);
-                        execute_commands(
-                            &chunk.commands,
-                            &mut scratch.as_mut(),
+                        execute_chunk(
+                            scratch.as_mut(),
+                            tile_tx,
+                            chunk,
                             &mut ctx,
-                            rw as f32,
-                            rh as f32,
                         );
-                        ctx.stack.restore(checkpoint);
-                        for _ in chunk.inherited_clips.iter() {
-                            ctx.clip_stack.pop();
-                        }
                     }
                     worker.clip_stack.reset();
                     Ok((x, y, rw, rh, scratch))
@@ -305,53 +276,29 @@ impl TinySkiaRenderer {
             // tile left behind would otherwise bleed across, and the damage region caps
             // the tile count at a small number, so the reset is free.
             self.clip_stack.reset();
-            self.stack = SceneStack::new(
-                Transform::from_translation(-(x as f32), -(y as f32)),
-                1.0,
-            );
-            let mut ctx = CommandContext {
+            let tile_tx = tiny_skia::Transform::from_translate(-(x as f32), -(y as f32));
+            let mut ctx = ChunkSinkContext {
                 clip_stack: &mut self.clip_stack,
                 text_ctx: &self.text_ctx,
                 svg_cache: &mut self.svg_cache,
                 image_cache: &mut self.image_cache,
                 shadow_rasterizer: &mut self.shadow_rasterizer,
-                stack: &mut self.stack,
                 line_cache: &mut self.line_cache,
+                tile_w: rw as f32,
+                tile_h: rh as f32,
             };
 
             for chunk in scene.chunks.iter().filter(|c| c.bounds.overlaps(rect)) {
                 // Chunk-local streams: placement (origin + hoisted root
-                // transform) and absolute inherited clips are applied here,
-                // around the content, so moved chunks reuse their encoding.
-                let base = skia_tx(&ctx.stack.transform());
-                for clip in chunk.inherited_clips.iter() {
-                    ctx.clip_stack.push(
-                        &clip.rect,
-                        clip.radius,
-                        base,
-                        rw,
-                        rh,
-                        scratch.width(),
-                        scratch.height(),
-                    );
-                }
-                let checkpoint = ctx.stack.checkpoint();
-                ctx.stack.push_transform(&Transform::from_translation(
-                    chunk.abs_origin.x,
-                    chunk.abs_origin.y,
-                ));
-                ctx.stack.push_transform(&chunk.placement);
-                execute_commands(
-                    &chunk.commands,
-                    &mut scratch.as_mut(),
+                // transform) and absolute inherited clips are applied by
+                // core's lowering, around the content, so moved chunks reuse
+                // their encoding.
+                execute_chunk(
+                    scratch.as_mut(),
+                    tile_tx,
+                    chunk,
                     &mut ctx,
-                    rw as f32,
-                    rh as f32,
                 );
-                ctx.stack.restore(checkpoint);
-                for _ in chunk.inherited_clips.iter() {
-                    ctx.clip_stack.pop();
-                }
             }
             self.clip_stack.reset();
 
@@ -454,7 +401,6 @@ fn tile_quantum(n: u32) -> u32 {
 struct TileWorker {
     scratch: Option<tiny_skia::Pixmap>,
     clip_stack: ClipStack,
-    stack: SceneStack,
     text_ctx: TextContext,
     svg_cache: SvgCache,
     image_cache: ImageCache,

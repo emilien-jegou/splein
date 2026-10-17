@@ -1,4 +1,10 @@
-// Single responsibility: Direct dispatch and execution of discrete SceneCommands on TinySkia targets.
+// Single responsibility: SceneSink implementation painting lowered primitives on TinySkia targets.
+//
+// No command matching, no stack walk, no placement policy: core lowers each
+// chunk (`lower_chunk`) and calls one method per placed primitive. This file
+// converts the absolute chunk-local transform to tiny-skia's type (composed
+// with the engine root: tile offset) and delegates to the existing pixel
+// routines.
 
 use tiny_skia::{FillRule, Mask, PixmapMut, Transform as SkiaTransform};
 
@@ -9,162 +15,211 @@ use crate::shader::build_paint;
 use crate::shadow::ShadowRasterizer;
 use crate::stroke::render_stroke;
 use crate::svg::SvgCache;
-use crate::text::{render_text, LineCompositeCache, TextRenderParams};
-use riode::foundation::Radius;
-use riode::scene::command::SceneCommand;
-use riode::scene::SceneStack;
+use crate::text::{
+    render_text_aligned, render_text_transformed, LineCompositeCache, TextRenderParams,
+};
+use riode::foundation::{Radius, Transform as CoreTransform};
+use riode::scene::{
+    PlacedClip, PlacedImage, PlacedRect, PlacedShadow, PlacedSvg, PlacedText, SceneSink,
+    TextRaster,
+};
 use riode::text::TextContext;
 
-/// Shared stateful resources required during single-tile TinySkia rasterization.
-pub struct CommandContext<'a> {
+/// Engine-side raster state for one chunk execution: pixel caches plus the
+/// root device transform (tile offset) composed around every placed item.
+pub struct ChunkSink<'a> {
     pub clip_stack: &'a mut ClipStack,
     pub text_ctx: &'a TextContext,
     pub svg_cache: &'a mut SvgCache,
     pub image_cache: &'a mut ImageCache,
     pub shadow_rasterizer: &'a mut ShadowRasterizer,
-    /// Framing-state walk shared with all backends (core semantics).
-    pub stack: &'a mut SceneStack,
     pub line_cache: &'a mut LineCompositeCache,
+    pub target: PixmapMut<'a>,
+    /// Tile offset (device px). Composed with each item's absolute
+    /// chunk-local transform at draw time — the only matrix the engine owns.
+    pub root: SkiaTransform,
+    pub tile_w: f32,
+    pub tile_h: f32,
 }
 
-/// Executes a list of scene commands onto a destination scratch pixmap tile.
-#[inline(always)]
-pub fn execute_commands(
-    commands: &[SceneCommand],
-    target: &mut PixmapMut,
-    ctx: &mut CommandContext,
-    tile_w: f32,
-    tile_h: f32,
-) {
-    let checkpoint = ctx.stack.checkpoint();
-    // Seed the base frame so every chunk starts from the inherited state,
-    // mirroring the old push-identity/push-base sequence.
-    ctx.stack.push_transform(&riode::foundation::Transform::IDENTITY);
+impl ChunkSink<'_> {
+    /// Composes the engine root around a placed item's absolute transform.
+    #[inline(always)]
+    fn compose(&self, t: &CoreTransform) -> SkiaTransform {
+        self.root.pre_concat(skia_tx(t))
+    }
 
-    for cmd in commands {
-        // Backend transform converted from the shared core state at draw
-        // time; the stack walk itself is backend-agnostic.
-        let (cur_tx, cur_op) = (skia_tx(&ctx.stack.transform()), ctx.stack.opacity());
-        match cmd {
-            SceneCommand::PushTransform(t) => {
-                ctx.stack.push_transform(t);
-            }
-            SceneCommand::PopTransform => {
-                ctx.stack.pop_transform();
-            }
-            SceneCommand::PushOffset(p) => ctx.stack.push_offset(*p),
-            SceneCommand::PopOffset => {
-                ctx.stack.pop_transform();
-            }
-            SceneCommand::PushOpacity(o) => ctx.stack.push_opacity(*o),
-            SceneCommand::PopOpacity => {
-                ctx.stack.pop_opacity();
-            }
-            SceneCommand::PushClip { rect, radius } => {
-                ctx.clip_stack.push(
-                    rect,
-                    *radius,
-                    cur_tx,
-                    tile_w as u32,
-                    tile_h as u32,
-                    target.width(),
-                    target.height(),
-                );
-            }
-            SceneCommand::PopClip => ctx.clip_stack.pop(),
-            SceneCommand::DrawShadow {
-                rect,
-                radius,
-                shadow,
-                light,
-            } => {
-                ctx.shadow_rasterizer.render(
-                    target,
-                    rect,
-                    *radius,
-                    shadow,
-                    light,
-                    cur_op,
-                    cur_tx,
-                    ctx.clip_stack.current(),
-                );
-            }
-            SceneCommand::DrawRect { rect, appearance } => {
-                render_rect(
-                    target,
-                    rect,
-                    appearance,
-                    cur_op,
-                    cur_tx,
-                    ctx.clip_stack.current(),
-                    tile_w,
-                    tile_h,
-                );
-            }
-            SceneCommand::DrawImage { rect, image } => {
-                ctx.image_cache.draw(
-                    target,
-                    rect,
-                    image,
-                    cur_op,
-                    cur_tx,
-                    ctx.clip_stack.current(),
-                    tile_w,
-                    tile_h,
-                );
-            }
-            SceneCommand::DrawSvg { rect, graphic } => {
-                ctx.svg_cache.draw(
-                    graphic,
-                    rect.width.round() as u32,
-                    rect.height.round() as u32,
-                    target,
-                    cur_op,
-                    cur_tx.pre_translate(rect.x, rect.y),
-                    ctx.clip_stack.current(),
-                );
-            }
-            SceneCommand::DrawText {
-                origin,
-                layout,
-                color,
-            } => {
-                render_text(
-                    target,
-                    ctx.text_ctx,
-                    TextRenderParams {
-                        origin: *origin,
-                        layout,
-                        layout_arc: Some(std::sync::Arc::clone(layout)),
-                        color: *color,
-                        opacity: cur_op,
-                        transform: cur_tx,
-                        clip: ctx.clip_stack.current(),
-                        line_cache: Some(&mut *ctx.line_cache),
-                    },
-                );
-            }
-            // Isolates the subtree with a rectangular clip, matching the Vello
-            // backend (push_layer/pop_layer). Previously this allocated an
-            // offscreen pixmap but never redirected draws into it, so the
-            // cache filled with empty bitmaps and isolation never happened.
-            SceneCommand::BeginLayer { rect, .. } => {
-                ctx.clip_stack.push(
-                    rect,
-                    Radius::ZERO,
-                    cur_tx,
-                    tile_w as u32,
-                    tile_h as u32,
-                    target.width(),
-                    target.height(),
-                );
-            }
-            SceneCommand::EndLayer { .. } => {
-                ctx.clip_stack.pop();
+    #[inline(always)]
+    fn target_size(&self) -> (u32, u32) {
+        (self.target.width(), self.target.height())
+    }
+}
+
+impl SceneSink for ChunkSink<'_> {
+    fn push_clip(&mut self, clip: &PlacedClip) {
+        let (mw, mh) = self.target_size();
+        // Masks size to the scratch pixmap: tiny-skia silently skips draws
+        // whose mask dimensions differ from the target.
+        self.clip_stack.push(
+            &clip.rect,
+            clip.radius,
+            self.compose(&clip.transform),
+            self.tile_w as u32,
+            self.tile_h as u32,
+            mw,
+            mh,
+        );
+    }
+
+    fn pop_clip(&mut self) {
+        self.clip_stack.pop();
+    }
+
+    fn rect(&mut self, r: &PlacedRect) {
+        // Split borrow: the target pixmap vs the clip mask borrow.
+        let tx = self.compose(&r.transform);
+        let clip = self.clip_stack.current();
+        render_rect(
+            &mut self.target,
+            &r.rect,
+            r.appearance,
+            r.opacity,
+            tx,
+            clip,
+            self.tile_w,
+            self.tile_h,
+        );
+    }
+
+    fn text(&mut self, t: &PlacedText) {
+        let tx = self.compose(&t.transform);
+        let clip = self.clip_stack.current();
+        let params = TextRenderParams {
+            origin: t.origin,
+            layout: t.layout,
+            layout_arc: Some(std::sync::Arc::clone(t.layout)),
+            color: t.color,
+            opacity: t.opacity,
+            transform: tx,
+            clip,
+            line_cache: Some(&mut *self.line_cache),
+        };
+        // Raster path decided by core from the absolute transform.
+        match t.raster {
+            TextRaster::Aligned => render_text_aligned(&mut self.target, self.text_ctx, params),
+            TextRaster::Transformed => {
+                render_text_transformed(&mut self.target, self.text_ctx, params)
             }
         }
     }
-    ctx.stack.restore(checkpoint);
+
+    fn image(&mut self, i: &PlacedImage) {
+        let tx = self.compose(&i.transform);
+        let clip = self.clip_stack.current();
+        self.image_cache.draw(
+            &mut self.target,
+            &i.rect,
+            i.image,
+            i.opacity,
+            tx,
+            clip,
+            self.tile_w,
+            self.tile_h,
+        );
+    }
+
+    fn svg(&mut self, s: &PlacedSvg) {
+        let (rw, rh) = riode::scene::raster_cache_size(s.rect.width, s.rect.height, 1.0);
+        let tx = self.compose(&s.transform);
+        let clip = self.clip_stack.current();
+        self.svg_cache.draw(
+            s.graphic,
+            rw,
+            rh,
+            &mut self.target,
+            s.opacity,
+            tx.pre_translate(s.rect.x, s.rect.y),
+            clip,
+        );
+    }
+
+    fn shadow(&mut self, s: &PlacedShadow) {
+        let tx = self.compose(&s.transform);
+        let clip = self.clip_stack.current();
+        self.shadow_rasterizer.render(
+            &mut self.target,
+            &s.rect,
+            s.radius,
+            s.shadow,
+            s.light,
+            s.opacity,
+            tx,
+            clip,
+        );
+    }
+}
+
+/// Executes one chunk's commands onto a destination scratch pixmap tile.
+///
+/// `tile_tx` positions the tile in device px; the chunk base
+/// (`translate(abs_origin) * placement`) is composed by core's lowering, so
+/// the engine only ever sees placed items. Inherited clips (absolute
+/// screen-space) are pushed with the tile transform directly, exactly as
+/// before.
+#[inline(always)]
+pub fn execute_chunk(
+    target: PixmapMut<'_>,
+    tile_tx: SkiaTransform,
+    chunk: &riode::scene::SceneChunk,
+    ctx: &mut ChunkSinkContext<'_>,
+) {
+    for clip in chunk.inherited_clips.iter() {
+        ctx.clip_stack.push(
+            &clip.rect,
+            clip.radius,
+            tile_tx,
+            ctx.tile_w as u32,
+            ctx.tile_h as u32,
+            target.width(),
+            target.height(),
+        );
+    }
+    {
+        let mut sink = ChunkSink {
+            clip_stack: &mut *ctx.clip_stack,
+            text_ctx: ctx.text_ctx,
+            svg_cache: &mut *ctx.svg_cache,
+            image_cache: &mut *ctx.image_cache,
+            shadow_rasterizer: &mut *ctx.shadow_rasterizer,
+            line_cache: &mut *ctx.line_cache,
+            target,
+            root: tile_tx,
+            tile_w: ctx.tile_w,
+            tile_h: ctx.tile_h,
+        };
+        riode::scene::lower_chunk(
+            &chunk.commands,
+            &riode::scene::chunk_base(chunk),
+            &mut sink,
+        );
+    }
+    for _ in chunk.inherited_clips.iter() {
+        ctx.clip_stack.pop();
+    }
+}
+
+/// Shared pixel caches borrowed for one chunk execution. Split from
+/// [`ChunkSink`] (which also owns the target pixmap and root) so callers
+/// hold caches across chunks without moving the target.
+pub struct ChunkSinkContext<'a> {
+    pub clip_stack: &'a mut ClipStack,
+    pub text_ctx: &'a TextContext,
+    pub svg_cache: &'a mut SvgCache,
+    pub image_cache: &'a mut ImageCache,
+    pub shadow_rasterizer: &'a mut ShadowRasterizer,
+    pub line_cache: &'a mut LineCompositeCache,
+    pub tile_w: f32,
+    pub tile_h: f32,
 }
 
 /// Tile culling honoring the full affine transform. The old test read only the
