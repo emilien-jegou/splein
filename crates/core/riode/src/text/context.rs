@@ -10,6 +10,7 @@ use crate::text::glyph::GlyphKey;
 use crate::text::glyph_cache::{CachedBitmap, GlyphBitmapCache, GlyphCacheBudget, GlyphCacheStats};
 use crate::text::layout::TextLayout;
 use crate::text::min_content;
+use crate::text::settle::YSettleTracker;
 use crate::text::shaper::TextShapeParams;
 use crate::text::shaper::TextShaper;
 #[cfg(feature = "text-runtime")]
@@ -75,6 +76,10 @@ pub struct TextContext {
     cache: ShapedTextCache,
     bitmaps: GlyphBitmapCache,
     pub(crate) font_blobs: Arc<Mutex<Vec<Arc<Vec<u8>>>>>,
+    /// Y-settle diary: per-run recent-origin history driving the
+    /// subpixel-while-moving / integer-when-resting decision. Position
+    /// data only, no animation coupling; see [`YSettleTracker`].
+    settle: Arc<Mutex<YSettleTracker>>,
     /// Live-resize hint: frames remaining in the "resizing" window, set by
     /// `Engine::resize`, ticked once per frame. While active, shaping misses
     /// reuse nearby widths instead of cold-shaping every 1/16px bucket.
@@ -119,6 +124,7 @@ impl TextContext {
             cache: ShapedTextCache::new(),
             bitmaps: GlyphBitmapCache::with_budget(budget),
             font_blobs,
+            settle: Arc::new(Mutex::new(YSettleTracker::new())),
             resize_hint: Arc::new(std::sync::atomic::AtomicU8::new(0)),
         }
     }
@@ -142,6 +148,21 @@ impl TextContext {
     /// Whether a resize drag is considered in flight.
     pub(crate) fn resizing(&self) -> bool {
         self.resize_hint.load(std::sync::atomic::Ordering::Relaxed) > 0
+    }
+
+    /// Resolves the origin Y to emit for a text run: raw `y` while the
+    /// run's recent history shows motion, latched `round(y)` once it has
+    /// rested. Key must identify the run across frames (layout allocation
+    /// pointer). The `B`-key global snap overrides the diary and forces
+    /// integer placement.
+    pub fn resolve_settled_y(&self, key: usize, y: f32) -> f32 {
+        if baseline_snap_y() {
+            return if y.is_finite() { y.round() } else { y };
+        }
+        match self.settle.lock() {
+            Ok(mut t) => t.resolve(key, y),
+            Err(_) => y,
+        }
     }
 
     /// Overrides the glyph bitmap budget on an existing context.

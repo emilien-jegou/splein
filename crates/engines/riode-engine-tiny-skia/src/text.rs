@@ -291,6 +291,17 @@ fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: T
     let layout: &TextLayout = params.layout;
     let layout_arc = params.layout_arc;
     let mut line_cache = params.line_cache;
+    // Y-settle: uniform origin-level adjustment so glyphs, decorations,
+    // and caret stay glued. While the run moves, identity; once rested,
+    // a whole-pixel nudge for crisp baselines. Keyed by layout
+    // allocation (stable while retained); X untouched.
+    let settle_key = layout_arc
+        .as_ref()
+        .map(|a| Arc::as_ptr(a) as usize)
+        .unwrap_or(params.layout as *const _ as usize);
+    let settled_y = text_ctx.resolve_settled_y(settle_key, origin.y + tty);
+    let settle_dy = settled_y - (origin.y + tty);
+    let origin = Point::new(origin.x, origin.y + settle_dy);
     // Paints one line's glyphs into `target`. Glyph device positions are
     // rebased onto integral `space` for the blit fast path and onto `draw`
     // for the draw call under `tx` with clip `clip_now`: canvas passes

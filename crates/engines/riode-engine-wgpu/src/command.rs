@@ -815,6 +815,12 @@ impl Batch {
         }
         let t = self.cur_tx();
         let c = [color.r, color.g, color.b, a];
+        // Y-settle: uniform origin-level adjustment (see tiny-skia
+        // reference) so glyphs and decorations stay glued; keyed by
+        // layout allocation, X untouched.
+        let settle_key = Arc::as_ptr(layout) as usize;
+        let settled_y = text_ctx.resolve_settled_y(settle_key, origin.y);
+        let origin = Point::new(origin.x, settled_y);
         // Coverage quads keep linear filtering: the 2px replicated atlas
         // gutter guarantees border taps read the owning cell, and linear
         // covers the epsilon between the integer device anchors (below)

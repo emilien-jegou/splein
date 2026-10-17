@@ -83,6 +83,7 @@ pub(crate) mod min_content;
 pub mod overflow;
 pub mod runs;
 pub mod selection;
+pub mod settle;
 pub mod shape;
 pub mod shaper;
 pub mod wrap;
@@ -109,5 +110,6 @@ pub use selection::{
     snap_to_boundary, word_bounds, word_edge, SelectionGranularity, TextSelection, CARET_WIDTH,
     DEFAULT_SELECTION_COLOR,
 };
+pub use settle::YSettleTracker;
 pub use shaper::{TextShapeParams, TextShaper};
 pub use wrap::TextWrap;
