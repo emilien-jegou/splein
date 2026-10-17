@@ -727,9 +727,11 @@ fn bench_glyph_raster(c: &mut Criterion) {
     for size in [12.0f32, 48.0] {
         let name = format!("size_{size}px");
         // Miss path: fresh context per batch => empty caches, full render.
-        // Phases spread over X quarters and Y eighths like real text at
-        // mixed pen positions (x in low 2 bits, y in next 3).
-        let phase = |i: usize| ((i % 4) | (((i / 4) % 8) << 2)) as u8;
+        // Phases spread over X quarters and Y `GLYPH_QUANTA_Y` bins like
+        // real text at mixed pen positions (x in low 2 bits, y above).
+        let phase = |i: usize| {
+            ((i % 4) | (((i / 4) % riode::scene::GLYPH_QUANTA_Y as usize) << 2)) as u8
+        };
         group.bench_function(format!("{name}_miss"), |b| {
             b.iter_batched(
                 || keys_for(size),

@@ -208,6 +208,17 @@ impl TinySkiaRenderer {
             self.persistent_canvas.width(),
             self.persistent_canvas.height(),
         );
+        tracing::info!(
+            damage_rects = damage.rects().len(),
+            damage_area_px = damage
+                .rects()
+                .iter()
+                .map(|r| (r.width.max(0.0) * r.height.max(0.0)) as u64)
+                .sum::<u64>(),
+            canvas_w = cw,
+            canvas_h = ch,
+            "raster tiles"
+        );
 
         // Scroll shifts first: the persistent canvas is current through last
         // frame (every frame repaints its own damage), so moving the covered

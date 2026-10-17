@@ -161,6 +161,23 @@ impl Clock {
         (steps, FIXED_STEP_SECS)
     }
 
+    /// Drops the pending animation delta and banked time.
+    ///
+    /// Called on frames where no ticker wants animation (all settled): the
+    /// measured gap then covers idle time owed to nobody. Both the stored
+    /// remainder and the current tick's delta are dropped — dropping only
+    /// the remainder is useless, since `animation_steps` would immediately
+    /// re-bank the just-measured gap (up to `MAX_DELTA_SECS`) into the next
+    /// retarget (a fresh 180ms fade starting 100ms in). Slow-frame catch-up
+    /// during live animation is unaffected — this only runs when nothing was
+    /// animating. Same principle as the frozen clock zeroing its
+    /// accumulator on stop. Note `wall` is kept: gesture timeouts must
+    /// still observe real idle stretches.
+    pub fn discard_banked(&mut self) {
+        self.last = 0.0;
+        self.accumulated = 0.0;
+    }
+
     /// Asks for exactly one quantum to run on the next frame, whatever the time scale.
     ///
     /// Requests do not queue up behind each other beyond the frame boundary, so pressing step

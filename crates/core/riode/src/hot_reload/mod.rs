@@ -99,6 +99,37 @@ pub const HOT_PROFILE: &str = "release";
 /// sysroot closure. Routing init through here keeps their dependency set to exactly one
 /// crate. Safe to call twice (only the first call wins).
 pub fn init_dev_logging() {
+    // File sink: `RIODE_LOG_FILE=/tmp/riode-foo.jsonl` (set by scripts/example.sh)
+    // gets a JSON fmt layer with span close events, so per-frame pass timings
+    // (`Pass::Layout`, `Pass::React`, ...) land in the file for jq analysis.
+    if let Ok(path) = std::env::var("RIODE_LOG_FILE") {
+        if !path.is_empty() {
+            use tracing_subscriber::layer::SubscriberExt;
+            use tracing_subscriber::util::SubscriberInitExt;
+            if let Ok(file) = std::fs::File::options()
+                .create(true)
+                .append(true)
+                .open(&path)
+            {
+                let filter =
+                    tracing_subscriber::EnvFilter::try_from_default_env()
+                        .unwrap_or_else(|_| "info".parse().expect("info parses"));
+                let _ = tracing_subscriber::registry()
+                    .with(filter)
+                    .with(
+                        tracing_subscriber::fmt::layer()
+                            .json()
+                            .with_target(true)
+                            .with_span_events(
+                                tracing_subscriber::fmt::format::FmtSpan::CLOSE,
+                            )
+                            .with_writer(std::sync::Mutex::new(file)),
+                    )
+                    .try_init();
+                return;
+            }
+        }
+    }
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()

@@ -57,6 +57,7 @@ impl ChunkSink<'_> {
 
 impl SceneSink for ChunkSink<'_> {
     fn push_clip(&mut self, clip: &PlacedClip) {
+        let _span = tracing::info_span!("Raster::Clip").entered();
         let (mw, mh) = self.target_size();
         // Masks size to the scratch pixmap: tiny-skia silently skips draws
         // whose mask dimensions differ from the target.
@@ -76,6 +77,7 @@ impl SceneSink for ChunkSink<'_> {
     }
 
     fn rect(&mut self, r: &PlacedRect) {
+        let _span = tracing::info_span!("Raster::Rect").entered();
         // Split borrow: the target pixmap vs the clip mask borrow.
         let tx = self.compose(&r.transform);
         let clip = self.clip_stack.current();
@@ -92,6 +94,7 @@ impl SceneSink for ChunkSink<'_> {
     }
 
     fn text(&mut self, t: &PlacedText) {
+        let _span = tracing::info_span!("Raster::Text").entered();
         let tx = self.compose(&t.transform);
         let clip = self.clip_stack.current();
         let params = TextRenderParams {
@@ -144,6 +147,7 @@ impl SceneSink for ChunkSink<'_> {
     }
 
     fn shadow(&mut self, s: &PlacedShadow) {
+        let _span = tracing::info_span!("Raster::Shadow").entered();
         let tx = self.compose(&s.transform);
         let clip = self.clip_stack.current();
         self.shadow_rasterizer.render(
@@ -276,20 +280,10 @@ fn render_rect(
     if !rect_visible_in_tile(r, tx, tw, th) {
         return;
     }
-    // Snap the shared translation (not each rect): box fill, highlight and
-    // any other rect under this transform shift by the same amount, so
-    // coincident edges stay coincident and land integer together.
-    let tx = crate::path::snap_transform_to_device(tx);
     if let Some(fill) = &a.fill {
         if let Some(paint) = build_paint(fill, op * a.opacity) {
-            // Device snap first: translation-only fractional offsets fringe
-            // every edge; then the hairline rule below keeps thin rects >=1px.
-            let sr = crate::path::snap_rect_to_device(r, tx);
             if matches!(a.radius, Radius::Scalar(rad) if rad <= 0.0) {
-                // 1px hairlines at fractional positions split coverage over
-                // two rows (full-width faint double line). Snap thin
-                // translation-only rects to integer pixels so they stay crisp.
-                let (mut rx, mut ry, mut rw, mut rh) = (sr.x, sr.y, sr.width, sr.height);
+                let (mut rx, mut ry, mut rw, mut rh) = (r.x, r.y, r.width, r.height);
                 if !tx.has_skew() && !tx.has_scale() {
                     if rh <= 1.5 {
                         ry = ry.round();
@@ -305,7 +299,7 @@ fn render_rect(
                 }
             } else {
                 t.fill_path(
-                    &build_rounded_path(&sr, a.radius),
+                    &build_rounded_path(r, a.radius),
                     &paint,
                     FillRule::Winding,
                     tx,
@@ -315,7 +309,6 @@ fn render_rect(
         }
     }
     if let Some(stroke) = &a.stroke {
-        let sr = crate::path::snap_rect_to_device(r, tx);
-        render_stroke(t, &sr, a.radius, stroke, op * a.opacity, tx, clip);
+        render_stroke(t, r, a.radius, stroke, op * a.opacity, tx, clip);
     }
 }

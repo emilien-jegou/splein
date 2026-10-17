@@ -56,8 +56,18 @@ cargo build --release -p riode-cli
 RIODE_HOT_EXAMPLE="$NAME" RUSTFLAGS="-C prefer-dynamic" cargo build --release -p riode-shared -p riode-hot-gen-ui
 
 if [ -n "$ENGINE" ]; then
-    exec ./target/release/riode hot --example "$NAME" --root "$ROOT" \
-        --engine "$ENGINE"
+    ENGINE_FLAG="--engine $ENGINE"
 else
-    exec ./target/release/riode hot --example "$NAME" --root "$ROOT"
+    ENGINE_FLAG=""
 fi
+
+# Auto-created trace log: JSON tracing (incl. per-pass span timings) lands here
+# so it can be handed to an agent for analysis. Honored by
+# `riode::hot_reload::init_dev_logging` via `RIODE_LOG_FILE`.
+LOG_FILE="/tmp/riode-${NAME}-$(date +%Y%m%d-%H%M%S).jsonl"
+export RIODE_LOG_FILE="$LOG_FILE"
+echo "example.sh: tracing log -> $RIODE_LOG_FILE" >&2
+
+# shellcheck disable=SC2086
+exec ./target/release/riode hot --example "$NAME" --root "$ROOT" \
+    $ENGINE_FLAG

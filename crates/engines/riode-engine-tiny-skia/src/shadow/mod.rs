@@ -234,6 +234,7 @@ impl ShadowRasterizer {
                 || rect.height < (patch_dim as f32)
                 || transform.has_skew();
             if is_too_small {
+                let _span = tracing::info_span!("Raster::ShadowDirect").entered();
                 render_direct_blur(
                     &mut self.scratch_a,
                     &mut self.scratch_b,

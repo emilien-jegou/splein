@@ -1,6 +1,7 @@
 // Single responsibility: Retained arena node aggregating style, geometry, and runtime state.
 
 use crate::foundation::{Key, Point, ResolvedRect, Size, StrokeAlign, Transform};
+use crate::scene::RectSettle;
 use crate::tree::kind::NodeKind;
 use crate::tree::state::NodeState;
 use crate::tree::style::NodeStyle;
@@ -50,6 +51,7 @@ pub struct LayoutNode {
     pub abs_tx: Transform,
     pub abs_tx_frame: u64,
     pub state: NodeState,
+    pub rect_settle: RectSettle,
 }
 
 impl LayoutNode {
@@ -64,6 +66,7 @@ impl LayoutNode {
             abs_tx: Transform::IDENTITY,
             abs_tx_frame: 0,
             state: NodeState::default(),
+            rect_settle: RectSettle::default(),
         }
     }
 

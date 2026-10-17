@@ -35,9 +35,20 @@ pub fn run_frame_passes(
     // One clock feeds everything time-driven this frame: the reactive tickers that drive
     // userland animation.
     let t_react0 = std::time::Instant::now();
+    // Idle wake bursts: banked time from a gap with no live animation is
+    // owed to nobody — spending it would fast-forward the next retarget
+    // (up to 12 steps into a fresh segment). Live animation keeps its
+    // catch-up (slow frames still converge). Fresh retargets report settled
+    // until their first advance, so a toggle out of idle correctly discards.
+    if !scheduler.runtime.borrow().has_active_tickers() {
+        scheduler.clock.discard_banked();
+    }
     let (steps, step) = scheduler.clock.animation_steps();
-    for _ in 0..steps {
-        crate::reactive::tick(&scheduler.runtime, step);
+    {
+        let _span = tracing::info_span!("Pass::React", steps).entered();
+        for _ in 0..steps {
+            crate::reactive::tick(&scheduler.runtime, step);
+        }
     }
     // Total time the tickers were given this frame. The post-layout phase instead gets the
     // frame's own scaled delta, so work that lives there (FLIP spring integration, scroll
@@ -97,7 +108,10 @@ pub fn run_frame_passes(
     // only thing downstream is damage, and a callback cannot dirty a node — it writes signals,
     // which the reactive layer resolves below — so the region computed here is the one this
     // frame's compile will actually use.
-    crate::reactive::run_post_layout(&scheduler.runtime, post_dt);
+    {
+        let _span = tracing::info_span!("Pass::PostLayout").entered();
+        crate::reactive::run_post_layout(&scheduler.runtime, post_dt);
+    }
     let t_react = t_react0.elapsed();
 
     // Whatever those callbacks wrote into a bound signal is applied here, in the same frame.

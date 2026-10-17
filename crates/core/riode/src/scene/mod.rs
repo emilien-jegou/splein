@@ -64,6 +64,7 @@ pub mod command;
 pub mod context;
 pub mod image;
 pub mod scene;
+pub mod settle;
 pub mod sink;
 pub mod snap;
 pub mod stack;
@@ -78,10 +79,11 @@ pub use sink::{
     chunk_base, lower_chunk, sink_ignored_counts, PlacedClip, PlacedImage, PlacedRect,
     PlacedShadow, PlacedSvg, PlacedText, SceneSink, SinkDiagnostics, TextRaster,
 };
+pub use settle::RectSettle;
 pub use snap::{
-    hairline_adjust, has_scale_or_skew, integerize_damage, quantize_eighth, quantize_nths,
-    quantize_quarter, raster_cache_size, settle_round, snap_rect_to_device,
-    snap_transform_to_device,
+    hairline_adjust, has_scale_or_skew, integerize_damage, quantize_nths, quantize_quarter,
+    quantize_y, raster_cache_size, settle_round, snap_rect_to_device, snap_transform_to_device,
 };
+pub use snap::GLYPH_QUANTA_Y;
 pub use stack::SceneStack;
 pub use vector::VectorGraphic;

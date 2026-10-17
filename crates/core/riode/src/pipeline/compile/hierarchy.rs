@@ -62,15 +62,19 @@ pub fn compile_node_hierarchy(
     let abs_origin = own_tx.transform_point(Point::ZERO);
     {
         let node_mut = arena.get_mut(id);
+        let paint = node_mut.rect_settle.observe(node_mut.resolved_rect);
+        let dx = paint.x - node_mut.resolved_rect.x;
+        let dy = paint.y - node_mut.resolved_rect.y;
         enter_node_frame(
             node_mut,
             chunk,
-            off_x,
-            off_y,
+            off_x + dx,
+            off_y + dy,
             LayerId::from_packed(id.packed()),
             is_stacking_root,
+            Some(paint),
         );
-        emit_node_content(node_mut, chunk, text_ctx, caret_visible, abs_origin.y);
+        emit_node_content(node_mut, chunk, text_ctx, caret_visible, abs_origin.y, Some(paint));
     }
 
     // Hoisted single copy (see bounds.rs): per-index `children()` calls

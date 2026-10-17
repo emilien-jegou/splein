@@ -38,12 +38,10 @@ impl ClipStack {
             return;
         }
 
+        let _span =
+            tracing::info_span!("Raster::ClipMask", w = mask_w, h = mask_h).entered();
         let mut mask = Mask::new(mask_w.max(1), mask_h.max(1)).expect("Mask allocation failed");
-        // Same shared-translation snap as draws: a snapped border under an unsnapped
-        // mask would be clipped up to half a pixel off its true edge.
-        let transform = crate::path::snap_transform_to_device(transform);
-        let snapped = crate::path::snap_rect_to_device(rect, transform);
-        let path = build_rounded_path(&snapped, radius);
+        let path = build_rounded_path(rect, radius);
         // AA mask: the draw paints beneath use AA coverage (`Paint::default`),
         // so an aliased clip would scissor smooth border/text edges into
         // stair-steps wherever any clip is active (page/layer clips are the

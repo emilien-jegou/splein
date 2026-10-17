@@ -14,3 +14,4 @@ crate-type = ["cdylib"]
 # Single dynamic edge (see riode-shared docs): everything resolves to the host's one
 # live runtime. No other riode-flavored dependencies, ever.
 riode-shared = { path = "../../crates/core/riode-shared", version = "0.2.0" }
+tracing = "0.1"

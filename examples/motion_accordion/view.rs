@@ -1,6 +1,7 @@
 // Single responsibility: Accordion panels, headers, and the reveal they animate.
 
 use riode::prelude::*;
+use riode::reactive::use_transition;
 
 use super::motion_ui::*;
 
@@ -116,7 +117,7 @@ fn Item(
     // The height is animated here rather than by the engine, so it is a real layout value at
     // every frame. The copy below is laid out against it and clipped by it in the same pass,
     // which is why nothing needs a separate reveal.
-    let height = Transition::smooth().on(is_open.clone().map(move |open| {
+    let height = use_transition(Transition::smooth(), is_open.clone().map(move |open| {
         if open {
             OPEN
         } else {
@@ -164,11 +165,13 @@ fn Header(
             gap={12.0}
             on:click={{
                 move |_| {
-                    toggle_open.set(if toggle_state.get() {
+                    let next = if toggle_state.get() {
                         None
                     } else {
                         Some(index)
-                    });
+                    };
+                    tracing::info!(index = index, open = ?next, "accordion toggle");
+                    toggle_open.set(next);
                 }
             }}
         >
@@ -191,7 +194,7 @@ fn Header(
 fn PanelBody(index: usize, copy: &'static str, is_open: Computed<bool>) -> impl IntoElement {
     // The copy fades on the same clock as the box, so it never appears before the reveal.
     let reveal =
-        Transition::ease(180.ms(), Ease::OutCubic).on(is_open.map(
+        use_transition(Transition::ease(180.ms(), Ease::OutCubic), is_open.map(
             move |open| {
                 if open {
                     1.0

@@ -6,7 +6,7 @@ use riode::foundation::{
 };
 use riode::scene::command::SceneCommand;
 use riode::scene::{
-    quantize_eighth, quantize_quarter, PlacedClip, PlacedImage, PlacedRect, PlacedShadow,
+    quantize_quarter, quantize_y, PlacedClip, PlacedImage, PlacedRect, PlacedShadow,
     PlacedSvg, PlacedText, SceneSink,
 };
 use riode::text::{quantize_raster_scale, TextContext};
@@ -796,9 +796,8 @@ impl Batch {
                 let placed = t.transform_point(Point::new(pen_x, pen_y));
                 // Subpixel policy — asymmetric quanta, shared with the
                 // tiny-skia reference: X quarters (validated-smooth,
-                // matching the legacy phase bins), Y eighths (1/16px
-                // residue, so horizontal features never read as doubled
-                // rows). The analytic rasterizer integrates coverage at
+                // matching the legacy phase bins), Y halves (1/4px
+                // residue). The analytic rasterizer integrates coverage at
                 // exactly that quantum from one linear outline, so glyph
                 // *shape* is identical at every subpixel position — no
                 // per-phase hinter re-fit, no per-bin bbox churn. The quad
@@ -814,12 +813,12 @@ impl Batch {
                     let by = placed.y.round() as i32;
                     (0u8, placed.y - by as f32)
                 } else {
-                    let (by, qy) = quantize_eighth(placed.y);
+                    let (by, qy) = quantize_y(placed.y);
                     (qy, placed.y - by as f32)
                 };
                 // Atlas slot distinctness only; the bitmap itself is keyed
                 // (key, qx, qy, scale) inside the analytic cache. X fits
-                // the legacy low 2 bits, Y the next 3 — the phase packs
+                // the legacy low 2 bits, Y the next 1 — the phase packs
                 // both natively.
                 let phase = (qx as u8) | ((qy as u8) << 2);
                 // Single raster: bitmap + bearing together (no TOCTOU).

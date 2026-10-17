@@ -14,6 +14,9 @@ readme = "README.md"
 # Hot-loop crates depend on nothing else riode-flavored; see the module docs.
 crate-type = ["dylib"]
 
+[features]
+tracy = ["riode/tracy"]
+
 [dependencies]
 riode = { path = "../riode", version = "0.2.0" }
 riode-engine-tiny-skia = { path = "../../engines/riode-engine-tiny-skia", version = "0.2.0" }

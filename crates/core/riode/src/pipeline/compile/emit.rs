@@ -48,11 +48,12 @@ pub fn enter_node_frame(
     y: f32,
     layer_id: LayerId,
     hoist_root_transform: bool,
+    paint: Option<ResolvedRect>,
 ) {
     // Clipping and layer bounds follow the render box; the content drawn inside keeps
     // its flow size (see `emit_node_content`), which is what makes a growing box reveal
     // static content instead of squashing it.
-    let painted = node.resolved_rect;
+    let painted = paint.unwrap_or(node.resolved_rect);
     let local_rect = ResolvedRect::new(0.0, 0.0, painted.width, painted.height);
     chunk.push(SceneCommand::PushOffset(Point::new(x, y)));
     if node.style.has_layer {
@@ -125,31 +126,22 @@ pub fn emit_node_content(
     text_ctx: &TextContext,
     caret_visible: bool,
     abs_origin_y: f32,
+    paint: Option<ResolvedRect>,
 ) {
+    let settled = paint.unwrap_or(node.resolved_rect);
     // A node that declares itself a clipping boundary owns its render box as a *surface*:
     // the card the user sees growing must paint up to the edge that is visibly moving, not
     // stop at its settled height while its own contents reveal past it. A node that is only
     // being repositioned by a transition is not a boundary, so its background stays at the
     // flow size and only its origin moves.
     let surface_rect = if node.style.clip {
-        let painted = node.resolved_rect;
-        ResolvedRect::new(0.0, 0.0, painted.width, painted.height)
+        ResolvedRect::new(0.0, 0.0, settled.width, settled.height)
     } else {
-        ResolvedRect::new(
-            0.0,
-            0.0,
-            node.resolved_rect.width,
-            node.resolved_rect.height,
-        )
+        ResolvedRect::new(0.0, 0.0, settled.width, settled.height)
     };
     // Interior content is always laid out at the flow size and revealed by the box above,
     // which is what stops glyphs from stretching while the surface grows around them.
-    let flow_rect = ResolvedRect::new(
-        0.0,
-        0.0,
-        node.resolved_rect.width,
-        node.resolved_rect.height,
-    );
+    let flow_rect = ResolvedRect::new(0.0, 0.0, node.resolved_rect.width, node.resolved_rect.height);
 
     if let Some(s) = &node.style.appearance.shadow {
         chunk.push(SceneCommand::DrawShadow {
