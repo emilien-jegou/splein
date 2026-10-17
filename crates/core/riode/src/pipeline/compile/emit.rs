@@ -193,6 +193,12 @@ pub fn emit_node_content(
                 .text
                 .placement
                 .observe(run_y, crate::text::baseline_snap_y());
+            // Chunk coherence for the replay path: the offset above is
+            // baked into this stream, so a cached replay is only valid
+            // while every text run in here sits settled.
+            chunk.has_text = true;
+            chunk.text_settled =
+                chunk.text_settled && node.state.text.placement.is_settled();
             if pad.left != 0.0 || pad.top != 0.0 {
                 chunk.push(SceneCommand::PushOffset(Point::new(pad.left, pad.top)));
             }

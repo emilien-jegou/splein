@@ -43,7 +43,19 @@ pub fn compile_stacking_context(
     // frame's scene entirely — harmless for retained-canvas damage-tile
     // rendering (stale pixels persist), but a hole for any backend that
     // repaints the scene (fullscreen shade, or clear-on-full-damage).
-    let replay = if is_clean && clips_match {
+    //
+    // Text settle coherence: the settle offset is baked into the cached
+    // stream, so a chunk whose origin moved since the bake or any text
+    // inside hasn't settled, forces a fresh emit (re-observing on live
+    // positions) instead of replaying a dead nudge.
+    let text_stale = node_state
+        .scene
+        .retained_chunk
+        .as_ref()
+        .is_some_and(|cached| {
+            cached.has_text && (ctx.abs_origin != cached.abs_origin || !cached.text_settled)
+        });
+    let replay = if is_clean && clips_match && !text_stale {
         node_state
             .scene
             .retained_chunk

@@ -53,6 +53,15 @@ pub struct SceneChunk {
     pub placement: Transform,
     /// Whether commands were recompiled this frame (vs replayed from cache).
     pub fresh: bool,
+    /// Whether any text settled inside this chunk's stream. The settle
+    /// offset is baked into the commands, so a replay is only valid while
+    /// every text run in here sits on its rounded baseline — otherwise the
+    /// chunk must re-emit and re-observe on live positions.
+    pub has_text: bool,
+    /// AND of every text run's settle verdict at bake time. Only meaningful
+    /// when `has_text`; vacuous `true` otherwise so textless chunks replay
+    /// freely.
+    pub text_settled: bool,
     /// Content hash memoized at finalization (N4): backends read this
     /// instead of re-walking the stream per frame per tile. `None` means
     /// unhashed (hand-built chunks); `push_chunk` fills it exactly once,
@@ -71,6 +80,8 @@ impl SceneChunk {
             placement: Transform::IDENTITY,
             fresh: true,
             content_hash: None,
+            has_text: false,
+            text_settled: true,
         }
     }
 
@@ -88,6 +99,8 @@ impl SceneChunk {
             placement: Transform::IDENTITY,
             fresh: true,
             content_hash: None,
+            has_text: false,
+            text_settled: true,
         }
     }
 
@@ -100,6 +113,8 @@ impl SceneChunk {
             placement: Transform::IDENTITY,
             fresh: true,
             content_hash: None,
+            has_text: false,
+            text_settled: true,
         }
     }
 

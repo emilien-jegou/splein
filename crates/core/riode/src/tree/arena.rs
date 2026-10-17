@@ -4,6 +4,7 @@ use crate::foundation::{Key, MeasuredElement, Point, ResolvedRect, Transform};
 use crate::tree::flags::DirtyFlags;
 use crate::tree::id::NodeId;
 use crate::tree::invalidation::mark_node_dirty;
+use crate::tree::kind::NodeKind;
 use crate::tree::node::LayoutNode;
 use crate::tree::registry::KeyRegistry;
 use smallvec::SmallVec;
@@ -181,6 +182,35 @@ impl TreeArena {
     #[inline(always)]
     pub fn drain_removed_damage(&mut self) -> Vec<ResolvedRect> {
         std::mem::take(&mut self.removed_damage)
+    }
+
+    /// Idle backstop for text settling: collects repaint regions for text
+    /// runs that still need observation to reach their baseline.
+    ///
+    /// Pure read, no state change: observation itself only runs during
+    /// compile (where absolute positions are live). On otherwise-idle
+    /// frames this reports the runs mid-glide so the frame forces a
+    /// recompile instead of freezing them mid-nudge. Bounded: a glide
+    /// converges in a frame or two, then this reports nothing and idle
+    /// stays idle. Regions are the last painted bounds expanded by the
+    /// max single-frame nudge, covering old and new pixels.
+    pub fn unsettled_text_bounds(&self) -> SmallVec<[ResolvedRect; 4]> {
+        let mut out = SmallVec::new();
+        for slot in &self.slots {
+            if !slot.is_active {
+                continue;
+            }
+            if !matches!(slot.node.kind, NodeKind::Text(_)) {
+                continue;
+            }
+            if !slot.node.state.text.placement.needs_settle() {
+                continue;
+            }
+            if let Some(b) = slot.node.state.paint.last_painted_bounds {
+                out.push(b.expand(2.0));
+            }
+        }
+        out
     }
 
     /// Checks if a node handle refers to an active, non-stale arena slot.

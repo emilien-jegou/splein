@@ -153,7 +153,20 @@ pub fn run_frame_passes(
     let viewport = ResolvedRect::new(0.0, 0.0, w as f32, h as f32);
     let t2 = std::time::Instant::now();
     // [STAGE0 #19] Idle skip: no layout, no damage, past first frame → reuse scene.
-    let idle = frame_counter > 0 && !stats.laid_out && frame_damage.is_empty() && !caret_visible;
+    // Text settle backstop: runs mid-glide cannot advance while compilation
+    // pauses, so an otherwise-idle frame with unsettled text repaints their
+    // bounds instead of freezing them mid-nudge. Bounded: the glide
+    // converges in a frame or two, then idle stays idle.
+    let mut idle =
+        frame_counter > 0 && !stats.laid_out && frame_damage.is_empty() && !caret_visible;
+    if idle {
+        let mut settling = false;
+        for rect in scheduler.arena.unsettled_text_bounds() {
+            frame_damage.push(rect);
+            settling = true;
+        }
+        idle = !settling;
+    }
     let comp = if idle {
         CompileResult {
             new_commands_emitted: 0,

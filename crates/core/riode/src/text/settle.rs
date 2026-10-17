@@ -13,26 +13,24 @@
 // Behavior:
 // - First sight of a node: displayed snaps to `round(desired)` — correct
 //   baseline on the very first paint, never a subpixel debut.
-// - Desired moves more than epsilon from displayed: moving — displayed
-//   follows exactly (smooth motion).
-// - Otherwise calm: after a still window, displayed glides toward
-//   `round(desired)` at 1px/frame and latches (resize corrections land
-//   instead of popping late).
-// - Slow drift can never buzz: any divergence above epsilon re-arms motion,
-//   so a creeping desired always drags displayed along.
+// - Desired differs from last frame by any amount: moving — displayed
+//   follows exactly. Deliberately no deadband, no glue: holding slow
+//   motion to the integer is what quantized text_smooth's drift into
+//   pixel steps. Micro-oscillation just tracks exactly at sub-quantum
+//   amplitude (invisible) instead of buzzing, and there is no snap-back
+//   cycle for a layout loop to sustain.
+// - Desired bit-identical to last frame: truly still. Displayed glides
+//   toward `round(desired)` at 1px/frame and latches. Sleep is immediate —
+//   no calm window, no threshold — so settling always completes on the
+//   first still frame and can never strand mid-diary when compilation
+//   pauses.
+// - The latch only engages on still frames, so oscillation can never
+//   flicker it: crossing a pixel boundary while moving just tracks
+//   through, and the final rest snaps home at most half a pixel, masked
+//   by the motion that caused it.
 
-/// Frames of stillness before a resting run starts gliding home.
-const CALM_WINDOW: u8 = 6;
-
-/// Frame-to-frame (and displayed-vs-desired) divergence above this counts
-/// as motion (layout px).
-const MOTION_EPS: f32 = 1.0 / 16.0;
-
-/// Glide rate toward the rounded baseline once calm (layout px per frame).
+/// Glide rate toward the rounded baseline once still (layout px per frame).
 const GLIDE_PER_FRAME: f32 = 1.0;
-
-/// Latch distance: close enough to call it landed (layout px).
-const LATCH_EPS: f32 = 1.0 / 16.0;
 
 /// Desired/displayed Y record for one text node. Lives on the node, so it
 /// survives reshapes and rebuilds that would reallocate a layout.
@@ -40,7 +38,7 @@ const LATCH_EPS: f32 = 1.0 / 16.0;
 pub struct TextPlacement {
     desired_y: f32,
     displayed_y: f32,
-    calm_frames: u8,
+    latched: Option<f32>,
     live: bool,
 }
 
@@ -49,7 +47,7 @@ impl Default for TextPlacement {
         Self {
             desired_y: 0.0,
             displayed_y: 0.0,
-            calm_frames: 0,
+            latched: None,
             live: false,
         }
     }
@@ -67,7 +65,7 @@ impl TextPlacement {
             let snapped = desired.round();
             self.desired_y = desired;
             self.displayed_y = snapped;
-            self.calm_frames = CALM_WINDOW;
+            self.latched = Some(snapped);
             self.live = true;
             return snapped - desired;
         }
@@ -75,31 +73,42 @@ impl TextPlacement {
             let snapped = desired.round();
             self.desired_y = desired;
             self.displayed_y = snapped;
-            self.calm_frames = CALM_WINDOW;
+            self.latched = Some(snapped);
             self.live = true;
             return snapped - desired;
         }
-        // Any divergence above epsilon — a jump, a step, or accumulated
-        // slow drift — is motion: follow exactly.
-        if (desired - self.displayed_y).abs() > MOTION_EPS {
+        if desired != self.desired_y {
+            // Moving (any change at all): follow exactly, drop the latch.
             self.desired_y = desired;
             self.displayed_y = desired;
-            self.calm_frames = 0;
+            self.latched = None;
             return 0.0;
         }
-        self.desired_y = desired;
-        self.calm_frames = self.calm_frames.saturating_add(1);
-        if self.calm_frames < CALM_WINDOW {
-            return self.displayed_y - desired;
-        }
-        // Calm: glide home at a bounded rate, latch when close.
+        // Bit-identical desired: truly still. Glide home, latch on arrival.
         let target = desired.round();
         let d = target - self.displayed_y;
-        if d.abs() <= LATCH_EPS {
+        if d == 0.0 {
+            self.latched = Some(target);
+        } else if d.abs() <= GLIDE_PER_FRAME {
             self.displayed_y = target;
+            self.latched = Some(target);
         } else {
             self.displayed_y += d.clamp(-GLIDE_PER_FRAME, GLIDE_PER_FRAME);
+            self.latched = None;
         }
         self.displayed_y - desired
+    }
+
+    /// Whether the run sits exactly on its rounded baseline. Only settled
+    /// runs may replay from the chunk cache: anything else must re-emit so
+    /// observation runs on live positions.
+    pub fn is_settled(&self) -> bool {
+        self.live && self.latched.is_some_and(|l| l == self.displayed_y)
+    }
+
+    /// Whether the run still needs observation to reach its baseline.
+    /// Pure read (no state change) for the idle backstop.
+    pub fn needs_settle(&self) -> bool {
+        self.live && !self.is_settled()
     }
 }
