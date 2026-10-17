@@ -33,24 +33,52 @@ impl ClipStack {
         mask_w: u32,
         mask_h: u32,
     ) {
+        self.push_from(
+            0,
+            rect,
+            radius,
+            transform,
+            tile_w,
+            tile_h,
+            mask_w,
+            mask_h,
+        );
+    }
+
+    /// Pushes a mask, intersecting only with masks at or above `floor`.
+    ///
+    /// A filter layer renders into an offscreen sized differently from the
+    /// tile, so masks pushed *before* the layer (sized to the tile) must not
+    /// intersect the in-layer masks (sized to the offscreen) — the zip would
+    /// misalign. `floor` is the clip depth recorded at layer entry; in-layer
+    /// clips intersect only their own generation.
+    pub fn push_from(
+        &mut self,
+        floor: usize,
+        rect: &ResolvedRect,
+        radius: Radius,
+        transform: Transform,
+        tile_w: u32,
+        tile_h: u32,
+        mask_w: u32,
+        mask_h: u32,
+    ) {
         if clip_covers_tile(rect, radius, transform, tile_w, tile_h) {
             self.masks.push(None);
             return;
         }
 
+        let _span =
+            tracing::info_span!("Raster::ClipMask", w = mask_w, h = mask_h).entered();
         let mut mask = Mask::new(mask_w.max(1), mask_h.max(1)).expect("Mask allocation failed");
-        // Same shared-translation snap as draws: a snapped border under an unsnapped
-        // mask would be clipped up to half a pixel off its true edge.
-        let transform = crate::path::snap_transform_to_device(transform);
-        let snapped = crate::path::snap_rect_to_device(rect, transform);
-        let path = build_rounded_path(&snapped, radius);
+        let path = build_rounded_path(rect, radius);
         // AA mask: the draw paints beneath use AA coverage (`Paint::default`),
         // so an aliased clip would scissor smooth border/text edges into
         // stair-steps wherever any clip is active (page/layer clips are the
         // common case, not the exception).
         mask.fill_path(&path, FillRule::Winding, true, transform);
 
-        if let Some(prev) = self.masks.iter().rev().find_map(|m| m.as_ref()) {
+        if let Some(prev) = self.masks[floor..].iter().rev().find_map(|m| m.as_ref()) {
             let prev_data = prev.data();
             for (dst, &src) in mask.data_mut().iter_mut().zip(prev_data.iter()) {
                 *dst = ((*dst as u16 * src as u16) / 255) as u8;
@@ -85,10 +113,37 @@ impl ClipStack {
 
     /// Returns a reference to the active clipping mask, if present.
     ///
-    /// Skipped full-coverage entries contribute nothing: an ancestor that covers the
-    /// tile clips nothing away, so the nearest real mask below them is authoritative.
+    /// Skipped full-coverage entries contribute nothing: an ancestor that covers
+    /// the tile clips nothing away, so the nearest real mask below them is authoritative.
     pub fn current(&self) -> Option<&Mask> {
-        self.masks.iter().rev().find_map(|m| m.as_ref())
+        self.current_from(0)
+    }
+
+    /// Returns the active mask among entries at or above `floor`, if present.
+    ///
+    /// A filter layer ignores masks pushed before it (sized to the tile, not
+    /// the offscreen); in-layer clips above `floor` are authoritative.
+    pub fn current_from(&self, floor: usize) -> Option<&Mask> {
+        self.masks
+            .get(floor..)
+            .unwrap_or(&[])
+            .iter()
+            .rev()
+            .find_map(|m| m.as_ref())
+    }
+
+    /// Current stack depth, for recording a filter layer's clip floor.
+    #[inline(always)]
+    pub fn depth(&self) -> usize {
+        self.masks.len()
+    }
+
+    /// Drops every mask pushed at or above `depth`.
+    ///
+    /// Called when a filter layer ends: its in-layer clips are dead and must
+    /// not leak into the parent's composite.
+    pub fn truncate_to(&mut self, depth: usize) {
+        self.masks.truncate(depth);
     }
 }
 

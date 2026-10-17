@@ -26,16 +26,16 @@ pub fn skia_tx(t: &CoreTransform) -> Transform {
     Transform::from_row(t.a, t.b, t.c, t.d, t.tx, t.ty)
 }
 
-/// Snaps a rect's placement to device pixels (core policy).
+/// Returns the rect unchanged; snap is handled by RectSettle in core.
 #[inline(always)]
-pub fn snap_rect_to_device(rect: &ResolvedRect, tx: Transform) -> ResolvedRect {
-    riode::scene::snap_rect_to_device(rect, &core_tx(tx))
+pub fn snap_rect_to_device(rect: &ResolvedRect, _tx: Transform) -> ResolvedRect {
+    *rect
 }
 
-/// Snaps the shared translation itself to device pixels (core policy).
+/// Returns the transform unchanged; snap is handled by RectSettle in core.
 #[inline(always)]
 pub fn snap_transform_to_device(tx: Transform) -> Transform {
-    skia_tx(&riode::scene::snap_transform_to_device(&core_tx(tx)))
+    tx
 }
 
 /// Builds rounded rectangle path with strict W3C Bézier radius clamping supporting per-corner radii.

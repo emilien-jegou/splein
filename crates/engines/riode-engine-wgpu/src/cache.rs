@@ -293,7 +293,7 @@ impl ChunkCache {
         image_base: u32,
         image_bind_base: u32,
     ) -> Op {
-        match *op {
+        match op.clone() {
             Op::BaseQuads { start, count } => Op::BaseQuads {
                 start: start + rect_base,
                 count,
@@ -346,6 +346,36 @@ impl ChunkCache {
                 count,
                 scissor,
                 bind: bind + image_bind_base,
+            },
+            // Filter layers never replay: BeginLayer makes the stream
+            // non-rebaseable (`rebaseable_stream`), so `rebase_for`
+            // rejects the chunk and it re-emits fresh. Pass through for
+            // exhaustiveness; a stale params index is never read.
+            Op::BeginLayer {
+                region,
+                params,
+                glass,
+            } => Op::BeginLayer {
+                region,
+                params,
+                glass,
+            },
+            Op::EndLayer {
+                start,
+                count,
+                scissor,
+                shadow_start,
+                shadows,
+                spill_start,
+                spill_count,
+            } => Op::EndLayer {
+                start: start + rect_base,
+                count,
+                scissor,
+                shadow_start: shadow_start + rect_base,
+                shadows,
+                spill_start: spill_start + rect_base,
+                spill_count,
             },
         }
     }

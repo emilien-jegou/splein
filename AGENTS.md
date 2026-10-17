@@ -105,6 +105,11 @@ they may never declare a fix correct.
   rename, write `hot.rs` (wiring + one `define_hot_ui! { ... }` block, see
   `text_smooth/hot.rs`). No workspace member needed. Keep `view.rs` as the
   single source of truth.
+- **Overlay glass case playbook:** `docs/glass-pipeline-cases.md` —
+  symptom fingerprints + diagnosis ladder for the overlay→plugin path
+  (islands never render / hints never latch / hover-only damage
+  artifacts), plus the status-probe and placement-log toolkit. Read it
+  before debugging `riode-glass` or overlay rendering.
 - **Honesty over closure.** "I have not proven the culprit" is always
   acceptable; "this should fix it" without a mechanism is never. Name
   what was eliminated, what remains, and what single observation decides.

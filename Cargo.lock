@@ -297,6 +297,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "byteorder-lite"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8f1fe948ff07f4bd06c30984e69f5b4899c516a3ef74f34df92a2df2ab535495"
+
+[[package]]
 name = "bytes"
 version = "1.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -758,6 +764,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "desktop-glass"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "libloading 0.8.9",
+ "riode-platform-wayland",
+ "riode-shared",
+ "smithay-client-toolkit 0.19.2",
+ "tracing",
+ "tracing-subscriber",
+ "wayland-client",
+ "wayland-protocols 0.32.13",
+]
+
+[[package]]
 name = "dispatch"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -791,6 +812,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ab8ecd87370524b461f8557c119c405552c396ed91fc0a8eec68679eab26f94a"
 dependencies = [
  "libloading 0.8.9",
+]
+
+[[package]]
+name = "dock"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "libloading 0.8.9",
+ "riode-platform-wayland",
+ "riode-shared",
+ "smithay-client-toolkit 0.19.2",
+ "tracing",
+ "tracing-subscriber",
+ "wayland-client",
+ "wayland-protocols 0.32.13",
 ]
 
 [[package]]
@@ -1455,6 +1491,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b9e0384b61958566e926dc50660321d12159025e767c18e043daf26b70104c39"
 
 [[package]]
+name = "image"
+version = "0.25.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "85ab80394333c02fe689eaf900ab500fbd0c2213da414687ebf995a65d5a6104"
+dependencies = [
+ "bytemuck",
+ "byteorder-lite",
+ "image-webp",
+ "moxcms",
+ "num-traits",
+ "png 0.18.1",
+]
+
+[[package]]
+name = "image-webp"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "525e9ff3e1a4be2fbea1fdf0e98686a6d98b4d8f937e1bf7402245af1909e8c3"
+dependencies = [
+ "byteorder-lite",
+ "quick-error",
+]
+
+[[package]]
 name = "imagesize"
 version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1839,6 +1899,16 @@ dependencies = [
  "log",
  "wasi",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "moxcms"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bb85c154ba489f01b25c0d36ae69a87e4a1c73a72631fc6c0eb6dde34a73e44b"
+dependencies = [
+ "num-traits",
+ "pxfm",
 ]
 
 [[package]]
@@ -2330,6 +2400,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "png"
+version = "0.18.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "60769b8b31b2a9f263dae2776c37b1b28ae246943cf719eb6946a1db05128a61"
+dependencies = [
+ "bitflags 2.13.2",
+ "crc32fast",
+ "fdeflate",
+ "flate2",
+ "miniz_oxide 0.8.9",
+]
+
+[[package]]
 name = "polling"
 version = "3.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2439,6 +2522,18 @@ name = "profiling"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d595e54a326bc53c1c197b32d295e14b169e3cfeaa8dc82b529f947fba6bcf5"
+
+[[package]]
+name = "pxfm"
+version = "0.1.30"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d55d956fa96f5ec02be2e13af0e20391a5aa83d6a074e3ad368959d0fab299ea"
+
+[[package]]
+name = "quick-error"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a993555f31e5a609f617c12db6250dedcac1b0a85076912c436e6fc9b2c8e6a3"
 
 [[package]]
 name = "quick-xml"
@@ -2645,6 +2740,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "riode-anodeui"
+version = "0.2.0"
+dependencies = [
+ "riode",
+]
+
+[[package]]
 name = "riode-cli"
 version = "0.2.0"
 dependencies = [
@@ -2698,6 +2800,7 @@ name = "riode-examples"
 version = "0.2.0"
 dependencies = [
  "riode",
+ "riode-anodeui",
  "riode-engine-tiny-skia",
  "riode-engine-wgpu",
  "tracing",
@@ -2710,12 +2813,14 @@ name = "riode-hot-gen-ui"
 version = "0.2.0"
 dependencies = [
  "riode-shared",
+ "tracing",
 ]
 
 [[package]]
 name = "riode-macros"
 version = "0.2.0"
 dependencies = [
+ "image",
  "parley",
  "proc-macro2",
  "quote",
@@ -2764,12 +2869,17 @@ name = "riode-platform-wayland"
 version = "0.2.0"
 dependencies = [
  "bytemuck",
+ "libc",
+ "libloading 0.8.9",
  "ntest",
- "riode",
- "riode-engine-tiny-skia",
+ "riode-shared",
  "smithay-client-toolkit 0.19.2",
  "tracing",
+ "tracing-subscriber",
+ "wayland-backend",
  "wayland-client",
+ "wayland-protocols 0.32.13",
+ "wayland-scanner",
 ]
 
 [[package]]
@@ -2788,6 +2898,7 @@ name = "riode-shared"
 version = "0.2.0"
 dependencies = [
  "riode",
+ "riode-anodeui",
  "riode-engine-tiny-skia",
  "riode-engine-wgpu",
 ]
@@ -3417,7 +3528,7 @@ dependencies = [
  "bytemuck",
  "cfg-if",
  "log",
- "png",
+ "png 0.17.16",
  "tiny-skia-path",
 ]
 
@@ -3608,6 +3719,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tracing-serde"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "704b1aeb7be0d0a84fc9828cae51dab5970fee5088f83d1dd7ee6f6246fc6ff1"
+dependencies = [
+ "serde",
+ "tracing-core",
+]
+
+[[package]]
 name = "tracing-subscriber"
 version = "0.3.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3617,12 +3738,15 @@ dependencies = [
  "nu-ansi-term",
  "once_cell",
  "regex-automata",
+ "serde",
+ "serde_json",
  "sharded-slab",
  "smallvec",
  "thread_local",
  "tracing",
  "tracing-core",
  "tracing-log",
+ "tracing-serde",
 ]
 
 [[package]]

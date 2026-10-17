@@ -134,6 +134,7 @@ pub struct MultiBackendConfig {
     pub(crate) background: Color,
     pub(crate) initial: RenderBackend,
     pub(crate) show_hud: bool,
+    pub(crate) transparent: bool,
     pub(crate) fps_limit: FpsLimit,
     pub(crate) extensions: Vec<Box<dyn AppExtension>>,
     pub(crate) runtime: Option<Rc<RefCell<ReactiveRuntime>>>,
@@ -171,6 +172,12 @@ impl MultiBackendConfig {
         self.show_hud = on;
         self
     }
+    /// Transparent window: the compositor shows through wherever the scene
+    /// leaves pixels unpainted (overlay mode).
+    pub fn transparent(mut self, on: bool) -> Self {
+        self.transparent = on;
+        self
+    }
     pub fn fps_limit(mut self, limit: impl Into<FpsLimit>) -> Self {
         self.fps_limit = limit.into();
         self
@@ -206,6 +213,7 @@ impl MultiBackend {
             background: Color::WHITE,
             initial: RenderBackend::TinySkia,
             show_hud: true,
+            transparent: false,
             fps_limit: FpsLimit::Auto,
             extensions: Vec::new(),
             runtime: None,
@@ -259,6 +267,7 @@ fn ensure_surface(
     win_w: u32,
     win_h: u32,
     fullscreen: bool,
+    transparent: bool,
     event_loop: &winit::event_loop::EventLoopWindowTarget<()>,
     factory: Option<BackendFactory>,
     text_ctx: &crate::text::TextContext,
@@ -278,6 +287,7 @@ fn ensure_surface(
             .with_inner_size(winit::dpi::LogicalSize::new(win_w, win_h))
             .with_fullscreen(fullscreen.then(|| winit::window::Fullscreen::Borderless(None)))
             .with_resizable(true)
+            .with_transparent(transparent)
             .with_position(winit::dpi::LogicalPosition::new(
                 80.0 + slot as f64 * 60.0,
                 80.0 + slot as f64 * 40.0,
@@ -350,6 +360,7 @@ fn run_multi<E: IntoElement, F: Fn() -> E + 'static>(config: MultiBackendConfig,
         config.width,
         config.height,
         config.fullscreen,
+        config.transparent,
         &event_loop,
         config.factories[single],
         &text_ctx,
@@ -378,6 +389,7 @@ fn run_multi<E: IntoElement, F: Fn() -> E + 'static>(config: MultiBackendConfig,
     let title = config.title.clone();
     let (cfg_w, cfg_h) = (config.width, config.height);
     let fullscreen = config.fullscreen;
+    let transparent = config.transparent;
     let _fps_limit = config.fps_limit;
     // Last idle extension lap: at rest no frames are drawn, so without this
     // `DevLoop::poll` (hot-reload watch → build → refresh) never runs and
@@ -412,6 +424,7 @@ fn run_multi<E: IntoElement, F: Fn() -> E + 'static>(config: MultiBackendConfig,
                             cfg_w,
                             cfg_h,
                             fullscreen,
+                            transparent,
                             elwt,
                             factories[single],
                             &tc,

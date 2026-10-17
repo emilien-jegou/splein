@@ -526,13 +526,23 @@ fn run_switchable_loop(
                     match event {
                         WindowEvent::KeyboardInput { event: key, .. }
                             if key.state == ElementState::Pressed
-                                && key.logical_key == Key::Named(NamedKey::Escape) =>
+                                && (key.logical_key == Key::Named(NamedKey::Escape)
+                                    || key.logical_key == Key::Named(NamedKey::F10)) =>
                         {
-                            // Esc in the panel closes it; the app keeps running.
+                            // Esc/F10 in the panel closes it; the app keeps running.
+                            // Must also clear the app-side `show_hud`: the F10
+                            // mirror below re-shows the window whenever it
+                            // disagrees with `panel_visible`, so hiding the
+                            // window alone pops it back on the next app event.
                             if let Some(dbg) = debug.as_ref() {
                                 dbg.window.set_visible(false);
                             }
                             panel_visible = false;
+                            if let Some(dbg) =
+                                extensions.iter_mut().find_map(|e| e.as_debugger())
+                            {
+                                dbg.show_hud = false;
+                            }
                         }
                         WindowEvent::CloseRequested => {
                             // X hides the panel (F10 reopens); the app keeps running.
@@ -540,6 +550,11 @@ fn run_switchable_loop(
                                 dbg.window.set_visible(false);
                             }
                             panel_visible = false;
+                            if let Some(dbg) =
+                                extensions.iter_mut().find_map(|e| e.as_debugger())
+                            {
+                                dbg.show_hud = false;
+                            }
                         }
                         WindowEvent::Resized(size) => {
                             if let Some(dbg) = debug.as_mut() {

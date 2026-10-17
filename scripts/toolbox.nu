@@ -34,6 +34,9 @@ def main [] {
     { command: "test", args: "[args...]", about: "Run cargo tests. Extra args pass through to cargo." },
     { command: "watch", args: "", about: "Run bacon (watch mode)." },
     { command: "example", args: "[name=demo1] [engine]", about: "Run an example in hot-reload mode. Engines: tiny-skia, wgpu." },
+    { command: "desktop-glass", args: "", about: "Run the desktop-glass overlay with hot-reloadable view." },
+    { command: "load-plugin", args: "", about: "Rebuild riode-glass.so and reload it into Hyprland." },
+    { command: "apps", args: "[app=dock]", about: "Run a standalone overlay app with hot-reloadable UI." },
     { command: "relacher", args: "", about: "Generate release commit and git tags." },
     { command: "release-github", args: "", about: "Generate release patch for github and deploy changes." },
   ]
@@ -81,9 +84,44 @@ def "main watch" [] {
 def "main example" [
   name: string@spleen-complete-examples = "demo1",
   engine: string@spleen-complete-engines = "",
+  --overlay  # Transparent layer-shell overlay (desktop_glass, prism_only).
 ] {
   cd (spleen--root)
-  ^./scripts/example.sh $name $engine
+  if $overlay {
+    ^./scripts/example.sh $name $engine --overlay
+  } else {
+    ^./scripts/example.sh $name $engine
+  }
+}
+
+# Run the desktop-glass overlay with a hot-reloadable view.
+def "main desktop-glass" [] {
+  cd (spleen--root)
+  ^./scripts/desktop-glass-hot.sh
+}
+
+# Rebuild riode-glass.so and reload it into the running Hyprland:
+# unload first (tolerated when not loaded), then load. Absolute path
+# so it works regardless of CWD or $HOME layout.
+def "main load-plugin" [] {
+  cd (spleen--root)
+  cd plugins/riode-glass
+  ^make
+  let so = (spleen--root | path join plugins riode-glass riode-glass.so)
+  do { ^hyprctl plugin unload $so } | ignore
+  ^hyprctl plugin load $so
+}
+
+# Run a standalone overlay app (UI lives next to the app, e.g. apps/dock/src).
+export def spleen-complete-overlays [] {
+  ["dock"]
+}
+
+def "main apps" [
+  app: string@spleen-complete-overlays = "dock",
+] {
+  cd (spleen--root)
+  ^./scripts/overlay.sh $app
 }
 
 # Install dependencies in release folder. Runs first for release tasks.
@@ -108,8 +146,23 @@ def "main release-github" [] {
 export def example [
   name: string@spleen-complete-examples = "demo1",
   engine: string@spleen-complete-engines = "",
+  --overlay
 ] {
-  main example $name $engine
+  if $overlay {
+    main example $name $engine --overlay
+  } else {
+    main example $name $engine
+  }
+}
+
+export def desktop-glass [] {
+  main desktop-glass
+}
+
+export def apps [
+  app: string = "dock",
+] {
+  main apps $app
 }
 
 export def build [...args: string] {

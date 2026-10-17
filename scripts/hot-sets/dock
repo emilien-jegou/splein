@@ -1,0 +1,10 @@
+# Canonical hot-reload companion packages for the dock overlay host.
+# Single source of truth: the overlay.sh hand build and
+# DevLoopConfig::companion_packages via riode::hot_reload::companion_set
+# (loop rebuilds) both read this file. The sets MUST be identical on both
+# sides: cargo unifies features across the requested packages, and any
+# difference compiles rival `riode` units whose dylib symbols never resolve
+# (undefined RawVec HookScope symbols at every dlopen attempt, forever).
+# The UI is the `dock` package's own cdylib (standalone hot-reload), so no
+# generative crate is involved.
+riode-shared dock

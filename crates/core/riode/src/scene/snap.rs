@@ -91,11 +91,20 @@ pub fn quantize_quarter(pos: f32) -> (i32, u8) {
     quantize_nths(pos, 4.0)
 }
 
-/// Y quantum: eighths (≤1/16px snap, so horizontal features never read as
-/// doubled rows).
+/// Y subpixel quanta per pixel — the single switch for the whole text
+/// pipeline (quantization, slot keys, raster offsets, placement back-out
+/// all derive from this). Supported values:
+/// - `8` = eighths (≤1/16px snap; sharpest, 32 slots/glyph),
+/// - `4` = quarters (≤1/8px snap, 16 slots/glyph),
+/// - `2` = halves (≤1/4px snap, 8 slots/glyph; fastest warmup).
+/// Must stay a power of two ≤ 8: slot keys mask with `QUANTA - 1` and the
+/// legacy phase packs Y above the 2 X bits.
+pub const GLYPH_QUANTA_Y: u8 = 4;
+
+/// Y quantum: `GLYPH_QUANTA_Y` bins per pixel.
 #[inline(always)]
-pub fn quantize_eighth(pos: f32) -> (i32, u8) {
-    quantize_nths(pos, 8.0)
+pub fn quantize_y(pos: f32) -> (i32, u8) {
+    quantize_nths(pos, GLYPH_QUANTA_Y as f32)
 }
 
 /// Raster size for a size-keyed cache entry (SVG, damage tiles): drawn

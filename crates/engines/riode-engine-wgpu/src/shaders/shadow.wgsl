@@ -10,6 +10,11 @@
 // the sigma into params.x. Ordered Bayer dither on the final alpha
 // breaks banding of very soft falloffs (our addition; gpui lacks it).
 // Color composites encoded on the plain Unorm target (vello-like).
+//
+// Inset (params.y > 0.5): the blurred occluder coverage is inverted and
+// clipped to the interior of the original box (obox) — CSS `inset`
+// box-shadow. The quad for an inset layer covers only the box + AA pad;
+// obox is the un-offset, un-spread element box used for the interior mask.
 struct Ortho {
     w: f32,
     h: f32,
@@ -23,6 +28,7 @@ struct Vin {
     @location(2) radii: vec4<f32>,
     @location(3) color: vec4<f32>,
     @location(4) params: vec4<f32>,
+    @location(5) obox: vec4<f32>,
 };
 struct Vout {
     @builtin(position) pos: vec4<f32>,
@@ -31,6 +37,7 @@ struct Vout {
     @location(2) color: vec4<f32>,
     @location(3) params: vec4<f32>,
     @location(4) dpos: vec2<f32>,
+    @location(5) obox: vec4<f32>,
 };
 
 @vertex
@@ -44,6 +51,7 @@ fn vs_main(in: Vin) -> Vout {
     out.color = in.color;
     out.params = in.params;
     out.dpos = in.pos;
+    out.obox = in.obox;
     return out;
 }
 
@@ -105,6 +113,7 @@ fn fs_main(in: Vout) -> @location(0) vec4<f32> {
     let center = in.fbox.xy + half_size;
     let center_to_point = in.dpos - center;
     let sigma = in.params.x;
+    let is_inset = in.params.y > 0.5;
 
     // Radius of the nearest corner (gpui pick_corner_radius; our radii
     // are (top_left, top_right, bottom_right, bottom_left)).
@@ -153,8 +162,22 @@ fn fs_main(in: Vout) -> @location(0) vec4<f32> {
         }
     }
 
+    var final_alpha = alpha;
+    if (is_inset) {
+        // Interior mask: AA coverage of the original (un-offset, un-spread)
+        // box at obox. The shadow is clipped to this — CSS inset never
+        // paints outside the element.
+        let ohalf = in.obox.zw * 0.5;
+        let ocenter = in.obox.xy + ohalf;
+        let odist = sd_round_box(in.dpos - ocenter, ohalf, in.radii);
+        let interior = clamp(0.5 - odist, 0.0, 1.0);
+        // Inverted occluder: darkness where the (blurred) lid does not
+        // reach inside the cavity.
+        final_alpha = interior * (1.0 - alpha);
+    }
+
     let dither = (bayer_4x4(vec2<u32>(floor(in.dpos))) - 0.5) / 255.0;
-    let a = clamp(alpha * in.color.a + dither, 0.0, 1.0);
+    let a = clamp(final_alpha * in.color.a + dither, 0.0, 1.0);
     if (a <= 0.0) {
         discard;
     }

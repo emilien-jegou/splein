@@ -49,7 +49,7 @@ pub fn Page() -> impl IntoElement {
         <Shell
             eyebrow_label="TEXT · SMOOTH DRIFT"
             title="Slow text repro."
-                copy="Four runs drift at ~15px/s: X, Y and diagonal at 15px, Y at 22px (all linear outlines, hinter off). Step a frame at a time (F8, then '.') — each press advances 1/8px of true position; renders land on X-quarter / Y-eighth pixel quanta like the CPU engines, so a press either steps the quantum or holds until the next. Rest frames stay pixel-crisp."
+                copy="Four runs drift at ~15px/s: X, Y and diagonal at 15px, Y at 22px (all linear outlines, hinter off). Step a frame at a time (F8, then '.') — each press advances 1/8px of true position; renders land on X-quarter / Y-quantum pixel quanta like the CPU engines, so a press either steps the quantum or holds until the next. Rest frames stay pixel-crisp."
         >
             <Content>
                 <Group direction="vertical" width="fill" height="fill" gap={16.0}>

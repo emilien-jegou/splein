@@ -6,6 +6,7 @@
 !CHANGELOG.md
 !optimization_plan.md
 !plan_wgpu.md
+!research-hyprland-plugin.md
 !.gitignore
 !Cargo.lock
 !Cargo.toml
@@ -31,6 +32,19 @@
 
 !docs/
 !docs/**/*
+
+!plugins/
+!plugins/**/
+!plugins/riode-glass/hyprpm.toml
+!plugins/riode-glass/Makefile
+!plugins/riode-glass/README.md
+!plugins/riode-glass/protocols/
+!plugins/riode-glass/protocols/*xml
+!plugins/riode-glass/src/
+!plugins/riode-glass/src/**/*.cpp
+!plugins/riode-glass/src/**/*.hpp
+!plugins/riode-glass/src/**/*.c
+!plugins/riode-glass/src/**/*.h
 
 !documentation/
 !documentation/app

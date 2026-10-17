@@ -97,16 +97,17 @@ impl TinySkiaRenderer {
         // Snapshot the chunks a tile needs as owned values so Rayon can
         // borrow them by value instead of sharing `Scene` (whose command
         // stream uses Rc and is not Sync).
-        let tile_chunks: Vec<(ResolvedRect, Vec<SceneChunk>)> = tiles
+        let tile_chunks: Vec<(ResolvedRect, ResolvedRect, Vec<SceneChunk>)> = tiles
             .iter()
             .map(|rect| {
+                let read = *rect;
                 let chunks = scene
                     .chunks
                     .iter()
-                    .filter(|chunk| chunk.bounds.overlaps(rect))
+                    .filter(|chunk| chunk.bounds.overlaps(&read))
                     .cloned()
                     .collect();
-                (*rect, chunks)
+                (*rect, read, chunks)
             })
             .collect();
         let workers = rayon::current_num_threads().clamp(1, tiles.len().max(1));
@@ -122,8 +123,9 @@ impl TinySkiaRenderer {
                     shadow_rasterizer: ShadowRasterizer::new(),
                     line_cache: LineCompositeCache::new(),
                 },
-                |worker, tile| -> Result<(u32, u32, u32, u32, tiny_skia::Pixmap), BackendError> {
+                |worker, tile| -> Result<(u32, u32, u32, u32, u32, u32, tiny_skia::Pixmap), BackendError> {
                     let rect = &tile.0;
+                    let read = &tile.1;
                     let (x, y) = (
                         (rect.x.floor() as i32).max(0) as u32,
                         (rect.y.floor() as i32).max(0) as u32,
@@ -133,11 +135,21 @@ impl TinySkiaRenderer {
                         (rect.bottom().ceil() as u32).min(ch),
                     );
                     if r <= x || b <= y {
-                        return Ok((x, y, 0, 0, tiny_skia::Pixmap::new(1, 1).unwrap()));
+                        return Ok((x, y, 0, 0, 0, 0, tiny_skia::Pixmap::new(1, 1).unwrap()));
                     }
                     let (rw, rh) = (r - x, b - y);
-                    let qx = tile_quantum(rw).max(1);
-                    let qy = tile_quantum(rh).max(1);
+                    // Overscan read window clamped to the canvas.
+                    let (ex, ey) = (
+                        (read.x.floor() as i32).max(0) as u32,
+                        (read.y.floor() as i32).max(0) as u32,
+                    );
+                    let (er, eb) = (
+                        (read.right().ceil() as u32).min(cw),
+                        (read.bottom().ceil() as u32).min(ch),
+                    );
+                    let (ew, eh) = (er.saturating_sub(ex), eb.saturating_sub(ey));
+                    let qx = tile_quantum(ew.max(1)).max(1);
+                    let qy = tile_quantum(eh.max(1)).max(1);
                     let mut scratch = worker
                         .scratch
                         .take()
@@ -147,9 +159,9 @@ impl TinySkiaRenderer {
                     }
                     scratch.fill(tiny_skia::Color::TRANSPARENT);
                     worker.clip_stack.reset();
-                    // Tile-local frame plus clean opacity, matching serial.
+                    // Frame origin: the scratch spans the read window.
                     let tile_tx =
-                        tiny_skia::Transform::from_translate(-(x as f32), -(y as f32));
+                        tiny_skia::Transform::from_translate(-(ex as f32), -(ey as f32));
                     let mut ctx = ChunkSinkContext {
                         clip_stack: &mut worker.clip_stack,
                         text_ctx: &worker.text_ctx,
@@ -157,10 +169,10 @@ impl TinySkiaRenderer {
                         image_cache: &mut worker.image_cache,
                         shadow_rasterizer: &mut worker.shadow_rasterizer,
                         line_cache: &mut worker.line_cache,
-                        tile_w: rw as f32,
-                        tile_h: rh as f32,
+                        tile_w: ew as f32,
+                        tile_h: eh as f32,
                     };
-                    for chunk in &tile.1 {
+                    for chunk in &tile.2 {
                         execute_chunk(
                             scratch.as_mut(),
                             tile_tx,
@@ -169,22 +181,24 @@ impl TinySkiaRenderer {
                         );
                     }
                     worker.clip_stack.reset();
-                    Ok((x, y, rw, rh, scratch))
+                    Ok((x, y, ex, ey, rw, rh, scratch))
                 },
             )
             .collect::<Result<Vec<_>, BackendError>>()?;
 
         let dst = self.persistent_canvas.data_mut();
         let cw = cw as usize;
-        for (x, y, rw, rh, scratch) in results {
+        for (x, y, ex, ey, rw, rh, scratch) in results {
             if rw == 0 || rh == 0 {
                 continue;
             }
             let src = scratch.data();
             let src_stride = scratch.width() as usize * 4;
+            // Inner damage rect offset inside the oversized scratch.
+            let (ox, oy) = (x - ex, y - ey);
             let di_base = (y as usize) * cw * 4 + (x as usize) * 4;
             for row in 0..rh as usize {
-                let si = row * src_stride;
+                let si = ((oy as usize + row) * src_stride) + ox as usize * 4;
                 let di = di_base + row * (cw * 4);
                 dst[di..di + (rw as usize) * 4]
                     .copy_from_slice(&src[si..si + (rw as usize) * 4]);
@@ -207,6 +221,17 @@ impl TinySkiaRenderer {
         let (cw, ch) = (
             self.persistent_canvas.width(),
             self.persistent_canvas.height(),
+        );
+        tracing::info!(
+            damage_rects = damage.rects().len(),
+            damage_area_px = damage
+                .rects()
+                .iter()
+                .map(|r| (r.width.max(0.0) * r.height.max(0.0)) as u64)
+                .sum::<u64>(),
+            canvas_w = cw,
+            canvas_h = ch,
+            "raster tiles"
         );
 
         // Scroll shifts first: the persistent canvas is current through last
@@ -256,27 +281,40 @@ impl TinySkiaRenderer {
                 continue;
             }
             let (rw, rh) = (r - x, b - y);
+            let read = *rect;
+            let (ex, ey) = (
+                (read.x.floor() as i32).max(0) as u32,
+                (read.y.floor() as i32).max(0) as u32,
+            );
+            let (er, eb) = (
+                (read.right().ceil() as u32).min(cw),
+                (read.bottom().ceil() as u32).min(ch),
+            );
+            let (ew, eh) = (er.saturating_sub(ex), eb.saturating_sub(ey));
+            if ew == 0 || eh == 0 {
+                continue;
+            }
 
             let mut scratch = match self.scratch_pixmap.take() {
-                Some(mut p) if p.width() >= rw && p.height() >= rh => {
+                Some(mut p) if p.width() >= ew && p.height() >= eh => {
                     // Avoid pinning a once-huge tile forever: if the retained pixmap is
                     // more than 4x the needed area, shrink it back to the tile size.
                     let (pw, ph) = (p.width() as u64, p.height() as u64);
-                    if pw * ph > (rw as u64) * (rh as u64) * 4 {
-                        Pixmap::new(tile_quantum(rw), tile_quantum(rh)).unwrap()
+                    if pw * ph > (ew as u64) * (eh as u64) * 4 {
+                        Pixmap::new(tile_quantum(ew), tile_quantum(eh)).unwrap()
                     } else {
                         p.fill(tiny_skia::Color::TRANSPARENT);
                         p
                     }
                 }
-                _ => Pixmap::new(tile_quantum(rw), tile_quantum(rh)).unwrap(),
+                _ => Pixmap::new(tile_quantum(ew), tile_quantum(eh)).unwrap(),
             };
 
             // Each tile starts from a clean clip and transform stack. Anything a previous
             // tile left behind would otherwise bleed across, and the damage region caps
             // the tile count at a small number, so the reset is free.
             self.clip_stack.reset();
-            let tile_tx = tiny_skia::Transform::from_translate(-(x as f32), -(y as f32));
+            let tile_tx = tiny_skia::Transform::from_translate(-(ex as f32), -(ey as f32));
             let mut ctx = ChunkSinkContext {
                 clip_stack: &mut self.clip_stack,
                 text_ctx: &self.text_ctx,
@@ -284,11 +322,11 @@ impl TinySkiaRenderer {
                 image_cache: &mut self.image_cache,
                 shadow_rasterizer: &mut self.shadow_rasterizer,
                 line_cache: &mut self.line_cache,
-                tile_w: rw as f32,
-                tile_h: rh as f32,
+                tile_w: ew as f32,
+                tile_h: eh as f32,
             };
 
-            for chunk in scene.chunks.iter().filter(|c| c.bounds.overlaps(rect)) {
+            for chunk in scene.chunks.iter().filter(|c| c.bounds.overlaps(&read)) {
                 // Chunk-local streams: placement (origin + hoisted root
                 // transform) and absolute inherited clips are applied by
                 // core's lowering, around the content, so moved chunks reuse
@@ -302,9 +340,11 @@ impl TinySkiaRenderer {
             }
             self.clip_stack.reset();
 
+            let (ox, oy) = (x - ex, y - ey);
             let (src, dst) = (scratch.data(), self.persistent_canvas.data_mut());
+            let src_stride = (scratch.width() * 4) as usize;
             for row in 0..rh as usize {
-                let si = row * (scratch.width() * 4) as usize;
+                let si = ((oy as usize + row) * src_stride) + ox as usize * 4;
                 let di = ((y as usize + row) * cw as usize + x as usize) * 4;
                 dst[di..di + rw as usize * 4].copy_from_slice(&src[si..si + rw as usize * 4]);
             }

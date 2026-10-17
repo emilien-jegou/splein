@@ -33,6 +33,9 @@ pub struct NodeStyle {
     pub isolate_children: bool,
     pub anchor: Option<Anchor>,
     pub appearance: Appearance,
+    /// Glass-group spacing in logical px (see `GroupDef::glass_group`).
+    /// `Some` merges descendant glass members into this node's layer.
+    pub glass_group: Option<f32>,
     pub z_index: i32,
     pub is_overlay: bool,
     pub has_layer: bool,
@@ -63,6 +66,7 @@ impl Default for NodeStyle {
             z_index: 0,
             is_overlay: false,
             has_layer: false,
+            glass_group: None,
             aspect_ratio: None,
             hit_test: HitTest::Auto,
         }

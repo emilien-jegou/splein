@@ -58,6 +58,7 @@ use std::str::FromStr;
 use crate::foundation::alignment::{Alignment, Direction, Distribution, FlowWrap};
 use crate::foundation::color::Color;
 use crate::foundation::fill::Fill;
+use crate::foundation::filter::Filter;
 use crate::foundation::positioning::Anchor;
 use crate::foundation::radius::Radius;
 use crate::foundation::shadow::Shadow;
@@ -365,10 +366,14 @@ pub fn parse_stroke(s: &str) -> Option<Stroke> {
     }
 }
 
-/// Parses a bare number (elevation) or CSS-like `ox oy blur [spread] [color]`.
+/// Parses a bare number (elevation) or CSS-like `[inset] ox oy blur [spread] [color]`.
 pub fn parse_shadow(s: &str) -> Option<Shadow> {
-    let parts: Vec<&str> = s.split_whitespace().collect();
-    match parts.as_slice() {
+    let mut parts: Vec<&str> = s.split_whitespace().collect();
+    let inset = parts.first().is_some_and(|p| p.eq_ignore_ascii_case("inset"));
+    if inset {
+        parts.remove(0);
+    }
+    let built = match parts.as_slice() {
         [single] => {
             let e = parse_px(&single.to_lowercase()).or_else(|| single.parse::<f32>().ok())?;
             Some(Shadow::elevation(e))
@@ -403,7 +408,8 @@ pub fn parse_shadow(s: &str) -> Option<Shadow> {
         }
         [] => None,
         _ => None,
-    }
+    };
+    built.map(|sh| if inset { sh.inset() } else { sh })
 }
 
 fn num_part(s: &str) -> Option<f32> {
@@ -554,9 +560,25 @@ impl_str_from!(
 impl_str_from!(
     Shadow,
     parse_shadow,
-    "an elevation number or `offset-x offset-y blur [spread] [color]`",
+    "an elevation number or `[inset] offset-x offset-y blur [spread] [color]`",
     "shadow",
     Shadow::elevation(0.0)
+);
+impl_str_from!(
+    Filter,
+    crate::foundation::filter::parse_filter,
+    "`none` or space-separated functions like `blur(4px) brightness(1.2)`",
+    "filter",
+    Filter::EMPTY
+);
+impl_str_from!(
+    crate::foundation::BlendMode,
+    crate::foundation::blend::parse_blend,
+    "`normal`, `multiply`, `screen`, `overlay`, `darken`, `lighten`, \
+     `color-dodge`, `color-burn`, `hard-light`, `soft-light`, `difference`, \
+     `exclusion`, `hue`, `saturation`, `color`, `luminosity`",
+    "blend mode",
+    crate::foundation::BlendMode::Normal
 );
 
 impl From<u32> for Fill {
@@ -746,6 +768,20 @@ mod tests {
         // Explicit spread still parses.
         let sh = parse_shadow("0 4 16 2 #fff").unwrap();
         assert_eq!(sh.spread, 2.0);
+    }
+
+    #[test]
+    fn shadow_inset_keyword() {
+        let sh = parse_shadow("inset 0 4 8 #0003").unwrap();
+        assert!(sh.inset);
+        assert!(!parse_shadow("0 4 8 #0003").unwrap().inset);
+        // Inset + spread + color.
+        let sh = parse_shadow("inset 2 2 6 1 rgba(0,0,0,0.3)").unwrap();
+        assert!(sh.inset);
+        assert_eq!(sh.spread, 1.0);
+        // Builder parity.
+        assert!(Shadow::web_like(0.0, 4.0, 8.0, 0.0, Color::BLACK).inset().inset);
+        assert!(!Shadow::elevation(4.0).inset_if(false).inset);
     }
 
     #[test]

@@ -1,19 +1,14 @@
 // Single responsibility: Elevation-based shadow specification with layered falloff.
 
+use crate::foundation::blend::BlendMode;
 use crate::foundation::color::Color;
 use crate::foundation::falloff::FalloffCurve;
 use crate::foundation::light::LightEnvironment;
 
-/// How a shadow composites with the surface beneath it.
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
-pub enum BlendMode {
-    /// Standard source-over alpha blending (CSS default).
-    #[default]
-    Normal,
-    /// Subtractive blending: deepens the underlying color instead of
-    /// washing it toward grey.
-    Multiply,
-}
+// `BlendMode` lives in [`crate::foundation::blend`] (shared with glass glow
+// and, later, node layers). Shadows consume the same enum; on wgpu only
+// `Normal`/`Multiply` are honoured and `Multiply` is still approximated as
+// source-over with a warn-once (see `riode-engine-wgpu`'s `command.rs`).
 
 /// Which silhouette the shadow is cast from.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
@@ -21,10 +16,13 @@ pub enum ShadowShape {
     /// Bounding-box silhouette (CSS `box-shadow`).
     #[default]
     Box,
-    /// Alpha-channel silhouette (CSS `filter: drop-shadow()`).
+    /// Alpha-channel silhouette (CSS `filter: drop-shadow()`): the
+    /// shadow is cast from the element's rendered alpha, so glyphs,
+    /// images and rounded shapes shadow their true outline.
     ///
-    /// Accepted in v1 but rasterized as `Box`; the offscreen alpha
-    /// pass is deferred work.
+    /// Both engines implement this by isolating the element into a layer
+    /// and blurring the layer's alpha behind it. `inset` (a box interior
+    /// by definition) and a missing offscreen fall back to [`Self::Box`].
     Alpha,
 }
 
@@ -69,6 +67,11 @@ pub struct Shadow {
     /// Occluder expansion in px before blurring (CSS `spread` semantics:
     /// positive grows, negative shrinks). Applies to every layer.
     pub spread: f32,
+    /// CSS `inset` keyword: the shadow is cast *into* the element's
+    /// border-box (a cavity) instead of behind it. Inset shadows are
+    /// clipped to the element and painted after the fill, never expanding
+    /// visual bounds.
+    pub inset: bool,
     layers: Vec<ShadowLayer>,
 }
 
@@ -85,6 +88,7 @@ impl Shadow {
             shape: ShadowShape::Box,
             offset: ShadowOffset::Elevation,
             spread: 0.0,
+            inset: false,
             layers: vec![ShadowLayer {
                 falloff: FalloffCurve::EaseOut,
                 softness: elevation * 0.75,
@@ -111,6 +115,7 @@ impl Shadow {
             shape: ShadowShape::Box,
             offset: ShadowOffset::Explicit { offset_x, offset_y },
             spread,
+            inset: false,
             layers: vec![ShadowLayer {
                 falloff: FalloffCurve::Linear,
                 softness: (blur * 0.5).max(0.0),
@@ -137,6 +142,7 @@ impl Shadow {
                 offset_y: 0.0,
             },
             spread: 0.0,
+            inset: false,
             layers: Vec::new(),
         }
     }
@@ -231,6 +237,23 @@ impl Shadow {
 
     pub fn alpha(mut self) -> Self {
         self.shape = ShadowShape::Alpha;
+        self
+    }
+
+    /// Casts the shadow *into* the element's border-box (CSS `inset`).
+    ///
+    /// The rasterizer inverts the blurred occluder coverage and clips it
+    /// to the element: positive offset_y darkens the top edge (light from
+    /// above), matching browser `inset 0 Ypx` parity. Inset shadows never
+    /// expand visual bounds and paint after the fill.
+    pub fn inset(mut self) -> Self {
+        self.inset = true;
+        self
+    }
+
+    /// Conditional inset for reactive call sites: `.inset_if(is_pressed)`.
+    pub fn inset_if(mut self, on: bool) -> Self {
+        self.inset = on;
         self
     }
 

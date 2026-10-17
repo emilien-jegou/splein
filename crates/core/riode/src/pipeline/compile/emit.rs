@@ -1,10 +1,69 @@
 // Single responsibility: Node coordinate framing, transformation, and display list command emission.
 
-use crate::foundation::{Point, Radius, ResolvedRect, Transform};
+use crate::foundation::{GlassLayer, Point, Radius, ResolvedRect, ShadowShape, Transform};
 use crate::scene::{LayerId, PaintContext, SceneChunk, SceneCommand};
 use crate::text::TextContext;
 use crate::tree::LayoutNode;
 use crate::tree::NodeKind;
+
+/// Offscreen margin an alpha-silhouette drop shadow needs around its
+/// layer's content, in layout px — largest over the shadow's layers of
+/// `max(|offset|) + layer_pad` (the offset displaces the silhouette, the
+/// pad covers the blur reach on top of it). `0.0` when the node casts no
+/// alpha drop shadow (including `inset`, which paints as a box interior).
+///
+/// This is also the layer-existence test: a non-zero pad means the
+/// element's content alpha feeds a shadow, so the layer needs an
+/// offscreen even without a filter. [`node_needs_layer`] and the
+/// `BeginLayer` emission both ask this one function, so "open a layer"
+/// and "size its offscreen" can never disagree.
+#[inline(always)]
+pub(crate) fn node_alpha_shadow_pad(node: &LayoutNode) -> f32 {
+    let Some(shadow) = &node.style.appearance.shadow else {
+        return 0.0;
+    };
+    if shadow.shape != ShadowShape::Alpha
+        || shadow.inset
+        || shadow.layers().is_empty()
+    {
+        return 0.0;
+    }
+    let light = &node.state.core.resolved_light;
+    shadow
+        .layers()
+        .iter()
+        .map(|layer| {
+            let (ox, oy) = shadow.layer_offset(light, layer);
+            ox.abs().max(oy.abs()) + shadow.layer_pad(layer)
+        })
+        .fold(0.0, f32::max)
+}
+
+/// Whether a node opens a layer, and what glass that layer carries.
+///
+/// Decided in `hierarchy.rs` (it alone sees ancestors): a group root
+/// always opens one, a glass node inside a group never does (its shape
+/// joins the group's layer), everything else follows the old rule
+/// (explicit `has_layer`, filter, own glass, alpha-silhouette shadow)
+/// plus blend: any non-`Normal` blend mode opens one (the backdrop
+/// snapshot + in-shader composite live in the layer).
+/// One struct, passed to both enter and exit, so the push and pop can
+/// never disagree.
+#[derive(Clone, Debug)]
+pub struct NodeLayer {
+    pub needs_layer: bool,
+    /// The `BeginLayer` rect: the content box, except group roots whose
+    /// rect is the union of member rects (group-local, may start
+    /// off-origin when members overhang).
+    pub rect: ResolvedRect,
+    /// `Single` (own material, radius stamped) or `Group` (collected
+    /// members); `None` for glass-free layers.
+    pub glass: Option<GlassLayer>,
+    /// Press content transform (node-local, about the content centre):
+    /// the pressed member's content scales with its lens. `None` when
+    /// the press is glow/light only (identity transform).
+    pub press: Option<Transform>,
+}
 
 /// The corner radius of the single clip a node imposes on its content, or `None` when it clips
 /// nothing at all.
@@ -48,17 +107,42 @@ pub fn enter_node_frame(
     y: f32,
     layer_id: LayerId,
     hoist_root_transform: bool,
+    paint: Option<ResolvedRect>,
+    layer: &NodeLayer,
 ) {
     // Clipping and layer bounds follow the render box; the content drawn inside keeps
     // its flow size (see `emit_node_content`), which is what makes a growing box reveal
     // static content instead of squashing it.
-    let painted = node.resolved_rect;
+    let painted = paint.unwrap_or(node.resolved_rect);
     let local_rect = ResolvedRect::new(0.0, 0.0, painted.width, painted.height);
     chunk.push(SceneCommand::PushOffset(Point::new(x, y)));
-    if node.style.has_layer {
+    // A glass node's cast shadow paints to the PARENT target, *before* its
+    // glass layer opens: inside the layer it would be rasterized into the
+    // glass offscreen, which the lens composite replaces (the shader is
+    // transparent outside the shape) — an invisible shadow. `emit_node_content`
+    // skips the shadow when this hoist fires, so it draws exactly once.
+    // Identity-transform glass (every shipped demo) is unaffected by the
+    // hoist landing before the local transform below.
+    if layer.glass.is_some() {
+        if let Some(s) = &node.style.appearance.shadow {
+            if !s.inset {
+                chunk.push(SceneCommand::DrawShadow {
+                    rect: local_rect,
+                    radius: node.style.appearance.radius,
+                    shadow: s.clone(),
+                    light: node.state.core.resolved_light,
+                });
+            }
+        }
+    }
+    if layer.needs_layer {
         chunk.push(SceneCommand::BeginLayer {
             id: layer_id,
-            rect: local_rect,
+            rect: layer.rect,
+            filter: node.style.appearance.filter.clone(),
+            glass: layer.glass.clone(),
+            shadow_pad: node_alpha_shadow_pad(node),
+            blend: node.style.appearance.blend,
         });
     }
     let transform = node.effective_transform();
@@ -69,6 +153,14 @@ pub fn enter_node_frame(
         } else {
             chunk.push(SceneCommand::PushTransform(transform));
         }
+    }
+    // Press content transform: the pressed member's content scales about
+    // its centre with its lens (the reference's `contentTransform`).
+    // Pushed in-stream (never hoisted): it is per-frame animation, not
+    // reusable placement.
+    let pressed = layer.press;
+    if let Some(press) = pressed {
+        chunk.push(SceneCommand::PushTransform(press));
     }
     let opacity = node.effective_opacity();
     if opacity < 1.0 {
@@ -92,19 +184,24 @@ pub fn exit_node_frame(
     chunk: &mut SceneChunk,
     layer_id: LayerId,
     hoist_root_transform: bool,
+    layer: &NodeLayer,
 ) {
-    // Asks the same authority `enter_node_frame` asked, so the pop can never disagree with the
-    // push and unbalance the clip stack.
+    // Pops exactly what the matching enter pushed (same `NodeLayer`), so
+    // the pop can never disagree with the push and unbalance the clip
+    // stack.
     if node_clip_radius(node).is_some() {
         chunk.push(SceneCommand::PopClip);
     }
     if node.effective_opacity() < 1.0 {
         chunk.push(SceneCommand::PopOpacity);
     }
+    if layer.press.is_some() {
+        chunk.push(SceneCommand::PopTransform);
+    }
     if node.effective_transform() != Transform::IDENTITY && !hoist_root_transform {
         chunk.push(SceneCommand::PopTransform);
     }
-    if node.style.has_layer {
+    if layer.needs_layer {
         chunk.push(SceneCommand::EndLayer { id: layer_id });
     }
     chunk.push(SceneCommand::PopOffset);
@@ -125,39 +222,38 @@ pub fn emit_node_content(
     text_ctx: &TextContext,
     caret_visible: bool,
     abs_origin_y: f32,
+    paint: Option<ResolvedRect>,
+    layer: &NodeLayer,
 ) {
+    let settled = paint.unwrap_or(node.resolved_rect);
     // A node that declares itself a clipping boundary owns its render box as a *surface*:
     // the card the user sees growing must paint up to the edge that is visibly moving, not
     // stop at its settled height while its own contents reveal past it. A node that is only
     // being repositioned by a transition is not a boundary, so its background stays at the
     // flow size and only its origin moves.
     let surface_rect = if node.style.clip {
-        let painted = node.resolved_rect;
-        ResolvedRect::new(0.0, 0.0, painted.width, painted.height)
+        ResolvedRect::new(0.0, 0.0, settled.width, settled.height)
     } else {
-        ResolvedRect::new(
-            0.0,
-            0.0,
-            node.resolved_rect.width,
-            node.resolved_rect.height,
-        )
+        ResolvedRect::new(0.0, 0.0, settled.width, settled.height)
     };
     // Interior content is always laid out at the flow size and revealed by the box above,
     // which is what stops glyphs from stretching while the surface grows around them.
-    let flow_rect = ResolvedRect::new(
-        0.0,
-        0.0,
-        node.resolved_rect.width,
-        node.resolved_rect.height,
-    );
+    let flow_rect = ResolvedRect::new(0.0, 0.0, node.resolved_rect.width, node.resolved_rect.height);
 
+    // Drop shadows paint behind the fill; inset shadows darken the fill's
+    // interior and must paint after it (CSS: inset box-shadow sits above
+    // the background, below content). A glass node's shadow was already
+    // hoisted to the parent target in `enter_node_frame`, so it is skipped
+    // here (inside the glass offscreen it would never be seen).
     if let Some(s) = &node.style.appearance.shadow {
-        chunk.push(SceneCommand::DrawShadow {
-            rect: surface_rect,
-            radius: node.style.appearance.radius,
-            shadow: s.clone(),
-            light: node.state.core.resolved_light,
-        });
+        if !s.inset && layer.glass.is_none() {
+            chunk.push(SceneCommand::DrawShadow {
+                rect: surface_rect,
+                radius: node.style.appearance.radius,
+                shadow: s.clone(),
+                light: node.state.core.resolved_light,
+            });
+        }
     }
 
     if node.style.appearance.fill.is_some() || node.style.appearance.stroke.is_some() {
@@ -170,6 +266,17 @@ pub fn emit_node_content(
             rect: surface_rect,
             appearance,
         });
+    }
+
+    if let Some(s) = &node.style.appearance.shadow {
+        if s.inset {
+            chunk.push(SceneCommand::DrawShadow {
+                rect: surface_rect,
+                radius: node.style.appearance.radius,
+                shadow: s.clone(),
+                light: node.state.core.resolved_light,
+            });
+        }
     }
 
     match &node.kind {

@@ -1,6 +1,7 @@
 // Single responsibility: Retained arena node aggregating style, geometry, and runtime state.
 
 use crate::foundation::{Key, Point, ResolvedRect, Size, StrokeAlign, Transform};
+use crate::scene::RectSettle;
 use crate::tree::kind::NodeKind;
 use crate::tree::state::NodeState;
 use crate::tree::style::NodeStyle;
@@ -50,6 +51,7 @@ pub struct LayoutNode {
     pub abs_tx: Transform,
     pub abs_tx_frame: u64,
     pub state: NodeState,
+    pub rect_settle: RectSettle,
 }
 
 impl LayoutNode {
@@ -64,6 +66,7 @@ impl LayoutNode {
             abs_tx: Transform::IDENTITY,
             abs_tx_frame: 0,
             state: NodeState::default(),
+            rect_settle: RectSettle::default(),
         }
     }
 
@@ -114,6 +117,9 @@ impl LayoutNode {
             || self.style.is_overlay
             || self.effective_opacity() < 1.0
             || self.effective_transform() != Transform::IDENTITY
+            // CSS: a blend-mode element creates a stacking context — the
+            // blend must see a well-defined backdrop painted beneath it.
+            || !self.style.appearance.blend.is_normal()
     }
 
     /// Painter layer this node occupies relative to its siblings.
@@ -238,13 +244,39 @@ impl LayoutNode {
         );
 
         if let Some(shadow) = &self.style.appearance.shadow {
-            for layer in shadow.layers() {
-                let (ox, oy) = shadow.layer_offset(&self.state.core.resolved_light, layer);
-                let pad = shadow.layer_pad(layer);
-                let shadow_rect =
-                    Self::project(tx, ox - pad, oy - pad, w + 2.0 * pad, h + 2.0 * pad);
-                bounds = bounds.union(&shadow_rect);
+            // Inset shadows are clipped to the border-box and never expand
+            // visual bounds; only drop shadows union their padded reach.
+            if !shadow.inset {
+                for layer in shadow.layers() {
+                    let (ox, oy) = shadow.layer_offset(&self.state.core.resolved_light, layer);
+                    let pad = shadow.layer_pad(layer);
+                    let shadow_rect =
+                        Self::project(tx, ox - pad, oy - pad, w + 2.0 * pad, h + 2.0 * pad);
+                    bounds = bounds.union(&shadow_rect);
+                }
             }
+        }
+
+        // A blur filter spreads the element's isolated content ~3σ past
+        // its own bounds; the damage region must cover that fringe.
+        if let Some(filter) = &self.style.appearance.filter {
+            let sigma = filter.max_blur_sigma();
+            if sigma > 0.0 {
+                let pad = 3.0 * sigma;
+                let blur_rect = Self::project(tx, -pad, -pad, w + 2.0 * pad, h + 2.0 * pad);
+                bounds = bounds.union(&blur_rect);
+            }
+        }
+
+        // A glass layer samples backdrop from outside its own rect (lens
+        // band, wide-tail rings, post-lens taps, backdrop inset, ambient
+        // reach, in-shader shadow); the pad covers all of them so
+        // backdrop damage just outside the glass repaints the lens too.
+        if let Some(glass) = &self.style.appearance.glass {
+            let backdrop = self.style.appearance.backdrop.unwrap_or_default();
+            let pad = glass.damage_pad(&backdrop);
+            let glass_rect = Self::project(tx, -pad, -pad, w + 2.0 * pad, h + 2.0 * pad);
+            bounds = bounds.union(&glass_rect);
         }
 
         if let Some(clip) = active_clip {

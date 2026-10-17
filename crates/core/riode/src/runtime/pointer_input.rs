@@ -3,6 +3,7 @@
 use crate::foundation::Point;
 use crate::input::{PointerEvent, PointerOutcome, PointerRouter};
 use crate::runtime::FrameScheduler;
+use crate::tree::TreeArena;
 
 /// Owns the pointer router and the queue of events waiting for the next frame.
 ///
@@ -73,8 +74,8 @@ impl PointerInput {
     /// This gives up the capture as well as the hover. A drag that is only half-released keeps
     /// sending moves to the view it was pressed on, so the view follows a pointer that no longer
     /// exists.
-    pub fn cancel_gesture(&mut self) {
-        self.router.cancel_gesture();
+    pub fn cancel_gesture(&mut self, arena: &mut TreeArena) {
+        self.router.cancel_gesture(arena);
     }
 
     /// Drains the queue, returning the state left behind by the last event dispatched.

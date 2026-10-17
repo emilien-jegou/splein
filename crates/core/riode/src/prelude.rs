@@ -18,8 +18,8 @@ pub use crate::dsl::{
     VirtualScrollView, VirtualScrollViewProps,
 };
 pub use crate::foundation::{
-    Alignment, Anchor, BlendMode, Color, Direction, Distribution, Edges, FalloffCurve, Fill, Gap,
-    LayoutPresence, LightEnvironment, Margin, Padding, Radius, RenderDriver, Shadow,
+    Alignment, Anchor, BlendMode, Color, Direction, Distribution, Edges, FalloffCurve, Fill, Filter,
+    FilterOp, Gap, LayoutPresence, LightEnvironment, Margin, Padding, Radius, RenderDriver, Shadow,
     ShadowOffset, ShadowShape, Size, Stroke, StrokeAlign, Transform,
 };
 pub use crate::hot_reload::{
@@ -59,3 +59,5 @@ pub use riode_macros::view;
 pub use riode_macros::pre_shaped;
 /// Build-time SVG rasterization: `include_svg!("..", W, H)`.
 pub use riode_macros::include_svg;
+/// Build-time image decode + Lanczos3 resample: `include_image!("..", W, H)`.
+pub use riode_macros::include_image;

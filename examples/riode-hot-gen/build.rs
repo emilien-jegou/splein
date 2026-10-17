@@ -69,4 +69,10 @@ fn main() {
     }
     println!("cargo:rerun-if-changed={}", hot.display());
     std::fs::write(&out, format!("#[path = \"{}\"]\nmod hot;\n", hot.display())).unwrap();
+    // This crate only ever builds as a hot-reload UI image: every view
+    // it mounts resolves `riode::` to the single shared runtime. Emit
+    // the `hot_ui` cfg so mounted views pick the shared-image import
+    // path (`riode::anodeui::…`). Build-script cfgs (unlike RUSTFLAGS
+    // in the hand scripts) also apply to the dev loop's own rebuilds.
+    println!("cargo:rustc-cfg=hot_ui");
 }

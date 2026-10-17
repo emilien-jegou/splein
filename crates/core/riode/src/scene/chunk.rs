@@ -62,6 +62,12 @@ pub struct SceneChunk {
     /// when `has_text`; vacuous `true` otherwise so textless chunks replay
     /// freely.
     pub text_settled: bool,
+    /// Whether glass motion (a pressed member's lens/content or a morphing
+    /// group) was unsettled when this chunk baked. Replay is only valid
+    /// while settled: the press/morph state integrates in the damage pass
+    /// and never marks dirty, so without this the stale stream replays
+    /// forever. Vacuous `false` for glass-free chunks.
+    pub glass_unsettled: bool,
     /// Content hash memoized at finalization (N4): backends read this
     /// instead of re-walking the stream per frame per tile. `None` means
     /// unhashed (hand-built chunks); `push_chunk` fills it exactly once,
@@ -82,6 +88,7 @@ impl SceneChunk {
             content_hash: None,
             has_text: false,
             text_settled: true,
+            glass_unsettled: false,
         }
     }
 
@@ -101,6 +108,7 @@ impl SceneChunk {
             content_hash: None,
             has_text: false,
             text_settled: true,
+            glass_unsettled: false,
         }
     }
 
@@ -115,6 +123,7 @@ impl SceneChunk {
             content_hash: None,
             has_text: false,
             text_settled: true,
+            glass_unsettled: false,
         }
     }
 

@@ -49,13 +49,16 @@
 
 pub mod alignment;
 pub mod appearance;
+pub mod blend;
 pub mod color;
 pub mod constraints;
 pub mod content;
 pub mod edges;
 pub mod falloff;
+pub mod filter;
 pub mod fill;
 pub mod geometry;
+pub mod glass;
 pub mod key;
 pub mod light;
 pub mod literal;
@@ -71,13 +74,16 @@ pub mod transform;
 
 pub use alignment::*;
 pub use appearance::*;
+pub use blend::*;
 pub use color::*;
 pub use constraints::*;
 pub use content::*;
 pub use edges::*;
 pub use falloff::*;
+pub use filter::*;
 pub use fill::*;
 pub use geometry::*;
+pub use glass::*;
 pub use key::*;
 pub use light::*;
 pub use literal::*;

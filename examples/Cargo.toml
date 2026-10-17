@@ -13,6 +13,7 @@ autoexamples = false
 
 [dependencies]
 riode = { path = "../crates/core/riode", version = "0.2.0" }
+riode-anodeui = { path = "../crates/ui/riode-anodeui", version = "0.2.0" }
 riode-engine-tiny-skia = { path = "../crates/engines/riode-engine-tiny-skia", version = "0.2.0" }
 riode-engine-wgpu = { path = "../crates/engines/riode-engine-wgpu", version = "0.2.0" }
 tracing = "0.1"
@@ -23,6 +24,10 @@ winit = { version = "0.29", default-features = false, features = ["rwh_06", "x11
 default = ["os-clipboard"]
 os-clipboard = ["riode/os-clipboard"]
 tracy = ["riode/tracy"]
+
+[[example]]
+name = "desktop_glass"
+path = "desktop_glass/main.rs"
 
 [[example]]
 name = "border_lab"
@@ -47,6 +52,14 @@ path = "demo2/main.rs"
 [[example]]
 name = "demo3"
 path = "demo3/main.rs"
+
+[[example]]
+name = "filter_lab"
+path = "filter_lab/main.rs"
+
+[[example]]
+name = "liquid_glass"
+path = "liquid_glass/main.rs"
 
 [[example]]
 name = "moving"
@@ -109,6 +122,10 @@ name = "shadow_lab"
 path = "shadow_lab/main.rs"
 
 [[example]]
+name = "glass_studio"
+path = "glass_studio/main.rs"
+
+[[example]]
 name = "shadow_studio"
 path = "shadow_studio/main.rs"
 
@@ -135,6 +152,14 @@ path = "text_smooth/main.rs"
 [[example]]
 name = "phase_grid"
 path = "phase_grid/main.rs"
+
+[[example]]
+name = "prism_only"
+path = "prism_only/main.rs"
+
+[[example]]
+name = "blend_group"
+path = "blend_group/main.rs"
 
 [[example]]
 name = "wrap_repro"

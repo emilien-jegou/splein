@@ -503,3 +503,115 @@ fn direct_cache_replay_is_identical() {
     assert_eq!(raster.direct.map.len(), 1);
     assert_eq!(first.data(), second.data());
 }
+
+/// Renders one inset shadow onto a canvas pre-filled with white, so the
+/// shadow darkens visible pixels (matching how emit order paints it over
+/// a fill).
+fn render_inset_on_white(shadow: &Shadow, rect: &ResolvedRect) -> Pixmap {
+    let mut raster = ShadowRasterizer::new();
+    let mut pix = Pixmap::new(500, 500).unwrap();
+    pix.fill(tiny_skia::Color::WHITE);
+    raster.render(
+        &mut pix.as_mut(),
+        rect,
+        Radius::Scalar(8.0),
+        shadow,
+        &LightEnvironment::DEFAULT,
+        1.0,
+        Transform::identity(),
+        None,
+    );
+    pix
+}
+
+fn pix_luma(pix: &Pixmap, x: i32, y: i32) -> u32 {
+    let w = pix.width() as i32;
+    let i = ((y * w + x) * 4) as usize;
+    let d = pix.data();
+    (d[i] as u32 + d[i + 1] as u32 + d[i + 2] as u32) / 3
+}
+
+/// CSS `inset 0 Ypx` darkens the TOP edge (light from above casts the lid
+/// down into the cavity): with positive offset_y the top interior must be
+/// darker than the bottom interior.
+#[test]
+fn inset_positive_offset_y_darkens_top() {
+    let shadow = Shadow::web_like(0.0, 8.0, 16.0, 0.0, Color::BLACK).inset();
+    let rect = ResolvedRect::new(100.0, 100.0, 120.0, 120.0);
+    let pix = render_inset_on_white(&shadow, &rect);
+    // Sample 6px inside each edge, horizontally centered.
+    let top = pix_luma(&pix, 160, 106);
+    let bottom = pix_luma(&pix, 160, 214);
+    assert!(
+        top < bottom,
+        "inset top ({top}) must be darker than bottom ({bottom})"
+    );
+    assert!(top < 250, "top edge must be visibly darkened, got luma {top}");
+}
+
+/// The shadow must not paint outside the element's border-box: pixels
+/// just outside the rect stay pure white.
+#[test]
+fn inset_does_not_paint_outside_box() {
+    let shadow = Shadow::web_like(0.0, 4.0, 12.0, 0.0, Color::BLACK).inset();
+    let rect = ResolvedRect::new(100.0, 100.0, 80.0, 80.0);
+    let pix = render_inset_on_white(&shadow, &rect);
+    // Outside samples (canvas is white; any dark pixel means overflow).
+    for (x, y) in [(50, 140), (250, 140), (140, 50), (140, 250)] {
+        assert_eq!(
+            pix_luma(&pix, x, y),
+            255,
+            "inset shadow painted outside the box at ({x},{y})"
+        );
+    }
+}
+
+/// Zero-offset inset: the darkening forms a ring hugging the edges, and
+/// the center stays near-white (the blurred lid fully covers the middle).
+#[test]
+fn inset_zero_offset_leaves_center_clean() {
+    let shadow = Shadow::web_like(0.0, 0.0, 12.0, 0.0, Color::BLACK).inset();
+    let rect = ResolvedRect::new(100.0, 100.0, 120.0, 120.0);
+    let pix = render_inset_on_white(&shadow, &rect);
+    let edge = pix_luma(&pix, 160, 104); // 4px inside the top edge
+    let center = pix_luma(&pix, 160, 160);
+    assert!(
+        edge < center,
+        "edge ({edge}) must be darker than center ({center})"
+    );
+    assert!(
+        center > 240,
+        "center must stay near-white under zero-offset inset, got {center}"
+    );
+}
+
+/// Inset shadows are byte-identical on replay (cache path).
+#[test]
+fn inset_cache_replay_is_identical() {
+    let shadow = Shadow::web_like(0.0, 4.0, 10.0, 2.0, Color::BLACK).inset();
+    let rect = ResolvedRect::new(150.0, 150.0, 40.0, 40.0);
+    let mut raster = ShadowRasterizer::new();
+    let mut first = Pixmap::new(300, 300).unwrap();
+    raster.render(
+        &mut first.as_mut(),
+        &rect,
+        Radius::Scalar(6.0),
+        &shadow,
+        &LightEnvironment::DEFAULT,
+        1.0,
+        Transform::identity(),
+        None,
+    );
+    let mut second = Pixmap::new(300, 300).unwrap();
+    raster.render(
+        &mut second.as_mut(),
+        &rect,
+        Radius::Scalar(6.0),
+        &shadow,
+        &LightEnvironment::DEFAULT,
+        1.0,
+        Transform::identity(),
+        None,
+    );
+    assert_eq!(first.data(), second.data());
+}

@@ -804,7 +804,7 @@ impl Engine {
     /// sending moves to the view it was pressed on, so the view follows a pointer that no
     /// longer exists.
     pub fn cancel_pointer_gesture(&mut self) {
-        self.pointer.cancel_gesture();
+        self.pointer.cancel_gesture(&mut self.scheduler.arena);
     }
 
     /// Drains queued pointer events, returning the state left behind by the last one.
@@ -930,15 +930,18 @@ impl Engine {
 
     /// Whether any animation still wants frames.
     ///
-    /// Reactive tickers, plus one engine-owned case: a focused caret blinks,
-    /// so its frame loop runs until the caret collapses away or blurs. A
-    /// static highlight needs no frames and keeps none alive.
+    /// Reactive tickers, one engine-owned case (a focused caret blinks,
+    /// so its frame loop runs until the caret collapses away or blurs; a
+    /// static highlight needs no frames and keeps none alive), and
+    /// glass motion (morph glides and press springs, which integrate in
+    /// the damage pass, outside the ticker system).
     pub fn has_active_motion(&self) -> bool {
         self.scheduler.runtime.borrow().has_active_tickers()
             || self
                 .pointer
                 .router()
                 .has_visible_caret(&self.scheduler.arena)
+            || self.scheduler.arena.glass_motion_active()
     }
 
     /// Blink phase from the last caret activity (~2Hz, frozen with the clock).

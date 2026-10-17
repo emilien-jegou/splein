@@ -1,0 +1,27 @@
+[package]
+name = "desktop-glass"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Three-island desktop-glass overlay demo (hot-reloadable view, Phase 2b/3 gate)"
+license = "GPL-3.0"
+
+[[bin]]
+name = "desktop-glass"
+path = "src/main.rs"
+
+[dependencies]
+# Single shared runtime image (dynamic): the host and every hot UI cdylib
+# resolve riode types to this one image, so hook scopes, the reactive
+# graph, and the engine exist exactly once. NEVER add a static `riode`
+# (or engine) dependency here — a second copy breaks the hot handshake
+# ("statically-linked driver") and every cross-boundary Element.
+riode-shared = { path = "../../crates/core/riode-shared", version = "0.2.0" }
+riode-platform-wayland = { path = "../../crates/platforms/riode-platform-wayland", version = "0.2.0" }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+smithay-client-toolkit = { workspace = true }
+wayland-client = { workspace = true }
+wayland-protocols = { workspace = true }
+libloading = "0.8"
+libc = "0.2"

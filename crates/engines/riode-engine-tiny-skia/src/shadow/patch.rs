@@ -172,7 +172,10 @@ pub fn blit_9patch(
                 dst[idx + 1] = ((g * a + dst[idx + 1] as u32 * inv_a + 128) >> 8) as u8;
                 dst[idx + 2] = ((b * a + dst[idx + 2] as u32 * inv_a + 128) >> 8) as u8;
             }
-            BlendMode::Multiply => {
+            // Shadow honours Normal/Multiply only; the rest of the
+            // `BlendMode` set folds to the multiply family (the scene
+            // wire folds the same way — `scene/command.rs`).
+            _ => {
                 // Subtractive: tinted product replaces source-over lerp so the
                 // shadow deepens the surface instead of washing it toward grey.
                 let (d0, d1, d2) = (dst[idx] as u32, dst[idx + 1] as u32, dst[idx + 2] as u32);

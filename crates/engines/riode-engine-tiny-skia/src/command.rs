@@ -6,9 +6,10 @@
 // with the engine root: tile offset) and delegates to the existing pixel
 // routines.
 
-use tiny_skia::{FillRule, Mask, PixmapMut, Transform as SkiaTransform};
+use tiny_skia::{FillRule, Mask, PixmapMut, PixmapPaint, Transform as SkiaTransform};
 
 use crate::clip::ClipStack;
+use crate::filter::LayerFrame;
 use crate::image::ImageCache;
 use crate::path::{build_rounded_path, skia_tx};
 use crate::shader::build_paint;
@@ -18,10 +19,9 @@ use crate::svg::SvgCache;
 use crate::text::{
     render_text_aligned, render_text_transformed, LineCompositeCache, TextRenderParams,
 };
-use riode::foundation::{Radius, Transform as CoreTransform};
-use riode::scene::{
-    PlacedClip, PlacedImage, PlacedRect, PlacedShadow, PlacedSvg, PlacedText, SceneSink,
-    TextRaster,
+use riode::foundation::{Radius, Transform as CoreTransform};use riode::scene::{
+    PlacedClip, PlacedImage, PlacedLayer, PlacedRect, PlacedShadow, PlacedSvg, PlacedText,
+    SceneSink, TextRaster,
 };
 use riode::text::TextContext;
 
@@ -40,7 +40,15 @@ pub struct ChunkSink<'a> {
     pub root: SkiaTransform,
     pub tile_w: f32,
     pub tile_h: f32,
+    /// Open filter layers. Draws route to the top layer's offscreen when it
+    /// owns a pixmap; a `pixmap: None` entry is a plain clip layer (the
+    /// pre-filter `has_layer` behavior).
+    pub layers: Vec<LayerFrame>,
 }
+
+// Glass is not implemented in this engine: a `BeginLayer { glass: Some(..) }`
+// is a plain isolation layer here, and the backdrop effect belongs to the
+// wgpu path (or to the compositor plugin). See `ongoing-liquid-glass-upgrade.md`.
 
 impl ChunkSink<'_> {
     /// Composes the engine root around a placed item's absolute transform.
@@ -57,13 +65,29 @@ impl ChunkSink<'_> {
 
 impl SceneSink for ChunkSink<'_> {
     fn push_clip(&mut self, clip: &PlacedClip) {
+        let _span = tracing::info_span!("Raster::Clip").entered();
+        let composed = self.compose(&clip.transform);
+        // Inside a filter layer, size the mask to the offscreen and intersect
+        // only in-layer masks: tile-sized ancestor masks must not mix with
+        // offscreen-sized ones (the zip would misalign).
+        if let Some(frame) = self.layers.last_mut() {
+            let (ox, oy) = frame.origin;
+            let floor = frame.clip_floor;
+            if let Some(pm) = frame.pixmap.as_mut() {
+                let (mw, mh) = (pm.width(), pm.height());
+                let tx = tiny_skia::Transform::from_translate(-ox, -oy).pre_concat(composed);
+                self.clip_stack
+                    .push_from(floor, &clip.rect, clip.radius, tx, mw, mh, mw, mh);
+                return;
+            }
+        }
         let (mw, mh) = self.target_size();
         // Masks size to the scratch pixmap: tiny-skia silently skips draws
         // whose mask dimensions differ from the target.
         self.clip_stack.push(
             &clip.rect,
             clip.radius,
-            self.compose(&clip.transform),
+            composed,
             self.tile_w as u32,
             self.tile_h as u32,
             mw,
@@ -75,9 +99,185 @@ impl SceneSink for ChunkSink<'_> {
         self.clip_stack.pop();
     }
 
+    fn begin_layer(&mut self, layer: &PlacedLayer) {
+        let _span = tracing::info_span!("Raster::Layer").entered();
+        let floor = self.clip_stack.depth();
+        // A plain layer is a clip — unless a filter or the alpha-shadow pad
+        // demands an offscreen. Glass does not: this engine draws no glass
+        // (see the note at the top of this file), so a glass-only layer is
+        // isolation-free here, exactly like a pre-glass frame.
+        if layer.filter.is_none() && layer.shadow_pad <= 0.0 {
+            // Plain isolation layer (pre-filter behavior): a clip.
+            self.push_clip(&PlacedClip {
+                rect: layer.rect,
+                radius: Radius::ZERO,
+                transform: layer.transform,
+            });
+            self.layers.push(LayerFrame {
+                pixmap: None,
+                origin: (0.0, 0.0),
+                filter: None,
+                clip_floor: floor,
+                alpha_shadow: None,
+            });
+            return;
+        };
+        // Device-space AABB of the layer rect under its placed transform.
+        let tx = self.compose(&layer.transform);
+        let (mut min_x, mut min_y) = (f32::INFINITY, f32::INFINITY);
+        let (mut max_x, mut max_y) = (f32::NEG_INFINITY, f32::NEG_INFINITY);
+        for (px, py) in [
+            (layer.rect.x, layer.rect.y),
+            (layer.rect.x + layer.rect.width, layer.rect.y),
+            (layer.rect.x, layer.rect.y + layer.rect.height),
+            (layer.rect.x + layer.rect.width, layer.rect.y + layer.rect.height),
+        ] {
+            let x = tx.sx * px + tx.kx * py + tx.tx;
+            let y = tx.ky * px + tx.sy * py + tx.ty;
+            min_x = min_x.min(x);
+            min_y = min_y.min(y);
+            max_x = max_x.max(x);
+            max_y = max_y.max(y);
+        }
+        // Gaussian support: 3σ past the rect so blur tails stay complete,
+        // plus the alpha-shadow pad.
+        let sigma = layer.filter.map(|f| f.max_blur_sigma()).unwrap_or(0.0);
+        let pad = 3.0 * sigma + layer.shadow_pad;
+        min_x -= pad;
+        min_y -= pad;
+        max_x += pad;
+        max_y += pad;
+        // Clamp to the tile neighborhood: only what this tile can show plus
+        // the blur's source margin. Bounds memory to ~tile + 6σ per axis.
+        min_x = min_x.max(-pad);
+        min_y = min_y.max(-pad);
+        max_x = max_x.min(self.tile_w + pad);
+        max_y = max_y.min(self.tile_h + pad);
+        let (ox, oy) = (min_x.floor(), min_y.floor());
+        // At least 1×1 so a fully off-tile layer still owns an offscreen
+        // (leaking its draws unfiltered onto the tile would be wrong).
+        let cap_w = (self.tile_w + 2.0 * pad + 2.0).max(1.0) as u32;
+        let cap_h = (self.tile_h + 2.0 * pad + 2.0).max(1.0) as u32;
+        let w = ((max_x.ceil() - ox).max(1.0) as u32).min(cap_w);
+        let h = ((max_y.ceil() - oy).max(1.0) as u32).min(cap_h);
+        let pixmap = tiny_skia::Pixmap::new(w, h);
+
+        self.layers.push(LayerFrame {
+            pixmap,
+            origin: (ox, oy),
+            filter: layer.filter.cloned(),
+            clip_floor: floor,
+            alpha_shadow: None,
+        });
+    }
+
+    fn end_layer(&mut self) {
+        let _span = tracing::info_span!("Raster::LayerEnd").entered();
+        let Some(frame) = self.layers.pop() else {
+            tracing::warn!("layer stack underflow: EndLayer without a matching BeginLayer");
+            self.pop_clip();
+            return;
+        };
+        let crate::filter::LayerFrame {
+            pixmap,
+            origin,
+            filter,
+            clip_floor,
+            alpha_shadow,
+        } = frame;
+        let Some(mut pm) = pixmap else {
+            // Clip layer: the clip pushed in begin_layer is popped here.
+            self.clip_stack.truncate_to(clip_floor);
+            self.pop_clip();
+            return;
+        };
+        // In-layer clips die with the layer; they must not mask the composite.
+        self.clip_stack.truncate_to(clip_floor);
+        if let Some(filter) = &filter {
+            crate::filter::apply_filter(&mut pm, filter);
+        }
+        // Fields used piecewise: the alpha-shadow pass and the content
+        // composite each borrow the sink exclusively, never together.
+        let ChunkSink {
+            clip_stack,
+            shadow_rasterizer,
+            root,
+            target,
+            layers,
+            ..
+        } = self;
+        let parent = layers.iter().rposition(|f| f.pixmap.is_some());
+        // Alpha drop shadow first: it lands on the parent *behind* the
+        // content composite that follows, cast from the finished silhouette
+        // (post-filter, in-layer clips baked in).
+        if let Some(a) = &alpha_shadow {
+            let composed = root.pre_concat(skia_tx(&a.transform));
+            if let Some(i) = parent {
+                let (pox, poy) = layers[i].origin;
+                let pfloor = layers[i].clip_floor;
+                let clip = clip_stack.current_from(pfloor);
+                if let Some(dst) = layers[i].pixmap.as_mut() {
+                    shadow_rasterizer.render_alpha(
+                        &pm,
+                        &mut dst.as_mut(),
+                        (origin.0 - pox, origin.1 - poy),
+                        &a.shadow,
+                        &a.light,
+                        a.opacity,
+                        composed,
+                        clip,
+                    );
+                }
+            } else {
+                let clip = clip_stack.current();
+                shadow_rasterizer.render_alpha(
+                    &pm,
+                    target,
+                    origin,
+                    &a.shadow,
+                    &a.light,
+                    a.opacity,
+                    composed,
+                    clip,
+                );
+            }
+        }
+        // Composite onto the parent surface.
+        let paint = PixmapPaint::default();
+        let ts = SkiaTransform::identity();
+        if let Some(i) = parent {
+            let (pox, poy) = layers[i].origin;
+            let clip = clip_stack.current_from(layers[i].clip_floor);
+            let (ppx, ppy) = (
+                (origin.0 - pox).round() as i32,
+                (origin.1 - poy).round() as i32,
+            );
+            if let Some(dst) = layers[i].pixmap.as_mut() {
+                dst.draw_pixmap(ppx, ppy, pm.as_ref(), &paint, ts, clip);
+            }
+        } else {
+            let clip = clip_stack.current();
+            let (px, py) = (origin.0.round() as i32, origin.1.round() as i32);
+            target.draw_pixmap(px, py, pm.as_ref(), &paint, ts, clip);
+        }
+    }
+
     fn rect(&mut self, r: &PlacedRect) {
-        // Split borrow: the target pixmap vs the clip mask borrow.
+        let _span = tracing::info_span!("Raster::Rect").entered();
         let tx = self.compose(&r.transform);
+        // Route into the active filter offscreen when one is open.
+        if let Some(frame) = self.layers.last_mut() {
+            let (ox, oy) = frame.origin;
+            let floor = frame.clip_floor;
+            if let Some(pm) = frame.pixmap.as_mut() {
+                let tw = pm.width() as f32;
+                let th = pm.height() as f32;
+                let tx = tiny_skia::Transform::from_translate(-ox, -oy).pre_concat(tx);
+                let clip = self.clip_stack.current_from(floor);
+                render_rect(&mut pm.as_mut(), &r.rect, r.appearance, r.opacity, tx, clip, tw, th);
+                return;
+            }
+        }
         let clip = self.clip_stack.current();
         render_rect(
             &mut self.target,
@@ -92,7 +292,35 @@ impl SceneSink for ChunkSink<'_> {
     }
 
     fn text(&mut self, t: &PlacedText) {
+        let _span = tracing::info_span!("Raster::Text").entered();
         let tx = self.compose(&t.transform);
+        if let Some(frame) = self.layers.last_mut() {
+            let (ox, oy) = frame.origin;
+            let floor = frame.clip_floor;
+            if let Some(pm) = frame.pixmap.as_mut() {
+                let tx = tiny_skia::Transform::from_translate(-ox, -oy).pre_concat(tx);
+                let clip = self.clip_stack.current_from(floor);
+                let params = TextRenderParams {
+                    origin: t.origin,
+                    layout: t.layout,
+                    layout_arc: Some(std::sync::Arc::clone(t.layout)),
+                    color: t.color,
+                    opacity: t.opacity,
+                    transform: tx,
+                    clip,
+                    line_cache: Some(&mut *self.line_cache),
+                };
+                match t.raster {
+                    TextRaster::Aligned => {
+                        render_text_aligned(&mut pm.as_mut(), self.text_ctx, params)
+                    }
+                    TextRaster::Transformed => {
+                        render_text_transformed(&mut pm.as_mut(), self.text_ctx, params)
+                    }
+                }
+                return;
+            }
+        }
         let clip = self.clip_stack.current();
         let params = TextRenderParams {
             origin: t.origin,
@@ -115,6 +343,19 @@ impl SceneSink for ChunkSink<'_> {
 
     fn image(&mut self, i: &PlacedImage) {
         let tx = self.compose(&i.transform);
+        if let Some(frame) = self.layers.last_mut() {
+            let (ox, oy) = frame.origin;
+            let floor = frame.clip_floor;
+            if let Some(pm) = frame.pixmap.as_mut() {
+                let tw = pm.width() as f32;
+                let th = pm.height() as f32;
+                let tx = tiny_skia::Transform::from_translate(-ox, -oy).pre_concat(tx);
+                let clip = self.clip_stack.current_from(floor);
+                self.image_cache
+                    .draw(&mut pm.as_mut(), &i.rect, i.image, i.opacity, tx, clip, tw, th);
+                return;
+            }
+        }
         let clip = self.clip_stack.current();
         self.image_cache.draw(
             &mut self.target,
@@ -131,6 +372,24 @@ impl SceneSink for ChunkSink<'_> {
     fn svg(&mut self, s: &PlacedSvg) {
         let (rw, rh) = riode::scene::raster_cache_size(s.rect.width, s.rect.height, 1.0);
         let tx = self.compose(&s.transform);
+        if let Some(frame) = self.layers.last_mut() {
+            let (ox, oy) = frame.origin;
+            let floor = frame.clip_floor;
+            if let Some(pm) = frame.pixmap.as_mut() {
+                let tx = tiny_skia::Transform::from_translate(-ox, -oy).pre_concat(tx);
+                let clip = self.clip_stack.current_from(floor);
+                self.svg_cache.draw(
+                    s.graphic,
+                    rw,
+                    rh,
+                    &mut pm.as_mut(),
+                    s.opacity,
+                    tx.pre_translate(s.rect.x, s.rect.y),
+                    clip,
+                );
+                return;
+            }
+        }
         let clip = self.clip_stack.current();
         self.svg_cache.draw(
             s.graphic,
@@ -144,7 +403,35 @@ impl SceneSink for ChunkSink<'_> {
     }
 
     fn shadow(&mut self, s: &PlacedShadow) {
+        let _span = tracing::info_span!("Raster::Shadow").entered();
+        // Alpha silhouette inside its own offscreen layer: stash instead of
+        // painting — `end_layer` casts it from the finished layer alpha,
+        // behind the content composite.
+        if matches!(s.shadow.shape, riode::foundation::ShadowShape::Alpha)
+            && !s.shadow.inset
+        {
+            if let Some(frame) = self.layers.last_mut().filter(|f| f.pixmap.is_some()) {
+                frame.alpha_shadow = Some(crate::filter::AlphaShadow {
+                    shadow: s.shadow.clone(),
+                    light: *s.light,
+                    opacity: s.opacity,
+                    transform: s.transform,
+                });
+                return;
+            }
+        }
         let tx = self.compose(&s.transform);
+        if let Some(frame) = self.layers.last_mut() {
+            let (ox, oy) = frame.origin;
+            let floor = frame.clip_floor;
+            if let Some(pm) = frame.pixmap.as_mut() {
+                let tx = tiny_skia::Transform::from_translate(-ox, -oy).pre_concat(tx);
+                let clip = self.clip_stack.current_from(floor);
+                self.shadow_rasterizer
+                    .render(&mut pm.as_mut(), &s.rect, s.radius, s.shadow, s.light, s.opacity, tx, clip);
+                return;
+            }
+        }
         let clip = self.clip_stack.current();
         self.shadow_rasterizer.render(
             &mut self.target,
@@ -196,6 +483,7 @@ pub fn execute_chunk(
             root: tile_tx,
             tile_w: ctx.tile_w,
             tile_h: ctx.tile_h,
+            layers: Vec::new(),
         };
         riode::scene::lower_chunk(
             &chunk.commands,
@@ -276,20 +564,10 @@ fn render_rect(
     if !rect_visible_in_tile(r, tx, tw, th) {
         return;
     }
-    // Snap the shared translation (not each rect): box fill, highlight and
-    // any other rect under this transform shift by the same amount, so
-    // coincident edges stay coincident and land integer together.
-    let tx = crate::path::snap_transform_to_device(tx);
     if let Some(fill) = &a.fill {
         if let Some(paint) = build_paint(fill, op * a.opacity) {
-            // Device snap first: translation-only fractional offsets fringe
-            // every edge; then the hairline rule below keeps thin rects >=1px.
-            let sr = crate::path::snap_rect_to_device(r, tx);
             if matches!(a.radius, Radius::Scalar(rad) if rad <= 0.0) {
-                // 1px hairlines at fractional positions split coverage over
-                // two rows (full-width faint double line). Snap thin
-                // translation-only rects to integer pixels so they stay crisp.
-                let (mut rx, mut ry, mut rw, mut rh) = (sr.x, sr.y, sr.width, sr.height);
+                let (mut rx, mut ry, mut rw, mut rh) = (r.x, r.y, r.width, r.height);
                 if !tx.has_skew() && !tx.has_scale() {
                     if rh <= 1.5 {
                         ry = ry.round();
@@ -305,7 +583,7 @@ fn render_rect(
                 }
             } else {
                 t.fill_path(
-                    &build_rounded_path(&sr, a.radius),
+                    &build_rounded_path(r, a.radius),
                     &paint,
                     FillRule::Winding,
                     tx,
@@ -315,7 +593,6 @@ fn render_rect(
         }
     }
     if let Some(stroke) = &a.stroke {
-        let sr = crate::path::snap_rect_to_device(r, tx);
-        render_stroke(t, &sr, a.radius, stroke, op * a.opacity, tx, clip);
+        render_stroke(t, r, a.radius, stroke, op * a.opacity, tx, clip);
     }
 }

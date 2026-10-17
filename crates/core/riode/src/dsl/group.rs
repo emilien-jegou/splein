@@ -27,6 +27,49 @@ pub struct GroupDef {
     pub scale: Option<Prop<f32>>,
     pub rotate_degrees: Option<Prop<f32>>,
     pub shadow: Option<Prop<Shadow>>,
+    pub filter: Option<Prop<Filter>>,
+    /// Blend mode this group's content composites at against its
+    /// backdrop (CSS `mix-blend-mode`; keywords like `"multiply"`).
+    /// Absent/`"normal"` = plain source-over (the pre-blend path).
+    pub blend: Option<Prop<BlendMode>>,
+    pub glass: Option<Prop<Glass>>,
+    /// Backdrop frost in logical px (`backdrop_blur={6.0}`). Absent =
+    /// neutral: a sharp (unblurred) lens. No table fallback — a visible
+    /// frost is always spelled at the call site.
+    pub backdrop_blur: Option<Prop<f32>>,
+    /// Backdrop wash (`backdrop_fill={Color}`). Absent = neutral: no
+    /// wash. `Some(Some(c))` uses `c.rgb` with opacity `c.a`. No table
+    /// fallback.
+    pub backdrop_fill: Option<Prop<Option<Color>>>,
+    /// Backdrop saturation (`backdrop_saturation={1.0}` = untouched,
+    /// 0.0 = grayscale). Absent = neutral: 1.0. No table fallback.
+    /// Only meaningful alongside `.glass()`.
+    pub backdrop_saturation: Option<Prop<f32>>,
+    /// Backdrop tone-curve amount (`backdrop_tone={1.0}` = fitted
+    /// reference curve, 0.0 = linear passthrough). Absent = fitted
+    /// curve.
+    /// Only meaningful alongside `.glass()`.
+    pub backdrop_tone: Option<Prop<f32>>,
+    /// Backdrop hue pickup (`backdrop_ambient={0.0}` = off).
+    /// Absent = fitted bank value. Only meaningful alongside `.glass()`.
+    pub backdrop_ambient: Option<Prop<f32>>,
+    /// Full tone curve, replacing the engine's fixed reference curve.
+    /// Absent = reference curve (or the `backdrop_tone` amount applied
+    /// to it). Only meaningful alongside `.glass()`.
+    pub backdrop_tone_curve: Option<Prop<ToneCurve>>,
+    /// Complete glass look from userland (preset crate); explicit
+    /// `glass` / `backdrop_*` props override it field-by-field.
+    pub preset: Option<Prop<GlassStyle>>,
+    /// Glass-group spacing in logical px (`Some` = this node merges the
+    /// glass of its descendant members into one shared layer; `None` =
+    /// ordinary node). Members closer than `spacing` blend together (the
+    /// smin radius is `spacing × mergeFactor`); 0 blends only touching
+    /// shapes. A group node must not carry its own `.glass()` — it is
+    /// ignored; members carry materials. Nested groups are transparent:
+    /// members join the outermost group. Members must be
+    /// translation-only relative to the group (no scale/rotation on the
+    /// path); anything else falls back to an AABB silhouette.
+    pub glass_group: Option<f32>,
     pub light_override: Option<LightEnvironment>,
     pub layout: LayoutConfig,
     pub margin: Margin,
@@ -109,6 +152,17 @@ pub fn group() -> GroupDef {
         scale: None,
         rotate_degrees: None,
         shadow: None,
+        filter: None,
+        blend: None,
+        glass: None,
+        backdrop_blur: None,
+        backdrop_fill: None,
+        backdrop_saturation: None,
+        backdrop_tone: None,
+        backdrop_tone_curve: None,
+        backdrop_ambient: None,
+        preset: None,
+        glass_group: None,
         light_override: None,
         layout: LayoutConfig::default(),
         margin: Margin::ZERO,
@@ -206,6 +260,110 @@ impl GroupDef {
     /// re-evaluate when their dependencies change.
     pub fn shadow<P: IntoProp<Shadow>>(mut self, s: P) -> Self {
         self.shadow = Some(s.into_prop());
+        self
+    }
+
+    /// Element filter from anything filter-like: a [`Filter`], a CSS
+    /// string (`"blur(4px)"`, `"brightness(1.2) saturate(0.5)"`), a raw
+    /// blur sigma (`4.0`), a closure `move || ...`, or a reactive signal.
+    /// A filter isolates this node's content into its own layer, applies
+    /// the chain to that isolated result, then composites — so blur
+    /// extends past the element's bounds without smearing its backdrop.
+    pub fn filter<P: IntoProp<Filter>>(mut self, f: P) -> Self {
+        self.filter = Some(f.into_prop());
+        self
+    }
+
+    /// Blend mode this group composites at against its backdrop (CSS
+    /// `mix-blend-mode`): `blend="multiply"`, `blend="soft-light"`,
+    /// `BlendMode::Overlay`, or a signal producing one. Non-`Normal`
+    /// isolates this group into a layer whose content composites
+    /// in-shader against a snapshot of what sits behind it.
+    pub fn blend<P: IntoProp<BlendMode>>(mut self, b: P) -> Self {
+        self.blend = Some(b.into_prop());
+        self
+    }
+
+    /// Liquid-glass lens from anything glass-like: a [`Glass`]
+    /// (`Glass::lens(1.0)`, `Glass::regular()`,
+    /// `Glass::lens(1.0).clear()`), a raw
+    /// strength (`glass={4.0}`), a shorthand string (`glass="4 5px"`),
+    /// a closure `move || ...`, or a reactive signal. Glass turns this
+    /// node into a backdrop-consuming lens layer: the engine snapshots
+    /// the pixels behind the element, refracts them through the
+    /// material's SDF height field, and composites the result under this
+    /// node's own content (which draws above, unrefracted). Frost, wash
+    /// and saturation come from [`Self::backdrop_blur`] /
+    /// [`Self::backdrop_fill`] / [`Self::backdrop_saturation`];
+    /// absent props resolve to neutral (sharp, unwashed, untouched) —
+    /// a visible stage is always spelled at the call site.
+    pub fn glass<P: IntoProp<Glass>>(mut self, g: P) -> Self {
+        self.glass = Some(g.into_prop());
+        self
+    }
+
+    /// Backdrop frost sigma in logical px, overriding the fitted table
+    /// for this node's glass (`backdrop_blur={0.0}` = sharp lens).
+    /// Absent = table default. Only meaningful alongside `.glass()`.
+    pub fn backdrop_blur<P: IntoProp<f32>>(mut self, v: P) -> Self {
+        self.backdrop_blur = Some(v.into_prop());
+        self
+    }
+
+    /// Backdrop wash, overriding the fitted table for this node's glass
+    /// (opacity comes from the color's alpha). Absent = table default.
+    /// Only meaningful alongside `.glass()`.
+    pub fn backdrop_fill<P: IntoProp<Option<Color>>>(mut self, v: P) -> Self {
+        self.backdrop_fill = Some(v.into_prop());
+        self
+    }
+
+    /// Backdrop saturation in the glass shader's saturate stage,
+    /// overriding the fitted table (1.0 = untouched, 0.0 = grayscale).
+    /// Absent = table default. Only meaningful alongside `.glass()`.
+    pub fn backdrop_saturation<P: IntoProp<f32>>(mut self, v: P) -> Self {
+        self.backdrop_saturation = Some(v.into_prop());
+        self
+    }
+
+    /// Backdrop tone-curve amount (1.0 = fitted reference curve,
+    /// 0.0 = linear passthrough). Absent = fitted curve.
+    /// Only meaningful alongside `.glass()`.
+    pub fn backdrop_tone<P: IntoProp<f32>>(mut self, v: P) -> Self {
+        self.backdrop_tone = Some(v.into_prop());
+        self
+    }
+
+    /// Backdrop hue pickup amount (0.0 = off). Absent = fitted bank
+    /// value. Only meaningful alongside `.glass()`.
+    pub fn backdrop_ambient<P: IntoProp<f32>>(mut self, v: P) -> Self {
+        self.backdrop_ambient = Some(v.into_prop());
+        self
+    }
+
+    /// Full backdrop tone curve, replacing the engine's fixed reference
+    /// curve. Absent = reference curve (scaled by `backdrop_tone`).
+    /// Only meaningful alongside `.glass()`.
+    pub fn backdrop_tone_curve<P: IntoProp<ToneCurve>>(mut self, v: P) -> Self {
+        self.backdrop_tone_curve = Some(v.into_prop());
+        self
+    }
+
+    /// A complete glass look in one prop: a userland preset (e.g.
+    /// anodeui) expanding to the lens plus every backdrop stage.
+    /// Explicit `glass` / `backdrop_*` props on the same node win over
+    /// the preset field-by-field, so a preset is a starting point, not
+    /// a lock-in. Dynamic presets (computed styles) re-evaluate like
+    /// any other prop.
+    pub fn preset<P: IntoProp<GlassStyle>>(mut self, p: P) -> Self {
+        self.preset = Some(p.into_prop());
+        self
+    }
+
+    /// Merges descendant glass members into this node's layer (Phase 5).
+    /// See [`Self::glass_group`] for the rules.
+    pub fn glass_group(mut self, spacing: f32) -> Self {
+        self.glass_group = Some(spacing.max(0.0));
         self
     }
 

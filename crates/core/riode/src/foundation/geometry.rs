@@ -64,6 +64,11 @@ impl ResolvedRect {
         self.width < 0.1 || self.height < 0.1
     }
 
+    #[inline(always)]
+    pub fn is_finite(&self) -> bool {
+        self.x.is_finite() && self.y.is_finite() && self.width.is_finite() && self.height.is_finite()
+    }
+
     /// Whether any part of this box meets `other`, testing a collapsed box as a point at its origin.
     ///
     /// `intersects` is exclusive, so a box squeezed to zero area never intersects anything and would

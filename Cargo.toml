@@ -2,7 +2,10 @@
 resolver = "2"
 members = [
   "apps/splein",
+  "apps/dock",
+  "apps/desktop-glass",
   "crates/core/riode",
+  "crates/ui/riode-anodeui",
   "crates/core/riode/benches/bench_suite",
   "crates/core/riode/macros",
   "examples/riode-hot-gen",
@@ -51,6 +54,7 @@ default-members = [
 [workspace.dependencies]
 smithay-client-toolkit = { version = "0.19", default-features = false }
 wayland-client = "0.31"
+wayland-protocols = { version = "0.32", features = ["client", "staging"] }
 wayland-protocols-wlr = { version = "0.3", features = ["client"] }
 
 # CLI & Logging

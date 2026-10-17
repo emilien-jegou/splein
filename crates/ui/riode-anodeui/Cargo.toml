@@ -1,0 +1,10 @@
+[package]
+name = "riode-anodeui"
+version = "0.2.0"
+edition = "2021"
+publish = false
+description = "Anode UI kit: Apple-matched liquid-glass primitives for riode (userland looks, no engine coupling)"
+license = "GPL-3.0"
+
+[dependencies]
+riode = { path = "../../core/riode", version = "0.2.0" }

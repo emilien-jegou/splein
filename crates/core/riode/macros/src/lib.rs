@@ -114,6 +114,18 @@ pub fn include_svg(tokens: TokenStream) -> TokenStream {
     }
 }
 
+/// Build-time image decode + resample: `include_image!("icon.png", 64, 64)`.
+///
+/// Decodes PNG/WebP on the host, Lanczos3-resamples to exactly W×H px and
+/// emits `::riode::scene::ImageSource::from_static_rgba8(..)`.
+#[proc_macro]
+pub fn include_image(tokens: TokenStream) -> TokenStream {
+    match preshape::include_image_impl(tokens) {
+        Ok(t) => t.into(),
+        Err(e) => e.to_compile_error().into(),
+    }
+}
+
 /// Optional `scope = ::path::to::scope_fn` and/or `name = "identity"` arguments.
 ///
 /// Empty means the defaults (`::riode::internal::component_scope` behavior and

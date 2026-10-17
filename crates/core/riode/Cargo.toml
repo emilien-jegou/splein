@@ -43,7 +43,7 @@ resvg = { version = "0.42", optional = true }
 
 # Tracing
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["fmt", "registry", "env-filter"] }
+tracing-subscriber = { version = "0.3", features = ["fmt", "registry", "env-filter", "json"] }
 tracy-client = { version = "0.19", features = ["enable"], optional = true }
 tracing-tracy = { version = "0.12", features = ["enable"], optional = true }
 

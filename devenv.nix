@@ -28,6 +28,25 @@ in {
     pkgs.libxkbcommon
     pkgs.libGL
     pkgs.vulkan-loader
+    # riode-glass Hyprland plugin (C++): compiler, build tool, compositor
+    # headers + everything hyprland.pc Requires so pkg-config resolves.
+    pkgs.gcc
+    pkgs.gnumake
+    pkgs.hyprland
+    pkgs.aquamarine
+    pkgs.hyprcursor
+    pkgs.hyprgraphics
+    pkgs.hyprlang
+    pkgs.hyprutils
+    pkgs.pixman
+    pkgs.libdrm
+    pkgs.cairo
+    pkgs.libinput
+    pkgs.glslang
+    pkgs.xorg.libxcb
+    pkgs.xorg.xcbutil
+    pkgs.xorg.xcbutilerrors
+    pkgs.xorg.xcbutilwm
    # tracy
   ];
 

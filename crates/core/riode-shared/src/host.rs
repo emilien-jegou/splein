@@ -6,7 +6,11 @@ use riode::hot_reload::{
     HotWindowFn, HotWindowInfo,
 };
 use riode::prelude::*;
-use riode::internal::*;  // P10 escape hatch: this test composes repr-builders directly
+// NOTE: import `text` qualified at the call site (not via glob/use): a
+// `text` binding at this file's scope would collide with the `text`
+// module re-exported at the crate root and break `riode_shared::text`
+// for every downstream user.
+use riode::internal::group;
 use std::ffi::{c_char, CStr};
 
 /// Reads a borrowed C string. The stub keeps every string alive for the call.
@@ -43,7 +47,9 @@ pub extern "Rust" fn devkit_run(
         watch_dir: example.as_deref().map(|name| root.join("examples").join(name)),
         lib_path: None,
         auto_build: true,
-        companion_packages: vec!["riode-shared".to_string(), package_raw.to_string()],
+        // Canonical set (scripts/hot-sets/window): must equal the hand-build
+        // set or rival `riode` units break dylib loads. Never inline a list.
+        companion_packages: riode::hot_reload::companion_set("window"),
     };
     let build_log = std::env::temp_dir().join(format!("riode-hot-boot-{}.log", std::process::id()));
     if let Err(tail) = blocking_hot_build(&loop_config(), &build_log) {
@@ -77,7 +83,7 @@ fn placeholder() -> impl IntoElement {
     group()
         .width(400.0)
         .height(300.0)
-        .children([text("building hot-ui…").size(16.0)])
+        .children([riode::internal::text("building hot-ui…").size(16.0)])
 }
 
 fn read_boot_chrome(config: &DevLoopConfig) -> (HotWindowInfo, String) {

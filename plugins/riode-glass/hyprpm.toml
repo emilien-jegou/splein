@@ -1,0 +1,15 @@
+[repository]
+name = "riode-glass"
+authors = ["splein"]
+description = "Desktop-backdrop glass regions for riode apps"
+
+# Running compositor pin first (matches 2026-10-18 environment).
+# Same convention as hyprglass: Hyprland release commit -> plugin release.
+commit_pins = [
+  ["efb50993780079460b0cbed1363e2166a2de1d9f", "v0.1.0"], # hyprland 0.56.2 -> riode-glass v0.1.0
+]
+
+[riode-glass]
+description = "riode desktop-backdrop glass (blur, optics, glow + blend)"
+output = "riode-glass.so"
+build = ["make"]

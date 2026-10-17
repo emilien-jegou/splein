@@ -17,7 +17,8 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use crate::foundation::{
-    Appearance, Color, LightEnvironment, Point, Radius, ResolvedRect, Shadow, Transform,
+    Appearance, Color, Filter, GlassLayer, LightEnvironment, Point, Radius, ResolvedRect, Shadow,
+    Transform,
 };
 use crate::scene::chunk::SceneChunk;
 use crate::scene::command::SceneCommand;
@@ -97,6 +98,32 @@ pub struct PlacedShadow<'a> {
     pub transform: Transform,
 }
 
+/// An isolated layer with an optional element filter, fully placed.
+///
+/// `None` filter is a plain isolation layer (the pre-filter behavior:
+/// engines default it to a clip). `Some` means the engine must render
+/// the layer's content to an offscreen, apply the filter, then composite.
+/// `shadow_pad > 0` demands an offscreen even without a filter: the
+/// layer's alpha is the silhouette of an alpha drop shadow, padded so the
+/// offset + blur reach fits around the content.
+#[derive(Clone, Debug)]
+pub struct PlacedLayer<'a> {
+    pub rect: ResolvedRect,
+    pub filter: Option<&'a Filter>,
+    /// Liquid-glass layer content (`Single` material or `Group` members):
+    /// `Some` means the engine must snapshot the backdrop behind `rect`
+    /// and run the optics pass, compositing the result under the layer's
+    /// content. Member rects are layer-local (see `GlassLayer`).
+    pub glass: Option<&'a GlassLayer>,
+    pub transform: Transform,
+    pub shadow_pad: f32,
+    /// Blend mode the layer's content composites at against the
+    /// backdrop. `Normal` is plain source-over; anything else makes the
+    /// engine keep a backdrop snapshot and composite in-shader (needs an
+    /// offscreen, so it forces a real layer).
+    pub blend: crate::foundation::BlendMode,
+}
+
 fn warn_ignored(what: &'static str, flag: &AtomicBool, counter: &AtomicU64) {
     counter.fetch_add(1, Ordering::Relaxed);
     if !flag.swap(true, Ordering::Relaxed) {
@@ -167,6 +194,22 @@ pub trait SceneSink {
         static WARNED: AtomicBool = AtomicBool::new(false);
         warn_ignored("shadow", &WARNED, &IGNORED_SHADOW);
     }
+    /// Opens an isolated layer. The default treats it as a plain clip
+    /// (the pre-filter behavior), so engines that don't implement filter
+    /// layers degrade to today's semantics instead of dropping content.
+    /// Engines that DO implement filters override this to start an
+    /// offscreen when `filter` is `Some`.
+    fn begin_layer(&mut self, layer: &PlacedLayer) {
+        self.push_clip(&PlacedClip {
+            rect: layer.rect,
+            radius: Radius::ZERO,
+            transform: layer.transform,
+        });
+    }
+    /// Closes the most recent layer (matching pop for the default clip).
+    fn end_layer(&mut self) {
+        self.pop_clip();
+    }
 }
 
 /// Chunk base as a single transform: `translate(abs_origin) * placement`.
@@ -205,12 +248,22 @@ pub fn lower_chunk(
                 transform: stack.transform(),
             }),
             SceneCommand::PopClip => sink.pop_clip(),
-            SceneCommand::BeginLayer { rect, .. } => sink.push_clip(&PlacedClip {
+            SceneCommand::BeginLayer {
+                rect,
+                filter,
+                glass,
+                shadow_pad,
+                blend,
+                ..
+            } => sink.begin_layer(&PlacedLayer {
                 rect: *rect,
-                radius: Radius::ZERO,
+                filter: filter.as_ref(),
+                glass: glass.as_ref(),
                 transform: stack.transform(),
+                shadow_pad: *shadow_pad,
+                blend: *blend,
             }),
-            SceneCommand::EndLayer { .. } => sink.pop_clip(),
+            SceneCommand::EndLayer { .. } => sink.end_layer(),
             SceneCommand::DrawRect { rect, appearance } => sink.rect(&PlacedRect {
                 rect: *rect,
                 appearance,

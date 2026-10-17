@@ -6,6 +6,7 @@
 pub mod clip;
 pub mod command;
 pub mod cpu_backend;
+pub mod filter;
 pub mod image;
 pub mod linebuffer;
 pub mod path;

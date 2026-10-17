@@ -8,12 +8,22 @@ license = "GPL-3.0"
 readme = "README.md"
 
 [dependencies]
-riode = { path = "../../core/riode", version = "0.2.0" }
-riode-engine-tiny-skia = { path = "../../engines/riode-engine-tiny-skia", version = "0.2.0" }
+# Single shared runtime image (dynamic): every riode type in this crate
+# resolves to libriode_shared.so, the same image the hot UI dylib and any
+# hot-capable host use. Never depend on static `riode` (or engine) crates
+# here — a second copy would diverge every cross-boundary type (Scene,
+# Island, Element).
+riode-shared = { path = "../../core/riode-shared", version = "0.2.0" }
 smithay-client-toolkit = { workspace = true }
 wayland-client = { workspace = true }
+wayland-backend = "0.3"
+wayland-protocols = { workspace = true }
+wayland-scanner = "0.31"
 bytemuck = "1"
 tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+libloading = "0.8"
+libc = "0.2"
 
 [dev-dependencies]
 ntest = "0.9"

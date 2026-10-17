@@ -23,6 +23,20 @@ cd "$ROOT"
 
 NAME="${1:-demo1}"
 ENGINE="${2:-}"
+OVERLAY=""
+
+# Flags may arrive in any position: `example <name> [engine] [--overlay]`.
+for arg in "$@"; do
+    case "$arg" in
+        --overlay) OVERLAY=1 ;;
+    esac
+done
+if [ "$ENGINE" = "--overlay" ]; then
+    ENGINE=""
+fi
+
+# Dashes are user spelling; dirs use underscores (`desktop-glass` -> `desktop_glass`).
+NAME="${NAME//-/_}"
 
 case "$NAME" in
     moving|showcase|selection_showcase|studio|render_bench)
@@ -40,24 +54,82 @@ case "$NAME" in
         fi ;;
 esac
 
+# Hot-reload package sets live in scripts/hot-sets/ (one file per host kind):
+# the same file the Rust loop reads via riode::hot_reload::companion_set.
+# Both sides always pass cargo the identical `-p` set, so one unit family
+# resolves everywhere. Never inline `-p` lists here — read the files.
+hot_build_for_set() {
+    local set_file="$1"
+    local -a pkgs=()
+    local tok
+    # Word-split the set file, stripping `#` comments (whole-line and
+    # trailing) and blank lines. Comment text must never reach cargo:
+    # a stray flag word in a comment would be passed as an argument.
+    for tok in $(sed 's/#.*//' "$set_file"); do
+        pkgs+=(-p "$tok")
+    done
+    RIODE_HOT_EXAMPLE="$NAME" RUSTFLAGS="-C prefer-dynamic" \
+        cargo build --release "${pkgs[@]}"
+}
+
 # Build order (documented — do not reorder, do not merge):
 #   1. `riode-cli` alone: static launcher binary. Built separately because
 #      its clap-derive proc-macro closure spawns rival unit variants that break
 #      the dylib links below when co-built (proven by same-hour with/without
 #      trials). Static links are immune, so it builds in isolation.
-#   2. Grouped `riode-shared` + generative `riode-hot-gen-ui` +
-#      shared image now owns host entry points.
-#      graph. `RIODE_HOT_EXAMPLE` selects which example the generative crate
-#      mounts; the loop itself rebuilds shared + UI with the same shape (see
-#      DevLoopConfig::companion_packages).
+#   2. Grouped set from scripts/hot-sets/<host>: one invocation, one unit
+#      family. The loop rebuilds the same set (see DevLoopConfig), and
+#      `RIODE_HOT_EXAMPLE` selects which example the generative crate mounts.
 # Everything is `--release`: runtime speed matters for interactive demos, and a
 # single profile everywhere keeps one unit family (the loop spawns release too).
+# Overlay mode: the transparent layer-shell host (not a winit window), so the
+# compositor + riode-glass plugin effects are visible while tuning.
+# Only examples whose view is overlay-shaped make sense here
+# (desktop_glass, prism_only); anything else exits loud instead of booting
+# a mis-sized overlay. Standalone overlay apps (dock) run via
+# `scripts/overlay.sh` instead — their UI lives next to the app, not
+# under `examples/`.
+if [ -n "$OVERLAY" ]; then
+    case "$NAME" in
+        desktop_glass|prism_only) HOST_BIN="desktop-glass"; HOST_SET="desktop-glass" ;;
+        *)
+            echo "example.sh: --overlay supports desktop_glass and prism_only (got '$NAME')." >&2
+            exit 2 ;;
+    esac
+    if [ -n "$ENGINE" ]; then
+        # The overlay runner rasterizes with headless tiny-skia; glass is
+        # rendered by the riode-glass compositor plugin from the packed
+        # frame, so a raster-engine choice has no effect here.
+        echo "example.sh: overlay raster is headless tiny-skia (glass comes from the riode-glass plugin); engine '$ENGINE' ignored." >&2
+    fi
+    # The host binary is part of the set, so exec it directly — never via
+    # `cargo run`, which would re-resolve the graph in a second invocation.
+    hot_build_for_set "$ROOT/scripts/hot-sets/$HOST_SET"
+    export LD_LIBRARY_PATH="$ROOT/target/release${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    # The host reads this: boot chrome (HOT_*), the loop's rebuild example,
+    # and the dylib mount must all name the same example.
+    export RIODE_HOT_EXAMPLE="$NAME"
+    LOG_FILE="/tmp/riode-${NAME}-overlay-$(date +%Y%m%d-%H%M%S).jsonl"
+    export RIODE_LOG_FILE="$LOG_FILE"
+    echo "example.sh: tracing log -> $RIODE_LOG_FILE" >&2
+    exec ./target/release/"$HOST_BIN"
+fi
 cargo build --release -p riode-cli
-RIODE_HOT_EXAMPLE="$NAME" RUSTFLAGS="-C prefer-dynamic" cargo build --release -p riode-shared -p riode-hot-gen-ui
+hot_build_for_set "$ROOT/scripts/hot-sets/window"
 
 if [ -n "$ENGINE" ]; then
-    exec ./target/release/riode hot --example "$NAME" --root "$ROOT" \
-        --engine "$ENGINE"
+    ENGINE_FLAG="--engine $ENGINE"
 else
-    exec ./target/release/riode hot --example "$NAME" --root "$ROOT"
+    ENGINE_FLAG=""
 fi
+
+# Auto-created trace log: JSON tracing (incl. per-pass span timings) lands here
+# so it can be handed to an agent for analysis. Honored by
+# `riode::hot_reload::init_dev_logging` via `RIODE_LOG_FILE`.
+LOG_FILE="/tmp/riode-${NAME}-$(date +%Y%m%d-%H%M%S).jsonl"
+export RIODE_LOG_FILE="$LOG_FILE"
+echo "example.sh: tracing log -> $RIODE_LOG_FILE" >&2
+
+# shellcheck disable=SC2086
+exec ./target/release/riode hot --example "$NAME" --root "$ROOT" \
+    $ENGINE_FLAG

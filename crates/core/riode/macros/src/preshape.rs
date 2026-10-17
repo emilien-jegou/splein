@@ -380,3 +380,62 @@ pub fn include_svg_impl(input: proc_macro::TokenStream) -> syn::Result<TokenStre
     let lit = bytes_literal(pixmap.data());
     Ok(quote!(::riode::scene::ImageSource::from_static_rgba8(#w, #h, #lit)))
 }
+
+/// `include_image!("path.png", 64, 64)`
+///
+/// Decodes a PNG/WebP on the build host, resamples to exactly `width`x`height`
+/// with Lanczos3, and emits `::riode::scene::ImageSource::from_static_rgba8(..)`.
+pub fn include_image_impl(input: proc_macro::TokenStream) -> syn::Result<TokenStream2> {
+    let parser =
+        Punctuated::<Lit, Token![,]>::parse_terminated;
+    let args: Vec<Lit> = parser.parse(input.into())?.into_iter().collect();
+    if args.len() != 3 {
+        return Err(syn::Error::new(
+            proc_macro2::Span::call_site(),
+            "expected include_image!(\"path.png\", WIDTH, HEIGHT)",
+        ));
+    }
+    let path = match &args[0] {
+        Lit::Str(s) => s.value(),
+        _ => {
+            return Err(syn::Error::new_spanned(
+                &args[0],
+                "first argument must be the image path string",
+            ))
+        }
+    };
+    let int_arg = |i: usize, what: &str| -> syn::Result<u32> {
+        match &args[i] {
+            Lit::Int(v) => v.base10_parse::<u32>().map_err(|_| {
+                syn::Error::new_spanned(&args[i], format!("{what} must be a positive integer"))
+            }),
+            _ => Err(syn::Error::new_spanned(
+                &args[i],
+                format!("{what} must be a positive integer"),
+            )),
+        }
+    };
+    let (w, h) = (int_arg(1, "width")?, int_arg(2, "height")?);
+    if w == 0 || h == 0 || w > 4096 || h > 4096 {
+        return Err(syn::Error::new(
+            proc_macro2::Span::call_site(),
+            "width/height must be in 1..=4096",
+        ));
+    }
+    let img_data = std::fs::read(manifest_relative(&path)).map_err(|e| {
+        syn::Error::new(proc_macro2::Span::call_site(), format!("cannot read image: {e}"))
+    })?;
+    let img = image::load_from_memory(&img_data).map_err(|e| {
+        syn::Error::new(proc_macro2::Span::call_site(), format!("image decode failed: {e}"))
+    })?;
+    let resized = img.resize_exact(w, h, image::imageops::FilterType::Lanczos3);
+    let mut rgba = resized.into_rgba8();
+    for p in rgba.chunks_exact_mut(4) {
+        let a = p[3] as u32;
+        p[0] = ((p[0] as u32 * a) / 255) as u8;
+        p[1] = ((p[1] as u32 * a) / 255) as u8;
+        p[2] = ((p[2] as u32 * a) / 255) as u8;
+    }
+    let lit = bytes_literal(&rgba.into_raw());
+    Ok(quote!(::riode::scene::ImageSource::from_static_rgba8(#w, #h, #lit)))
+}

@@ -41,17 +41,43 @@ pub struct DevLoopConfig {
     /// Companion packages co-built with the UI in the SAME `cargo build`
     /// invocation. `spawn_build` sorts and deduplicates companions plus the UI
     /// package into one canonical root set, so every loop — whichever example
-    /// it serves — resolves the same unit family. In practice this is just the
-    /// shared image alongside the UI (`[shared, package]`); keep it minimal —
-    /// every extra package is another closure that can diverge the graph.
+    /// it serves — resolves the same unit family.
     ///
     /// Load-bearing, not decorative: different `-p` root sets resolve
     /// different unit-variant families for the same crates, and linking a
     /// consumer against one variant's shared image while loading another fails
     /// the build ("only shows up once") or the load (undefined symbols).
-    /// `example.sh` builds the same set by hand (plus the static launcher,
-    /// separately).
+    ///
+    /// Never hand-write this list: build it with [`companion_set`], which reads
+    /// the canonical `scripts/hot-sets/<host>` file — the same file the
+    /// hand-build scripts read. That single source of truth is what keeps the
+    /// script side and the loop side from ever drifting apart again.
     pub companion_packages: Vec<String>,
+}
+
+/// Canonical hot-reload companion packages for one host kind.
+///
+/// Reads `scripts/hot-sets/<host>` (via `include_str!`, resolved at compile
+/// time against the workspace checkout): `window` for winit-window hosts,
+/// `desktop-glass` / `dock` for the layer-shell overlay hosts. The
+/// hand-build scripts read the same files, so both sides always pass cargo
+/// the identical `-p` set and resolve one unit family. Unknown host names
+/// fail the build loudly instead of silently compiling rival units.
+pub fn companion_set(host: &str) -> Vec<String> {
+    const WINDOW: &str = include_str!("../../../../../scripts/hot-sets/window");
+    const DESKTOP_GLASS: &str = include_str!("../../../../../scripts/hot-sets/desktop-glass");
+    const DOCK: &str = include_str!("../../../../../scripts/hot-sets/dock");
+    let raw = match host {
+        "window" => WINDOW,
+        "desktop-glass" => DESKTOP_GLASS,
+        "dock" => DOCK,
+        other => panic!("riode: unknown hot-reload host set `{other}` (want `window`, `desktop-glass`, or `dock`)"),
+    };
+    raw.lines()
+        .map(|line| line.split('#').next().unwrap_or(""))
+        .flat_map(str::split_whitespace)
+        .map(str::to_string)
+        .collect()
 }
 
 impl DevLoopConfig {
@@ -105,7 +131,8 @@ impl DevLoopConfig {
 
     /// Package manifest watched alongside sources: dependency and feature edits rebuild
     /// through the same cycle as source edits. Missing manifests are simply unwatched.
-    /// Probes `crates/<package>/Cargo.toml` first, then `examples/<package>/Cargo.toml`.
+    /// Probes `crates/<package>/Cargo.toml`, then `examples/<package>/Cargo.toml`,
+    /// then `apps/<package>/Cargo.toml` (standalone overlay apps).
     pub fn manifest_path(&self) -> PathBuf {
         let crates = self
             .workspace_root
@@ -122,6 +149,14 @@ impl DevLoopConfig {
             .join("Cargo.toml");
         if examples.exists() {
             return examples;
+        }
+        let apps = self
+            .workspace_root
+            .join("apps")
+            .join(&self.package)
+            .join("Cargo.toml");
+        if apps.exists() {
+            return apps;
         }
         crates
     }
@@ -888,18 +923,44 @@ pub fn blocking_hot_build(
     config: &DevLoopConfig,
     log_path: &std::path::Path,
 ) -> Result<(), Vec<String>> {
+    // Stream the boot build live (concurrently-style): `cargo`'s stderr is
+    // piped, tee'd line-by-line to both the log file and this process's
+    // stderr, so `example.sh` shows `Compiling …` progress instead of
+    // hanging silent until the first frame.
     let log_file = std::fs::File::create(log_path).map_err(|e| {
         vec![format!(
             "riode: hot-reload cannot log boot build ({}): {e}",
             log_path.display()
         )]
     })?;
-    let status = hot_build_command(config)
+    let mut child = hot_build_command(config)
         .current_dir(&config.workspace_root)
         .stdout(std::process::Stdio::null())
-        .stderr(log_file)
-        .status()
+        .stderr(std::process::Stdio::piped())
+        .spawn()
         .map_err(|e| vec![format!("riode: hot-reload could not spawn boot build: {e}")])?;
+    let stderr = child.stderr.take();
+    if let Some(stderr) = stderr {
+        use std::io::BufRead;
+        let mut writer = log_file;
+        for chunk in std::io::BufReader::new(stderr).split(b'\n') {
+            match chunk {
+                Ok(line) => {
+                    use std::io::Write;
+                    let _ = writer.write_all(&line);
+                    let _ = writer.write_all(b"\n");
+                    eprintln!(
+                        "riode: hot build | {}",
+                        String::from_utf8_lossy(&line)
+                    );
+                }
+                Err(_) => break,
+            }
+        }
+    }
+    let status = child
+        .wait()
+        .map_err(|e| vec![format!("riode: hot-reload could not wait on boot build: {e}")])?;
     if status.success() {
         Ok(())
     } else {

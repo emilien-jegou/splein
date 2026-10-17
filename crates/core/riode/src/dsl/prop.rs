@@ -1,9 +1,10 @@
 // Single responsibility: Declarative UI conversions from foundation types into dynamic properties.
 
 use crate::foundation::{
-    Alignment, Color, Direction, Distribution, Fill, Gap, LayoutPresence, Margin, Radius, Shadow,
-    Size, Stroke, Transform,
+    Alignment, BlendMode, Color, Direction, Distribution, Fill, Filter, Gap, Glass,
+    GlassStyle, LayoutPresence, Margin, Radius, Shadow, Size, Stroke, Transform,
 };
+use crate::foundation::glass::ToneCurve;
 use crate::reactive::computed::Computed;
 use crate::reactive::prop::{Prop, IntoProp};
 use crate::reactive::signal::Signal;
@@ -70,6 +71,62 @@ impl IntoProp<Shadow> for (f32, Color) {
     }
 }
 
+impl IntoProp<Filter> for Filter {
+    fn into_prop(self) -> Prop<Filter> {
+        Prop::Static(self)
+    }
+}
+
+impl IntoProp<Glass> for Glass {
+    fn into_prop(self) -> Prop<Glass> {
+        Prop::Static(self)
+    }
+}
+
+/// Raw strength: `group().glass(4.0)` is `Glass::lens(4.0)` — lens only.
+impl IntoProp<Glass> for f32 {
+    fn into_prop(self) -> Prop<Glass> {
+        Prop::Static(Glass::lens(self))
+    }
+}
+
+impl IntoProp<Glass> for i32 {
+    fn into_prop(self) -> Prop<Glass> {
+        Prop::Static(Glass::lens(self as f32))
+    }
+}
+
+impl IntoProp<Option<Color>> for Color {
+    fn into_prop(self) -> Prop<Option<Color>> {
+        Prop::Static(Some(self))
+    }
+}
+
+impl IntoProp<Option<Color>> for Option<Color> {
+    fn into_prop(self) -> Prop<Option<Color>> {
+        Prop::Static(self)
+    }
+}
+
+impl IntoProp<ToneCurve> for ToneCurve {
+    fn into_prop(self) -> Prop<ToneCurve> {
+        Prop::Static(self)
+    }
+}
+
+impl IntoProp<GlassStyle> for GlassStyle {
+    fn into_prop(self) -> Prop<GlassStyle> {
+        Prop::Static(self)
+    }
+}
+
+/// Raw blur sigma: `group().filter(4.0)` is `blur(4px)`.
+impl IntoProp<Filter> for f32 {
+    fn into_prop(self) -> Prop<Filter> {
+        Prop::Static(Filter::blur(self))
+    }
+}
+
 impl IntoProp<Size> for Signal<f32> {
     fn into_prop(self) -> Prop<Size> {
         Prop::Dynamic(std::rc::Rc::new(move || Size::Fixed(self.get())))
@@ -126,6 +183,15 @@ impl_str_prop!(Alignment);
 impl_str_prop!(Distribution);
 impl_str_prop!(Stroke);
 impl_str_prop!(Shadow);
+impl_str_prop!(Filter);
+impl_str_prop!(Glass);
+impl_str_prop!(BlendMode);
+
+impl IntoProp<BlendMode> for BlendMode {
+    fn into_prop(self) -> Prop<BlendMode> {
+        Prop::Static(self)
+    }
+}
 
 macro_rules! impl_num_prop {
     ($ty:ty) => {

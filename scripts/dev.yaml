@@ -28,9 +28,14 @@ commands:
             "tiny-skia\tSoftware rasterizer",
             "wgpu\tWebGPU hardware renderer"
           ]
+      flag:
+        overlay:
+          description: Transparent layer-shell overlay (desktop_glass, prism_only).
+
+  - name: desktop-glass
+    description: Run the desktop-glass overlay with hot-reloadable view.
 
   - name: relacher
     description: Generate release commit and git tags.
-
   - name: release-github
     description: Generate release patch for github and deploy changes.

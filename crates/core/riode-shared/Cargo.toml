@@ -14,7 +14,13 @@ readme = "README.md"
 # Hot-loop crates depend on nothing else riode-flavored; see the module docs.
 crate-type = ["dylib"]
 
+[features]
+tracy = ["riode/tracy"]
+
 [dependencies]
 riode = { path = "../riode", version = "0.2.0" }
+# Re-exported as `anodeui` so hot UI cdylibs resolve preset types to
+# this single shared image (same rule as `riode` itself above).
+riode-anodeui = { path = "../../ui/riode-anodeui", version = "0.2.0" }
 riode-engine-tiny-skia = { path = "../../engines/riode-engine-tiny-skia", version = "0.2.0" }
 riode-engine-wgpu = { path = "../../engines/riode-engine-wgpu", version = "0.2.0" }

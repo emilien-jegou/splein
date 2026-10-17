@@ -1,24 +1,28 @@
 // Single responsibility: SceneCommand -> batched rect + glyph vertex emission.
 
 use riode::foundation::{
-    Color, Fill, LightEnvironment, Point, Radius, ResolvedRect, Shadow, ShadowShape,
-    StrokeAlign, Transform,
+    composed_blur_aspect, composed_blur_sigma, merge_unions, pack_glass_uniforms, Color, Fill,
+    GlassFrameUniforms, GlassLayer, GlassShapeUniform, LightEnvironment, Point, Radius,
+    ResolvedRect, Shadow, ShadowShape, StrokeAlign, Transform, DEFAULT_LIGHT_ANGLE, GLASS_STANDARD,
 };
 use riode::scene::command::SceneCommand;
 use riode::scene::{
-    quantize_eighth, quantize_quarter, PlacedClip, PlacedImage, PlacedRect, PlacedShadow,
-    PlacedSvg, PlacedText, SceneSink,
+    quantize_quarter, quantize_y, PlacedClip, PlacedImage, PlacedLayer, PlacedRect,
+    PlacedShadow, PlacedSvg, PlacedText, SceneSink,
 };
 use riode::text::{quantize_raster_scale, TextContext};
 use std::sync::Arc;
 
 use crate::clip::ClipStack;
 use crate::image::ImageGpu;
-use crate::pipeline::{GlyphVertex, ImageVertex, RRectVertex, RectVertex, ShadowVertex};
+use crate::pipeline::{
+    GlyphVertex, GlassFrameGpu, ImageVertex, RRectVertex, RectVertex, ShadowVertex,
+};
 use crate::text::GlyphAtlas;
 
 static WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static WARNED_MULTIPLY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static WARNED_GLASS_BLEND: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 fn warn_once(msg: &str) {
     if !WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
@@ -32,6 +36,17 @@ fn warn_multiply_once() {
     if !WARNED_MULTIPLY.swap(true, std::sync::atomic::Ordering::Relaxed) {
         tracing::warn!(
             "riode-wgpu: Shadow BlendMode::Multiply approximated as Normal (further silent)"
+        );
+    }
+}
+
+/// Blend on a glass-carrying layer: blending the whole card needs the
+/// lens+content result composited once against the backdrop (separate
+/// work) — the blend is ignored here, source-over as before.
+fn warn_glass_blend_once() {
+    if !WARNED_GLASS_BLEND.swap(true, std::sync::atomic::Ordering::Relaxed) {
+        tracing::warn!(
+            "riode-wgpu: blend mode on a glass layer ignored (further silent); glass-card blend is separate work"
         );
     }
 }
@@ -65,7 +80,7 @@ fn srgb_to_oklab(c: [f32; 3]) -> [f32; 3] {
 }
 
 /// One draw op over the rect, glyph, rounded-rect, or shadow vertex buffers.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub enum Op {
     Rects {
         start: u32,
@@ -102,6 +117,117 @@ pub enum Op {
         /// (scale/skew/rotation); translation-only uses nearest.
         linear: bool,
     },
+    /// Opens a filter layer: draw ops after this target the layer's
+    /// surface-sized offscreen instead of the parent target. `region` is
+    /// the device-space content AABB padded by 3σ (blur reach + the
+    /// composite quad) and the glass damage pad; `params` indexes the
+    /// batch's `filter_params`; `glass` indexes `glass_params` when the
+    /// layer carries a liquid-glass material (the renderer snapshots
+    /// the parent under the padded region and runs the optics pass).
+    /// A marker op (no draws): it also breaks run merging by variant.
+    BeginLayer {
+        region: ResolvedRect,
+        params: u32,
+        glass: Option<u32>,
+    },
+    /// Closes the innermost filter layer: the renderer runs the blur
+    /// passes over the layer's offscreen, then draws the composite quad
+    /// `start..start + count` (rect_verts, the region) onto the parent
+    /// through `scissor` (ancestor clips; in-layer clips died with the
+    /// layer's balanced pops). Alpha-silhouette shadow draws sit first:
+    /// quads `shadow_start..shadow_start + 6·shadows.len()`, one blur +
+    /// tinted composite per [`ShadowGpuDraw`], painted behind the content
+    /// composite in vertex order.
+    EndLayer {
+        start: u32,
+        count: u32,
+        scissor: Option<ResolvedRect>,
+        shadow_start: u32,
+        shadows: Vec<ShadowGpuDraw>,
+        /// Dedicated LightSpill verts (`spill_start..spill_start +
+        /// spill_count`, rect_verts): the below-edge strip with feathered
+        /// vertex alpha (horizontal edge fade + vertical falloff). Drawn
+        /// with the blurred-card material when the replay is active.
+        spill_start: u32,
+        spill_count: u32,
+    },
+}
+
+/// One alpha-silhouette shadow layer, emission-time in device px: the
+/// separable blur's sigma, the composite quad's displacement (texel
+/// lookup shifts by `-offset`), and the row-major 4×5 tint matrix —
+/// constant RGB rows of the shadow color, alpha row scaled by
+/// intensity × color alpha × layer opacity × node opacity.
+#[derive(Clone)]
+pub struct ShadowGpuDraw {
+    pub sigma: f32,
+    pub offset: [f32; 2],
+    pub matrix: [f32; 20],
+}
+
+/// One alpha drop shadow stashed on its layer (emission order: BeginLayer
+/// → shadow → fill): `DrawShadow` inside the element's own offscreen is a
+/// data carrier, painted by `end_layer` from the layer's finished alpha.
+#[derive(Clone)]
+pub struct AlphaShadow {
+    pub shadow: Shadow,
+    pub light: LightEnvironment,
+    pub opacity: f32,
+    pub transform: Transform,
+}
+
+/// LightSpill seed for one glass layer: the downward length in device
+/// px, or `None` when the style throws no spill. `resolve_rule()[0]` is
+/// the length in logical px (the alias maps `reach` × 32 back to it).
+fn spill_len(r: &riode::foundation::Refraction, scale: f32) -> Option<f32> {
+    if !r.is_active() {
+        return None;
+    }
+    let len = r.resolve_rule()[0].max(0.0) * scale;
+    (len > 0.5).then_some(len)
+}
+
+/// One open layer, emission-side: the offscreen region + filter-params
+/// index (`Some`), or `None` for a plain clip layer, plus the stashed
+/// alpha shadow cast from this layer's content at `end_layer`.
+struct LayerStackEntry {
+    region: Option<(ResolvedRect, u32)>,
+    alpha: Option<AlphaShadow>,
+    /// LightSpill seed: card-union bounds (x-span + bottom edge, device
+    /// px) + spill length (device px) + corner radius (device px).
+    /// `end_layer` emits the feathered spill verts from it.
+    spill: Option<(ResolvedRect, f32, f32)>,
+}
+
+/// Resolved element filter for one layer, emission-time: the chain's
+/// largest blur sigma in device px (sigma scales with the root device
+/// matrix, unlike the tiny-skia twin which renders unscaled) plus the
+/// combined row-major 4×5 CSS color matrix (identity when the chain is
+/// color-free). `Batch::filter_params` holds one per filter layer,
+/// indexed by `Op::BeginLayer.params`.
+///
+/// Frame-local: layer chunks are non-rebaseable, so a cache replay can
+/// never read another frame's index.
+#[derive(Clone, Copy)]
+pub struct FilterGpu {
+    pub sigma: f32,
+    pub matrix: [f32; 20],
+    /// Blend mode the layer's content composites at against the parent
+    /// snapshot, packed as the wire id (`BlendMode::as_uniform_id`);
+    /// `0.0` = `Normal` = plain source-over through the regular
+    /// composite pipeline. The renderer switches to the blend pipeline
+    /// when it is non-zero (and the layer carries no glass).
+    pub blend: f32,
+}
+
+impl FilterGpu {
+    /// Row-major 4×5 identity: RGB pass-through, alpha preserved, no offset.
+    pub const IDENTITY: [f32; 20] = [
+        1.0, 0.0, 0.0, 0.0, 0.0, //
+        0.0, 1.0, 0.0, 0.0, 0.0, //
+        0.0, 0.0, 1.0, 0.0, 0.0, //
+        0.0, 0.0, 0.0, 1.0, 0.0,
+    ];
 }
 
 /// Emission context: batched verts + ordered ops.
@@ -134,6 +260,20 @@ pub struct Batch {
     /// ops that no longer correspond (a chunk whose draws all merged into
     /// the previous chunk's run snapshots zero ops and replays invisible).
     barrier: bool,
+    /// Resolved filters for the frame's filter layers, indexed by
+    /// `Op::BeginLayer.params`.
+    pub filter_params: Vec<FilterGpu>,
+    /// Packed glass frame uniforms for the frame's glass layers, indexed
+    /// by `Op::BeginLayer.glass`. Packed at emission (device px, device
+    /// scale folded in); frame-local for the same reason as
+    /// `filter_params`.
+    pub glass_params: Vec<GlassFrameGpu>,
+    /// Emission-side layer stack, one entry per open layer: an offscreen
+    /// region + params index for a filter/alpha-shadow layer, `None` for
+    /// a plain clip layer (the trait-default degradation, no offscreen).
+    /// Balanced by `WgpuSink::end_layer`; a non-empty stack at `reset`
+    /// means an unbalanced command stream.
+    layer_stack: Vec<LayerStackEntry>,
 }
 
 impl Batch {
@@ -149,6 +289,9 @@ impl Batch {
             ops: Vec::new(),
             scale: 1.0,
             barrier: false,
+            filter_params: Vec::new(),
+            glass_params: Vec::new(),
+            layer_stack: Vec::new(),
         }
     }
 
@@ -172,6 +315,15 @@ impl Batch {
         self.image_binds.clear();
         self.ops.clear();
         self.barrier = false;
+        self.filter_params.clear();
+        self.glass_params.clear();
+        if !self.layer_stack.is_empty() {
+            tracing::warn!(
+                "riode-wgpu: {} unclosed filter layer(s) at frame end (unbalanced BeginLayer/EndLayer)",
+                self.layer_stack.len()
+            );
+            self.layer_stack.clear();
+        }
     }
 
     /// Marks the start of a chunk's emission: the next run of any kind
@@ -555,6 +707,13 @@ impl Batch {
             rc.bottom_left * s,
         ];
         let spread_d = shadow.spread * s;
+        // Original (un-offset, un-spread) box: the interior mask for
+        // inset layers; zeroed for drop layers (the shader never reads it).
+        let obox = if shadow.inset {
+            [dx0, dy0, dx1 - dx0, dy1 - dy0]
+        } else {
+            [0.0; 4]
+        };
         // Largest extent first so tighter layers paint over softer ones
         // (identical order to the reference engines).
         let mut order: Vec<usize> = (0..shadow.layers().len()).collect();
@@ -592,15 +751,29 @@ impl Batch {
             // the shader's +-2sigma support.
             let pad = layer.extent.max(3.0 * layer.softness.max(0.5)) * s + 1.5;
             let color = [shadow.color.r, shadow.color.g, shadow.color.b, a];
-            let params = [sigma, 0.0, 0.0, 0.0];
+            let params = [sigma, if shadow.inset { 1.0 } else { 0.0 }, 0.0, 0.0];
             let fbox = [bx, by, bw, bh];
+            // Inset: the visible region is the element interior only — the
+            // quad hugs the original box (+1.5px AA) instead of the
+            // offset+blur reach. The shader clips to obox anyway; this
+            // just avoids rasterizing outside.
+            let (qx0, qy0, qx1, qy1) = if shadow.inset {
+                (
+                    obox[0] - 1.5,
+                    obox[1] - 1.5,
+                    obox[0] + obox[2] + 1.5,
+                    obox[1] + obox[3] + 1.5,
+                )
+            } else {
+                (bx - pad, by - pad, bx + bw + pad, by + bh + pad)
+            };
             let quad = [
-                (bx - pad, by - pad),
-                (bx + bw + pad, by - pad),
-                (bx - pad, by + bh + pad),
-                (bx + bw + pad, by - pad),
-                (bx + bw + pad, by + bh + pad),
-                (bx - pad, by + bh + pad),
+                (qx0, qy0),
+                (qx1, qy0),
+                (qx0, qy1),
+                (qx1, qy0),
+                (qx1, qy1),
+                (qx0, qy1),
             ];
             for (px, py) in quad {
                 self.shadow_verts.push(ShadowVertex {
@@ -609,6 +782,7 @@ impl Batch {
                     radii,
                     color,
                     params,
+                    obox,
                 });
             }
             count += 6;
@@ -796,9 +970,8 @@ impl Batch {
                 let placed = t.transform_point(Point::new(pen_x, pen_y));
                 // Subpixel policy — asymmetric quanta, shared with the
                 // tiny-skia reference: X quarters (validated-smooth,
-                // matching the legacy phase bins), Y eighths (1/16px
-                // residue, so horizontal features never read as doubled
-                // rows). The analytic rasterizer integrates coverage at
+                // matching the legacy phase bins), Y halves (1/4px
+                // residue). The analytic rasterizer integrates coverage at
                 // exactly that quantum from one linear outline, so glyph
                 // *shape* is identical at every subpixel position — no
                 // per-phase hinter re-fit, no per-bin bbox churn. The quad
@@ -814,12 +987,12 @@ impl Batch {
                     let by = placed.y.round() as i32;
                     (0u8, placed.y - by as f32)
                 } else {
-                    let (by, qy) = quantize_eighth(placed.y);
+                    let (by, qy) = quantize_y(placed.y);
                     (qy, placed.y - by as f32)
                 };
                 // Atlas slot distinctness only; the bitmap itself is keyed
                 // (key, qx, qy, scale) inside the analytic cache. X fits
-                // the legacy low 2 bits, Y the next 3 — the phase packs
+                // the legacy low 2 bits, Y the next 1 — the phase packs
                 // both natively.
                 let phase = (qx as u8) | ((qy as u8) << 2);
                 // Single raster: bitmap + bearing together (no TOCTOU).
@@ -927,6 +1100,587 @@ impl SceneSink for WgpuSink<'_> {
         self.batch.clip.pop();
     }
 
+    fn begin_layer(&mut self, layer: &PlacedLayer) {
+        // A plain layer is a clip — unless a filter, glass material,
+        // alpha-shadow pad, or a non-`Normal` blend mode demands the
+        // offscreen (the blend composites against a parent snapshot).
+        if layer.filter.is_none()
+            && layer.shadow_pad <= 0.0
+            && layer.glass.is_none()
+            && layer.blend.is_normal()
+        {
+            // Plain isolation layer (pre-filter behavior): the trait
+            // default — a clip, so unfiltered groups keep today's
+            // semantics. The stack still needs the entry so end_layer
+            // knows to pop this clip instead of compositing.
+            self.push_clip(&PlacedClip {
+                rect: layer.rect,
+                radius: Radius::ZERO,
+                transform: layer.transform,
+            });
+            self.batch.layer_stack.push(LayerStackEntry {
+                region: None,
+                alpha: None,
+                spill: None,
+            });
+            return;
+        };
+        // Device-space AABB of the layer rect under its placed transform
+        // (root device scale composed in — same corner walk as
+        // `push_clip_local`). The offscreen is surface-sized, so unlike
+        // the tiny-skia twin there is no tile clamp: scissors and the
+        // composite quad are clamped at draw time.
+        let t = self.batch.device_tx(&layer.transform);
+        let mut x0 = f32::INFINITY;
+        let mut y0 = f32::INFINITY;
+        let mut x1 = f32::NEG_INFINITY;
+        let mut y1 = f32::NEG_INFINITY;
+        for (px, py) in [
+            (layer.rect.x, layer.rect.y),
+            (layer.rect.x + layer.rect.width, layer.rect.y),
+            (layer.rect.x, layer.rect.y + layer.rect.height),
+            (
+                layer.rect.x + layer.rect.width,
+                layer.rect.y + layer.rect.height,
+            ),
+        ] {
+            let p = t.transform_point(Point::new(px, py));
+            x0 = x0.min(p.x);
+            y0 = y0.min(p.y);
+            x1 = x1.max(p.x);
+            y1 = y1.max(p.y);
+        }
+        // Exact device rect of the layer box (for the glass SDF) —
+        // taken before the pad expands the AABB below.
+        let rect_dev = (x0, y0, (x1 - x0).max(0.0), (y1 - y0).max(0.0));
+        // Gaussian support: 3σ past the content AABB so blur tails stay
+        // complete, in device px (σ scales with the root matrix; the
+        // tiny-skia engine renders unscaled, so its σ is already
+        // layout=device), the glass folding/blur reach, plus the
+        // alpha-shadow pad (offset + blur reach of the silhouette cast
+        // this layer exists for).
+        let sigma = layer
+            .filter
+            .map(|f| f.max_blur_sigma())
+            .unwrap_or(0.0)
+            * self.batch.scale();
+        let mut pad = 3.0 * sigma + layer.shadow_pad * self.batch.scale();
+        if let Some(g) = layer.glass {
+            pad += g.device_pad(self.batch.scale());
+        }
+        let region = ResolvedRect::new(
+            x0 - pad,
+            y0 - pad,
+            (x1 - x0) + 2.0 * pad,
+            (y1 - y0) + 2.0 * pad,
+        );
+        let params = self.batch.filter_params.len() as u32;
+        // Glass + blend: the card composites source-over (Phase 3 owns
+        // blending the whole card against the backdrop); fold the mode
+        // to `Normal` so the EndLayer path agrees with the snapshot it
+        // actually took.
+        if layer.glass.is_some() && !layer.blend.is_normal() {
+            warn_glass_blend_once();
+        }
+        self.batch.filter_params.push(FilterGpu {
+            sigma,
+            matrix: layer
+                .filter
+                .and_then(|f| f.color_matrix())
+                .unwrap_or(FilterGpu::IDENTITY),
+            blend: if layer.glass.is_some() {
+                0.0
+            } else {
+                layer.blend.as_uniform_id()
+            },
+        });
+        let (glass, spill_seed) = match layer.glass {
+            None => (None, None),
+            Some(g) => {
+                let (idx, spill) = match g {
+            GlassLayer::Single(g, b, s, gl, r) => {
+                let sc = self.batch.scale();
+                let k = GLASS_STANDARD;
+                let v = g.effective(&b);
+                // SDF rect: the device AABB before the pad expanded it.
+                let rect = ResolvedRect::new(rect_dev.0, rect_dev.1, rect_dev.2, rect_dev.3);
+                // One radius per shape (the reference's uniform carries a
+                // single value): per-corner riode radii collapse to the
+                // smallest, capped at half the shorter side — the same rule
+                // `merge_unions` keeps. A pill (`Radius::Max`) resolves equal
+                // corners, so it is unaffected.
+                let c = g.radius.resolve_corners(layer.rect.width, layer.rect.height);
+                let radius = c
+                    .top_left
+                    .min(c.top_right)
+                    .min(c.bottom_right)
+                    .min(c.bottom_left)
+                    * sc;
+                let radius = radius.min(rect.width.min(rect.height) / 2.0);
+                // Core blur the engine pre-applies to the snapshot, composed
+                // from the shape's half shorter side (logical px in and out);
+                // the shader spends `uBlur` only on what this one misses.
+                let half_min = rect.width.min(rect.height) / 2.0 / sc;
+                let sigma = composed_blur_sigma(v, half_min);
+                let aspect = composed_blur_aspect(v, rect.width / sc, rect.height / sc);
+                let mut shape = GlassShapeUniform::new(rect, radius, g.hidden);
+                shape.tint = b.tint;
+                shape.corner_exponent = g.corner_exponent;
+                shape.blur_sigma = sigma;
+                shape.blur_aspect = aspect;
+                shape.strength = g.strength;
+                shape.band = g.band;
+                shape.rim = g.rim;
+                shape.frost_sigma = b.blur;
+                shape.wash = b.wash;
+                shape.saturation = b.saturation;
+                shape.rim_intensity = g.rim_intensity;
+                shape.rim_mix = g.rim_mix;
+                shape.blur_aspect_power = g.blur_aspect_power;
+                shape.lens_edge_decay = g.lens_edge_decay;
+                shape.tone = b.tone;
+                shape.tone_curve = b.tone_curve;
+                shape.lens_decay = g.lens_decay;
+                shape.lens_size_ref = g.lens_size_ref;
+                shape.lens_edge = g.lens_edge;
+                shape.normal_radius_scale = g.normal_radius_scale;
+                shape.rim_width = g.rim_width;
+                shape.rim_mix_width = g.rim_mix_width;
+                shape.rim_mix_cut = g.rim_mix_cut;
+                shape.rim_mix_floor = g.rim_mix_floor;
+                shape.tint_strength = b.tint_strength;
+                shape.ambient_mix = b.ambient_mix;
+                shape.post_blur_share = g.post_blur_share;
+                shape.frost_wide_sigma = g.frost_wide_sigma;
+                shape.frost_wide_mix_edge = g.frost_wide_mix_edge;
+                shape.frost_wide_mix_centre = g.frost_wide_mix_centre;
+                shape.frost_wide_size_ref = g.frost_wide_size_ref;
+                shape.frost_wide_size_drop = g.frost_wide_size_drop;
+                shape.blur_size_ref = b.blur_size_ref;
+                shape.fill_size_ref = b.fill_size_ref;
+                shape.fill_size_drop = b.fill_size_drop;
+                shape.glow_strength = g.glow_strength;
+                shape.lens_strength = g.lens_strength;
+                shape.press_lift = g.press_lift;
+                shape.dim = b.dim;
+                shape.post_jacobian_max = g.post_jacobian_max;
+                shape.ambient_reach = b.ambient_reach;
+                let frame = GlassFrameUniforms {
+                    shapes: std::slice::from_ref(&shape),
+                    device_pixel_ratio: sc,
+                    light_angle: DEFAULT_LIGHT_ANGLE,
+                    // A lone shape has no smin partner; the frame smoothing
+                    // only matters for multi-shape groups (Phase 5).
+                    smoothing: 0.0,
+                    constants: &k,
+                    high_contrast: false,
+                    opaque_color: None,
+                    touch: None,
+                    glow: 0.0,
+                    blur_sigma: sigma,
+                    blur_aspect: aspect,
+                    spectral: *s,
+                    voice_glow: *gl,
+                    refraction: *r,
+                };
+                let packed = pack_glass_uniforms(&frame);
+                let idx = self.batch.glass_params.len() as u32;
+                self.batch.glass_params.push(GlassFrameGpu::from_pack(
+                    [sigma * aspect * sc, sigma / aspect * sc, 0.0, 0.0],
+                    &packed,
+                ));
+                // LightSpill seed: x-span + rounded bottom edge of the
+                // card rect with the downward length and corner radius,
+                // so `end_layer` can emit the feathered spill verts.
+                let spill = spill_len(r, sc).map(|len| {
+                    (
+                        ResolvedRect::new(
+                            rect.x,
+                            rect.y + rect.height,
+                            rect.width.max(0.0),
+                            len,
+                        ),
+                        len,
+                        radius,
+                    )
+                });
+                (idx, spill)
+            }
+            GlassLayer::Group(group) => {
+                let sc = self.batch.scale();
+                let k = GLASS_STANDARD;
+                // Group-layer-local logical px to device px: the same
+                // corner walk as the layer box above, per member (and one
+                // for the shared clip).
+                let dev_box = |r: ResolvedRect| {
+                    let mut x0 = f32::INFINITY;
+                    let mut y0 = f32::INFINITY;
+                    let mut x1 = f32::NEG_INFINITY;
+                    let mut y1 = f32::NEG_INFINITY;
+                    for (px, py) in [
+                        (r.x, r.y),
+                        (r.x + r.width, r.y),
+                        (r.x, r.y + r.height),
+                        (r.x + r.width, r.y + r.height),
+                    ] {
+                        let p = t.transform_point(Point::new(px, py));
+                        x0 = x0.min(p.x);
+                        y0 = y0.min(p.y);
+                        x1 = x1.max(p.x);
+                        y1 = y1.max(p.y);
+                    }
+                    ResolvedRect::new(x0, y0, (x1 - x0).max(0.0), (y1 - y0).max(0.0))
+                };
+                let clip_dev = group.clip.map(|c| dev_box(c));
+                let mut shapes = Vec::with_capacity(group.members.len().min(24));
+                for m in &group.members {
+                    let rect = dev_box(m.rect);
+                    let v = m.glass.effective(&m.backdrop);
+                    let radius = (m.radius() * m.radius_scale * sc)
+                        .min(rect.width.min(rect.height) / 2.0);
+                    let half_min = rect.width.min(rect.height) / 2.0 / sc;
+                    let sigma = composed_blur_sigma(v, half_min);
+                    let aspect = composed_blur_aspect(v, rect.width / sc, rect.height / sc);
+                    let mut shape = GlassShapeUniform::new(rect, radius, m.glass.hidden);
+                    shape.tint = m.backdrop.tint;
+                    shape.corner_exponent = m.glass.corner_exponent;
+                    shape.union_id = m.glass.union_id;
+                    shape.group = 0;
+                    shape.smoothing = Some(group.smoothing * sc);
+                    shape.opacity = group.opacity;
+                    shape.clip = clip_dev;
+                    shape.light = m.light;
+                    shape.blur_sigma = sigma;
+                    shape.blur_aspect = aspect;
+                    shape.strength = m.glass.strength;
+                    shape.lens_strength = m.glass.lens_strength;
+                    shape.band = m.glass.band;
+                    shape.rim = m.glass.rim;
+                    shape.frost_sigma = m.backdrop.blur;
+                    shape.wash = m.backdrop.wash;
+                    shape.saturation = m.backdrop.saturation;
+                    shape.rim_intensity = m.glass.rim_intensity;
+                    shape.rim_mix = m.glass.rim_mix;
+                    shape.blur_aspect_power = m.glass.blur_aspect_power;
+                    shape.lens_edge_decay = m.glass.lens_edge_decay;
+                    shape.tone = m.backdrop.tone;
+                    shape.tone_curve = m.backdrop.tone_curve;
+                    shape.lens_decay = m.glass.lens_decay;
+                    shape.lens_size_ref = m.glass.lens_size_ref;
+                    shape.lens_edge = m.glass.lens_edge;
+                    shape.normal_radius_scale = m.glass.normal_radius_scale;
+                    shape.rim_width = m.glass.rim_width;
+                    shape.rim_mix_width = m.glass.rim_mix_width;
+                    shape.rim_mix_cut = m.glass.rim_mix_cut;
+                    shape.rim_mix_floor = m.glass.rim_mix_floor;
+                    shape.tint_strength = m.backdrop.tint_strength;
+                    shape.ambient_mix = m.backdrop.ambient_mix;
+                    shape.post_blur_share = m.glass.post_blur_share;
+                    shape.frost_wide_sigma = m.glass.frost_wide_sigma;
+                    shape.frost_wide_mix_edge = m.glass.frost_wide_mix_edge;
+                    shape.frost_wide_mix_centre = m.glass.frost_wide_mix_centre;
+                    shape.frost_wide_size_ref = m.glass.frost_wide_size_ref;
+                    shape.frost_wide_size_drop = m.glass.frost_wide_size_drop;
+                    shape.blur_size_ref = m.backdrop.blur_size_ref;
+                    shape.fill_size_ref = m.backdrop.fill_size_ref;
+                    shape.fill_size_drop = m.backdrop.fill_size_drop;
+                    shape.glow_strength = m.glass.glow_strength;
+                    shape.press_lift = m.glass.press_lift;
+                    shape.dim = m.backdrop.dim;
+                    shape.post_jacobian_max = m.glass.post_jacobian_max;
+                    shape.ambient_reach = m.backdrop.ambient_reach;
+                    shapes.push(shape);
+                }
+                // Union merge (Phase 5.3): same-`union_id` members draw as
+                // one surface before the pack.
+                let shapes = merge_unions(&shapes);
+                // One blur for the whole pass at the smallest drawn sigma
+                // (the reference's rule); members wanting more get the
+                // rest as extra frost taps (`uBlur`).
+                let (frame_sigma, frame_aspect) = shapes
+                    .iter()
+                    .map(|s| (s.blur_sigma, s.blur_aspect))
+                    .min_by(|a, b| {
+                        a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal)
+                    })
+                    .unwrap_or((0.0, 1.0));
+                // Frame touch: the pressed member's touch in device
+                // px, with its glow (`uTouch`).
+                let (touch, glow) = group
+                    .press_touch
+                    .map(|(local, glow)| {
+                        let p = t.transform_point(Point::new(local.x, local.y));
+                        ([p.x, p.y], glow)
+                    })
+                    .unwrap_or(([0.0, 0.0], 0.0));
+                let frame = GlassFrameUniforms {
+                    shapes: &shapes,
+                    device_pixel_ratio: sc,
+                    light_angle: DEFAULT_LIGHT_ANGLE,
+                    smoothing: 0.0,
+                    constants: &k,
+                    high_contrast: false,
+                    opaque_color: None,
+                    touch: if group.press_touch.is_some() {
+                        Some(touch)
+                    } else {
+                        None
+                    },
+                    glow,
+                    blur_sigma: frame_sigma,
+                    blur_aspect: frame_aspect,
+                    spectral: group.spectral,
+                    voice_glow: group.glow,
+                    refraction: group.refraction,
+                };
+                let packed = pack_glass_uniforms(&frame);
+                let idx = self.batch.glass_params.len() as u32;
+                self.batch.glass_params.push(GlassFrameGpu::from_pack(
+                    [
+                        frame_sigma * frame_aspect * sc,
+                        frame_sigma / frame_aspect * sc,
+                        0.0,
+                        0.0,
+                    ],
+                    &packed,
+                ));
+                // LightSpill seed: x-span union + rounded bottom edge of
+                // the merged member rects, with the downward length and
+                // the smallest corner radius.
+                let mut ux0 = f32::INFINITY;
+                let mut uy1 = f32::NEG_INFINITY;
+                let mut ux1 = f32::NEG_INFINITY;
+                let mut ur = f32::INFINITY;
+                for s in &shapes {
+                    ux0 = ux0.min(s.rect.x);
+                    uy1 = uy1.max(s.rect.y + s.rect.height);
+                    ux1 = ux1.max(s.rect.x + s.rect.width);
+                    ur = ur.min(s.radius);
+                }
+                let spill = spill_len(&group.refraction, sc).and_then(|len| {
+                    (ux0.is_finite() && ux1 > ux0).then(|| {
+                        (ResolvedRect::new(ux0, uy1, (ux1 - ux0).max(0.0), len), len, ur.max(0.0))
+                    })
+                });
+                (idx, spill)
+                } // end Group arm
+            }; // end match g
+                (Some(idx), spill)
+            }
+        };
+        self.batch.layer_stack.push(LayerStackEntry {
+            region: Some((region, params)),
+            alpha: None,
+            spill: spill_seed,
+        });
+        self.batch
+            .ops
+            .push(Op::BeginLayer { region, params, glass });
+    }
+
+    fn end_layer(&mut self) {
+        match self.batch.layer_stack.pop() {
+            Some(LayerStackEntry {
+                region: Some((region, _params)),
+                alpha,
+                spill,
+            }) => {
+                // Alpha-silhouette shadow quads first (painted behind the
+                // content composite below): one 6-vert quad per shadow
+                // layer at the region displaced by the layer's device
+                // offset, tinted through a constant-color matrix at draw
+                // time (see renderer EndLayer).
+                let shadow_start = self.batch.rect_verts.len() as u32;
+                let mut shadows: Vec<ShadowGpuDraw> = Vec::new();
+                if let Some(a) = alpha {
+                    if a.shadow.spread != 0.0 {
+                        warn_once("alpha shadow: spread ignored (CSS drop-shadow has none)");
+                    }
+                    if matches!(
+                        a.shadow.blend,
+                        riode::foundation::BlendMode::Multiply
+                    ) {
+                        warn_multiply_once();
+                    }
+                    let t = self.batch.device_tx(&a.transform);
+                    let sc = self.batch.scale();
+                    let mut order: Vec<usize> =
+                        (0..a.shadow.layers().len()).collect();
+                    order.sort_by(|&x, &y| {
+                        a.shadow.layers()[y]
+                            .extent
+                            .partial_cmp(&a.shadow.layers()[x].extent)
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    });
+                    let c = &a.shadow.color;
+                    for i in order {
+                        let layer = &a.shadow.layers()[i];
+                        let op = (a.light.intensity * c.a * layer.opacity * a.opacity)
+                            .clamp(0.0, 1.0);
+                        if op <= 0.0 {
+                            continue;
+                        }
+                        let (ox, oy) = a.shadow.layer_offset(&a.light, layer);
+                        let (dx, dy) = (t.a * ox + t.c * oy, t.b * ox + t.d * oy);
+                        let sigma = (layer.softness * sc).max(0.0);
+                        shadows.push(ShadowGpuDraw {
+                            sigma,
+                            offset: [dx, dy],
+                            matrix: [
+                                0.0, 0.0, 0.0, 0.0, c.r, //
+                                0.0, 0.0, 0.0, 0.0, c.g, //
+                                0.0, 0.0, 0.0, 0.0, c.b, //
+                                0.0, 0.0, 0.0, op, 0.0,
+                            ],
+                        });
+                        let (qx0, qy0) = (region.x + dx, region.y + dy);
+                        let (qx1, qy1) =
+                            (qx0 + region.width, qy0 + region.height);
+                        for (px, py) in [
+                            (qx0, qy0),
+                            (qx1, qy0),
+                            (qx0, qy1),
+                            (qx1, qy0),
+                            (qx1, qy1),
+                            (qx0, qy1),
+                        ] {
+                            self.batch.rect_verts.push(RectVertex {
+                                pos: [px, py],
+                                color: [1.0; 4],
+                            });
+                        }
+                    }
+                }
+                // Composite quad over the filtered offscreen: six rect
+                // verts at the region (device px). The composite shader
+                // derives texel coords from position — no UVs needed.
+                let start = self.batch.rect_verts.len() as u32;
+                let tint = [1.0; 4];
+                let (x0, y0) = (region.x, region.y);
+                let (x1, y1) = (region.x + region.width, region.y + region.height);
+                for (px, py) in [
+                    (x0, y0),
+                    (x1, y0),
+                    (x0, y1),
+                    (x1, y0),
+                    (x1, y1),
+                    (x0, y1),
+                ] {
+                    self.batch.rect_verts.push(RectVertex {
+                        pos: [px, py],
+                        color: tint,
+                    });
+                }
+                // LightSpill verts: a strip of side-by-side quads below
+                // the card's bottom edge, its top following the rounded
+                // corners in 8 steps per side. Vertex alpha carries the
+                // shaping the scissor cannot: top row opaque → bottom row
+                // transparent (vertical falloff), outer side columns
+                // transparent → inner opaque (horizontal feather). The
+                // blurred-card material supplies colour + its own blur
+                // falloff; the matrix gain keeps it dimmer than the card.
+                let (spill_start, spill_count) = match spill {
+                    Some((bounds, len, radius)) => {
+                        let s = self.batch.rect_verts.len() as u32;
+                        let (sx0, syb) = (bounds.x, bounds.y);
+                        let sy1 = bounds.y + len;
+                        let w = bounds.width.max(0.0);
+                        if w <= 0.0 {
+                            (s, 0)
+                        } else {
+                            let r = radius.clamp(0.0, w * 0.5);
+                            // Horizontal feather: 10% of the width on each
+                            // side — the box edges never paint a hard line.
+                            let f = (w * 0.10).clamp(0.0, 40.0);
+                            // Bottom-edge height at x along the rounded
+                            // corners (circle arcs, straight between).
+                            let edge_y = |x: f32| -> f32 {
+                                if r <= 0.0 {
+                                    return syb;
+                                }
+                                if x < sx0 + r {
+                                    let dx = (sx0 + r) - x;
+                                    syb - r + (r * r - dx * dx).max(0.0).sqrt()
+                                } else if x > sx0 + w - r {
+                                    let dx = x - (sx0 + w - r);
+                                    syb - r + (r * r - dx * dx).max(0.0).sqrt()
+                                } else {
+                                    syb
+                                }
+                            };
+                            let fade_x = |x: f32| -> f32 {
+                                if f <= 0.0 {
+                                    return 1.0;
+                                }
+                                ((x - sx0) / f).clamp(0.0, 1.0)
+                                    * ((sx0 + w - x) / f).clamp(0.0, 1.0)
+                            };
+                            // Column boundaries: 8 steps up each corner
+                            // arc, one straight span between.
+                            let k = 8u32;
+                            let mut xs = Vec::with_capacity((2 * k + 2) as usize);
+                            xs.push(sx0);
+                            for i in 1..=k {
+                                xs.push(sx0 + r * (i as f32) / (k as f32));
+                            }
+                            for i in 0..=k {
+                                xs.push(sx0 + w - r + r * (i as f32) / (k as f32));
+                            }
+                            for j in 0..xs.len() - 1 {
+                                let (xa, xb) = (xs[j], xs[j + 1]);
+                                if xb <= xa {
+                                    continue;
+                                }
+                                let (ya, yb) = (edge_y(xa), edge_y(xb));
+                                let (aa, ab) = (fade_x(xa), fade_x(xb));
+                                for (px, py, a) in [
+                                    (xa, ya, aa),
+                                    (xb, yb, ab),
+                                    (xa, sy1, 0.0),
+                                    (xb, yb, ab),
+                                    (xb, sy1, 0.0),
+                                    (xa, sy1, 0.0),
+                                ] {
+                                    self.batch.rect_verts.push(RectVertex {
+                                        pos: [px, py],
+                                        color: [1.0, 1.0, 1.0, a],
+                                    });
+                                }
+                            }
+                            let n =
+                                (self.batch.rect_verts.len() as u32).saturating_sub(s);
+                            (s, n)
+                        }
+                    }
+                    None => (0, 0),
+                };
+                // In-layer clips are balanced pops inside the layer, so
+                // `current()` is exactly the ancestor clips: what must
+                // bound the composite on the parent target.
+                let scissor = self.batch.clip.current();
+                self.batch.ops.push(Op::EndLayer {
+                    start,
+                    count: 6,
+                    scissor,
+                    shadow_start,
+                    shadows,
+                    spill_start,
+                    spill_count,
+                });
+            }
+            Some(LayerStackEntry { region: None, .. }) => {
+                // Clip layer: pop the clip pushed in begin_layer.
+                self.batch.clip.pop();
+            }
+            None => {
+                tracing::warn!(
+                    "riode-wgpu: layer stack underflow: EndLayer without a matching BeginLayer"
+                );
+                self.batch.clip.pop();
+            }
+        }
+    }
+
     fn rect(&mut self, r: &PlacedRect) {
         let t = self.batch.device_tx(&r.transform);
         let plain_square =
@@ -986,6 +1740,25 @@ impl SceneSink for WgpuSink<'_> {
     }
 
     fn shadow(&mut self, s: &PlacedShadow) {
+        // Alpha silhouette inside its own offscreen layer: stash instead
+        // of painting — `end_layer` casts it from the finished layer
+        // alpha, behind the content composite.
+        if matches!(s.shadow.shape, ShadowShape::Alpha) && !s.shadow.inset {
+            if let Some(e) = self
+                .batch
+                .layer_stack
+                .last_mut()
+                .filter(|e| e.region.is_some())
+            {
+                e.alpha = Some(AlphaShadow {
+                    shadow: s.shadow.clone(),
+                    light: *s.light,
+                    opacity: s.opacity,
+                    transform: s.transform,
+                });
+                return;
+            }
+        }
         let t = self.batch.device_tx(&s.transform);
         if !self
             .batch

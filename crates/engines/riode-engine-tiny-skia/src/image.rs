@@ -85,6 +85,7 @@ impl ImageCache {
 
         let paint = PixmapPaint {
             opacity,
+            quality: tiny_skia::FilterQuality::Bilinear,
             ..Default::default()
         };
         let image_tx = transform.pre_translate(rect.x, rect.y).pre_scale(

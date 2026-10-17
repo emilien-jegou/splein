@@ -13,11 +13,11 @@ use smithay_client_toolkit::shm::Shm;
 use wayland_client::protocol::{wl_callback::WlCallback, wl_shm, wl_surface::WlSurface};
 use wayland_client::{Dispatch, QueueHandle};
 
-use riode::app::runner::backend::{Backend, Present, PresentReport};
-use riode::foundation::{DamageRegion, ResolvedRect};
-use riode::render::BackendError;
-use riode::text::TextContext;
-use riode_tiny_skia::TinySkiaRenderer;
+use riode_shared::app::runner::backend::{Backend, Present, PresentReport};
+use riode_shared::foundation::{DamageRegion, ResolvedRect};
+use riode_shared::render::BackendError;
+use riode_shared::text::TextContext;
+use riode_shared::tiny_skia::TinySkiaRenderer;
 
 /// Clamped integer damage tile: origin plus extent, in buffer pixels.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -191,7 +191,7 @@ where
                     y * w as usize + tile.x as usize,
                     y * w as usize + tile.x as usize,
                 );
-                riode::render::swizzle_rgba_to_bgra(
+                riode_shared::render::swizzle_rgba_to_bgra(
                     &mut dst[di..di + tile.w as usize],
                     &src[si..si + tile.w as usize],
                 );

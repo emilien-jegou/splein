@@ -55,7 +55,10 @@ impl Color {
     }
 
     /// Constructs color from 24-bit RGB hexadecimal integer (e.g. 0xFF00AA).
-    pub fn hex(hex: u32) -> Self {
+    ///
+    /// `const` so fitted constants tables (the liquid-glass variant sets)
+    /// can name colours in the `const fn` that builds them.
+    pub const fn hex(hex: u32) -> Self {
         let r = ((hex >> 16) & 0xFF) as f32 / 255.0;
         let g = ((hex >> 8) & 0xFF) as f32 / 255.0;
         let b = (hex & 0xFF) as f32 / 255.0;

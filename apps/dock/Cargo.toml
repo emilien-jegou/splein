@@ -1,0 +1,32 @@
+[package]
+name = "dock"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Native macOS-style dock overlay: hot-reloadable liquid-glass bar on the compositor"
+license = "GPL-3.0"
+
+[[bin]]
+name = "dock"
+path = "src/main.rs"
+
+[lib]
+name = "dock"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+# Single shared runtime image (dynamic): the host and every hot UI cdylib
+# resolve riode types to this one live image, so hook scopes, the reactive
+# graph, and the engine exist exactly once. NEVER add a static `riode`
+# (or engine) dependency here — a second copy breaks the hot handshake
+# ("statically-linked driver") and every cross-boundary Element.
+riode-shared = { path = "../../crates/core/riode-shared", version = "0.2.0" }
+riode-platform-wayland = { path = "../../crates/platforms/riode-platform-wayland", version = "0.2.0" }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+smithay-client-toolkit = { workspace = true }
+wayland-client = { workspace = true }
+wayland-protocols = { workspace = true }
+libloading = "0.8"
+libc = "0.2"

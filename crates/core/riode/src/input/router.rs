@@ -191,9 +191,10 @@ impl PointerRouter {
     ///
     /// Distinct from [`Self::clear_hover`] because a pointer that disappeared mid-drag has to
     /// give up its capture as well; see [`crate::input::tracker::PointerTracker::cancel_gesture`].
-    pub fn cancel_gesture(&mut self) {
+    pub fn cancel_gesture(&mut self, arena: &mut TreeArena) {
         self.clear_hover();
         self.press_chain.clear();
+        arena.press_end();
         self.chain.clear();
         self.tracker.cancel_gesture();
         // The gesture ends but the highlight persists, like a browser keeping
@@ -260,6 +261,7 @@ impl PointerRouter {
                         }
                     }
                     self.press_chain = press_chain;
+                    glass_press_begin(arena, &self.press_chain, event.position);
                     // A drag only exists for content that can be dragged. If nobody
                     // in the pressed chain handles drags, this press stays a press no
                     // matter how far it moves, and release still clicks as long as it
@@ -311,10 +313,23 @@ impl PointerRouter {
                     // A press into the void breaks the burst like any retarget.
                     self.tracker.reset_burst();
                     self.last_press = None;
+                    arena.press_end();
                 }
             }
             TrackerChange::Moved => {
+                arena.press_move(event.position);
                 handled |= self.update_hover(&*arena, event.position);
+                // Plain moves reach `on:pointer_move` topmost-first (the web's
+                // mousemove bubbling). The DSL setter existed but nothing ever
+                // fired it — dock magnification and scrollbar hover both starved.
+                for hit in &self.chain {
+                    let (fired, stopped) =
+                        fire(&*arena, hit.id, |h| h.fire_pointer_move(event));
+                    handled |= fired;
+                    if stopped {
+                        break;
+                    }
+                }
                 // Steps stream only once the threshold has been crossed. A held button
                 // on its own is a press, not a drag: firing steps for sub-threshold
                 // moves makes a 1px click wiggle nudge the view (and still deliver the
@@ -345,6 +360,7 @@ impl PointerRouter {
                 self.extend_active_selection(arena, event.position);
             }
             TrackerChange::Dragged => {
+                arena.press_move(event.position);
                 handled |= self.deliver_to(
                     &*arena,
                     captured,
@@ -385,6 +401,7 @@ impl PointerRouter {
                     }
                 }
                 self.press_chain.clear();
+                arena.press_end();
                 self.release_selection(arena, click);
                 handled |= self.update_hover(&*arena, event.position);
             }
@@ -398,6 +415,7 @@ impl PointerRouter {
                     false,
                 );
                 self.press_chain.clear();
+                arena.press_end();
                 // The highlight stays selected and stays tracked: a later
                 // foreign press must still find and clear it, and shift-click
                 // extends from the same anchor. Only the gesture ends.
@@ -742,6 +760,12 @@ fn absorbs(arena: &TreeArena, id: NodeId) -> bool {
     !arena.get(id).state.input.handlers.is_empty()
         || arena.get(id).style.hit_test == HitTest::Opaque
         || selectable_text(arena, id)
+        || arena
+            .get(id)
+            .style
+            .appearance
+            .glass
+            .is_some_and(|g| g.is_interactive())
 }
 
 /// Whether a node has handlers to fire (vs. absorbing silently as Opaque space).
@@ -785,4 +809,26 @@ impl Default for PointerRouter {
 #[inline]
 pub fn is_press(event: &PointerEvent) -> bool {
     event.phase == PointerPhase::Down
+}
+
+/// Starts a glass press on the first interactive-glass node of the press
+/// chain (innermost first), or ends the active press when none qualifies.
+/// Group markers never take the press themselves (their material is
+/// ignored by the layer decision): the press falls through to the inner
+/// interactive member. A press into the void ends the gesture rather than
+/// retargeting it.
+fn glass_press_begin(arena: &mut TreeArena, chain: &[NodeId], pos: Point) {
+    if let Some(&id) = chain.iter().find(|id| {
+        let node = arena.get(**id);
+        node.style.glass_group.is_none()
+            && node
+                .style
+                .appearance
+                .glass
+                .is_some_and(|g| g.is_interactive())
+    }) {
+        arena.press_begin(id, pos);
+    } else {
+        arena.press_end();
+    }
 }

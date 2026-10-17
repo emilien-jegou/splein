@@ -17,7 +17,7 @@ pub struct AtlasEntry {
     pub h: u32,
 }
 
-const ATLAS_SIZE: u32 = 2048;
+const ATLAS_SIZE: u32 = 1024;
 /// Transparent gutter around every cell so linear taps at borders read
 /// replicated edge texels instead of neighbor glyphs.
 const GUTTER: u32 = 2;

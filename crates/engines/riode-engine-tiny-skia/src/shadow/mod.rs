@@ -1,5 +1,6 @@
 // Single responsibility: Layered elevation-based shadow rasterization with LRU 9-patch caching.
 
+pub mod alpha;
 pub mod direct;
 pub mod patch;
 
@@ -11,7 +12,7 @@ use smallvec::SmallVec;
 use tiny_skia::{Mask, Pixmap, PixmapMut, Transform};
 
 use riode::foundation::{LightEnvironment, Radius, ResolvedRect, Shadow};
-use direct::render_direct_blur;
+use direct::{render_direct_blur, render_inset};
 use patch::{blit_9patch, generate_patch, layer_geometry, ShadowPatch, ShadowPatchKey};
 
 const MAX_SHADOW_PATCHES: usize = 64;
@@ -30,7 +31,9 @@ const MAX_DIRECT_BYTES: usize = 8 << 20;
 /// Identity of one direct-blurred coverage bitmap: geometry only (no
 /// color/opacity/transform/clip — those apply at tint/draw time, so one
 /// entry serves every paint of the same shape). Offset IS included: it
-/// shifts the shape within same-size buffers.
+/// shifts the shape within same-size buffers. `inset` separates the
+/// inverted (interior-clipped) coverage from the drop-path coverage —
+/// identical geometry can produce both, and they are not interchangeable.
 #[derive(Copy, Clone, Hash, PartialEq, Eq)]
 pub(crate) struct DirectKey {
     blur_bits: u32,
@@ -40,6 +43,7 @@ pub(crate) struct DirectKey {
     h_bits: u32,
     radius_bits: u32,
     offset_bits: [u32; 2],
+    inset: u8,
 }
 
 /// Software shadow rasterizer caching 9-patch blurred corner templates.
@@ -170,6 +174,35 @@ impl ShadowRasterizer {
         }
     }
 
+    /// Casts an alpha-silhouette drop shadow from a layer's finished
+    /// content (see [`alpha::render`]); reuses the direct path's scratch.
+    pub fn render_alpha(
+        &mut self,
+        source: &Pixmap,
+        dest: &mut PixmapMut,
+        dest_offset: (f32, f32),
+        shadow: &Shadow,
+        light: &LightEnvironment,
+        opacity: f32,
+        transform: Transform,
+        clip: Option<&Mask>,
+    ) {
+        alpha::render(
+            &mut self.scratch_a,
+            &mut self.scratch_b,
+            &mut self.scratch_temp,
+            &mut self.direct_scratch,
+            source,
+            dest,
+            dest_offset,
+            shadow,
+            light,
+            opacity,
+            transform,
+            clip,
+        );
+    }
+
     /// Renders analytical soft shadows or direct blurred fallbacks per layer.
     pub fn render(
         &mut self,
@@ -185,13 +218,16 @@ impl ShadowRasterizer {
         if shadow.layers().is_empty() {
             return;
         }
-        // Alpha-silhouette shadows are not accelerated yet; the 9-patch box
-        // path below is the graceful fallback. Warn once, not per frame.
+        // The alpha-silhouette path runs in `render_alpha` (end_layer of
+        // the element's own layer). Reaching this box rasterizer with
+        // `Alpha` means the fallback cases: an inset shadow (a box
+        // interior by definition) or a layer without an offscreen.
+        // Warn once, not per frame.
         if matches!(shadow.shape, riode::foundation::ShadowShape::Alpha) {
             static WARNED: std::sync::atomic::AtomicBool =
                 std::sync::atomic::AtomicBool::new(false);
             if !WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
-                tracing::warn!("ShadowShape::Alpha falls back to Box until accelerated");
+                tracing::warn!("ShadowShape::Alpha rendered as box (inset or no offscreen)");
             }
         }
         let total_opacity = opacity * light.intensity;
@@ -224,6 +260,35 @@ impl ShadowRasterizer {
             let (offset_x, offset_y) = shadow.layer_offset(light, layer);
             let blur_r = layer.softness.max(0.5);
             let pad = shadow.layer_pad(layer);
+
+            // Inset: inverted interior coverage — always the full-buffer
+            // direct path (the 9-patch assumes a solid interior + fringe).
+            if shadow.inset {
+                let _span = tracing::info_span!("Raster::ShadowInset").entered();
+                render_inset(
+                    &mut self.scratch_a,
+                    &mut self.scratch_b,
+                    &mut self.scratch_temp,
+                    &mut self.direct_scratch,
+                    &mut self.direct,
+                    layer.falloff.tag(),
+                    pixmap,
+                    rect,
+                    r_scalar,
+                    offset_x,
+                    offset_y,
+                    blur_r,
+                    shadow.spread,
+                    &layer.falloff.lut(),
+                    shadow.color,
+                    layer_opacity,
+                    shadow.blend,
+                    transform,
+                    clip,
+                );
+                continue;
+            }
+
             // Slice past the inward blur support (see layer_geometry).
             let (kernel_pad, corner_size, patch_dim) = layer_geometry(r_scalar, shadow, layer);
 
@@ -234,6 +299,7 @@ impl ShadowRasterizer {
                 || rect.height < (patch_dim as f32)
                 || transform.has_skew();
             if is_too_small {
+                let _span = tracing::info_span!("Raster::ShadowDirect").entered();
                 render_direct_blur(
                     &mut self.scratch_a,
                     &mut self.scratch_b,

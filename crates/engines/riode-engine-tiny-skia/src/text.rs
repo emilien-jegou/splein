@@ -1,7 +1,7 @@
 // Single responsibility: Glyph bitmap Porter-Duff alpha compositing via TinySkia.
 
 use riode::foundation::{Color, Point};
-use riode::scene::{quantize_eighth, quantize_quarter};
+use riode::scene::{quantize_quarter, quantize_y, GLYPH_QUANTA_Y};
 use riode::text::{GlyphBitmap, TextContext, TextLayout};
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
@@ -212,11 +212,11 @@ pub fn render_text(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: TextR
 /// bounding boxes are unaffected.
 
 /// Subpixel position quanta per pixel: X quantizes to quarters (validated
-/// smooth, matching the legacy phase bins), Y to eighths (1/16px residue,
-/// so horizontal features never read as doubled rows). Asymmetric by
-/// design — see `quantize_eighth`.
+/// smooth, matching the legacy phase bins), Y to `GLYPH_QUANTA_Y` bins.
+/// Asymmetric by design: fewer Y slots means fractional motion warms the
+/// cache in a handful of frames.
 pub const POS_QUANTA_X: u8 = 4;
-pub const POS_QUANTA_Y: u8 = 8;
+pub const POS_QUANTA_Y: u8 = GLYPH_QUANTA_Y;
 
 /// Renders glyph runs for translation-only transforms.
 ///
@@ -326,9 +326,9 @@ pub(crate) fn render_text_aligned(
             // space and line-local space.
             let dev_x = origin.x + line.align_offset + g.point.x + ttx;
             let dev_y = origin.y + g.point.y + tty;
-            // X quantizes to quarters, Y to eighths; the analytic bitmap
+            // X quantizes to quarters, Y to halves; the analytic bitmap
             // is integrated exactly at the quantum, so integer placement
-            // carries <=1/8px snap on X, <=1/16px on Y, with no coverage
+            // carries <=1/8px snap on X, <=1/4px on Y, with no coverage
             // smoothing. With baseline Y-snap armed (`B` key, GPUI's 4x1),
             // Y snaps to whole device pixels instead (qy forced 0).
             // Settled runs arrive pre-rounded from core compile, so they
@@ -339,7 +339,7 @@ pub(crate) fn render_text_aligned(
             let (by, qy) = if riode::text::baseline_snap_y() {
                 (dev_y.round() as i32, 0u8)
             } else {
-                quantize_eighth(dev_y)
+                quantize_y(dev_y)
             };
             text_ctx.raster_glyph_exact(
                 g.cache_key,
@@ -407,6 +407,8 @@ pub(crate) fn render_text_aligned(
                     let (ew, eh) = (entry.width(), entry.height());
                     debug_assert_eq!((ew, eh), (lsw, lsh));
                     if (ew, eh) == (lsw, lsh) {
+                        let _span =
+                            tracing::info_span!("Raster::LineCacheHit").entered();
                         pixmap.draw_pixmap(
                             0,
                             0,
@@ -420,6 +422,7 @@ pub(crate) fn render_text_aligned(
                 }
                 // Miss: composite into a fresh pixmap (rare: once per static
                 // configuration), replay it this frame, and retain it.
+                let _miss_span = tracing::info_span!("Raster::LineCacheMiss").entered();
                 let mut fresh = match Pixmap::new(lsw, lsh) {
                     Some(p) => p,
                     None => {
@@ -458,9 +461,12 @@ pub(crate) fn render_text_aligned(
                 continue;
             }
         }
-        paint_line(
-            pixmap, line, alpha_lut, 0.0, 0.0, ttx, tty, transform, clip, clip_w, clip_h,
-        );
+        {
+            let _span = tracing::info_span!("Raster::GlyphDirect").entered();
+            paint_line(
+                pixmap, line, alpha_lut, 0.0, 0.0, ttx, tty, transform, clip, clip_w, clip_h,
+            );
+        }
     }
 }
 
@@ -507,7 +513,7 @@ pub(crate) fn render_text_transformed(
 
     for line in &params.layout.lines {
         for g in &line.glyphs {
-            // Analytic coverage quantized X-quarters / Y-eighths;
+            // Analytic coverage quantized X-quarters / Y-halves;
             // placement stays exact (the fractional origin under the
             // transform is legitimate filtering of a sharp source).
             // Matches the aligned path.
@@ -515,7 +521,7 @@ pub(crate) fn render_text_transformed(
             let pen_y = params.origin.y + g.point.y;
             let (qx, qy) = (
                 quantize_quarter(pen_x).1,
-                quantize_eighth(pen_y).1,
+                quantize_y(pen_y).1,
             );
 
             let mut placed: Option<(f32, f32, u32, u32)> = None;
@@ -528,7 +534,7 @@ pub(crate) fn render_text_transformed(
                     // out of the exact pen.
                     placed = Some((
                         pen_x - qx as f32 * 0.25 + img.left as f32,
-                        pen_y - qy as f32 * 0.125 - img.top as f32,
+                        pen_y - qy as f32 / GLYPH_QUANTA_Y as f32 - img.top as f32,
                         img.width,
                         img.height,
                     ));
@@ -671,22 +677,18 @@ mod tests {
         }
     }
 
-    /// Eighth quantization covers the pixel exactly once: base plus
-    /// quantum reconstructs the pen within 1/16px, quantum in [0, 8).
+    /// Y quantization covers the pixel exactly once: base plus quantum
+    /// reconstructs the pen within half a bin, quantum in `[0, Q)`.
     #[test]
-    fn quantize_eighth_covers_the_pixel() {
-        assert_eq!(quantize_eighth(4.0), (4, 0));
-        assert_eq!(quantize_eighth(4.5), (4, 4));
-        assert_eq!(quantize_eighth(4.9), (4, 7));
-        assert_eq!(quantize_eighth(4.95), (5, 0));
+    fn quantize_y_covers_the_pixel() {
         for hundredths in -200..200 {
             let pos = hundredths as f32 / 100.0;
-            let (b, q) = quantize_eighth(pos);
-            assert!(q < 8, "pos {pos}: quantum {q}");
-            let snapped = b as f32 + q as f32 / 8.0;
+            let (b, q) = quantize_y(pos);
+            assert!(q < GLYPH_QUANTA_Y, "pos {pos}: quantum {q}");
+            let snapped = b as f32 + q as f32 / GLYPH_QUANTA_Y as f32;
             assert!(
-                (snapped - pos).abs() <= 1.0 / 16.0 + 1e-6,
-                "pos {pos} snaps within 1/16px (got {snapped})"
+                (snapped - pos).abs() <= 0.5 / GLYPH_QUANTA_Y as f32 + 1e-6,
+                "pos {pos} snaps within half a bin (got {snapped})"
             );
         }
     }
