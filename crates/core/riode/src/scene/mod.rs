@@ -75,8 +75,8 @@ pub use context::PaintContext;
 pub use image::ImageSource;
 pub use scene::Scene;
 pub use sink::{
-    chunk_base, lower_chunk, PlacedClip, PlacedImage, PlacedRect, PlacedShadow, PlacedSvg,
-    PlacedText, SceneSink, TextRaster,
+    chunk_base, lower_chunk, sink_ignored_counts, PlacedClip, PlacedImage, PlacedRect,
+    PlacedShadow, PlacedSvg, PlacedText, SceneSink, SinkDiagnostics, TextRaster,
 };
 pub use snap::{
     hairline_adjust, has_scale_or_skew, integerize_damage, quantize_eighth, quantize_nths,

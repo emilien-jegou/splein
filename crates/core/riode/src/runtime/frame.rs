@@ -226,6 +226,7 @@ pub fn run_frame_passes(
                 glyph_evictions: s.evictions,
             }
         },
+        sink: crate::scene::sink_ignored_counts(),
     };
 
     (stats, diag)

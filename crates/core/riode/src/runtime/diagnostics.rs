@@ -15,6 +15,10 @@ pub struct FrameDiagnostics {
     pub spatial: SpatialDiagnostics,
     pub compile: CompileDiagnostics,
     pub cache: CacheDiagnostics,
+    /// Primitives the active backend sink declined to rasterize (stub
+    /// defaults). Non-zero = visible degradation; see
+    /// [`crate::scene::SinkDiagnostics`].
+    pub sink: crate::scene::SinkDiagnostics,
 }
 
 #[derive(Clone, Debug, Default)]

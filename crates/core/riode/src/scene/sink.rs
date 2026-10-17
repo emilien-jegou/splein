@@ -14,7 +14,7 @@
 // them. Transform-only motion keeps reusing lowered content because the base
 // stays out of the items.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use crate::foundation::{
     Appearance, Color, LightEnvironment, Point, Radius, ResolvedRect, Shadow, Transform,
@@ -97,9 +97,39 @@ pub struct PlacedShadow<'a> {
     pub transform: Transform,
 }
 
-fn warn_ignored(what: &'static str, flag: &AtomicBool) {
+fn warn_ignored(what: &'static str, flag: &AtomicBool, counter: &AtomicU64) {
+    counter.fetch_add(1, Ordering::Relaxed);
     if !flag.swap(true, Ordering::Relaxed) {
         tracing::warn!("backend ignores primitive `{what}` (further occurrences silent)");
+    }
+}
+
+/// Per-primitive drop counters: how many placed items the active sink
+/// declined to rasterize. Non-zero means the backend doesn't implement that
+/// primitive — visible degradation, not a crash.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub struct SinkDiagnostics {
+    pub ignored_rect: u64,
+    pub ignored_text: u64,
+    pub ignored_image: u64,
+    pub ignored_svg: u64,
+    pub ignored_shadow: u64,
+}
+
+static IGNORED_RECT: AtomicU64 = AtomicU64::new(0);
+static IGNORED_TEXT: AtomicU64 = AtomicU64::new(0);
+static IGNORED_IMAGE: AtomicU64 = AtomicU64::new(0);
+static IGNORED_SVG: AtomicU64 = AtomicU64::new(0);
+static IGNORED_SHADOW: AtomicU64 = AtomicU64::new(0);
+
+/// Snapshot of the cumulative ignored-primitive counters.
+pub fn sink_ignored_counts() -> SinkDiagnostics {
+    SinkDiagnostics {
+        ignored_rect: IGNORED_RECT.load(Ordering::Relaxed),
+        ignored_text: IGNORED_TEXT.load(Ordering::Relaxed),
+        ignored_image: IGNORED_IMAGE.load(Ordering::Relaxed),
+        ignored_svg: IGNORED_SVG.load(Ordering::Relaxed),
+        ignored_shadow: IGNORED_SHADOW.load(Ordering::Relaxed),
     }
 }
 
@@ -115,27 +145,27 @@ pub trait SceneSink {
     /// Paints a placed rectangle.
     fn rect(&mut self, _r: &PlacedRect) {
         static WARNED: AtomicBool = AtomicBool::new(false);
-        warn_ignored("rect", &WARNED);
+        warn_ignored("rect", &WARNED, &IGNORED_RECT);
     }
     /// Paints a placed text run.
     fn text(&mut self, _t: &PlacedText) {
         static WARNED: AtomicBool = AtomicBool::new(false);
-        warn_ignored("text", &WARNED);
+        warn_ignored("text", &WARNED, &IGNORED_TEXT);
     }
     /// Paints a placed image.
     fn image(&mut self, _i: &PlacedImage) {
         static WARNED: AtomicBool = AtomicBool::new(false);
-        warn_ignored("image", &WARNED);
+        warn_ignored("image", &WARNED, &IGNORED_IMAGE);
     }
     /// Paints a placed vector graphic.
     fn svg(&mut self, _s: &PlacedSvg) {
         static WARNED: AtomicBool = AtomicBool::new(false);
-        warn_ignored("svg", &WARNED);
+        warn_ignored("svg", &WARNED, &IGNORED_SVG);
     }
     /// Paints a placed shadow.
     fn shadow(&mut self, _s: &PlacedShadow) {
         static WARNED: AtomicBool = AtomicBool::new(false);
-        warn_ignored("shadow", &WARNED);
+        warn_ignored("shadow", &WARNED, &IGNORED_SHADOW);
     }
 }
 
