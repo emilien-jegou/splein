@@ -114,11 +114,19 @@ pub fn exit_node_frame(
 ///
 /// `caret_visible` is the engine's blink phase; the caret paints only while it
 /// is on (and the node is focused with a collapsed selection).
+/// `abs_origin_y` is the absolute layout-space Y of the node's content
+/// origin (accumulated ancestor offsets); `settle_key` identifies the text
+/// run across frames for the rest detector. When the run is resting, its
+/// whole content (glyphs, decorations, caret) is nudged by one extra offset
+/// so the absolute run Y lands on a whole pixel — engines rasterize whatever
+/// origin they receive, no flag needed.
 pub fn emit_node_content(
     node: &LayoutNode,
     chunk: &mut SceneChunk,
     text_ctx: &TextContext,
     caret_visible: bool,
+    abs_origin_y: f32,
+    settle_key: u64,
 ) {
     // A node that declares itself a clipping boundary owns its render box as a *surface*:
     // the card the user sees growing must paint up to the edge that is visibly moving, not
@@ -176,9 +184,23 @@ pub fn emit_node_content(
             );
             // Text inks at the padding origin: the box grows around the run,
             // and the run starts inset rather than at the border edge.
+            // When the rest detector reports a resting run, one extra
+            // offset nudges the absolute run Y to a whole pixel — glyphs,
+            // decorations, selection, and caret all sit inside, so they
+            // stay glued. X untouched.
             let pad = node.style.padding;
+            let run_y = abs_origin_y + pad.top;
+            let settled = text_ctx.is_text_y_settled(settle_key as usize, run_y);
+            let adj = if settled {
+                crate::scene::settle_round(run_y) - run_y
+            } else {
+                0.0
+            };
             if pad.left != 0.0 || pad.top != 0.0 {
                 chunk.push(SceneCommand::PushOffset(Point::new(pad.left, pad.top)));
+            }
+            if adj != 0.0 {
+                chunk.push(SceneCommand::PushOffset(Point::new(0.0, adj)));
             }
             t.emit(
                 &layout,
@@ -186,6 +208,9 @@ pub fn emit_node_content(
                 node.state.text.text_selection,
                 node.state.input.text_focused && caret_visible,
             );
+            if adj != 0.0 {
+                chunk.push(SceneCommand::PopOffset);
+            }
             if pad.left != 0.0 || pad.top != 0.0 {
                 chunk.push(SceneCommand::PopOffset);
             }

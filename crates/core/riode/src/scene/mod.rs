@@ -2,7 +2,7 @@
 //!
 //! The compile pass ([`crate::pipeline`]) translates the retained tree into a [`Scene`]
 //! — a flat list of [`SceneChunk`]s, each a bounded slice of [`SceneCommand`]s with a
-//! placement transform and clips. Backends (`riode-tiny-skia`, `riode-vello`) replay
+//! placement transform and clips. Backends (`riode-tiny-skia`, `riode-wgpu`) replay
 //! these chunks without knowing what a node is. That ignorance is the backend boundary:
 //! everything tree-shaped stays on this side of it.
 //!
@@ -64,6 +64,8 @@ pub mod command;
 pub mod context;
 pub mod image;
 pub mod scene;
+pub mod snap;
+pub mod stack;
 pub mod vector;
 
 pub use chunk::SceneChunk;
@@ -71,4 +73,10 @@ pub use command::{LayerId, SceneCommand};
 pub use context::PaintContext;
 pub use image::ImageSource;
 pub use scene::Scene;
+pub use snap::{
+    hairline_adjust, has_scale_or_skew, integerize_damage, quantize_eighth, quantize_nths,
+    quantize_quarter, raster_cache_size, settle_round, snap_rect_to_device,
+    snap_transform_to_device,
+};
+pub use stack::SceneStack;
 pub use vector::VectorGraphic;

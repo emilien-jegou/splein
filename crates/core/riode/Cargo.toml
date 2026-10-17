@@ -55,14 +55,10 @@ libloading = "0.8"
 [dev-dependencies]
 ntest = "0.9"
 libc = "0.2"
-riode-engine-vello = { path = "../../engines/riode-engine-vello", version = "0.2.0" }
 riode-engine-wgpu = { path = "../../engines/riode-engine-wgpu", version = "0.2.0" }
 # lib name `riode_tiny_skia` — the headless raster + testing harness most of
 # tests/ imports (broken since the engine-prefix rename; restored).
 riode-engine-tiny-skia = { path = "../../engines/riode-engine-tiny-skia", version = "0.2.0" }
-# lib name `riode_engine_skia` — pulled in via examples/common when the e2e
-# tests #[path]-include example mains.
-riode-engine-skia = { path = "../../engines/riode-engine-skia", version = "0.2.0" }
 
 [profile.release]
 debug = true

@@ -498,7 +498,7 @@ fn run_switchable_loop(
     let mut pointer = PointerBridge::new();
     let mut cursor = CursorIcon::Default;
     let mut os_clipboard = OsClipboardSync::new();
-    let factories: [Option<BackendFactory>; 5] = config.factories;
+    let factories: [Option<BackendFactory>; 2] = config.factories;
     // Frame pacing (mirrors the single-window runner): without it the loop
     // spins unthrottled whenever motion is active and the FPS readout
     // counts empty frames.

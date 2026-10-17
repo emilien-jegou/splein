@@ -9,9 +9,8 @@
 //! - **Here**: [`RenderBackend`] (which painter to use), [`BackendError`], plus shared
 //!   kernels — [`blur`] (box-blur with shadow falloff), [`stroke_geometry`],
 //!   [`swizzle_rgba_to_bgra`].
-//! - **Elsewhere**: `riode-tiny-skia` (CPU), `riode-vello` (GPU compute) and
-//!   `riode-wgpu` (raw GPU) implement the actual
-//!   rasterizers behind a factory fn you hand to
+//! - **Elsewhere**: `riode-tiny-skia` (CPU) and `riode-wgpu` (raw GPU)
+//!   implement the actual rasterizers behind a factory fn you hand to
 //!   [`AppConfig::backend_factory`](crate::app::AppConfig::backend_factory).
 //!
 //! If you find yourself adding a rasterizer *here*, stop — it belongs in a backend crate.
@@ -30,8 +29,8 @@
 //!     .run(Page);
 //!
 //! // GPU: same scene, different painter.
-//! App::config().backend(RenderBackend::Vello)
-//!     .backend_factory(riode_engine_vello::create_backend)
+//! App::config().backend(RenderBackend::Wgpu)
+//!     .backend_factory(riode_engine_wgpu::create_backend)
 //!     .run(Page);
 //! ```
 //!
@@ -48,31 +47,16 @@ pub use swizzle::swizzle_rgba_to_bgra;
 
 /// Selects the active rasterization and presentation engine.
 ///
-/// A pure selection key: rasterizers live in `riode-tiny-skia` and `riode-vello` and are
+/// A pure selection key: rasterizers live in `riode-tiny-skia` and `riode-wgpu` and are
 /// supplied to [`AppConfig::backend_factory`](crate::app::AppConfig::backend_factory).
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub enum RenderBackend {
     #[default]
     TinySkia,
-    Vello,
-    /// Vello with CPU-staged coarse rasterization (`RendererOptions::use_cpu`).
-    ///
-    /// Still presents through wgpu (fine raster + blit stay on the GPU), but
-    /// all stages up to fine rasterization run on the CPU — useful for
-    /// comparing GPU-compute vs CPU-staged pipelines on the same scene.
-    ///
-    /// Reference/compare engine only: Vello 0.2 stages coarse work as
-    /// single-threaded scalar dispatches over the full scene every animated
-    /// frame (measured ~80x slower coarse than GPU on an RTX 2070), while
-    /// [`RenderBackend::TinySkia`] is SIMD and damage-tiled. For an actually
-    /// fast CPU rasterizer, use TinySkia.
-    VelloCpu,
     /// Raw wgpu backend with analytical shaders (`riode-wgpu` crate).
     ///
-    /// Traditional quad-based renderer with custom WGSL shaders instead of
-    /// Vello's compute rasterizer. Shadows evaluate blur analytically in
-    /// the fragment shader (zero CPU pixel work, zero cache thrash).
+    /// Traditional quad-based renderer with custom WGSL shaders.
+    /// Shadows evaluate blur analytically in the fragment shader
+    /// (zero CPU pixel work, zero cache thrash).
     Wgpu,
-    /// Skia backend (CPU raster first)
-    Skia,
 }

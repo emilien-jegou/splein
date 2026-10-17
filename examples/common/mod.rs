@@ -42,16 +42,12 @@ pub struct ExampleCli {
 
 /// Maps a user-supplied engine name to a [`RenderBackend`].
 ///
-/// Accepts `tiny-skia` / `skia` / `cpu`, `vello` / `gpu`, and
-/// `vello-cpu` / `vello_cpu` (dashes and underscores are interchangeable,
-/// case-insensitive). Returns `None` for anything else so typos in unrelated
-/// positionals never silently switch the rasterizer.
+/// Accepts `tiny-skia` / `cpu` and `wgpu` (dashes and underscores are
+/// interchangeable, case-insensitive). Returns `None` for anything else so
+/// typos in unrelated positionals never silently switch the rasterizer.
 fn parse_engine_name(raw: &str) -> Option<RenderBackend> {
     match raw.to_lowercase().replace('_', "-").as_str() {
         "tiny-skia" | "tinyskia" | "cpu" => Some(RenderBackend::TinySkia),
-        "skia" => Some(RenderBackend::Skia),
-        "vello" | "vello-gpu" | "gpu" => Some(RenderBackend::Vello),
-        "vello-cpu" | "cpu-vello" | "vellocpu" => Some(RenderBackend::VelloCpu),
         "wgpu" | "raw-wgpu" | "rawgpu" => Some(RenderBackend::Wgpu),
         _ => None,
     }
@@ -60,10 +56,9 @@ fn parse_engine_name(raw: &str) -> Option<RenderBackend> {
 impl ExampleCli {
     /// Parses CLI arguments (`[engine]`, `--gpu`, `--cpu`, `--fps <N>`, `--uncapped`, `--no-hud`).
     ///
-    /// The engine can be given positionally, e.g. `cargo run --example demo1 -- vello-cpu`:
-    /// `tiny-skia` (default), `vello` (GPU compute), or `vello-cpu` (CPU-staged
-    /// Vello). The legacy `--gpu` / `--vello` / `--cpu` / `--skia` flags still
-    /// work; an explicit positional engine wins over flags.
+    /// The engine can be given positionally, e.g. `cargo run --example demo1 -- wgpu`:
+    /// `tiny-skia` (default) or `wgpu`. The legacy `--gpu` / `--cpu` flags
+    /// still work; an explicit positional engine wins over flags.
     pub fn parse(default_w: u32, default_h: u32) -> Self {
         let args: Vec<String> = std::env::args().collect();
 
@@ -71,10 +66,8 @@ impl ExampleCli {
             println!("┌────────────────────────────────────────────────────────┐");
             println!("│                RIODE EXAMPLE RUNNER                   │");
             println!("├────────────────────────────────────────────────────────┤");
-            println!("│ [engine]             tiny-skia (default) | vello |     │");
-            println!("│                      vello-cpu | wgpu | skia          │");
-            println!("│ --gpu / --vello    Use Vello GPU Compute (Metal/VK/D3D)│");
-            println!("│ --vello-cpu        Use Vello with CPU-staged coarse    │");
+            println!("│ [engine]             tiny-skia (default) | wgpu   │");
+            println!("│ --gpu              Use Wgpu GPU Rasterizer           │");
             println!("│ --cpu              Use TinySkia CPU Rasterizer (Def.)  │");
             println!("│ --fps <N>          Cap target FPS (e.g. 144, 240, 360) │");
             println!("│ --uncapped         Disable frame pacer (max benchmark) │");
@@ -93,18 +86,8 @@ impl ExampleCli {
             .and_then(|a| parse_engine_name(a));
         let mut backend = positional.unwrap_or(RenderBackend::TinySkia);
         if positional.is_none() {
-            if args
-                .iter()
-                .any(|a| a == "--gpu" || a == "--vello" || a == "--vello-gpu")
-            {
-                backend = RenderBackend::Vello;
-            } else if args.iter().any(|a| a == "--wgpu" || a == "--raw-wgpu") {
+            if args.iter().any(|a| a == "--gpu" || a == "--wgpu" || a == "--raw-wgpu") {
                 backend = RenderBackend::Wgpu;
-            } else if args
-                .iter()
-                .any(|a| a == "--vello-cpu" || a == "--vello_cpu" || a == "--cpu-vello")
-            {
-                backend = RenderBackend::VelloCpu;
             }
         }
 
@@ -145,9 +128,6 @@ impl ExampleCli {
 
         let engine_name = match backend {
             RenderBackend::TinySkia => "tiny-skia",
-            RenderBackend::Skia => "skia",
-            RenderBackend::Vello => "vello",
-            RenderBackend::VelloCpu => "vello-cpu",
             RenderBackend::Wgpu => "wgpu",
         };
         println!(
@@ -200,9 +180,9 @@ impl ExampleCli {
         }
     }
 
-    /// Pre-configures a `MultiBackendConfig` with all five raster backends.
+    /// Pre-configures a `MultiBackendConfig` with both raster backends.
     ///
-    /// One shared engine/reactive state. `1-5` select a single backend
+    /// One shared engine/reactive state. `1-2` select a single backend
     /// window, `Tab`/`F7` cycles. The CLI positional/flags pick the focused
     /// backend.
     pub fn app_config_multi(&self, title: &str) -> riode::app::multibackend::MultiBackendConfig {
@@ -212,18 +192,12 @@ impl ExampleCli {
 
         MultiBackend::config([
             Some(riode_tiny_skia::create_backend),
-            Some(riode_engine_vello::create_backend),
-            Some(riode_engine_vello::create_cpu_backend),
             Some(riode_engine_wgpu::create_backend),
-            Some(riode_engine_skia::create_backend),
         ])
         .title(format!(
-            "{title} [1-5 engine | Tab/F7 cycle | {}]",
+            "{title} [1-2 engine | Tab/F7 cycle | {}]",
             match self.backend {
                 RenderBackend::TinySkia => "tiny-skia",
-                RenderBackend::Skia => "skia",
-                RenderBackend::Vello => "vello-gpu",
-                RenderBackend::VelloCpu => "vello-cpu",
                 RenderBackend::Wgpu => "wgpu",
             }
         ))
@@ -247,9 +221,6 @@ impl ExampleCli {
             .extension(debugger);
         match self.backend {
             RenderBackend::TinySkia => config.backend_factory(riode_tiny_skia::create_backend),
-            RenderBackend::Skia => config.backend_factory(riode_engine_skia::create_backend),
-            RenderBackend::Vello => config.backend_factory(riode_engine_vello::create_backend),
-            RenderBackend::VelloCpu => config.backend_factory(riode_engine_vello::create_cpu_backend),
             RenderBackend::Wgpu => config.backend_factory(riode_engine_wgpu::create_backend),
         }
     }

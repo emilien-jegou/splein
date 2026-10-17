@@ -150,18 +150,17 @@ impl TextContext {
         self.resize_hint.load(std::sync::atomic::Ordering::Relaxed) > 0
     }
 
-    /// Resolves the origin Y to emit for a text run: raw `y` while the
-    /// run's recent history shows motion, latched `round(y)` once it has
-    /// rested. Key must identify the run across frames (layout allocation
-    /// pointer). The `B`-key global snap overrides the diary and forces
-    /// integer placement.
-    pub fn resolve_settled_y(&self, key: usize, y: f32) -> f32 {
+    /// Observes one frame's absolute layout-space Y for a text run,
+    /// returning whether the run is currently resting (see
+    /// [`YSettleTracker`]). The `B`-key global snap forces `true`.
+    /// Key must identify the run across frames (layout allocation pointer).
+    pub fn is_text_y_settled(&self, key: usize, y: f32) -> bool {
         if baseline_snap_y() {
-            return if y.is_finite() { y.round() } else { y };
+            return true;
         }
         match self.settle.lock() {
-            Ok(mut t) => t.resolve(key, y),
-            Err(_) => y,
+            Ok(mut t) => t.observe(key, y),
+            Err(_) => false,
         }
     }
 

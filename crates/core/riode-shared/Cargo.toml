@@ -17,6 +17,4 @@ crate-type = ["dylib"]
 [dependencies]
 riode = { path = "../riode", version = "0.2.0" }
 riode-engine-tiny-skia = { path = "../../engines/riode-engine-tiny-skia", version = "0.2.0" }
-riode-engine-skia = { path = "../../engines/riode-engine-skia", version = "0.2.0" }
-riode-engine-vello = { path = "../../engines/riode-engine-vello", version = "0.2.0" }
 riode-engine-wgpu = { path = "../../engines/riode-engine-wgpu", version = "0.2.0" }

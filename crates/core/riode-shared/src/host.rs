@@ -18,9 +18,6 @@ fn arg<'a>(ptr: *const c_char) -> &'a str {
 fn parse_engine_name(raw: &str) -> RenderBackend {
     match raw.to_lowercase().replace('_', "-").as_str() {
         "tiny-skia" | "tinyskia" | "cpu" => RenderBackend::TinySkia,
-        "skia" => RenderBackend::Skia,
-        "vello" | "vello-gpu" | "gpu" => RenderBackend::Vello,
-        "vello-cpu" | "cpu-vello" | "vellocpu" => RenderBackend::VelloCpu,
         "wgpu" | "raw-wgpu" | "rawgpu" => RenderBackend::Wgpu,
         _ => RenderBackend::TinySkia,
     }
@@ -59,17 +56,14 @@ pub extern "Rust" fn devkit_run(
     let (info, title) = read_boot_chrome(&loop_config());
     let ext = ComponentReloadExtension::new(loop_config());
     let backend = parse_engine_name(arg(engine));
-    // Multibackend runner (not single `App`): one shared engine, all five
-    // factories live, so F7/Tab/1-5 switch rasterizers inside the hot loop.
+    // Multibackend runner (not single `App`): one shared engine, both
+    // factories live, so F7/Tab/1-2 switch rasterizers inside the hot loop.
     // `backend` only picks the focused window at boot.
     riode::app::multibackend::MultiBackend::config([
         Some(crate::tiny_skia::create_backend),
-        Some(crate::vello::create_backend),
-        Some(crate::vello::create_cpu_backend),
         Some(crate::wgpu::create_backend),
-        Some(crate::skia::create_backend),
     ])
-    .title(format!("{title} [1-5 engine | Tab/F7 cycle]"))
+    .title(format!("{title} [1-2 engine | Tab/F7 cycle]"))
     .size(info.width.max(1), info.height.max(1))
     .font("Inter", include_bytes!("../../riode/assets/inter-var.ttf"))
     .background(Color::hex(info.background))

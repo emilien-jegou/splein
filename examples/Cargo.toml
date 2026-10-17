@@ -14,8 +14,6 @@ autoexamples = false
 [dependencies]
 riode = { path = "../crates/core/riode", version = "0.2.0" }
 riode-engine-tiny-skia = { path = "../crates/engines/riode-engine-tiny-skia", version = "0.2.0" }
-riode-engine-skia = { path = "../crates/engines/riode-engine-skia", version = "0.2.0" }
-riode-engine-vello = { path = "../crates/engines/riode-engine-vello", version = "0.2.0" }
 riode-engine-wgpu = { path = "../crates/engines/riode-engine-wgpu", version = "0.2.0" }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }

@@ -154,6 +154,7 @@ impl TextConfig {
     /// on top as before. A collapsed selection paints a 1px caret *after* the
     /// glyphs when `focused` — the caller gates that on focus and the blink
     /// phase, so blur and blink-off hide it while keeping the range.
+    /// Emits a shaped run, its selection highlight, decorations, and caret.
     pub fn emit(
         &self,
         layout: &Arc<TextLayout>,

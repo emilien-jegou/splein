@@ -1,46 +1,41 @@
 // Single responsibility: TinySkia path generation for W3C-compliant clamped rounded rectangles.
+//
+// Device-snapping *policy* lives in core (`riode::scene::snap`); the
+// functions below are pure type-conversion shims from tiny-skia's
+// `Transform` to core's, so every backend shares one policy.
 
-use riode::foundation::{Radius, ResolvedRect};
+use riode::foundation::{Radius, ResolvedRect, Transform as CoreTransform};
 use tiny_skia::{Path, PathBuilder, Rect, Transform};
 
-/// Snaps a rect's placement to device pixels under translation-only
-/// transforms: shifts the rect so its effective origin lands on integer
-/// pixels. Uses floor (never round): round-half-away-from-zero maps the
-/// same .5 fraction to different shifts depending on the accumulated
-/// translation's sign (e.g. -27.5 -> -28 but +1.5 -> +2), which splits
-/// coincident edges — the white-box bottom and the selection-highlight
-/// bottom share device y=263.5 through different offset chains, and opposite
-/// shifts opened exactly the 1px seam (highlight over green, box missing).
-/// Floor shifts equal fractions equally, so coincident edges stay
-/// coincident. Scaled/skewed transforms pass through untouched (fractional
-/// coverage is correct there, and motion smoothness outranks static
-/// crispness under animation).
-pub fn snap_rect_to_device(rect: &ResolvedRect, tx: Transform) -> ResolvedRect {
-    if tx.has_skew() || tx.has_scale() {
-        return *rect;
+/// Converts a tiny-skia transform to the core transform (same 2D affine).
+#[inline(always)]
+pub fn core_tx(tx: Transform) -> CoreTransform {
+    CoreTransform {
+        a: tx.sx,
+        b: tx.ky,
+        c: tx.kx,
+        d: tx.sy,
+        tx: tx.tx,
+        ty: tx.ty,
     }
-    let dx = tx.tx.floor() - tx.tx;
-    let dy = tx.ty.floor() - tx.ty;
-    if dx == 0.0 && dy == 0.0 {
-        return *rect;
-    }
-    ResolvedRect::new(rect.x + dx, rect.y + dy, rect.width, rect.height)
 }
 
-/// Snaps the shared translation itself to device pixels: every rect drawn
-/// under the returned transform shifts by the SAME amount, so coincident
-/// edges (selection highlight == text-box bottom == clip edge) stay
-/// coincident and land integer together. Per-rect snapping cannot do this:
-/// each rect would round a different fraction and split the shared edge
-/// into a 1px gap. Floor (not round) for the same sign-independence reason
-/// as above. Scaled/skewed transforms pass through untouched.
-pub fn snap_transform_to_device(mut tx: Transform) -> Transform {
-    if tx.has_skew() || tx.has_scale() {
-        return tx;
-    }
-    tx.tx = tx.tx.floor();
-    tx.ty = tx.ty.floor();
-    tx
+/// Converts a core transform back to tiny-skia.
+#[inline(always)]
+pub fn skia_tx(t: &CoreTransform) -> Transform {
+    Transform::from_row(t.a, t.b, t.c, t.d, t.tx, t.ty)
+}
+
+/// Snaps a rect's placement to device pixels (core policy).
+#[inline(always)]
+pub fn snap_rect_to_device(rect: &ResolvedRect, tx: Transform) -> ResolvedRect {
+    riode::scene::snap_rect_to_device(rect, &core_tx(tx))
+}
+
+/// Snaps the shared translation itself to device pixels (core policy).
+#[inline(always)]
+pub fn snap_transform_to_device(tx: Transform) -> Transform {
+    skia_tx(&riode::scene::snap_transform_to_device(&core_tx(tx)))
 }
 
 /// Builds rounded rectangle path with strict W3C Bézier radius clamping supporting per-corner radii.

@@ -98,7 +98,7 @@ pub trait Backend {
 ///
 /// `riode` owns this contract but never implements it: `riode-tiny-skia` provides
 /// `create_backend` for [`RenderBackend::TinySkia`](crate::render::RenderBackend) and
-/// `riode-vello` for `Vello`. The factory is handed to
+/// `riode-wgpu` for `Wgpu`. The factory is handed to
 /// [`AppConfig::backend_factory`](crate::app::AppConfig::backend_factory) so the engine
 /// crate never names a concrete rasterizer.
 ///

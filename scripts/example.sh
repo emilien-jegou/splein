@@ -5,7 +5,7 @@
 # Edit `examples/<name>/view.rs` while it runs; the window rebuilds live.
 #
 # Usage: nu scripts/toolbox.nu example <name> [engine]  (e.g. nu scripts/toolbox.nu example motion_press wgpu; default: demo1)
-# Engines: tiny-skia (default), vello, vello-cpu, wgpu
+# Engines: tiny-skia (default), wgpu
 # Release (no hot-reload, statically linked):
 #   cargo run -p riode-examples --example <name> --release
 # Hot-reloadable names (tree-only views: any examples/<name>/ dir with hot.rs):

@@ -58,8 +58,7 @@ impl SvgCache {
         {
             return None;
         }
-        let rw = (rect.width * scale).round().max(1.0) as u32;
-        let rh = (rect.height * scale).round().max(1.0) as u32;
+        let (rw, rh) = riode::scene::raster_cache_size(rect.width, rect.height, scale);
         let ptr_key = (Arc::as_ptr(&graphic.tree) as usize as u64) & 0x0000_FFFF_FFFF;
         let key = (ptr_key << 32) | ((rw as u64) << 16) | (rh as u64);
 

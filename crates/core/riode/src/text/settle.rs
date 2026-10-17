@@ -1,12 +1,14 @@
-// Single responsibility: Y-only settle tracker — subpixel while moving, integer when resting.
+// Single responsibility: Y-only rest detector — subpixel while moving, settled when resting.
 //
-// Loosely coupled by design: position-in / position-out, no dependency on
+// Loosely coupled by design: position-in / bool-out, no dependency on
 // `anim/` or any notion of "is animating". Each text run (keyed by layout
 // allocation identity) keeps a short diary of recent Y positions; only when
 // the total wandering inside the window stays below epsilon is the run
-// considered resting and rounded to the nearest whole pixel. A nudge every
-// 2nd/3rd/4th frame still shows up as wandering inside the window, so slow
-// drift never false-settles into a buzz.
+// considered resting. A nudge every 2nd/3rd/4th frame still shows up as
+// wandering inside the window, so slow drift never false-settles into a buzz.
+//
+// This module only *decides*; the caller owns the *rounding* (in whatever
+// space it renders — layout px in core compile, device px in engines).
 
 use std::collections::HashMap;
 
@@ -25,8 +27,8 @@ struct Entry {
     len: usize,
     /// Write cursor into `history`.
     cursor: usize,
-    /// Whether the run has settled (and at what snapped Y).
-    anchor: Option<f32>,
+    /// Latched rest state. `None` while moving.
+    settled: bool,
 }
 
 impl Entry {
@@ -35,7 +37,7 @@ impl Entry {
             history: [0.0; WINDOW],
             len: 0,
             cursor: 0,
-            anchor: None,
+            settled: false,
         }
     }
 
@@ -72,14 +74,13 @@ impl YSettleTracker {
         Self::default()
     }
 
-    /// Resolves the Y to emit for `key` given the raw Y this frame.
-    ///
-    /// Moving (window excursion above epsilon, or window not yet full):
-    /// returns `y` unchanged. Resting: returns the latched `round(y)`,
-    /// sticky until excursion breaks it again.
-    pub fn resolve(&mut self, key: usize, y: f32) -> f32 {
+    /// Observes one frame's raw Y for `key`, returning whether the run is
+    /// currently resting. Moving (window excursion above epsilon, or window
+    /// not yet full): returns false. Resting: returns true, sticky until
+    /// excursion breaks it again.
+    pub fn observe(&mut self, key: usize, y: f32) -> bool {
         if !y.is_finite() {
-            return y;
+            return false;
         }
         // Bound growth: layouts come and go; drop stale entries lazily.
         if self.entries.len() > 8192 {
@@ -88,17 +89,11 @@ impl YSettleTracker {
         let entry = self.entries.entry(key).or_insert_with(Entry::new);
         entry.push(y);
         if entry.len < WINDOW || entry.excursion() > EXCURSION_EPS {
-            entry.anchor = None;
-            return y;
+            entry.settled = false;
+            return false;
         }
-        match entry.anchor {
-            Some(a) => a,
-            None => {
-                let snapped = y.round();
-                entry.anchor = Some(snapped);
-                snapped
-            }
-        }
+        entry.settled = true;
+        true
     }
 }
 
@@ -107,42 +102,37 @@ mod tests {
     use super::*;
 
     #[test]
-    fn moving_passes_through_until_window_calms() {
+    fn moving_reports_unsettled_until_window_calms() {
         let mut t = YSettleTracker::new();
-        // Drift keeps passing through.
+        // Drift keeps reporting moving.
         for i in 0..WINDOW {
             let y = 100.0 + i as f32 * 0.5;
-            assert_eq!(t.resolve(1, y), y);
+            assert!(!t.observe(1, y));
         }
-        // Then stillness settles to round.
-        let mut last = 0.0;
+        // Then stillness settles.
+        let mut settled = false;
         for _ in 0..WINDOW {
-            last = t.resolve(1, 100.4);
+            settled = t.observe(1, 100.4);
         }
-        assert_eq!(last, 100.0);
+        assert!(settled);
         // A nudge above epsilon wakes back up.
-        assert_eq!(t.resolve(1, 100.4 + EXCURSION_EPS * 2.0), 100.4 + EXCURSION_EPS * 2.0);
+        assert!(!t.observe(1, 100.4 + EXCURSION_EPS * 2.0));
     }
 
     #[test]
     fn slow_nudge_every_fourth_frame_never_settles() {
         let mut t = YSettleTracker::new();
         // 3 still frames, 1 nudge, repeating: excursion inside any
-        // 6-frame window always exceeds epsilon → never snaps.
-        let mut snapped = false;
+        // 6-frame window always exceeds epsilon → never settled.
         for i in 0..24 {
             let y = if i % 4 == 3 { 100.4 } else { 100.0 };
-            let out = t.resolve(7, y);
-            if out != y {
-                snapped = true;
-            }
+            assert!(!t.observe(7, y), "slow stepping motion must not settle");
         }
-        assert!(!snapped, "slow stepping motion must not settle");
     }
 
     #[test]
-    fn non_finite_passes_through() {
+    fn non_finite_is_not_settled() {
         let mut t = YSettleTracker::new();
-        assert!(t.resolve(3, f32::NAN).is_nan());
+        assert!(!t.observe(3, f32::NAN));
     }
 }

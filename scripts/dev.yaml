@@ -26,8 +26,6 @@ commands:
         - ["$(nu -c 'use scripts/toolbox.nu spleen-complete-examples; spleen-complete-examples | each { print }')"]
         - [
             "tiny-skia\tSoftware rasterizer",
-            "vello\tGPU compute-centric 2D renderer",
-            "vello-cpu\tVello CPU fallback",
             "wgpu\tWebGPU hardware renderer"
           ]
 

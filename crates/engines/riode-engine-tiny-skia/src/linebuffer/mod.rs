@@ -17,6 +17,7 @@ pub mod sink;
 use riode::foundation::DamageRegion;
 use riode::render::error::BackendError;
 use riode::scene::scene::Scene;
+use riode::scene::SceneStack;
 use riode::text::TextContext;
 use crate::clip::ClipStack;
 use crate::command::{execute_commands, CommandContext};
@@ -25,7 +26,7 @@ use crate::shadow::ShadowRasterizer;
 use crate::svg::SvgCache;
 use crate::text::LineCompositeCache;
 pub use sink::{FramebufferSink, LineSink};
-use tiny_skia::{Pixmap, Transform as SkiaTransform};
+use tiny_skia::Pixmap;
 
 /// Scanline rasterizer pushing rows directly to a [`LineSink`].
 pub struct LineBufferBackend {
@@ -37,8 +38,7 @@ pub struct LineBufferBackend {
     image_cache: ImageCache,
     shadow_rasterizer: ShadowRasterizer,
     line_cache: LineCompositeCache,
-    tx_stack: Vec<SkiaTransform>,
-    opacity_stack: Vec<f32>,
+    stack: SceneStack,
     row: Pixmap,
 }
 
@@ -57,8 +57,10 @@ impl LineBufferBackend {
             image_cache: ImageCache::new(),
             shadow_rasterizer: ShadowRasterizer::new(),
             line_cache: LineCompositeCache::new(),
-            tx_stack: Vec::with_capacity(32),
-            opacity_stack: Vec::with_capacity(32),
+            stack: SceneStack::new(
+                riode::foundation::Transform::IDENTITY,
+                1.0,
+            ),
             row,
         }
     }
@@ -134,19 +136,17 @@ impl LineBufferBackend {
         let w = self.width;
         self.row.fill(tiny_skia::Color::TRANSPARENT);
         self.clip_stack.reset();
-        self.tx_stack.clear();
-        self.opacity_stack.clear();
-        // Row-local frame: x stays, y maps the scanline to row 0.
-        self.tx_stack
-            .push(SkiaTransform::from_translate(0.0, -(y as f32)));
+        self.stack = SceneStack::new(
+            riode::foundation::Transform::from_translation(0.0, -(y as f32)),
+            1.0,
+        );
         let mut ctx = CommandContext {
             clip_stack: &mut self.clip_stack,
             text_ctx: &self.text_ctx,
             svg_cache: &mut self.svg_cache,
             image_cache: &mut self.image_cache,
             shadow_rasterizer: &mut self.shadow_rasterizer,
-            tx_stack: &mut self.tx_stack,
-            opacity_stack: &mut self.opacity_stack,
+            stack: &mut self.stack,
             line_cache: &mut self.line_cache,
         };
         // A chunk covering the scanline (half-open [top, bottom) in the
@@ -154,7 +154,7 @@ impl LineBufferBackend {
         for chunk in scene.chunks.iter().filter(|c| {
             (y as f32) >= c.bounds.y && (y as f32) < c.bounds.bottom()
         }) {
-            let base = *ctx.tx_stack.last().unwrap();
+            let base = crate::path::skia_tx(&ctx.stack.transform());
             for clip in chunk.inherited_clips.iter() {
                 ctx.clip_stack.push(
                     &clip.rect,
@@ -166,17 +166,14 @@ impl LineBufferBackend {
                     1,
                 );
             }
-            let placed = base
-                .pre_translate(chunk.abs_origin.x, chunk.abs_origin.y)
-                .pre_concat(SkiaTransform::from_row(
-                    chunk.placement.a,
-                    chunk.placement.b,
-                    chunk.placement.c,
-                    chunk.placement.d,
-                    chunk.placement.tx,
-                    chunk.placement.ty,
-                ));
-            ctx.tx_stack.push(placed);
+            let checkpoint = ctx.stack.checkpoint();
+            ctx.stack.push_transform(
+                &riode::foundation::Transform::from_translation(
+                    chunk.abs_origin.x,
+                    chunk.abs_origin.y,
+                ),
+            );
+            ctx.stack.push_transform(&chunk.placement);
             execute_commands(
                 &chunk.commands,
                 &mut self.row.as_mut(),
@@ -184,12 +181,11 @@ impl LineBufferBackend {
                 w as f32,
                 1.0,
             );
-            ctx.tx_stack.pop();
+            ctx.stack.restore(checkpoint);
             for _ in chunk.inherited_clips.iter() {
                 ctx.clip_stack.pop();
             }
         }
-        self.tx_stack.pop();
         self.clip_stack.reset();
         sink.push_line(y, self.row.data());
         Ok(())

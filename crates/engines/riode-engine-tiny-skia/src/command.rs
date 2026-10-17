@@ -4,7 +4,7 @@ use tiny_skia::{FillRule, Mask, PixmapMut, Transform as SkiaTransform};
 
 use crate::clip::ClipStack;
 use crate::image::ImageCache;
-use crate::path::build_rounded_path;
+use crate::path::{build_rounded_path, skia_tx};
 use crate::shader::build_paint;
 use crate::shadow::ShadowRasterizer;
 use crate::stroke::render_stroke;
@@ -12,6 +12,7 @@ use crate::svg::SvgCache;
 use crate::text::{render_text, LineCompositeCache, TextRenderParams};
 use riode::foundation::Radius;
 use riode::scene::command::SceneCommand;
+use riode::scene::SceneStack;
 use riode::text::TextContext;
 
 /// Shared stateful resources required during single-tile TinySkia rasterization.
@@ -21,8 +22,8 @@ pub struct CommandContext<'a> {
     pub svg_cache: &'a mut SvgCache,
     pub image_cache: &'a mut ImageCache,
     pub shadow_rasterizer: &'a mut ShadowRasterizer,
-    pub tx_stack: &'a mut Vec<SkiaTransform>,
-    pub opacity_stack: &'a mut Vec<f32>,
+    /// Framing-state walk shared with all backends (core semantics).
+    pub stack: &'a mut SceneStack,
     pub line_cache: &'a mut LineCompositeCache,
 }
 
@@ -35,37 +36,29 @@ pub fn execute_commands(
     tile_w: f32,
     tile_h: f32,
 ) {
-    let (base_tx, base_op) = (ctx.tx_stack.len(), ctx.opacity_stack.len());
-    ctx.tx_stack.push(
-        ctx.tx_stack
-            .last()
-            .copied()
-            .unwrap_or_else(SkiaTransform::identity),
-    );
-    ctx.opacity_stack
-        .push(ctx.opacity_stack.last().copied().unwrap_or(1.0));
+    let checkpoint = ctx.stack.checkpoint();
+    // Seed the base frame so every chunk starts from the inherited state,
+    // mirroring the old push-identity/push-base sequence.
+    ctx.stack.push_transform(&riode::foundation::Transform::IDENTITY);
 
     for cmd in commands {
-        let (cur_tx, cur_op) = (
-            *ctx.tx_stack.last().unwrap(),
-            *ctx.opacity_stack.last().unwrap(),
-        );
+        // Backend transform converted from the shared core state at draw
+        // time; the stack walk itself is backend-agnostic.
+        let (cur_tx, cur_op) = (skia_tx(&ctx.stack.transform()), ctx.stack.opacity());
         match cmd {
             SceneCommand::PushTransform(t) => {
-                ctx.tx_stack.push(
-                    cur_tx.pre_concat(SkiaTransform::from_row(t.a, t.b, t.c, t.d, t.tx, t.ty)),
-                );
+                ctx.stack.push_transform(t);
             }
             SceneCommand::PopTransform => {
-                ctx.tx_stack.pop();
+                ctx.stack.pop_transform();
             }
-            SceneCommand::PushOffset(p) => ctx.tx_stack.push(cur_tx.pre_translate(p.x, p.y)),
+            SceneCommand::PushOffset(p) => ctx.stack.push_offset(*p),
             SceneCommand::PopOffset => {
-                ctx.tx_stack.pop();
+                ctx.stack.pop_transform();
             }
-            SceneCommand::PushOpacity(o) => ctx.opacity_stack.push(cur_op * o.clamp(0.0, 1.0)),
+            SceneCommand::PushOpacity(o) => ctx.stack.push_opacity(*o),
             SceneCommand::PopOpacity => {
-                ctx.opacity_stack.pop();
+                ctx.stack.pop_opacity();
             }
             SceneCommand::PushClip { rect, radius } => {
                 ctx.clip_stack.push(
@@ -171,8 +164,7 @@ pub fn execute_commands(
             }
         }
     }
-    ctx.tx_stack.truncate(base_tx);
-    ctx.opacity_stack.truncate(base_op);
+    ctx.stack.restore(checkpoint);
 }
 
 /// Tile culling honoring the full affine transform. The old test read only the

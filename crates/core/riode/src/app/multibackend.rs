@@ -1,5 +1,5 @@
 // Single responsibility: Multi-backend demo runner — one shared Engine presented
-// through one of five raster backends (1-5 select, Tab/F7 cycle).
+// through one of two raster backends (1-2 select, Tab/F7 cycle).
 //
 // One `Engine` (one reactive runtime, one `Scene`) frames once; each live
 // backend presents that same scene into its own OS window. Backend switching
@@ -34,26 +34,17 @@ use crate::render::RenderBackend;
 use crate::runtime::Engine;
 
 /// Ordered backend slots: index selects, Tab/F7 cycles.
-pub const BACKEND_ORDER: [RenderBackend; 5] = [
-    RenderBackend::TinySkia,
-    RenderBackend::Vello,
-    RenderBackend::VelloCpu,
-    RenderBackend::Wgpu,
-    RenderBackend::Skia,
-];
+pub const BACKEND_ORDER: [RenderBackend; 2] = [RenderBackend::TinySkia, RenderBackend::Wgpu];
 
 /// Descriptive display name per backend slot.
 pub fn backend_display_name(backend: RenderBackend) -> &'static str {
     match backend {
         RenderBackend::TinySkia => "tiny-skia",
-        RenderBackend::Vello => "vello-gpu",
-        RenderBackend::VelloCpu => "vello-cpu",
         RenderBackend::Wgpu => "wgpu",
-        RenderBackend::Skia => "skia",
     }
 }
 
-/// Focused backend slot: `1-5` select, Tab/F7 cycles round-robin.
+/// Focused backend slot: `1-2` select, Tab/F7 cycles round-robin.
 pub type BackendSlot = usize;
 
 /// Next slot in Tab/F7 cycle order.
@@ -131,7 +122,7 @@ impl BackendStats {
 }
 
 /// Factories supplied by the caller (concrete backend crates), one per slot.
-pub type MultiBackendFactories = [Option<BackendFactory>; 5];
+pub type MultiBackendFactories = [Option<BackendFactory>; 2];
 
 /// Builder for a multi-backend demo window set.
 pub struct MultiBackendConfig {
@@ -631,11 +622,11 @@ fn run_multi<E: IntoElement, F: Fn() -> E + 'static>(config: MultiBackendConfig,
 
 /// Engine switch keys. Returns the newly focused slot when handled.
 ///
-/// `1-5` select directly; Tab and F7 cycle round-robin.
+/// `1-2` select directly; Tab and F7 cycle round-robin.
 fn handle_switch_key(key: &Key, single: BackendSlot) -> Option<BackendSlot> {
     match key {
         Key::Character(c) => match c.as_str() {
-            "1" | "2" | "3" | "4" | "5" => {
+            "1" | "2" => {
                 let idx = c.chars().next()?.to_digit(10)? as usize - 1;
                 (idx < BACKEND_ORDER.len()).then_some(idx)
             }

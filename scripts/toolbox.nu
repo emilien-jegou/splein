@@ -24,7 +24,7 @@ export def spleen-complete-examples [] {
 }
 
 export def spleen-complete-engines [] {
-  ["tiny-skia", "vello", "vello-cpu", "wgpu"]
+  ["tiny-skia", "wgpu"]
 }
 
 # List all commands.
@@ -33,7 +33,7 @@ def main [] {
     { command: "build", args: "[args...]", about: "Build the project. Extra args pass through to cargo." },
     { command: "test", args: "[args...]", about: "Run cargo tests. Extra args pass through to cargo." },
     { command: "watch", args: "", about: "Run bacon (watch mode)." },
-    { command: "example", args: "[name=demo1] [engine]", about: "Run an example in hot-reload mode. Engines: tiny-skia, vello, vello-cpu, wgpu." },
+    { command: "example", args: "[name=demo1] [engine]", about: "Run an example in hot-reload mode. Engines: tiny-skia, wgpu." },
     { command: "relacher", args: "", about: "Generate release commit and git tags." },
     { command: "release-github", args: "", about: "Generate release patch for github and deploy changes." },
   ]

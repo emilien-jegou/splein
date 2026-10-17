@@ -1,6 +1,7 @@
 // Single responsibility: Glyph bitmap Porter-Duff alpha compositing via TinySkia.
 
 use riode::foundation::{Color, Point};
+use riode::scene::{quantize_eighth, quantize_quarter};
 use riode::text::{GlyphBitmap, TextContext, TextLayout};
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
@@ -217,30 +218,6 @@ pub fn render_text(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: TextR
 pub const POS_QUANTA_X: u8 = 4;
 pub const POS_QUANTA_Y: u8 = 8;
 
-/// Splits a pen position into an integer base plus a quarter-pixel quantum
-/// in [0, 4): the quantum selects the analytic raster variant, the base
-/// anchors integer placement. Quantum 4 wraps to the next pixel.
-fn quantize_quarter(pos: f32) -> (i32, u8) {
-    quantize_nths(pos, 4)
-}
-
-/// Splits a pen position into an integer base plus an eighth-pixel quantum
-/// in [0, 8): Y-axis counterpart of [`quantize_quarter`]. Quantum 8 wraps
-/// to the next pixel.
-fn quantize_eighth(pos: f32) -> (i32, u8) {
-    quantize_nths(pos, 8)
-}
-
-fn quantize_nths(pos: f32, quanta: u8) -> (i32, u8) {
-    let base = pos.floor() as i32;
-    let q = ((pos - base as f32) * quanta as f32 + 0.5).floor() as i32;
-    if q >= quanta as i32 {
-        (base + 1, 0)
-    } else {
-        (base, q.max(0) as u8)
-    }
-}
-
 /// Renders glyph runs for translation-only transforms.
 ///
 /// Quarter-quantized analytic coverage: each pen quantizes to its nearest
@@ -284,24 +261,13 @@ fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: T
         None => (0, 0),
     };
 
-    let origin = params.origin;
     let transform = params.transform;
     let (ttx, tty) = (transform.tx, transform.ty);
     let clip = params.clip;
     let layout: &TextLayout = params.layout;
     let layout_arc = params.layout_arc;
     let mut line_cache = params.line_cache;
-    // Y-settle: uniform origin-level adjustment so glyphs, decorations,
-    // and caret stay glued. While the run moves, identity; once rested,
-    // a whole-pixel nudge for crisp baselines. Keyed by layout
-    // allocation (stable while retained); X untouched.
-    let settle_key = layout_arc
-        .as_ref()
-        .map(|a| Arc::as_ptr(a) as usize)
-        .unwrap_or(params.layout as *const _ as usize);
-    let settled_y = text_ctx.resolve_settled_y(settle_key, origin.y + tty);
-    let settle_dy = settled_y - (origin.y + tty);
-    let origin = Point::new(origin.x, origin.y + settle_dy);
+    let origin = params.origin;
     // Paints one line's glyphs into `target`. Glyph device positions are
     // rebased onto integral `space` for the blit fast path and onto `draw`
     // for the draw call under `tx` with clip `clip_now`: canvas passes
@@ -361,6 +327,8 @@ fn render_text_aligned(pixmap: &mut PixmapMut, text_ctx: &TextContext, params: T
             // carries <=1/8px snap on X, <=1/16px on Y, with no coverage
             // smoothing. With baseline Y-snap armed (`B` key, GPUI's 4x1),
             // Y snaps to whole device pixels instead (qy forced 0).
+            // Settled runs arrive pre-rounded from core compile, so they
+            // take the integer path naturally here.
             // Rebasing onto `space` keeps canvas and line-local painting
             // on the same code path.
             let (bx, qx) = quantize_quarter(dev_x);

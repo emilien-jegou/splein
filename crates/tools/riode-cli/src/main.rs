@@ -56,7 +56,7 @@ enum Command {
         /// Host library (default: next to this launcher binary).
         #[arg(long)]
         host: Option<PathBuf>,
-        /// Raster engine: tiny-skia (default), vello, vello-cpu, wgpu.
+        /// Raster engine: tiny-skia (default), wgpu.
         #[arg(long)]
         engine: Option<String>,
     },

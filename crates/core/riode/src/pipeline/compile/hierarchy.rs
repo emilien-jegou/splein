@@ -62,7 +62,20 @@ pub fn compile_node_hierarchy(
         LayerId::from_packed(id.packed()),
         is_stacking_root,
     );
-    emit_node_content(node, chunk, text_ctx, caret_visible);
+    // Absolute layout-space Y of the node's content origin: accumulated
+    // offsets through the ancestor chain, so a transition moving an
+    // ancestor reads as motion here. (Pure canvas-scroll shifts applied by
+    // engines below compile are invisible to this — accepted: scroll keeps
+    // subpixel placement.)
+    let abs_origin = own_tx.transform_point(Point::ZERO);
+    emit_node_content(
+        node,
+        chunk,
+        text_ctx,
+        caret_visible,
+        abs_origin.y,
+        id.packed(),
+    );
 
     // Hoisted single copy (see bounds.rs): per-index `children()` calls
     // rebuild the whole child list N+1 times per node per frame.

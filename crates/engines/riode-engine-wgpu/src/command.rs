@@ -5,6 +5,7 @@ use riode::foundation::{
     StrokeAlign, Transform,
 };
 use riode::scene::command::SceneCommand;
+use riode::scene::{quantize_eighth, quantize_quarter, SceneStack};
 use riode::text::{quantize_raster_scale, TextContext};
 use std::sync::Arc;
 
@@ -29,31 +30,6 @@ fn warn_multiply_once() {
         tracing::warn!(
             "riode-wgpu: Shadow BlendMode::Multiply approximated as Normal (further silent)"
         );
-    }
-}
-
-/// Nearest-quarter split of a device pen: integer base + quantum in
-/// [0, 4). A quantum that rounds up to 4 wraps to the next pixel —
-/// byte-for-byte the reference's `quantize_quarter` (tiny-skia), so both
-/// engines derive identical bases and quanta.
-fn quantize_quarter(pos: f32) -> (i32, u8) {
-    quantize_nths(pos, 4)
-}
-
-/// Nearest-eighth split of a device pen (Y axis): integer base + quantum
-/// in [0, 8), 1/16px residue so horizontal features never read as doubled
-/// rows. Quantum 8 wraps to the next pixel.
-fn quantize_eighth(pos: f32) -> (i32, u8) {
-    quantize_nths(pos, 8)
-}
-
-fn quantize_nths(pos: f32, quanta: u8) -> (i32, u8) {
-    let base = pos.floor() as i32;
-    let qq = (((pos - base as f32) * quanta as f32) + 0.5).floor() as i32;
-    if qq >= quanta as i32 {
-        (base + 1, 0)
-    } else {
-        (base, qq.max(0) as u8)
     }
 }
 
@@ -127,8 +103,9 @@ pub enum Op {
 
 /// Emission context: transform/opacity stacks + batched verts + ordered ops.
 pub struct Batch {
-    tx: Vec<Transform>,
-    opacity: Vec<f32>,
+    /// Framing-state walk shared with all backends (core semantics);
+    /// converted nowhere — wgpu works in core `Transform` natively.
+    stack: SceneStack,
     pub clip: ClipStack,
     pub rect_verts: Vec<RectVertex>,
     pub rrect_verts: Vec<RRectVertex>,
@@ -157,8 +134,7 @@ pub struct Batch {
 impl Batch {
     pub fn new() -> Self {
         Self {
-            tx: vec![Transform::IDENTITY],
-            opacity: vec![1.0],
+            stack: SceneStack::new(Transform::IDENTITY, 1.0),
             clip: ClipStack::default(),
             rect_verts: Vec::with_capacity(1024),
             rrect_verts: Vec::with_capacity(256),
@@ -183,10 +159,7 @@ impl Batch {
     }
 
     pub fn reset(&mut self) {
-        self.tx.clear();
-        self.tx.push(Transform::from_scale(self.scale, self.scale));
-        self.opacity.clear();
-        self.opacity.push(1.0);
+        self.stack = SceneStack::new(Transform::from_scale(self.scale, self.scale), 1.0);
         self.clip.reset();
         self.rect_verts.clear();
         self.rrect_verts.clear();
@@ -206,18 +179,15 @@ impl Batch {
     }
 
     pub fn push_base(&mut self, t: Transform) {
-        let top = *self.tx.last().unwrap();
-        self.tx.push(top.multiply(&t));
+        self.stack.push_transform(&t);
     }
 
     pub fn pop_base(&mut self) {
-        // reset() leaves exactly the root scale on the stack: pop anything
+        // reset() leaves exactly the root scale as the base: pop anything
         // above it. (Both other backends truncate to entry depth; the old
         // `> 2` guard never fired, so every chunk inherited all previous
         // chunks' placements.)
-        if self.tx.len() > 1 {
-            self.tx.pop();
-        }
+        self.stack.pop_transform();
     }
 
     /// Pushes an already-absolute layout-space clip as device pixels.
@@ -256,17 +226,17 @@ impl Batch {
             y1 = y1.max(p.y);
         }
         self.clip.push(
-            &ResolvedRect::new(x0.floor(), y0.floor(), (x1 - x0).ceil(), (y1 - y0).ceil()),
+            &riode::scene::integerize_damage(&ResolvedRect::new(x0, y0, x1 - x0, y1 - y0)),
             radius,
         );
     }
 
     fn cur_tx(&self) -> Transform {
-        *self.tx.last().unwrap()
+        self.stack.transform()
     }
 
     fn cur_op(&self) -> f32 {
-        *self.opacity.last().unwrap()
+        self.stack.opacity()
     }
 
     fn push_rect_run(&mut self, count: u32) {
@@ -799,6 +769,7 @@ impl Batch {
         self.push_rect_run(6);
     }
 
+    /// Emits one text run.
     #[allow(clippy::too_many_arguments)]
     fn emit_text(
         &mut self,
@@ -815,12 +786,6 @@ impl Batch {
         }
         let t = self.cur_tx();
         let c = [color.r, color.g, color.b, a];
-        // Y-settle: uniform origin-level adjustment (see tiny-skia
-        // reference) so glyphs and decorations stay glued; keyed by
-        // layout allocation, X untouched.
-        let settle_key = Arc::as_ptr(layout) as usize;
-        let settled_y = text_ctx.resolve_settled_y(settle_key, origin.y);
-        let origin = Point::new(origin.x, settled_y);
         // Coverage quads keep linear filtering: the 2px replicated atlas
         // gutter guarantees border taps read the owning cell, and linear
         // covers the epsilon between the integer device anchors (below)
@@ -847,7 +812,9 @@ impl Batch {
                 // integer-anchors at base+bearing, so stems never resample
                 // through fractional filtering either. With baseline
                 // Y-snap armed (`B` key, GPUI's 4x1), Y snaps to whole
-                // device pixels instead (qy forced 0).
+                // device pixels instead (qy forced 0). Settled runs
+                // arrive pre-rounded from core compile, so they take the
+                // integer path naturally here.
                 let (bx, qx) = quantize_quarter(placed.x);
                 let fx = placed.x - bx as f32;
                 let (qy, fy) = if riode::text::baseline_snap_y() {
@@ -934,32 +901,22 @@ impl Batch {
         for cmd in commands {
             match cmd {
                 SceneCommand::PushTransform(t) => {
-                    let top = self.cur_tx();
-                    self.tx.push(top.multiply(t));
+                    self.stack.push_transform(t);
                 }
                 SceneCommand::PopTransform => {
-                    if self.tx.len() > 1 {
-                        self.tx.pop();
-                    }
+                    self.stack.pop_transform();
                 }
                 SceneCommand::PushOffset(p) => {
-                    let top = self.cur_tx();
-                    self.tx
-                        .push(top.multiply(&Transform::from_translation(p.x, p.y)));
+                    self.stack.push_offset(*p);
                 }
                 SceneCommand::PopOffset => {
-                    if self.tx.len() > 1 {
-                        self.tx.pop();
-                    }
+                    self.stack.pop_transform();
                 }
                 SceneCommand::PushOpacity(o) => {
-                    let v = self.cur_op() * o.clamp(0.0, 1.0);
-                    self.opacity.push(v);
+                    self.stack.push_opacity(*o);
                 }
                 SceneCommand::PopOpacity => {
-                    if self.opacity.len() > 1 {
-                        self.opacity.pop();
-                    }
+                    self.stack.pop_opacity();
                 }
                 SceneCommand::PushClip { rect, radius } => self.push_clip_local(rect, *radius),
                 SceneCommand::PopClip => self.clip.pop(),
