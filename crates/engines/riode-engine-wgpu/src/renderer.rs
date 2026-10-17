@@ -6,7 +6,7 @@ use riode::scene::scene::Scene;
 use riode::text::TextContext;
 use std::sync::Arc;
 
-use crate::cache::{chunk_base, chunk_key, ChunkCache};
+use crate::cache::{chunk_key, ChunkCache};
 use crate::command::{Batch, Op};
 use crate::context::WgpuContext;
 use crate::image::ImageCache;
@@ -522,8 +522,8 @@ impl WgpuRenderer {
                 for clip in chunk.inherited_clips.iter() {
                     batch.push_clip_device(&clip.rect, clip.radius);
                 }
-                batch.push_base(chunk_base(chunk));
-                batch.commands(
+                batch.emit_chunk(
+                    &riode::scene::chunk_base(chunk),
                     &chunk.commands,
                     text_ctx,
                     atlas,
@@ -532,7 +532,6 @@ impl WgpuRenderer {
                     images,
                     svgs,
                 );
-                batch.pop_base();
                 for _ in chunk.inherited_clips.iter() {
                     batch.clip.pop();
                 }

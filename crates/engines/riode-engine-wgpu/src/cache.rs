@@ -6,7 +6,7 @@
 // atlas generation: an atlas repack rewrites UVs, so stale glyph ranges are
 // dropped while rect-only ranges survive.
 
-use riode::foundation::{Point, Radius, ResolvedRect, Transform};
+use riode::foundation::{Point, Radius, ResolvedRect};
 use riode::scene::chunk::SceneChunk;
 use riode::scene::command::{hash_commands, transform_bits, SceneCommand};
 use rustc_hash::FxHashMap;
@@ -349,10 +349,4 @@ impl ChunkCache {
             },
         }
     }
-}
-
-/// Placement + origin as a single transform, matching the renderer's
-/// `translate(abs_origin) * placement` composition.
-pub fn chunk_base(chunk: &SceneChunk) -> Transform {
-    Transform::from_translation(chunk.abs_origin.x, chunk.abs_origin.y).multiply(&chunk.placement)
 }

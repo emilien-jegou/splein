@@ -5,7 +5,10 @@ use riode::foundation::{
     StrokeAlign, Transform,
 };
 use riode::scene::command::SceneCommand;
-use riode::scene::{quantize_eighth, quantize_quarter, SceneStack};
+use riode::scene::{
+    quantize_eighth, quantize_quarter, PlacedClip, PlacedImage, PlacedRect, PlacedShadow,
+    PlacedSvg, PlacedText, SceneSink,
+};
 use riode::text::{quantize_raster_scale, TextContext};
 use std::sync::Arc;
 
@@ -101,11 +104,13 @@ pub enum Op {
     },
 }
 
-/// Emission context: transform/opacity stacks + batched verts + ordered ops.
+/// Emission context: batched verts + ordered ops.
+///
+/// No framing stack: core lowers each chunk into placed items
+/// (`SceneSink`), and every item already carries its absolute transform and
+/// folded opacity. The engine composes its root device scale around each
+/// item — the only matrix it owns.
 pub struct Batch {
-    /// Framing-state walk shared with all backends (core semantics);
-    /// converted nowhere — wgpu works in core `Transform` natively.
-    stack: SceneStack,
     pub clip: ClipStack,
     pub rect_verts: Vec<RectVertex>,
     pub rrect_verts: Vec<RRectVertex>,
@@ -134,7 +139,6 @@ pub struct Batch {
 impl Batch {
     pub fn new() -> Self {
         Self {
-            stack: SceneStack::new(Transform::IDENTITY, 1.0),
             clip: ClipStack::default(),
             rect_verts: Vec::with_capacity(1024),
             rrect_verts: Vec::with_capacity(256),
@@ -159,7 +163,6 @@ impl Batch {
     }
 
     pub fn reset(&mut self) {
-        self.stack = SceneStack::new(Transform::from_scale(self.scale, self.scale), 1.0);
         self.clip.reset();
         self.rect_verts.clear();
         self.rrect_verts.clear();
@@ -178,16 +181,10 @@ impl Batch {
         self.barrier = true;
     }
 
-    pub fn push_base(&mut self, t: Transform) {
-        self.stack.push_transform(&t);
-    }
-
-    pub fn pop_base(&mut self) {
-        // reset() leaves exactly the root scale as the base: pop anything
-        // above it. (Both other backends truncate to entry depth; the old
-        // `> 2` guard never fired, so every chunk inherited all previous
-        // chunks' placements.)
-        self.stack.pop_transform();
+    /// Root device matrix: layout px -> device px. Composed around every
+    /// placed item's absolute transform — the only matrix the engine owns.
+    fn device_tx(&self, t: &Transform) -> Transform {
+        Transform::from_scale(self.scale, self.scale).multiply(t)
     }
 
     /// Pushes an already-absolute layout-space clip as device pixels.
@@ -200,15 +197,14 @@ impl Batch {
         );
     }
 
-    /// Pushes a node-local clip rect, transformed by the current matrix
-    /// into device pixels (outward-rounded AABB: over-covers under skew,
-    /// which clips less rather than more).
+    /// Pushes a node-local clip rect, transformed by the composed device
+    /// matrix into device pixels (outward-rounded AABB: over-covers under
+    /// skew, which clips less rather than more).
     /// For command-stream clips, which are relative to the current frame
     /// (node offsets precede the clip in the stream). Ignoring the
     /// transform intersects the rect near the origin and silently drops
     /// every op of nodes placed far from it.
-    pub fn push_clip_local(&mut self, rect: &ResolvedRect, radius: Radius) {
-        let t = self.cur_tx();
+    pub fn push_clip_local(&mut self, rect: &ResolvedRect, radius: Radius, t: Transform) {
         let mut x0 = f32::INFINITY;
         let mut y0 = f32::INFINITY;
         let mut x1 = f32::NEG_INFINITY;
@@ -229,14 +225,6 @@ impl Batch {
             &riode::scene::integerize_damage(&ResolvedRect::new(x0, y0, x1 - x0, y1 - y0)),
             radius,
         );
-    }
-
-    fn cur_tx(&self) -> Transform {
-        self.stack.transform()
-    }
-
-    fn cur_op(&self) -> f32 {
-        self.stack.opacity()
     }
 
     fn push_rect_run(&mut self, count: u32) {
@@ -319,15 +307,16 @@ impl Batch {
         &mut self,
         rect: &ResolvedRect,
         appearance: &riode::foundation::Appearance,
+        t: Transform,
+        op: f32,
     ) -> bool {
         if rect.width <= 0.0 || rect.height <= 0.0 {
             return true;
         }
-        let t = self.cur_tx();
         if !Self::tx_is_rigid(&t) {
             return false;
         }
-        let op = self.cur_op() * appearance.opacity;
+        let op = op * appearance.opacity;
         // Fill: solid, or a 2-stop linear gradient (Oklab on the GPU).
         // Radial/N-stop gradients stay unsupported (vello fallback).
         let mut fill = [0.0, 0.0, 0.0, 0.0];
@@ -533,6 +522,8 @@ impl Batch {
         radius: Radius,
         shadow: &Shadow,
         light: &LightEnvironment,
+        t: Transform,
+        op: f32,
     ) -> bool {
         if rect.width <= 0.0 || rect.height <= 0.0 {
             return true;
@@ -546,11 +537,9 @@ impl Batch {
         if matches!(shadow.blend, riode::foundation::BlendMode::Multiply) {
             warn_multiply_once();
         }
-        let t = self.cur_tx();
         if !Self::tx_is_rigid(&t) {
             return false;
         }
-        let op = self.cur_op();
         // Device-space layout box (same corner transform as emit_rrect;
         // rigid tx keeps the silhouette axis-aligned).
         let p0 = t.transform_point(Point::new(rect.x, rect.y));
@@ -634,12 +623,16 @@ impl Batch {
     /// ride the current affine (any transform is fine: the UVs stay
     /// 0..1 over the transformed quad, so bilinear sampling remains
     /// correct under skew/rotation); opacity bakes into `color.a`.
-    fn emit_image_quad(&mut self, rect: &ResolvedRect, gpu: Arc<ImageGpu>) {
+    fn emit_image_quad(
+        &mut self,
+        rect: &ResolvedRect,
+        gpu: Arc<ImageGpu>,
+        t: Transform,
+        op: f32,
+    ) {
         if rect.width <= 0.0 || rect.height <= 0.0 || gpu.w == 0 || gpu.h == 0 {
             return;
         }
-        let t = self.cur_tx();
-        let op = self.cur_op();
         let corners = [
             (rect.x, rect.y),
             (rect.x + rect.width, rect.y),
@@ -738,12 +731,11 @@ impl Batch {
         }
     }
 
-    fn emit_solid(&mut self, rect: &ResolvedRect, color: Color) {
+    fn emit_solid(&mut self, rect: &ResolvedRect, color: Color, t: Transform, op: f32) {
         if rect.width <= 0.0 || rect.height <= 0.0 {
             return;
         }
-        let t = self.cur_tx();
-        let a = (color.a * self.cur_op()).clamp(0.0, 1.0);
+        let a = (color.a * op).clamp(0.0, 1.0);
         if a <= 0.0 {
             return;
         }
@@ -779,12 +771,13 @@ impl Batch {
         text_ctx: &TextContext,
         atlas: &mut GlyphAtlas,
         queue: &wgpu::Queue,
+        t: Transform,
+        op: f32,
     ) {
-        let a = (color.a * self.cur_op()).clamp(0.0, 1.0);
+        let a = (color.a * op).clamp(0.0, 1.0);
         if a <= 0.0 {
             return;
         }
-        let t = self.cur_tx();
         let c = [color.r, color.g, color.b, a];
         // Coverage quads keep linear filtering: the 2px replicated atlas
         // gutter guarantees border taps read the owning cell, and linear
@@ -888,8 +881,9 @@ impl Batch {
         }
     }
 
-    pub fn commands(
+    pub fn emit_chunk(
         &mut self,
+        base: &Transform,
         commands: &[SceneCommand],
         text_ctx: &TextContext,
         atlas: &mut GlyphAtlas,
@@ -898,96 +892,121 @@ impl Batch {
         images: &mut crate::image::ImageCache,
         svgs: &mut crate::svg::SvgCache,
     ) {
-        for cmd in commands {
-            match cmd {
-                SceneCommand::PushTransform(t) => {
-                    self.stack.push_transform(t);
+        let mut sink = WgpuSink {
+            batch: self,
+            text_ctx,
+            atlas,
+            queue,
+            device,
+            images,
+            svgs,
+        };
+        riode::scene::lower_chunk(commands, base, &mut sink);
+    }
+}
+
+/// Engine-side raster state for one chunk emission: the batch plus the
+/// per-frame GPU resources the placed items resolve against.
+pub struct WgpuSink<'a> {
+    pub batch: &'a mut Batch,
+    pub text_ctx: &'a TextContext,
+    pub atlas: &'a mut GlyphAtlas,
+    pub queue: &'a wgpu::Queue,
+    pub device: &'a wgpu::Device,
+    pub images: &'a mut crate::image::ImageCache,
+    pub svgs: &'a mut crate::svg::SvgCache,
+}
+
+impl SceneSink for WgpuSink<'_> {
+    fn push_clip(&mut self, clip: &PlacedClip) {
+        let t = self.batch.device_tx(&clip.transform);
+        self.batch.push_clip_local(&clip.rect, clip.radius, t);
+    }
+
+    fn pop_clip(&mut self) {
+        self.batch.clip.pop();
+    }
+
+    fn rect(&mut self, r: &PlacedRect) {
+        let t = self.batch.device_tx(&r.transform);
+        let plain_square =
+            matches!(r.appearance.radius, Radius::Scalar(v) if v <= 0.0)
+                && r.appearance.stroke.is_none();
+        match &r.appearance.fill {
+            Some(Fill::Solid(c)) => {
+                let mut col = *c;
+                col.a *= r.appearance.opacity;
+                if plain_square {
+                    self.batch.emit_solid(&r.rect, col, t, r.opacity);
+                } else if !self.batch.emit_rrect(&r.rect, r.appearance, t, r.opacity) {
+                    // Skewed transform or gradient stroke:
+                    // square solid base keeps layout visible.
+                    warn_once("rrect unsupported, square fallback");
+                    self.batch.emit_solid(&r.rect, col, t, r.opacity);
                 }
-                SceneCommand::PopTransform => {
-                    self.stack.pop_transform();
+            }
+            Some(_) => {
+                // 2-stop linear gradients ride the SDF pipeline
+                // (emit_rrect, Oklab + dither on the GPU);
+                // radial/N-stop fall through unsupported.
+                if !self.batch.emit_rrect(&r.rect, r.appearance, t, r.opacity) {
+                    warn_once("gradient unsupported (radial/N-stop), skipped");
                 }
-                SceneCommand::PushOffset(p) => {
-                    self.stack.push_offset(*p);
+            }
+            None => {
+                // Stroke-only ring.
+                if !plain_square
+                    && !self.batch.emit_rrect(&r.rect, r.appearance, t, r.opacity)
+                {
+                    warn_once("stroke-only rrect unsupported, skipped");
                 }
-                SceneCommand::PopOffset => {
-                    self.stack.pop_transform();
-                }
-                SceneCommand::PushOpacity(o) => {
-                    self.stack.push_opacity(*o);
-                }
-                SceneCommand::PopOpacity => {
-                    self.stack.pop_opacity();
-                }
-                SceneCommand::PushClip { rect, radius } => self.push_clip_local(rect, *radius),
-                SceneCommand::PopClip => self.clip.pop(),
-                SceneCommand::BeginLayer { .. } => {
-                    warn_once("BeginLayer offscreen unsupported, drawing inline")
-                }
-                SceneCommand::EndLayer { .. } => {}
-                SceneCommand::DrawRect { rect, appearance } => {
-                    let plain_square = matches!(
-                        appearance.radius,
-                        Radius::Scalar(v) if v <= 0.0
-                    ) && appearance.stroke.is_none();
-                    match &appearance.fill {
-                        Some(Fill::Solid(c)) => {
-                            let mut col = *c;
-                            col.a *= appearance.opacity;
-                            if plain_square {
-                                self.emit_solid(rect, col);
-                            } else if !self.emit_rrect(rect, appearance) {
-                                // Skewed transform or gradient stroke:
-                                // square solid base keeps layout visible.
-                                warn_once("rrect unsupported, square fallback");
-                                self.emit_solid(rect, col);
-                            }
-                        }
-                        Some(_) => {
-                            // 2-stop linear gradients ride the SDF pipeline
-                            // (emit_rrect, Oklab + dither on the GPU);
-                            // radial/N-stop fall through unsupported
-                            // (existing vello fallback at the app level).
-                            if !self.emit_rrect(rect, appearance) {
-                                warn_once("gradient unsupported (radial/N-stop), skipped");
-                            }
-                        }
-                        None => {
-                            // Stroke-only ring.
-                            if !plain_square && !self.emit_rrect(rect, appearance) {
-                                warn_once("stroke-only rrect unsupported, skipped");
-                            }
-                        }
-                    }
-                }
-                SceneCommand::DrawImage { rect, image } => {
-                    if let Some(gpu) = images.get_or_insert(device, queue, image) {
-                        self.emit_image_quad(rect, gpu);
-                    }
-                }
-                SceneCommand::DrawSvg { rect, graphic } => {
-                    if let Some(gpu) =
-                        svgs.get_or_insert(device, queue, images, graphic, rect, self.scale)
-                    {
-                        self.emit_image_quad(rect, gpu);
-                    }
-                }
-                SceneCommand::DrawShadow {
-                    rect,
-                    radius,
-                    shadow,
-                    light,
-                } => {
-                    if !self.emit_shadow(rect, *radius, shadow, light) {
-                        warn_once("shadow unsupported (skewed transform), skipped");
-                    }
-                }
-                SceneCommand::DrawText {
-                    origin,
-                    layout,
-                    color,
-                } => self.emit_text(origin, layout, *color, text_ctx, atlas, queue),
             }
         }
+    }
+
+    fn image(&mut self, i: &PlacedImage) {
+        let t = self.batch.device_tx(&i.transform);
+        if let Some(gpu) = self.images.get_or_insert(self.device, self.queue, i.image) {
+            self.batch.emit_image_quad(&i.rect, gpu, t, i.opacity);
+        }
+    }
+
+    fn svg(&mut self, s: &PlacedSvg) {
+        let t = self.batch.device_tx(&s.transform);
+        if let Some(gpu) = self.svgs.get_or_insert(
+            self.device,
+            self.queue,
+            self.images,
+            s.graphic,
+            &s.rect,
+            self.batch.scale(),
+        ) {
+            self.batch.emit_image_quad(&s.rect, gpu, t, s.opacity);
+        }
+    }
+
+    fn shadow(&mut self, s: &PlacedShadow) {
+        let t = self.batch.device_tx(&s.transform);
+        if !self
+            .batch
+            .emit_shadow(&s.rect, s.radius, s.shadow, s.light, t, s.opacity)
+        {
+            warn_once("shadow unsupported (skewed transform), skipped");
+        }
+    }
+
+    fn text(&mut self, t: &PlacedText) {
+        let tx = self.batch.device_tx(&t.transform);
+        self.batch.emit_text(
+            &t.origin,
+            t.layout,
+            t.color,
+            self.text_ctx,
+            self.atlas,
+            self.queue,
+            tx,
+            t.opacity,
+        );
     }
 }
 
