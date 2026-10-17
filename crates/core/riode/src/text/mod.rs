@@ -110,6 +110,6 @@ pub use selection::{
     snap_to_boundary, word_bounds, word_edge, SelectionGranularity, TextSelection, CARET_WIDTH,
     DEFAULT_SELECTION_COLOR,
 };
-pub use settle::YSettleTracker;
+pub use settle::TextPlacement;
 pub use shaper::{TextShapeParams, TextShaper};
 pub use wrap::TextWrap;

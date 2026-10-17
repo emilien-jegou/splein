@@ -1,138 +1,105 @@
-// Single responsibility: Y-only rest detector — subpixel while moving, settled when resting.
+// Single responsibility: Per-text-node desired/displayed Y placement.
 //
-// Loosely coupled by design: position-in / bool-out, no dependency on
-// `anim/` or any notion of "is animating". Each text run (keyed by layout
-// allocation identity) keeps a short diary of recent Y positions; only when
-// the total wandering inside the window stays below epsilon is the run
-// considered resting. A nudge every 2nd/3rd/4th frame still shows up as
-// wandering inside the window, so slow drift never false-settles into a buzz.
+// A text node distinguishes two positions:
+// - *desired*: where layout put the run this frame (the engine's answer),
+// - *displayed*: where the run actually paints (the font's answer).
 //
-// This module only *decides*; the caller owns the *rounding* (in whatever
-// space it renders — layout px in core compile, device px in engines).
+// Self-contained by design: position-in / adjustment-out, no dependency on
+// `anim/` or any notion of "is animating". Motion is read off the desired
+// positions themselves, so transitions, springs, overshoots, retargets,
+// scrolls, and resizes all read correctly without the text domain knowing
+// any of those things exist.
+//
+// Behavior:
+// - First sight of a node: displayed snaps to `round(desired)` — correct
+//   baseline on the very first paint, never a subpixel debut.
+// - Desired moves more than epsilon from displayed: moving — displayed
+//   follows exactly (smooth motion).
+// - Otherwise calm: after a still window, displayed glides toward
+//   `round(desired)` at 1px/frame and latches (resize corrections land
+//   instead of popping late).
+// - Slow drift can never buzz: any divergence above epsilon re-arms motion,
+//   so a creeping desired always drags displayed along.
 
-use std::collections::HashMap;
+/// Frames of stillness before a resting run starts gliding home.
+const CALM_WINDOW: u8 = 6;
 
-/// Frames of Y history consulted before declaring rest.
-const WINDOW: usize = 6;
+/// Frame-to-frame (and displayed-vs-desired) divergence above this counts
+/// as motion (layout px).
+const MOTION_EPS: f32 = 1.0 / 16.0;
 
-/// Total wandering inside the window below this counts as still (layout px).
-const EXCURSION_EPS: f32 = 1.0 / 16.0;
+/// Glide rate toward the rounded baseline once calm (layout px per frame).
+const GLIDE_PER_FRAME: f32 = 1.0;
 
-/// Per-run diary entry.
+/// Latch distance: close enough to call it landed (layout px).
+const LATCH_EPS: f32 = 1.0 / 16.0;
+
+/// Desired/displayed Y record for one text node. Lives on the node, so it
+/// survives reshapes and rebuilds that would reallocate a layout.
 #[derive(Clone, Debug)]
-struct Entry {
-    /// Recent raw Y positions (oldest..newest, up to WINDOW).
-    history: [f32; WINDOW],
-    /// How many slots of `history` are filled.
-    len: usize,
-    /// Write cursor into `history`.
-    cursor: usize,
-    /// Latched rest state. `None` while moving.
-    settled: bool,
+pub struct TextPlacement {
+    desired_y: f32,
+    displayed_y: f32,
+    calm_frames: u8,
+    live: bool,
 }
 
-impl Entry {
-    fn new() -> Self {
+impl Default for TextPlacement {
+    fn default() -> Self {
         Self {
-            history: [0.0; WINDOW],
-            len: 0,
-            cursor: 0,
-            settled: false,
+            desired_y: 0.0,
+            displayed_y: 0.0,
+            calm_frames: 0,
+            live: false,
         }
     }
+}
 
-    fn push(&mut self, y: f32) {
-        self.history[self.cursor] = y;
-        self.cursor = (self.cursor + 1) % WINDOW;
-        self.len = (self.len + 1).min(WINDOW);
-    }
-
-    fn excursion(&self) -> f32 {
-        if self.len == 0 {
+impl TextPlacement {
+    /// Observes one frame's desired absolute Y, returning the adjustment to
+    /// add to it (`displayed - desired`). When `snap_now` (the `B`-key
+    /// global snap), jumps straight to the rounded baseline.
+    pub fn observe(&mut self, desired: f32, snap_now: bool) -> f32 {
+        if !desired.is_finite() {
             return 0.0;
         }
-        let mut min = f32::INFINITY;
-        let mut max = f32::NEG_INFINITY;
-        for v in self.history.iter().take(self.len) {
-            min = min.min(*v);
-            max = max.max(*v);
+        if snap_now {
+            let snapped = desired.round();
+            self.desired_y = desired;
+            self.displayed_y = snapped;
+            self.calm_frames = CALM_WINDOW;
+            self.live = true;
+            return snapped - desired;
         }
-        max - min
-    }
-}
-
-/// Tracks per-run Y rest state. Keyed by caller-provided run identity
-/// (layout allocation pointer); bounded by caller eviction via the
-/// line-cache lifetime — entries for dropped layouts are pruned lazily.
-#[derive(Debug, Default)]
-pub struct YSettleTracker {
-    entries: HashMap<usize, Entry>,
-}
-
-impl YSettleTracker {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Observes one frame's raw Y for `key`, returning whether the run is
-    /// currently resting. Moving (window excursion above epsilon, or window
-    /// not yet full): returns false. Resting: returns true, sticky until
-    /// excursion breaks it again.
-    pub fn observe(&mut self, key: usize, y: f32) -> bool {
-        if !y.is_finite() {
-            return false;
+        if !self.live {
+            let snapped = desired.round();
+            self.desired_y = desired;
+            self.displayed_y = snapped;
+            self.calm_frames = CALM_WINDOW;
+            self.live = true;
+            return snapped - desired;
         }
-        // Bound growth: layouts come and go; drop stale entries lazily.
-        if self.entries.len() > 8192 {
-            self.entries.clear();
+        // Any divergence above epsilon — a jump, a step, or accumulated
+        // slow drift — is motion: follow exactly.
+        if (desired - self.displayed_y).abs() > MOTION_EPS {
+            self.desired_y = desired;
+            self.displayed_y = desired;
+            self.calm_frames = 0;
+            return 0.0;
         }
-        let entry = self.entries.entry(key).or_insert_with(Entry::new);
-        entry.push(y);
-        if entry.len < WINDOW || entry.excursion() > EXCURSION_EPS {
-            entry.settled = false;
-            return false;
+        self.desired_y = desired;
+        self.calm_frames = self.calm_frames.saturating_add(1);
+        if self.calm_frames < CALM_WINDOW {
+            return self.displayed_y - desired;
         }
-        entry.settled = true;
-        true
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn moving_reports_unsettled_until_window_calms() {
-        let mut t = YSettleTracker::new();
-        // Drift keeps reporting moving.
-        for i in 0..WINDOW {
-            let y = 100.0 + i as f32 * 0.5;
-            assert!(!t.observe(1, y));
+        // Calm: glide home at a bounded rate, latch when close.
+        let target = desired.round();
+        let d = target - self.displayed_y;
+        if d.abs() <= LATCH_EPS {
+            self.displayed_y = target;
+        } else {
+            self.displayed_y += d.clamp(-GLIDE_PER_FRAME, GLIDE_PER_FRAME);
         }
-        // Then stillness settles.
-        let mut settled = false;
-        for _ in 0..WINDOW {
-            settled = t.observe(1, 100.4);
-        }
-        assert!(settled);
-        // A nudge above epsilon wakes back up.
-        assert!(!t.observe(1, 100.4 + EXCURSION_EPS * 2.0));
-    }
-
-    #[test]
-    fn slow_nudge_every_fourth_frame_never_settles() {
-        let mut t = YSettleTracker::new();
-        // 3 still frames, 1 nudge, repeating: excursion inside any
-        // 6-frame window always exceeds epsilon → never settled.
-        for i in 0..24 {
-            let y = if i % 4 == 3 { 100.4 } else { 100.0 };
-            assert!(!t.observe(7, y), "slow stepping motion must not settle");
-        }
-    }
-
-    #[test]
-    fn non_finite_is_not_settled() {
-        let mut t = YSettleTracker::new();
-        assert!(!t.observe(3, f32::NAN));
+        self.displayed_y - desired
     }
 }

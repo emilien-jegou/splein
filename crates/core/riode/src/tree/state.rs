@@ -10,6 +10,7 @@ use crate::input::handlers::NodeHandlers;
 use crate::scene::SceneChunk;
 use crate::text::selection::{SelectionGranularity, TextSelection};
 use crate::text::TextLayout;
+use crate::text::TextPlacement;
 use crate::tree::binding::NodeBindings;
 use crate::tree::cache::LayoutCache;
 use crate::tree::flags::DirtyFlags;
@@ -94,6 +95,9 @@ pub struct TextState {
     pub text_selection: Option<TextSelection>,
     /// Click-count granularity latched for the active selection gesture.
     pub selection_granularity: SelectionGranularity,
+    /// Desired/displayed Y record driving the subpixel-while-moving /
+    /// integer-when-resting decision, owned per node. See [`TextPlacement`].
+    pub placement: TextPlacement,
 }
 
 /// Retained paint output: owned by the scene domain.
