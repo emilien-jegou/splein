@@ -75,6 +75,14 @@ pub struct WgpuRenderer {
     /// composite writes), its single core-blurred copy, and the optics
     /// output. Surface-sized, grown on demand, dropped on resize.
     glass_pool: Vec<GlassTargets>,
+    /// Parent snapshot for blend-mode alpha shadows (one surface-sized
+    /// slot, reused across EndLayers): copied from the parent target
+    /// after the spill and before the shadow draws, so a shadow
+    /// multiplies against the finished beneath — the same isolation
+    /// the layer blend path gets at BeginLayer, but lazy (the stash is
+    /// only known once the layer's content has emitted). Dropped on
+    /// resize.
+    shadow_snap: Option<(wgpu::Texture, wgpu::TextureView)>,
 }
 
 fn make_ortho(
@@ -136,6 +144,31 @@ fn make_filter_target(
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT
             | wgpu::TextureUsages::TEXTURE_BINDING
             | wgpu::TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    (texture, view)
+}
+
+/// Parent snapshot for blend-mode alpha shadows (see `shadow_snap`):
+/// copy destination + sampled backdrop — never a render attachment.
+fn make_shadow_snap(
+    device: &wgpu::Device,
+    w: u32,
+    h: u32,
+) -> (wgpu::Texture, wgpu::TextureView) {
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("riode-wgpu-shadow-snap"),
+        size: wgpu::Extent3d {
+            width: w.max(1),
+            height: h.max(1),
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
         view_formats: &[],
     });
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
@@ -315,6 +348,7 @@ impl WgpuRenderer {
             readback: None,
             layer_pool: Vec::new(),
             blur_ping: None,
+            shadow_snap: None,
             glass_pool: Vec::new(),
         }
     }
@@ -357,6 +391,7 @@ impl WgpuRenderer {
             self.layer_pool.clear();
             self.blur_ping = None;
             self.glass_pool.clear();
+            self.shadow_snap = None;
         }
     }
 
@@ -577,12 +612,15 @@ impl WgpuRenderer {
 
     /// One liquid-glass optics pass: fullscreen triangle over the
     /// core-blurred backdrop, into `dst` (cleared by its load op),
-    /// scissored to the layer region. Params + bind group live only for
-    /// this encoder pass (refcount pattern of `run_blur_pass`).
+    /// scissored to the layer region. `sharp` is the raw parent
+    /// snapshot — binding 3, the card-blend backdrop (`backdrop` may be
+    /// the core pre-blur). Params + bind group live only for this
+    /// encoder pass (refcount pattern of `run_blur_pass`).
     fn run_glass_pass(
         &self,
         enc: &mut wgpu::CommandEncoder,
         backdrop: &wgpu::TextureView,
+        sharp: &wgpu::TextureView,
         mut gp: GlassFrameGpu,
         dst: &wgpu::TextureView,
         sc: (u32, u32, u32, u32),
@@ -618,6 +656,10 @@ impl WgpuRenderer {
                     wgpu::BindGroupEntry {
                         binding: 2,
                         resource: ubuf.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::TextureView(sharp),
                     },
                 ],
             });
@@ -1233,6 +1275,18 @@ impl WgpuRenderer {
                                 ),
                             ));
                         }
+                        // Blend-mode shadow snapshot target: allocated
+                        // before the first borrow of either target (same
+                        // rule as ping) so no arm reassigns mid-use.
+                        if shadows.iter().any(|d| d.blend != 0.0)
+                            && self.shadow_snap.is_none()
+                        {
+                            self.shadow_snap = Some(make_shadow_snap(
+                                &self.gpu.device,
+                                sw,
+                                sh,
+                            ));
+                        }
                         // Composite source: the layer's own texture, or
                         // ping 1 after a blur chain (both surface-sized,
                         // so the composite samples 1:1 by position).
@@ -1343,7 +1397,7 @@ impl WgpuRenderer {
                                         backdrop = &gt.a.1;
                                     }
                                 }
-                                self.run_glass_pass(&mut enc, backdrop, gp, &gt.out.1, rc);
+                                self.run_glass_pass(&mut enc, backdrop, &gt.snap.1, gp, &gt.out.1, rc);
                                 glass_out = Some(&gt.out.1);
                                 // LightSpill: blurred finished card replayed
                                 // underneath, drawn only through the
@@ -1508,6 +1562,49 @@ impl WgpuRenderer {
                         // finished silhouette (post-filter, in-layer
                         // clips baked in).
                         if !shadows.is_empty() && open.glass.is_none() {
+                            // Blend-mode shadows composite against the
+                            // parent snapshot (CSS `mix-blend-mode` needs
+                            // the backdrop as input — same isolation the
+                            // layer blend path gets at BeginLayer). Copied
+                            // now: after the spill, before this layer's
+                            // own shadow/content draws; sibling layers
+                            // finished earlier are already in the parent.
+                            // No pass is open here (each shadow draw opens
+                            // its own below).
+                            let shadow_snap: Option<&wgpu::TextureView> =
+                                if shadows.iter().any(|d| d.blend != 0.0) {
+                                    let snap = self
+                                        .shadow_snap
+                                        .as_ref()
+                                        .expect("shadow snapshot ensured above");
+                                    let parent_tex: &wgpu::Texture = match stack.last() {
+                                        Some(l) => &self.layer_pool[l.slot].0,
+                                        None => &self.gpu.persistent,
+                                    };
+                                    pass = None;
+                                    enc.copy_texture_to_texture(
+                                        wgpu::ImageCopyTexture {
+                                            texture: parent_tex,
+                                            mip_level: 0,
+                                            origin: wgpu::Origin3d::ZERO,
+                                            aspect: wgpu::TextureAspect::All,
+                                        },
+                                        wgpu::ImageCopyTexture {
+                                            texture: &snap.0,
+                                            mip_level: 0,
+                                            origin: wgpu::Origin3d::ZERO,
+                                            aspect: wgpu::TextureAspect::All,
+                                        },
+                                        wgpu::Extent3d {
+                                            width: sw,
+                                            height: sh,
+                                            depth_or_array_layers: 1,
+                                        },
+                                    );
+                                    Some(&snap.1)
+                                } else {
+                                    None
+                                };
                             let silhouette: &wgpu::TextureView = src_view;
                             for (i, d) in shadows.iter().enumerate() {
                                 let mut shadow_src: &wgpu::TextureView = silhouette;
@@ -1554,7 +1651,7 @@ impl WgpuRenderer {
                                 }
                                 let mut cm = ColorMatrixGpu::pack(&d.matrix);
                                 cm.tex_off =
-                                    [-d.offset[0], -d.offset[1], 0.0, 0.0];
+                                    [-d.offset[0], -d.offset[1], d.blend, 0.0];
                                 let cbuf = self.gpu.device.create_buffer_init(
                                     &wgpu::util::BufferInitDescriptor {
                                         label: Some("riode-wgpu-shadow-matrix"),
@@ -1562,24 +1659,63 @@ impl WgpuRenderer {
                                         usage: wgpu::BufferUsages::UNIFORM,
                                     },
                                 );
-                                kept.push(self.gpu.device.create_bind_group(
-                                    &wgpu::BindGroupDescriptor {
-                                        label: Some("riode-wgpu-shadow-material"),
-                                        layout: &self.pipes.filter_layout,
-                                        entries: &[
-                                            wgpu::BindGroupEntry {
-                                                binding: 0,
-                                                resource: wgpu::BindingResource::TextureView(
-                                                    shadow_src,
-                                                ),
-                                            },
-                                            wgpu::BindGroupEntry {
-                                                binding: 1,
-                                                resource: cbuf.as_entire_binding(),
-                                            },
-                                        ],
-                                    },
-                                ));
+                                // Blend-mode shadows composite through the
+                                // blend pipeline against the snapshot taken
+                                // above (`tex_off.z` is the mode id —
+                                // `composite_blend.wgsl` reads it like the
+                                // layer blend path); Normal keeps the plain
+                                // composite untouched.
+                                if d.blend != 0.0 {
+                                    let snap_view = shadow_snap.expect(
+                                        "blend shadow implies a snapshot",
+                                    );
+                                    kept.push(self.gpu.device.create_bind_group(
+                                        &wgpu::BindGroupDescriptor {
+                                            label: Some("riode-wgpu-shadow-blend-material"),
+                                            layout: &self.pipes.blend_layout,
+                                            entries: &[
+                                                wgpu::BindGroupEntry {
+                                                    binding: 0,
+                                                    resource:
+                                                        wgpu::BindingResource::TextureView(
+                                                            shadow_src,
+                                                        ),
+                                                },
+                                                wgpu::BindGroupEntry {
+                                                    binding: 1,
+                                                    resource:
+                                                        wgpu::BindingResource::TextureView(
+                                                            snap_view,
+                                                        ),
+                                                },
+                                                wgpu::BindGroupEntry {
+                                                    binding: 2,
+                                                    resource: cbuf.as_entire_binding(),
+                                                },
+                                            ],
+                                        },
+                                    ));
+                                } else {
+                                    kept.push(self.gpu.device.create_bind_group(
+                                        &wgpu::BindGroupDescriptor {
+                                            label: Some("riode-wgpu-shadow-material"),
+                                            layout: &self.pipes.filter_layout,
+                                            entries: &[
+                                                wgpu::BindGroupEntry {
+                                                    binding: 0,
+                                                    resource:
+                                                        wgpu::BindingResource::TextureView(
+                                                            shadow_src,
+                                                        ),
+                                                },
+                                                wgpu::BindGroupEntry {
+                                                    binding: 1,
+                                                    resource: cbuf.as_entire_binding(),
+                                                },
+                                            ],
+                                        },
+                                    ));
+                                }
                                 // Explicit assignment — see BeginLayer above.
                                 pass = None;
                                 pass = Some(enc.begin_render_pass(
@@ -1603,7 +1739,17 @@ impl WgpuRenderer {
                                 {
                                     let p = Self::open_pass(&mut pass);
                                     if Self::apply_scissor(p, scissor, sw, sh) {
-                                        p.set_pipeline(&self.pipes.composite_pipeline);
+                                        if d.blend != 0.0 {
+                                            // Blend pipeline (fixed-function
+                                            // blending off): the shader
+                                            // emits the full CSS composite
+                                            // against the snapshot.
+                                            p.set_pipeline(
+                                                &self.pipes.blend_composite_pipeline,
+                                            );
+                                        } else {
+                                            p.set_pipeline(&self.pipes.composite_pipeline);
+                                        }
                                         p.set_bind_group(0, &self.ortho_bg, &[]);
                                         p.set_bind_group(1, kept.last().unwrap(), &[]);
                                         p.set_vertex_buffer(0, self.vert_buf.slice(..));

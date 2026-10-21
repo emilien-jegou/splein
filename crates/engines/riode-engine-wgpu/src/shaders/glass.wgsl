@@ -23,7 +23,10 @@
 //
 // Group 0: binding 0 backdrop (surface-sized, premultiplied sRGB, same
 // coordinates as the fragment position — so `px / uSize` samples the
-// pixel under `px`), binding 1 a linear sampler, binding 2 the uniform.
+// pixel under `px`; may be the core pre-blur), binding 1 a linear
+// sampler, binding 2 the uniform, binding 3 the *sharp* parent
+// snapshot (the card-blend backdrop — binding 0's blur must not leak
+// into the mix-blend-mode composite).
 // The pass renders a fullscreen triangle into a cleared offscreen
 // (blend disabled); outside the silhouette the SDF stage returns
 // transparent, inside it refracts the frosted backdrop and shades it.
@@ -99,6 +102,8 @@ var backdrop: texture_2d<f32>;
 var samp: sampler;
 @group(0) @binding(2)
 var<uniform> u: GlassU;
+@group(0) @binding(3)
+var sharp: texture_2d<f32>;
 
 @vertex
 fn vs_main(@builtin(vertex_index) ix: u32) -> @builtin(position) vec4<f32> {
@@ -334,6 +339,34 @@ fn lensBlend(p: vec2<f32>, grp: f32) -> f32 {
     return hmax;
 }
 
+// Card blend (CSS `mix-blend-mode` on the whole glass card): the
+// finished card — refracted backdrop and material baked in,
+// premultiplied — composited against the *sharp* snapshot at this
+// pixel through §"Compositing and Blending" of CSS Compositing Level 1
+// (same formula as `composite_blend.wgsl`). The mode id rides the
+// engine header's w slot (`GlassFrameGpu.core[3]`); 0 (`Normal`)
+// returns the card unchanged — the exact pre-blend bytes.
+fn cardBlend(cardPrem: vec3<f32>, cardA: f32, px: vec2<f32>) -> vec4<f32> {
+    let mode = i32(u.engine.w);
+    if (mode == 0) {
+        return vec4<f32>(cardPrem, cardA);
+    }
+    var cs = vec3<f32>(0.0);
+    if (cardA > 0.0) {
+        cs = cardPrem * (1.0 / max(cardA, 1e-6));
+    }
+    let bd = textureSampleLevel(sharp, samp, px / u.size.xy, 0.0);
+    let ab = bd.a;
+    var cb = vec3<f32>(0.0);
+    if (ab > 0.0) {
+        cb = bd.rgb * (1.0 / ab);
+    }
+    let b = blendMode(cb, cs, mode);
+    let co = cardA * (1.0 - ab) * cs + cardA * ab * b + (1.0 - cardA) * ab * cb;
+    let ao = cardA + ab * (1.0 - cardA);
+    return vec4<f32>(co, ao);
+}
+
 @fragment
 fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
     // Output is premultiplied colour composited srcOver onto the sharp
@@ -468,7 +501,7 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
     // Opaque (Reduce Transparency).
     if (u.u_global.w > 0.5) {
         let solid = mix(u.u_opaque.rgb, tint.rgb, tint.a);
-        return vec4<f32>(solid * inside, inside) * keep;
+        return cardBlend(solid * (inside * keep), inside * keep, px);
     }
 
     let fxp = lensField(px + vec2<f32>(1.0, 0.0));
@@ -744,5 +777,9 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
         col += F.y * u.u_touch.z * exp(-dot(dt, dt) / (2.0 * gr * gr));
     }
 
-    return vec4<f32>(clamp(col, vec3<f32>(0.0), vec3<f32>(1.0)) * inside, inside) * keep;
+    return cardBlend(
+        clamp(col, vec3<f32>(0.0), vec3<f32>(1.0)) * (inside * keep),
+        inside * keep,
+        px,
+    );
 }

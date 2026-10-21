@@ -121,3 +121,103 @@ pub fn parse_blend(s: &str) -> Option<BlendMode> {
         _ => None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_all_css_keywords() {
+        for (kw, want) in [
+            ("normal", BlendMode::Normal),
+            ("multiply", BlendMode::Multiply),
+            ("screen", BlendMode::Screen),
+            ("overlay", BlendMode::Overlay),
+            ("darken", BlendMode::Darken),
+            ("lighten", BlendMode::Lighten),
+            ("color-dodge", BlendMode::ColorDodge),
+            ("color-burn", BlendMode::ColorBurn),
+            ("hard-light", BlendMode::HardLight),
+            ("soft-light", BlendMode::SoftLight),
+            ("difference", BlendMode::Difference),
+            ("exclusion", BlendMode::Exclusion),
+            ("hue", BlendMode::Hue),
+            ("saturation", BlendMode::Saturation),
+            ("color", BlendMode::Color),
+            ("luminosity", BlendMode::Luminosity),
+        ] {
+            assert_eq!(parse_blend(kw), Some(want), "keyword {kw}");
+            // Case-insensitive; dashed and undashed both accepted.
+            assert_eq!(parse_blend(&kw.to_uppercase()), Some(want), "upper {kw}");
+            assert_eq!(
+                parse_blend(&kw.replace('-', "")),
+                Some(want),
+                "undashed {kw}"
+            );
+        }
+        assert_eq!(parse_blend("bogus"), None);
+        assert_eq!(parse_blend(""), None);
+        assert_eq!(parse_blend("normalish"), None);
+    }
+
+    #[test]
+    fn wire_ids_roundtrip_and_are_append_only() {
+        // The discriminant is the wire id — 0..=15 in spec order.
+        for (i, want) in [
+            (0.0, BlendMode::Normal),
+            (1.0, BlendMode::Multiply),
+            (2.0, BlendMode::Screen),
+            (3.0, BlendMode::Overlay),
+            (4.0, BlendMode::Darken),
+            (5.0, BlendMode::Lighten),
+            (6.0, BlendMode::ColorDodge),
+            (7.0, BlendMode::ColorBurn),
+            (8.0, BlendMode::HardLight),
+            (9.0, BlendMode::SoftLight),
+            (10.0, BlendMode::Difference),
+            (11.0, BlendMode::Exclusion),
+            (12.0, BlendMode::Hue),
+            (13.0, BlendMode::Saturation),
+            (14.0, BlendMode::Color),
+            (15.0, BlendMode::Luminosity),
+        ] {
+            assert_eq!(want.as_uniform_id(), i, "id for {want:?}");
+            assert_eq!(BlendMode::from_uniform_id(i), want);
+        }
+        // Out-of-range folds to Normal — shaders may feed garbage.
+        assert_eq!(BlendMode::from_uniform_id(16.0), BlendMode::Normal);
+        assert_eq!(BlendMode::from_uniform_id(-1.0), BlendMode::Normal);
+        assert_eq!(BlendMode::from_uniform_id(f32::NAN), BlendMode::Normal);
+    }
+
+    #[test]
+    fn separable_partition() {
+        // 0..=11 separable, 12..=15 non-separable (Lum/SetLum family).
+        for m in [
+            BlendMode::Normal,
+            BlendMode::Multiply,
+            BlendMode::Screen,
+            BlendMode::Overlay,
+            BlendMode::Darken,
+            BlendMode::Lighten,
+            BlendMode::ColorDodge,
+            BlendMode::ColorBurn,
+            BlendMode::HardLight,
+            BlendMode::SoftLight,
+            BlendMode::Difference,
+            BlendMode::Exclusion,
+        ] {
+            assert!(m.is_separable(), "{m:?}");
+        }
+        for m in [
+            BlendMode::Hue,
+            BlendMode::Saturation,
+            BlendMode::Color,
+            BlendMode::Luminosity,
+        ] {
+            assert!(!m.is_separable(), "{m:?}");
+        }
+        assert!(BlendMode::Normal.is_normal());
+        assert!(!BlendMode::Multiply.is_normal());
+    }
+}

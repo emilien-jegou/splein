@@ -22,7 +22,8 @@ use crate::text::GlyphAtlas;
 
 static WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static WARNED_MULTIPLY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-static WARNED_GLASS_BLEND: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static WARNED_SHADOW_FOLD: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
 
 fn warn_once(msg: &str) {
     if !WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
@@ -40,13 +41,13 @@ fn warn_multiply_once() {
     }
 }
 
-/// Blend on a glass-carrying layer: blending the whole card needs the
-/// lens+content result composited once against the backdrop (separate
-/// work) — the blend is ignored here, source-over as before.
-fn warn_glass_blend_once() {
-    if !WARNED_GLASS_BLEND.swap(true, std::sync::atomic::Ordering::Relaxed) {
+/// Non-Multiply shadow blends fold to the multiply family (the scene
+/// wire and tiny-skia fold the same way) — the composite is a real
+/// multiply, not the requested mode.
+fn warn_shadow_fold_once() {
+    if !WARNED_SHADOW_FOLD.swap(true, std::sync::atomic::Ordering::Relaxed) {
         tracing::warn!(
-            "riode-wgpu: blend mode on a glass layer ignored (further silent); glass-card blend is separate work"
+            "riode-wgpu: shadow blend folded to Multiply (further silent)"
         );
     }
 }
@@ -155,14 +156,21 @@ pub enum Op {
 
 /// One alpha-silhouette shadow layer, emission-time in device px: the
 /// separable blur's sigma, the composite quad's displacement (texel
-/// lookup shifts by `-offset`), and the row-major 4×5 tint matrix —
+/// lookup shifts back by `-offset`), and the row-major 4×5 tint matrix —
 /// constant RGB rows of the shadow color, alpha row scaled by
 /// intensity × color alpha × layer opacity × node opacity.
+///
+/// `blend` is the shadow's CSS mix mode as a wire id (`0.0` = `Normal`
+/// = the regular tinted composite; non-zero = the multiply family —
+/// the scene wire and tiny-skia fold the same way). Non-zero layers
+/// composite through the blend pipeline against an EndLayer parent
+/// snapshot; zero layers keep the plain composite path untouched.
 #[derive(Clone)]
 pub struct ShadowGpuDraw {
     pub sigma: f32,
     pub offset: [f32; 2],
     pub matrix: [f32; 20],
+    pub blend: f32,
 }
 
 /// One alpha drop shadow stashed on its layer (emission order: BeginLayer
@@ -686,7 +694,11 @@ impl Batch {
         if matches!(shadow.shape, ShadowShape::Alpha) {
             warn_once("ShadowShape::Alpha rasterized as Box on wgpu");
         }
-        if matches!(shadow.blend, riode::foundation::BlendMode::Multiply) {
+        // Direct SDF shadows draw inline into the open target — no
+        // snapshot exists there, so any non-Normal mode stays a
+        // source-over approximation (the alpha-silhouette EndLayer path
+        // below does the real blend; see `ShadowGpuDraw::blend`).
+        if !shadow.blend.is_normal() {
             warn_multiply_once();
         }
         if !Self::tx_is_rigid(&t) {
@@ -1175,24 +1187,20 @@ impl SceneSink for WgpuSink<'_> {
             (y1 - y0) + 2.0 * pad,
         );
         let params = self.batch.filter_params.len() as u32;
-        // Glass + blend: the card composites source-over (Phase 3 owns
-        // blending the whole card against the backdrop); fold the mode
-        // to `Normal` so the EndLayer path agrees with the snapshot it
-        // actually took.
-        if layer.glass.is_some() && !layer.blend.is_normal() {
-            warn_glass_blend_once();
-        }
+        // Card blend (glass + blend): the id rides the glass frame's
+        // engine header (`GlassFrameGpu.core[3]` → `u.engine.w`) — the
+        // optics shader composites the whole card against the sharp
+        // snapshot in-shader. `FilterGpu.blend` is the non-glass layer
+        // path; the EndLayer blend pipeline gates on `gp.is_none()`, so
+        // carrying the id here too for glass is inert.
+        let card_blend = layer.blend.as_uniform_id();
         self.batch.filter_params.push(FilterGpu {
             sigma,
             matrix: layer
                 .filter
                 .and_then(|f| f.color_matrix())
                 .unwrap_or(FilterGpu::IDENTITY),
-            blend: if layer.glass.is_some() {
-                0.0
-            } else {
-                layer.blend.as_uniform_id()
-            },
+            blend: card_blend,
         });
         let (glass, spill_seed) = match layer.glass {
             None => (None, None),
@@ -1286,7 +1294,12 @@ impl SceneSink for WgpuSink<'_> {
                 let packed = pack_glass_uniforms(&frame);
                 let idx = self.batch.glass_params.len() as u32;
                 self.batch.glass_params.push(GlassFrameGpu::from_pack(
-                    [sigma * aspect * sc, sigma / aspect * sc, 0.0, 0.0],
+                    [
+                        sigma * aspect * sc,
+                        sigma / aspect * sc,
+                        0.0,
+                        card_blend,
+                    ],
                     &packed,
                 ));
                 // LightSpill seed: x-span + rounded bottom edge of the
@@ -1440,7 +1453,7 @@ impl SceneSink for WgpuSink<'_> {
                         frame_sigma * frame_aspect * sc,
                         frame_sigma / frame_aspect * sc,
                         0.0,
-                        0.0,
+                        card_blend,
                     ],
                     &packed,
                 ));
@@ -1496,12 +1509,19 @@ impl SceneSink for WgpuSink<'_> {
                     if a.shadow.spread != 0.0 {
                         warn_once("alpha shadow: spread ignored (CSS drop-shadow has none)");
                     }
-                    if matches!(
-                        a.shadow.blend,
-                        riode::foundation::BlendMode::Multiply
-                    ) {
-                        warn_multiply_once();
-                    }
+                    // The scene wire folds every non-Normal mode to the
+                    // multiply family (`scene/command.rs`); the blend
+                    // pipeline switches on the same 0/1, so chunk hashes
+                    // and pixels agree. Only a folded (non-Multiply) mode
+                    // warns — true Multiply now composites for real.
+                    let shadow_blend = if a.shadow.blend.is_normal() {
+                        0.0
+                    } else {
+                        if a.shadow.blend != riode::foundation::BlendMode::Multiply {
+                            warn_shadow_fold_once();
+                        }
+                        1.0
+                    };
                     let t = self.batch.device_tx(&a.transform);
                     let sc = self.batch.scale();
                     let mut order: Vec<usize> =
@@ -1532,6 +1552,7 @@ impl SceneSink for WgpuSink<'_> {
                                 0.0, 0.0, 0.0, 0.0, c.b, //
                                 0.0, 0.0, 0.0, op, 0.0,
                             ],
+                            blend: shadow_blend,
                         });
                         let (qx0, qy0) = (region.x + dx, region.y + dy);
                         let (qx1, qy1) =

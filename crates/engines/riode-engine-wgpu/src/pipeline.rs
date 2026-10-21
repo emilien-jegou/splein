@@ -330,8 +330,10 @@ pub const GLASS_VEC4S: usize = K_GLASS_UNIFORM_FLOATS / 4;
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct GlassFrameGpu {
-    /// Engine-owned: composed core blur σx, σy (device px), 0, 0. Drives
-    /// the EndLayer pre-blur passes; the shader never reads it.
+    /// Engine-owned: composed core blur σx, σy (device px), 0, then the
+    /// card blend wire id (`BlendMode::as_uniform_id`; glass + blend —
+    /// the shader's `u.engine.w`). Drives the EndLayer pre-blur passes
+    /// (σx/σy); only `.w` is read by the shader.
     pub core: [f32; 4],
     /// Engine-owned: backdrop target size in px (`uSize`), 0, 0. Filled by
     /// the renderer at draw time — emission does not know it.
@@ -921,12 +923,14 @@ pub fn create_pipelines(
 
     // Liquid-glass optics pass: the core-blurred backdrop + a linear
     // sampler + the frame uniform (`GlassFrameGpu`: engine header,
-    // `uSize`, then the reference's 736-float stream); fullscreen
-    // triangle into a cleared surface-sized offscreen (blend disabled,
-    // like the blur). One texture only — the wide tail / post-lens /
-    // extra frost are shader taps on it. The blend-mode library is
-    // prepended (WGSL has no include mechanism; order is free — module-
-    // scope declarations are hoisted).
+    // `uSize`, then the reference's 736-float stream) + the sharp
+    // parent snapshot (the card-blend backdrop — binding 0 may be the
+    // pre-blur); fullscreen triangle into a cleared surface-sized
+    // offscreen (blend disabled, like the blur). One texture only for
+    // the lens — the wide tail / post-lens / extra frost are shader
+    // taps on it. The blend-mode library is prepended (WGSL has no
+    // include mechanism; order is free — module-scope declarations are
+    // hoisted).
     let glass_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("riode-wgpu-glass"),
         source: wgpu::ShaderSource::Wgsl(GLASS_WGSL.into()),
@@ -957,6 +961,16 @@ pub fn create_pipelines(
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,
                     min_binding_size: None,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                binding: 3,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
                 },
                 count: None,
             },

@@ -79,12 +79,26 @@ fn fs_main(in: Vout) -> @location(0) vec4<f32> {
         size - vec2<i32>(1),
     );
     let px = textureLoad(src_tex, c, 0);
-    let bd = textureLoad(dst_tex, c, 0);
+    // Backdrop at the fragment's own texel — UNSHIFTED. `c` carries the
+    // shadow's `-offset` lookup shift (the silhouette lives undisplaced
+    // in the layer texture), but the CSS backdrop is whatever paints
+    // beneath this fragment — the same pixel the fixed-function path
+    // would source-over onto. (On the layer-blend path `tex_off.xy` is
+    // always zero, so both coordinates agree there.)
+    let n = clamp(
+        vec2<i32>(floor(in.pos.xy)),
+        vec2<i32>(0),
+        size - vec2<i32>(1),
+    );
+    let bd = textureLoad(dst_tex, n, 0);
     if (px.a <= 0.0) {
-        // No source coverage: the backdrop passes through untouched —
-        // also what the attachment's LoadOp::Load already holds, so the
-        // replace below is a no-op pixel.
-        return bd;
+        // No source coverage: keep the attachment as-is. The parent
+        // already holds the snapshot plus anything drawn since (same-
+        // EndLayer shadow layers) — writing `bd` back would erase those.
+        // For the layer path this is a no-op pixel either way (nothing
+        // paints the parent between its snapshot and its composite
+        // except its own shadows, which must survive).
+        discard;
     }
     // Straight source through the layer colour matrix (identity for a
     // plain blend layer; a filtered+blended layer keeps the chain).
