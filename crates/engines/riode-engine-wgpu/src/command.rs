@@ -125,11 +125,15 @@ pub enum Op {
     /// batch's `filter_params`; `glass` indexes `glass_params` when the
     /// layer carries a liquid-glass material (the renderer snapshots
     /// the parent under the padded region and runs the optics pass).
-    /// A marker op (no draws): it also breaks run merging by variant.
+    /// `stages` is the ordered effect stack lowered to GPU stages —
+    /// the renderer executes them in order (blur/color ping-pong,
+    /// glass optics merge, blend composite). A marker op (no draws):
+    /// it also breaks run merging by variant.
     BeginLayer {
         region: ResolvedRect,
         params: u32,
         glass: Option<u32>,
+        stages: Vec<StageGpu>,
     },
     /// Closes the innermost filter layer: the renderer runs the blur
     /// passes over the layer's offscreen, then draws the composite quad
@@ -197,10 +201,11 @@ fn spill_len(r: &riode::foundation::Refraction, scale: f32) -> Option<f32> {
 
 /// One open layer, emission-side: the offscreen region + filter-params
 /// index (`Some`), or `None` for a plain clip layer, plus the stashed
-/// alpha shadow cast from this layer's content at `end_layer`.
+/// alpha shadows cast from this layer's content at `end_layer` (one per
+/// `DrawShadow` primitive and one per `Shadow` effect stage).
 struct LayerStackEntry {
     region: Option<(ResolvedRect, u32)>,
-    alpha: Option<AlphaShadow>,
+    alpha_shadows: Vec<AlphaShadow>,
     /// LightSpill seed: card-union bounds (x-span + bottom edge, device
     /// px) + spill length (device px) + corner radius (device px).
     /// `end_layer` emits the feathered spill verts from it.
@@ -236,6 +241,31 @@ impl FilterGpu {
         0.0, 0.0, 1.0, 0.0, 0.0, //
         0.0, 0.0, 0.0, 1.0, 0.0,
     ];
+}
+
+/// One ordered effect stage for the EndLayer executor, lowered from the
+/// layer's `EffectStack` at emission (device px, device scale folded in).
+/// The renderer walks these in order, ping-ponging through the layer
+/// texture and the blur scratch targets; glass merges the optics output
+/// under the current image, blend switches the (final or materialized)
+/// composite mode.
+#[derive(Clone)]
+pub enum StageGpu {
+    /// Separable Gaussian blur at sigma (device px): H into scratch,
+    /// V into the other scratch.
+    Blur { sigma: f32 },
+    /// Color matrix applied to the current image into a cleared scratch
+    /// (src-over onto transparent is identity, so the plain composite
+    /// pipeline doubles as the stage applicator).
+    ColorMatrix { matrix: [f32; 20] },
+    /// Glass optics: snapshot → core pre-blur → optics pass, merged
+    /// under the current image (Porter-Duff associativity keeps this
+    /// identical to sequential parent draws). Params ride `Op::BeginLayer.glass`.
+    Glass,
+    /// Card/content blend against the parent snapshot (wire id;
+    /// `0.0` = `Normal`). Applied at the final composite, or
+    /// materialized into scratch when later stages follow.
+    Blend { mode: f32 },
 }
 
 /// Emission context: batched verts + ordered ops.
@@ -1142,7 +1172,7 @@ impl SceneSink for WgpuSink<'_> {
             });
             self.batch.layer_stack.push(LayerStackEntry {
                 region: None,
-                alpha: None,
+                alpha_shadows: Vec::new(),
                 spill: None,
             });
             return;
@@ -1493,19 +1523,77 @@ impl SceneSink for WgpuSink<'_> {
         };
         self.batch.layer_stack.push(LayerStackEntry {
             region: Some((region, params)),
-            alpha: None,
+            alpha_shadows: Vec::new(),
             spill: spill_seed,
         });
-        self.batch
-            .ops
-            .push(Op::BeginLayer { region, params, glass });
+        // Ordered executor stages, lowered from the stack in declaration
+        // order. Blur sigmas scale with the root device matrix; color
+        // stages carry their own matrix each (no pre-combining — order
+        // is the point). Shadow stages stash like `DrawShadow` and are
+        // drawn by the existing silhouette machinery; ClipRound and the
+        // group marker are compile-time only (clips already baked into
+        // verts, groups already collected). Custom stages have no
+        // executor pass yet (Phase E) — warn once and skip.
+        let mut stages: Vec<StageGpu> = Vec::new();
+        if let Some(stack) = layer.effects {
+            use riode::foundation::effect::{BuiltinStage, EffectShader};
+            let sc = self.batch.scale();
+            for e in stack.0.iter() {
+                match e.shader() {
+                    EffectShader::Builtin(BuiltinStage::Blur { sigma }) => {
+                        stages.push(StageGpu::Blur { sigma: sigma * sc });
+                    }
+                    EffectShader::Builtin(BuiltinStage::ColorMatrix { matrix }) => {
+                        stages.push(StageGpu::ColorMatrix { matrix });
+                    }
+                    EffectShader::Builtin(BuiltinStage::Glass(_)) => {
+                        stages.push(StageGpu::Glass);
+                    }
+                    EffectShader::Builtin(BuiltinStage::Blend { mode }) => {
+                        stages.push(StageGpu::Blend { mode: mode.as_uniform_id() });
+                    }
+                    EffectShader::Builtin(BuiltinStage::Shadow(p)) => {
+                        self.batch
+                            .layer_stack
+                            .last_mut()
+                            .expect("layer just pushed")
+                            .alpha_shadows
+                            .push(AlphaShadow {
+                                shadow: p.shadow.clone(),
+                                light: p.light,
+                                opacity: 1.0,
+                                transform: layer.transform,
+                            });
+                    }
+                    EffectShader::Builtin(
+                        BuiltinStage::ClipRound { .. }
+                        | BuiltinStage::GlassGroup { .. },
+                    ) => {}
+                    other => {
+                        static WARNED_CUSTOM: std::sync::atomic::AtomicBool =
+                            std::sync::atomic::AtomicBool::new(false);
+                        if !WARNED_CUSTOM.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                            tracing::warn!(
+                                "riode-wgpu: custom/fine-grained stage {other:?} has no executor pass yet (skipped)"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        self.batch.ops.push(Op::BeginLayer {
+            region,
+            params,
+            glass,
+            stages,
+        });
     }
 
     fn end_layer(&mut self) {
         match self.batch.layer_stack.pop() {
             Some(LayerStackEntry {
                 region: Some((region, _params)),
-                alpha,
+                alpha_shadows,
                 spill,
             }) => {
                 // Alpha-silhouette shadow quads first (painted behind the
@@ -1515,7 +1603,7 @@ impl SceneSink for WgpuSink<'_> {
                 // time (see renderer EndLayer).
                 let shadow_start = self.batch.rect_verts.len() as u32;
                 let mut shadows: Vec<ShadowGpuDraw> = Vec::new();
-                if let Some(a) = alpha {
+                for a in &alpha_shadows {
                     if a.shadow.spread != 0.0 {
                         warn_once("alpha shadow: spread ignored (CSS drop-shadow has none)");
                     }
@@ -1781,7 +1869,7 @@ impl SceneSink for WgpuSink<'_> {
                 .last_mut()
                 .filter(|e| e.region.is_some())
             {
-                e.alpha = Some(AlphaShadow {
+                e.alpha_shadows.push(AlphaShadow {
                     shadow: s.shadow.clone(),
                     light: *s.light,
                     opacity: s.opacity,

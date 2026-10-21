@@ -355,10 +355,12 @@ impl ChunkCache {
                 region,
                 params,
                 glass,
+                stages,
             } => Op::BeginLayer {
                 region,
                 params,
                 glass,
+                stages: stages.clone(),
             },
             Op::EndLayer {
                 start,
