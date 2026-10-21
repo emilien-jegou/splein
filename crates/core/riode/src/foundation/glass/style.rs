@@ -10,6 +10,7 @@ use super::backdrop::Backdrop;
 use super::refraction::Refraction;
 use super::spectral::Spectral;
 use super::glow::Glow;
+use crate::foundation::effect::{Effect, EffectStack, GlassEffect};
 use crate::foundation::shadow::Shadow;
 use crate::foundation::Glass;
 
@@ -107,5 +108,22 @@ impl GlassStyle {
             softness: spill.softness,
         };
         self
+    }
+}
+
+impl GlassStyle {
+    /// This look as an effect stack: a single `Glass` refraction stage.
+    /// (The cast shadow stays on the general `Shadow` path — pass it to
+    /// `shadow=` separately.) Migration helper from `preset={style}` to
+    /// `effects={style.into_effects()}`.
+    pub fn into_effects(self) -> EffectStack {
+        EffectStack::from(vec![GlassEffect::single(
+            self.glass,
+            self.backdrop,
+            self.spectral,
+            self.glow,
+            self.refraction,
+        )
+        .boxed()])
     }
 }

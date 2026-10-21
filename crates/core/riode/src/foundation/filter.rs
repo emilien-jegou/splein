@@ -15,6 +15,9 @@ pub enum FilterOp {
     Contrast(f32),
     /// Rotates hue in degrees (CSS `hue-rotate()`).
     HueRotate(f32),
+    /// Raw row-major 4x5 matrix (effect-stack lowering): carries a
+    /// pre-combined matrix that no single CSS op expresses.
+    Matrix([f32; 20]),
 }
 
 impl FilterOp {
@@ -25,6 +28,7 @@ impl FilterOp {
         let m = match self {
             // Blur has no color matrix (handled as a separate spatial pass).
             Self::Blur(_) => return None,
+            Self::Matrix(m) => m,
             Self::Brightness(b) => [
                 b, 0.0, 0.0, 0.0, 0.0, //
                 0.0, b, 0.0, 0.0, 0.0, //
@@ -113,6 +117,30 @@ pub struct Filter {
 
 impl Filter {
     pub const EMPTY: Self = Self { ops: Vec::new() };
+
+    /// Raw op chain (effect-stack lowering): blur sigmas as `Blur` ops,
+    /// pre-combined color stages as `Matrix` ops, in execution order.
+    pub fn from_ops(ops: Vec<FilterOp>) -> Self {
+        Self { ops }
+    }
+
+    /// This chain as an effect stack: one `Blur` stage per blur op, then
+    /// a single `ColorMatrix` stage for the combined color matrix (the
+    /// engine fold order). Migration helper from `filter={f}` to
+    /// `effects={f.into_effects()}`.
+    pub fn into_effects(self) -> crate::foundation::EffectStack {
+        use crate::foundation::{Blur, ColorMatrix, Effect};
+        let mut items: Vec<Box<dyn Effect>> = Vec::new();
+        for op in &self.ops {
+            if let FilterOp::Blur(s) = op {
+                items.push(Blur::new(*s).boxed());
+            }
+        }
+        if let Some(m) = self.color_matrix() {
+            items.push(ColorMatrix::new(m).boxed());
+        }
+        crate::foundation::EffectStack::from(items)
+    }
 
     /// CSS `blur(<length>)`; `sigma` is the Gaussian standard deviation
     /// in px (the CSS parameter, not a box-shadow-style diameter).

@@ -1,0 +1,584 @@
+pub mod shaders;
+
+// Single responsibility: composable effect-layer vocabulary — primitives the
+// renderer executes in stack order, builtins and program-supplied customs.
+//
+// An effect is one render pass with the standard plug shape (WGSL):
+//   fn apply(ctx: EffectCtx, backdrop, sharp, uniforms) -> EffectCtx
+// `EffectCtx { color, uv, depth, normal, coverage }` travels between stages;
+// `depth`/`coverage` is what makes ClipRound-as-effect work (the clip writes
+// them, later effects read them). Order in `EffectStack` is execution order.
+
+/// Stable cache key for an effect: pipeline cache + compositor IPC cache.
+/// Builtins hash (stage, params); customs hash the WGSL source + uniforms.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct EffectId(pub u64);
+
+/// What backdrop texture a custom shader needs, if any.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum BackdropNeed {
+    None,
+    ReadSharp,
+    ReadBlurred { sigma: f32 },
+}
+
+/// One program-supplied custom shader stage: arbitrary WGSL implementing the
+/// fixed `apply` ABI, plus packed uniforms (vec4-array convention).
+#[derive(Clone, Debug, PartialEq)]
+pub struct CustomShader {
+    pub wgsl: String,
+    pub uniforms: Vec<f32>,
+    pub backdrop: BackdropNeed,
+}
+
+use crate::foundation::{
+    Backdrop, BlendMode, Filter, FilterOp, Glass, GlassLayer, Glow, LightEnvironment, Radius,
+    Refraction, Shadow, Spectral,
+};
+
+/// Builtin primitive stages. Param-carrying variants (`Glass`, `Blend`,
+/// `Shadow`, `ClipRound`) own the material data the executor lowers into
+/// passes; the fine-grained glass stages (`Refract`…`Press`) are the
+/// Phase C split of today's monolithic optics pass.
+#[derive(Clone, Debug, PartialEq)]
+pub enum BuiltinStage {
+    Blur { sigma: f32 },
+    ColorMatrix { matrix: [f32; 20] },
+    ClipRound { radius: Radius },
+    Glass(GlassParams),
+    Blend { mode: BlendMode },
+    Shadow(ShadowParams),
+    // Phase C split of the glass optics pass (unit stages for now —
+    // params ride `Glass` until the WGSL decomposition lands).
+    Refract,
+    Frost,
+    Spectral,
+    Tone,
+    FillDimTint,
+    Glow,
+    Rim,
+    Press,
+    LightSpill,
+    CardBlend { mode_id: u32 },
+    /// Group-root marker: merges descendant members' glass into one
+    /// shared layer (spacing = smin merge radius factor input). Consumed
+    /// by compile; the executor emits no pass for it.
+    GlassGroup { spacing: f32 },
+}
+
+/// Material bundle a `Glass` effect refracts through: today's `GlassLayer`
+/// value verbatim, so the executor's lowering is byte-identical to the
+/// current optics path until Phase C splits it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct GlassParams {
+    pub layer: GlassLayer,
+}
+
+/// `BlendMode` carrier for the in-shader card/content composite.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ShadowParams {
+    pub shadow: Shadow,
+    pub light: LightEnvironment,
+}
+
+/// Builtin (known WGSL source) vs custom (program-supplied WGSL).
+#[derive(Clone, Debug, PartialEq)]
+pub enum EffectShader {
+    Builtin(BuiltinStage),
+    Custom(CustomShader),
+}
+
+/// One composable effect layer. Object-safe so stacks are heterogeneous
+/// (`Vec<Box<dyn Effect>>`); call sites write plain structs, no enum wrapper.
+pub trait Effect: Send + Sync + std::fmt::Debug {
+    fn id(&self) -> EffectId;
+    fn needs_backdrop(&self) -> bool;
+    fn pad(&self, scale: f32) -> f32;
+    fn shader(&self) -> EffectShader;
+    /// Object-safe clone for `EffectStack: Clone` (needed by `Prop<T>`).
+    fn clone_box(&self) -> Box<dyn Effect>;
+    /// Box a concrete effect for heterogeneous stacks:
+    /// `vec![Blur::new(4.0).boxed(), Saturate::new(1.3).boxed()]`.
+    fn boxed(self) -> Box<dyn Effect>
+    where
+        Self: Sized + 'static,
+    {
+        Box::new(self)
+    }
+}
+
+/// Ordered effect stack: index order is execution order (bottom → top).
+#[derive(Debug, Default)]
+pub struct EffectStack(pub Vec<Box<dyn Effect>>);
+
+impl Clone for EffectStack {
+    fn clone(&self) -> Self {
+        Self(self.0.iter().map(|e| e.clone_box()).collect())
+    }
+}
+
+impl PartialEq for EffectStack {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.len() == other.0.len()
+            && self
+                .0
+                .iter()
+                .zip(other.0.iter())
+                .all(|(a, b)| a.id() == b.id())
+    }
+}
+
+impl From<Vec<Box<dyn Effect>>> for EffectStack {
+    fn from(items: Vec<Box<dyn Effect>>) -> Self {
+        Self(items)
+    }
+}
+
+impl EffectStack {
+    pub fn new() -> Self {
+        Self(Vec::new())
+    }
+
+    pub fn push<E: Effect + 'static>(&mut self, e: E) {
+        self.0.push(Box::new(e));
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Total offscreen margin in device px: max over member pads.
+    pub fn pad_total(&self, scale: f32) -> f32 {
+        self.0
+            .iter()
+            .map(|e| e.pad(scale))
+            .fold(0.0, f32::max)
+    }
+
+    /// Whether any stage snapshots the backdrop.
+    pub fn needs_backdrop_layer(&self) -> bool {
+        self.0.iter().any(|e| e.needs_backdrop())
+    }
+
+    /// Group-root spacing, if the stack declares a glass group.
+    pub fn glass_group_spacing(&self) -> Option<f32> {
+        self.0.iter().find_map(|e| match e.shader() {
+            EffectShader::Builtin(BuiltinStage::GlassGroup { spacing }) => Some(spacing),
+            _ => None,
+        })
+    }
+
+    /// Lowering for engines until Phase D executes the stack directly:
+    /// the stack's blur sigmas as `Blur` ops and each color stage as a
+    /// raw `Matrix` op, in order. `None` when the stack carries no
+    /// filter-like stage (the engine then skips the offscreen).
+    pub fn to_filter(&self) -> Option<Filter> {
+        let mut ops = Vec::new();
+        for e in self.0.iter() {
+            match e.shader() {
+                EffectShader::Builtin(BuiltinStage::Blur { sigma }) => {
+                    if sigma > 0.0 {
+                        ops.push(FilterOp::Blur(sigma));
+                    }
+                }
+                EffectShader::Builtin(BuiltinStage::ColorMatrix { matrix }) => {
+                    ops.push(FilterOp::Matrix(matrix));
+                }
+                _ => {}
+            }
+        }
+        if ops.is_empty() {
+            None
+        } else {
+            Some(Filter::from_ops(ops))
+        }
+    }
+
+    /// First `Glass` stage's single-material components, if the stack's
+    /// glass is a lone lens (not a group): `(glass, backdrop, spectral,
+    /// glow, refraction)`.
+    pub fn glass_single(
+        &self,
+    ) -> Option<(Glass, Backdrop, Spectral, Glow, Refraction)> {
+        self.0.iter().find_map(|e| match e.shader() {
+            EffectShader::Builtin(BuiltinStage::Glass(p)) => match &p.layer {
+                GlassLayer::Single(g, b, s, gl, r) => Some((*g, *b, *s, *gl, *r)),
+                GlassLayer::Group(_) => None,
+            },
+            _ => None,
+        })
+    }
+
+    /// First `Glass` stage params, if the stack refracts a backdrop.
+    /// Engines and island extraction lower through this until Phase D
+    /// executes the stack directly.
+    pub fn glass_layer(&self) -> Option<GlassLayer> {
+        self.0.iter().find_map(|e| match e.shader() {
+            EffectShader::Builtin(BuiltinStage::Glass(p)) => Some(p.layer.clone()),
+            _ => None,
+        })
+    }
+
+    /// First `Blend` stage mode, if the stack composites with a blend mode.
+    pub fn blend_mode(&self) -> Option<BlendMode> {
+        self.0.iter().find_map(|e| match e.shader() {
+            EffectShader::Builtin(BuiltinStage::Blend { mode }) => Some(mode),
+            _ => None,
+        })
+    }
+}
+
+/// FNV-1a 64 over bytes: stable `EffectId` without external deps.
+fn hash_id(bytes: &[u8]) -> EffectId {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for b in bytes {
+        h ^= *b as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    EffectId(h)
+}
+
+/// Separable Gaussian blur primitive (H then V passes in the executor).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Blur {
+    pub sigma: f32,
+}
+
+impl Blur {
+    pub fn new(sigma: f32) -> Self {
+        Self {
+            sigma: sigma.max(0.0),
+        }
+    }
+}
+
+impl Effect for Blur {
+    fn id(&self) -> EffectId {
+        { let mut b = vec![0x01]; b.extend_from_slice(&self.sigma.to_bits().to_le_bytes()); hash_id(&b) }
+    }
+
+    fn needs_backdrop(&self) -> bool {
+        false
+    }
+
+    fn pad(&self, scale: f32) -> f32 {
+        3.0 * self.sigma * scale
+    }
+
+    fn shader(&self) -> EffectShader {
+        EffectShader::Builtin(BuiltinStage::Blur { sigma: self.sigma })
+    }
+
+    fn clone_box(&self) -> Box<dyn Effect> {
+        Box::new(self.clone())
+    }
+}
+
+/// Raw 4x5 color-matrix primitive (a `ColorMatrix` pass in the executor).
+/// Carries a pre-combined matrix (e.g. from `Filter::color_matrix()`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct ColorMatrix {
+    pub matrix: [f32; 20],
+}
+
+impl ColorMatrix {
+    pub fn new(matrix: [f32; 20]) -> Self {
+        Self { matrix }
+    }
+}
+
+impl Effect for ColorMatrix {
+    fn id(&self) -> EffectId {
+        let mut b = vec![0x03];
+        for x in self.matrix {
+            b.extend_from_slice(&x.to_bits().to_le_bytes());
+        }
+        hash_id(&b)
+    }
+
+    fn needs_backdrop(&self) -> bool {
+        false
+    }
+
+    fn pad(&self, _scale: f32) -> f32 {
+        0.0
+    }
+
+    fn shader(&self) -> EffectShader {
+        EffectShader::Builtin(BuiltinStage::ColorMatrix {
+            matrix: self.matrix,
+        })
+    }
+
+    fn clone_box(&self) -> Box<dyn Effect> {
+        Box::new(self.clone())
+    }
+}
+
+/// Saturation adjustment primitive (a `ColorMatrix` pass in the executor).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Saturate {
+    pub amount: f32,
+}
+
+impl Saturate {
+    pub fn new(amount: f32) -> Self {
+        Self { amount }
+    }
+
+    /// Row-major 4x5 CSS saturate matrix.
+    pub fn matrix(&self) -> [f32; 20] {
+        let s = self.amount;
+        let m = [
+            0.213 + 0.787 * s,
+            0.715 - 0.715 * s,
+            0.072 - 0.072 * s,
+            0.213 - 0.213 * s,
+            0.715 + 0.285 * s,
+            0.072 - 0.072 * s,
+            0.213 - 0.213 * s,
+            0.715 - 0.715 * s,
+            0.072 + 0.928 * s,
+        ];
+        [
+            m[0], m[1], m[2], 0.0, 0.0, //
+            m[3], m[4], m[5], 0.0, 0.0, //
+            m[6], m[7], m[8], 0.0, 0.0, //
+            0.0, 0.0, 0.0, 1.0, 0.0,
+        ]
+    }
+}
+
+impl Effect for Saturate {
+    fn id(&self) -> EffectId {
+        { let mut b = vec![0x02]; b.extend_from_slice(&self.amount.to_bits().to_le_bytes()); hash_id(&b) }
+    }
+
+    fn needs_backdrop(&self) -> bool {
+        false
+    }
+
+    fn pad(&self, _scale: f32) -> f32 {
+        0.0
+    }
+
+    fn shader(&self) -> EffectShader {
+        EffectShader::Builtin(BuiltinStage::ColorMatrix {
+            matrix: self.matrix(),
+        })
+    }
+
+    fn clone_box(&self) -> Box<dyn Effect> {
+        Box::new(self.clone())
+    }
+}
+
+fn debug_id(tag: u8, v: &impl std::fmt::Debug) -> EffectId {
+    let mut b = vec![tag];
+    b.extend_from_slice(format!("{v:?}").as_bytes());
+    hash_id(&b)
+}
+
+/// Liquid-glass refraction effect: snapshots the backdrop and refracts it
+/// through the material's SDF. Carries today's `GlassLayer` value so the
+/// executor's lowering is byte-identical until Phase C splits the optics.
+#[derive(Clone, Debug, PartialEq)]
+pub struct GlassEffect {
+    pub params: GlassParams,
+}
+
+impl GlassEffect {
+    pub fn single(
+        glass: Glass,
+        backdrop: Backdrop,
+        spectral: Spectral,
+        glow: Glow,
+        refraction: Refraction,
+    ) -> Self {
+        Self {
+            params: GlassParams {
+                layer: GlassLayer::Single(glass, backdrop, spectral, glow, refraction),
+            },
+        }
+    }
+
+    pub fn new(layer: GlassLayer) -> Self {
+        Self {
+            params: GlassParams { layer },
+        }
+    }
+}
+
+impl Effect for GlassEffect {
+    fn id(&self) -> EffectId {
+        debug_id(0x10, &self.params.layer)
+    }
+
+    fn needs_backdrop(&self) -> bool {
+        true
+    }
+
+    fn pad(&self, scale: f32) -> f32 {
+        self.params.layer.device_pad(scale)
+    }
+
+    fn shader(&self) -> EffectShader {
+        EffectShader::Builtin(BuiltinStage::Glass(self.params.clone()))
+    }
+
+    fn clone_box(&self) -> Box<dyn Effect> {
+        Box::new(self.clone())
+    }
+}
+
+/// CSS mix-blend-mode composite against the backdrop snapshot.
+#[derive(Clone, Debug, PartialEq)]
+pub struct BlendEffect {
+    pub mode: BlendMode,
+}
+
+impl BlendEffect {
+    pub fn new(mode: BlendMode) -> Self {
+        Self { mode }
+    }
+}
+
+impl Effect for BlendEffect {
+    fn id(&self) -> EffectId {
+        debug_id(0x11, &self.mode)
+    }
+
+    fn needs_backdrop(&self) -> bool {
+        !self.mode.is_normal()
+    }
+
+    fn pad(&self, _scale: f32) -> f32 {
+        0.0
+    }
+
+    fn shader(&self) -> EffectShader {
+        EffectShader::Builtin(BuiltinStage::Blend { mode: self.mode })
+    }
+
+    fn clone_box(&self) -> Box<dyn Effect> {
+        Box::new(self.clone())
+    }
+}
+
+/// Alpha-silhouette shadow cast from the layer's finished content.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ShadowEffect {
+    pub params: ShadowParams,
+}
+
+impl ShadowEffect {
+    pub fn new(shadow: Shadow, light: LightEnvironment) -> Self {
+        Self {
+            params: ShadowParams { shadow, light },
+        }
+    }
+}
+
+impl Effect for ShadowEffect {
+    fn id(&self) -> EffectId {
+        debug_id(0x12, &self.params.shadow)
+    }
+
+    fn needs_backdrop(&self) -> bool {
+        !self.params.shadow.blend.is_normal()
+    }
+
+    fn pad(&self, scale: f32) -> f32 {
+        self.params.shadow.max_extent() * scale
+    }
+
+    fn shader(&self) -> EffectShader {
+        EffectShader::Builtin(BuiltinStage::Shadow(self.params.clone()))
+    }
+
+    fn clone_box(&self) -> Box<dyn Effect> {
+        Box::new(self.clone())
+    }
+}
+
+/// Rounded-rect clip as an effect: writes SDF `depth`/`coverage` into the
+/// context for downstream stages (glass refracts inside it, shadows cast
+/// from it). Replaces `Radius`-as-prop on the layer path.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ClipRound {
+    pub radius: Radius,
+}
+
+impl ClipRound {
+    pub fn new(radius: Radius) -> Self {
+        Self { radius }
+    }
+}
+
+impl Effect for ClipRound {
+    fn id(&self) -> EffectId {
+        debug_id(0x13, &self.radius)
+    }
+
+    fn needs_backdrop(&self) -> bool {
+        false
+    }
+
+    fn pad(&self, _scale: f32) -> f32 {
+        1.5
+    }
+
+    fn shader(&self) -> EffectShader {
+        EffectShader::Builtin(BuiltinStage::ClipRound {
+            radius: self.radius,
+        })
+    }
+
+    fn clone_box(&self) -> Box<dyn Effect> {
+        Box::new(self.clone())
+    }
+}
+
+/// Glass-group root marker: merges descendant members' glass into one
+/// shared layer. Consumed by compile (`enclosing_glass_group`); the
+/// executor emits no pass for it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct GlassGroupEffect {
+    pub spacing: f32,
+}
+
+impl GlassGroupEffect {
+    pub fn new(spacing: f32) -> Self {
+        Self {
+            spacing: spacing.max(0.0),
+        }
+    }
+}
+
+impl Effect for GlassGroupEffect {
+    fn id(&self) -> EffectId {
+        debug_id(0x14, &self.spacing.to_bits())
+    }
+
+    fn needs_backdrop(&self) -> bool {
+        false
+    }
+
+    fn pad(&self, scale: f32) -> f32 {
+        self.spacing * scale
+    }
+
+    fn shader(&self) -> EffectShader {
+        EffectShader::Builtin(BuiltinStage::GlassGroup {
+            spacing: self.spacing,
+        })
+    }
+
+    fn clone_box(&self) -> Box<dyn Effect> {
+        Box::new(self.clone())
+    }
+}

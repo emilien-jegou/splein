@@ -1,7 +1,7 @@
 // Single responsibility: Side-by-side demo for CSS element filters.
 //
 // Each card is a 150x150 rounded rect with a vivid fill, carrying one
-// `filter` so the effect is isolated and comparable row-to-row:
+// `effects` stack so the effect is isolated and comparable row-to-row:
 //   - "Blur (8)": `Filter::blur(8)` — soft Gaussian falloff past the edges.
 //   - "Brightness (1.6)": `Filter::brightness(1.6)` — lifts toward white.
 //   - "Saturate (0)": `Filter::saturate(0)` — greyscale.
@@ -11,6 +11,7 @@
 //     runs before the color matrix (v1 ordering).
 // Frozen inspection via F8 / `.` / `s` comes from the shared harness.
 
+use riode::foundation::EffectStack;
 use riode::prelude::*;
 
 /// Window chrome shared by the release driver (`main.rs`) and the hot entry
@@ -26,7 +27,7 @@ const LABEL_COLOR: u32 = 0xC8D0E0;
 const CARD_FILL: u32 = 0x3B82F6;
 
 #[component]
-fn Card(label: &'static str, filter: Filter) -> impl IntoElement {
+fn Card(label: &'static str, effects: EffectStack) -> impl IntoElement {
     view! {
         <Group direction="vertical" gap={24.0} alignment="center">
             <Text size={16.0} weight={500u16} color={LABEL_COLOR}>{label}</Text>
@@ -35,7 +36,7 @@ fn Card(label: &'static str, filter: Filter) -> impl IntoElement {
                 height={150.0}
                 radius={8.0}
                 fill={CARD_FILL}
-                filter={filter}
+                effects={effects}
             />
         </Group>
     }
@@ -59,12 +60,12 @@ pub(crate) fn Page() -> impl IntoElement {
                 alignment="center"
                 distribution="center"
             >
-                <Card label="Blur (8)" filter={Filter::blur(8.0)} />
-                <Card label="Brightness (1.6)" filter={Filter::brightness(1.6)} />
-                <Card label="Saturate (0)" filter={Filter::saturate(0.0)} />
-                <Card label="Contrast (1.8)" filter={Filter::contrast(1.8)} />
-                <Card label="Hue Rotate (120°)" filter={Filter::hue_rotate(120.0)} />
-                <Card label="Blur + Saturate" filter={Filter::blur(4.0).with(FilterOp::Saturate(0.0))} />
+                <Card label="Blur (8)" effects={Filter::blur(8.0).into_effects()} />
+                <Card label="Brightness (1.6)" effects={Filter::brightness(1.6).into_effects()} />
+                <Card label="Saturate (0)" effects={Filter::saturate(0.0).into_effects()} />
+                <Card label="Contrast (1.8)" effects={Filter::contrast(1.8).into_effects()} />
+                <Card label="Hue Rotate (120°)" effects={Filter::hue_rotate(120.0).into_effects()} />
+                <Card label="Blur + Saturate" effects={Filter::blur(4.0).with(FilterOp::Saturate(0.0)).into_effects()} />
             </Group>
         </Group>
     }

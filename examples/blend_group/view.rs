@@ -21,7 +21,19 @@
 // section — only the composite differs; that sameness is what the eyes
 // check. Human judges; no test asserts.
 
-use riode::foundation::{GlassStyle, Glow, Refraction, Spectral};
+use riode::foundation::{BlendEffect, Effect, EffectStack, GlassEffect, GlassStyle, Glow, Refraction, Spectral};
+
+fn blend_stack(blend: BlendMode) -> EffectStack {
+    EffectStack::from(vec![BlendEffect::new(blend).boxed()])
+}
+
+fn glass_blend_stack(style: GlassStyle, blend: BlendMode) -> EffectStack {
+    let GlassStyle { glass, backdrop, spectral, glow, refraction, .. } = style;
+    EffectStack::from(vec![
+        GlassEffect::single(glass, backdrop, spectral, glow, refraction).boxed(),
+        BlendEffect::new(blend).boxed(),
+    ])
+}
 use riode::internal::group;
 use riode::prelude::*;
 // Presets resolve to the single shared image under hot-reload and to
@@ -84,7 +96,7 @@ fn Row(label: &'static str, blend: BlendMode) -> impl IntoElement {
                     height={72.0}
                     radius={16.0}
                     fill={ACCENT}
-                    blend={blend}
+                    effects={blend_stack(blend)}
                     z_index={2}
                     alignment="center"
                     distribution="center"
@@ -127,8 +139,7 @@ fn GlassRow(label: &'static str, blend: BlendMode) -> impl IntoElement {
                     width={220.0}
                     height={88.0}
                     radius={24.0}
-                    preset={style}
-                    blend={blend}
+                    effects={glass_blend_stack(style, blend)}
                     z_index={2}
                     alignment="center"
                     distribution="center"

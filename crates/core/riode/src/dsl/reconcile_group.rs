@@ -4,7 +4,7 @@ use crate::dsl::element::Element;
 use crate::dsl::group::GroupDef;
 use crate::dsl::reconcile_children::reconcile_children;
 use crate::dsl::reconciler::{evaluate_prop, reconcile};
-use crate::foundation::{Backdrop, BlendMode, Fill, Filter, Glass, Glow, LayoutPresence, Refraction, Shadow, Size, Spectral, Transform};
+use crate::foundation::{EffectStack, Fill, LayoutPresence, Shadow, Size, Transform};
 use crate::input::handlers::NodeHandlers;
 use crate::reactive::id::SubscriberId;
 use crate::reactive::observer::Observer;
@@ -42,9 +42,7 @@ pub fn reconcile_group(
     let has_dyn_paint = def.fill.as_ref().is_some_and(|p| p.is_dynamic())
         || def.opacity.as_ref().is_some_and(|p| p.is_dynamic())
         || def.shadow.as_ref().is_some_and(|p| p.is_dynamic())
-        || def.filter.as_ref().is_some_and(|p| p.is_dynamic())
-        || def.blend.as_ref().is_some_and(|p| p.is_dynamic())
-        || def.glass.as_ref().is_some_and(|p| p.is_dynamic())
+        || def.effects.as_ref().is_some_and(|p| p.is_dynamic())
         || def.transform.as_ref().is_some_and(|p| p.is_dynamic())
         || def.z_index.as_ref().is_some_and(|p| p.is_dynamic())
         || def.x.as_ref().is_some_and(|p| p.is_dynamic())
@@ -71,14 +69,8 @@ pub fn reconcile_group(
             .as_ref()
             .and_then(|p| p.dynamic_closure())
             .map(|s| Rc::new(move || Some(s())) as _),
-        filter: def
-            .filter
-            .as_ref()
-            .and_then(|p| p.dynamic_closure())
-            .map(|s| Rc::new(move || Some(s())) as _),
-        blend: def.blend.as_ref().and_then(|p| p.dynamic_closure()),
-        glass: def
-            .glass
+        effects: def
+            .effects
             .as_ref()
             .and_then(|p| p.dynamic_closure())
             .map(|s| Rc::new(move || Some(s())) as _),
@@ -177,14 +169,7 @@ pub fn reconcile_group(
     }
     node.style.appearance.stroke = def.stroke;
     node.style.appearance.shadow = props.shadow.clone();
-    node.style.appearance.filter = props.filter.clone();
-    node.style.appearance.blend = props.blend;
-    node.style.appearance.glass = props.glass;
-    node.style.appearance.backdrop = Some(props.backdrop);
-    node.style.appearance.spectral = Some(props.spectral);
-    node.style.appearance.glow = Some(props.glow);
-    node.style.appearance.refraction = Some(props.refraction);
-    node.style.glass_group = def.glass_group;
+    node.style.appearance.effects = props.effects.clone();
     node.style.appearance.light_override = def.light_override;
     node.style.appearance.radius = def.radius;
 
@@ -358,26 +343,8 @@ struct ResolvedProps {
     opacity: Option<f32>,
     /// Static or dynamic shadow the node actually paints.
     shadow: Option<Shadow>,
-    /// Static or dynamic element filter the node actually paints.
-    filter: Option<Filter>,
-    /// Static or dynamic blend mode the node composites at (`Normal` =
-    /// unset — plain source-over).
-    blend: BlendMode,
-    /// Static or dynamic liquid-glass material the node actually paints.
-    glass: Option<Glass>,
-    /// The backdrop stages the lens samples (core blur, wash,
-    /// saturation, tone, ambient, fill), resolved from the preset plus
-    /// the explicit `backdrop_*` props.
-    backdrop: Backdrop,
-    /// The spectral response shared by the lens layer, resolved from the
-    /// preset (`None`/`Spectral::NONE` means monochrome).
-    spectral: Spectral,
-    /// The emissive bottom glow shared by the lens layer, resolved from
-    /// the preset (`Glow::NONE` means off).
-    glow: Glow,
-    /// The outer refraction halo shared by the lens layer, resolved from
-    /// the preset (`Refraction::NONE` means off).
-    refraction: Refraction,
+    /// Static or dynamic ordered effect stack the node actually paints.
+    effects: Option<EffectStack>,
     /// Effective stacking order, absoluteness folded in, read under the paint observer when
     /// dynamic so a signal change repaints.
     z_index: i32,
@@ -430,92 +397,20 @@ impl ResolvedProps {
             scroll_offset,
         );
 
-        let mut shadow = match &def.shadow {
+        let shadow = match &def.shadow {
             Some(Prop::Static(s)) => Some(s.clone()),
             Some(Prop::Dynamic(_)) | Some(Prop::Context(_)) => {
                 evaluate_prop(&def.shadow, p_sub, runtime)
             }
             None => None,
         };
-        let filter = match &def.filter {
+        let effects = match &def.effects {
             Some(Prop::Static(s)) => Some(s.clone()),
             Some(Prop::Dynamic(_)) | Some(Prop::Context(_)) => {
-                evaluate_prop(&def.filter, p_sub, runtime)
+                evaluate_prop(&def.effects, p_sub, runtime)
             }
             None => None,
         };
-        let blend = match &def.blend {
-            Some(Prop::Static(s)) => *s,
-            Some(Prop::Dynamic(_)) | Some(Prop::Context(_)) => {
-                evaluate_prop(&def.blend, p_sub, runtime).unwrap_or(BlendMode::Normal)
-            }
-            None => BlendMode::Normal,
-        };
-        let mut glass = match &def.glass {
-            Some(Prop::Static(s)) => Some(*s),
-            Some(Prop::Dynamic(_)) | Some(Prop::Context(_)) => {
-                evaluate_prop(&def.glass, p_sub, runtime)
-            }
-            None => None,
-        };
-        // A userland preset seeds the whole look; explicit props patch
-        // over it field-by-field (explicit wins, absent falls back to
-        // the preset, no preset falls back to neutral).
-        let preset = evaluate_prop(&def.preset, p_sub, runtime);
-        // The preset carries the whole look, cast shadow included; an
-        // explicit `shadow=` prop wins over it (v2 Phase 1: the shadow is
-        // a plain `Shadow` owned by the general API, not a lens knob).
-        if shadow.is_none() {
-            shadow = preset.as_ref().and_then(|s| s.shadow.clone());
-        }
-        if glass.is_none() {
-            glass = preset.as_ref().map(|s| s.glass);
-        }
-        // The backdrop stages resolve independently of the lens: the
-        // preset's stages seed a `Backdrop`, and each explicit
-        // `backdrop_*` prop patches over it. This mirrors the old
-        // flatten-into-`glass` behaviour exactly — only the destination
-        // moved, so the shipped look is unchanged.
-        let mut backdrop = Backdrop::NONE;
-        if glass.is_some() {
-            let preset_bd = preset.as_ref().map(|s| s.backdrop).unwrap_or(Backdrop::NONE);
-            backdrop = preset_bd;
-            if let Some(blur) = evaluate_prop(&def.backdrop_blur, p_sub, runtime) {
-                backdrop.blur = Some(blur.max(0.0));
-            }
-            // Explicit prop, else the preset's wash. `Some(None)` (an
-            // explicit no-wash) disables; a plain absent prop keeps the
-            // preset's, falling back to neutral.
-            if let Some(wash) = evaluate_prop(&def.backdrop_fill, p_sub, runtime) {
-                backdrop.wash = Some(wash);
-            }
-            if let Some(sat) = evaluate_prop(&def.backdrop_saturation, p_sub, runtime) {
-                backdrop.saturation = Some(sat.max(0.0));
-            }
-            if let Some(tone) = evaluate_prop(&def.backdrop_tone, p_sub, runtime) {
-                backdrop.tone = Some(tone.clamp(0.0, 1.0));
-            }
-            if let Some(curve) = evaluate_prop(&def.backdrop_tone_curve, p_sub, runtime) {
-                backdrop.tone_curve = Some(curve);
-            }
-            if let Some(amb) = evaluate_prop(&def.backdrop_ambient, p_sub, runtime) {
-                backdrop.ambient_mix = Some(amb.clamp(0.0, 1.0));
-            }
-        }
-
-        // The spectral response rides the whole layer: only a node with a
-        // lens reads it, and an unset response is monochrome (off).
-        // The emissive glow rides alongside it: only a node with a lens
-        // reads it, and an unset glow is off.
-        let mut spectral = Spectral::NONE;
-        let mut glow = Glow::NONE;
-        let mut refraction = Refraction::NONE;
-        if glass.is_some() {
-            spectral = preset.as_ref().map(|s| s.spectral).unwrap_or(Spectral::NONE);
-            glow = preset.as_ref().map(|s| s.glow).unwrap_or(Glow::NONE);
-            refraction = preset.as_ref().map(|s| s.refraction).unwrap_or(Refraction::NONE);
-        }
-
         Self {
             width,
             height,
@@ -525,13 +420,7 @@ impl ResolvedProps {
             fill: evaluate_prop(&def.fill, p_sub, runtime).flatten(),
             opacity: evaluate_prop(&def.opacity, p_sub, runtime),
             shadow,
-            filter,
-            blend,
-            glass,
-            backdrop,
-            spectral,
-            glow,
-            refraction,
+            effects,
             z_index: resolve_z_index(evaluate_prop(&def.z_index, p_sub, runtime), def.is_absolute),
         }
     }
@@ -566,13 +455,7 @@ impl ChangeSet {
         let paint = app.fill != props.fill
             || (props.opacity.is_some() && props.opacity != Some(app.opacity))
             || app.shadow != props.shadow
-            || app.filter != props.filter
-            || app.blend != props.blend
-            || app.glass != props.glass
-            || app.backdrop != Some(props.backdrop)
-            || app.spectral != Some(props.spectral)
-            || app.glow != Some(props.glow)
-            || app.refraction != Some(props.refraction)
+            || app.effects != props.effects
             || app.light_override != def.light_override
             || app.stroke != def.stroke
             || app.radius != def.radius

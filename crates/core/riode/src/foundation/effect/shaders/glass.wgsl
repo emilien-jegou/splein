@@ -367,16 +367,60 @@ fn cardBlend(cardPrem: vec3<f32>, cardA: f32, px: vec2<f32>) -> vec4<f32> {
     return vec4<f32>(co, ao);
 }
 
-@fragment
-fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
-    // Output is premultiplied colour composited srcOver onto the sharp
-    // backdrop: transparent outside the shape.
-    let px = pos.xy;
-    let count = i32(u.u_global.x);
-    if (count == 0) {
-        return vec4<f32>(0.0);
-    }
+// ---------------------------------------------------------------------------
+// Effect stages: `fs_main` below is purely an orchestrator — silhouette,
+// then one function per material stage in pipeline order. Every stage
+// takes a `GlassCtx` and returns it; the math inside each stage is
+// verbatim what the monolithic `fs_main` did (same taps, same order),
+// so reordering stages is a one-line change in `fs_main` and custom
+// effects can replace a single stage without forking the file.
+//
+// Uniform banks are read directly from `u` inside each stage
+// (`u.u_var[N]`); the context carries only per-pixel varyings.
+// ---------------------------------------------------------------------------
 
+/// Per-pixel state threaded through the glass effect stages. Mirrors the
+/// shared `EffectCtx` ABI (`effect_abi.wgsl`): `col` is the working
+/// colour, `px` the device pixel, `depth` the SDF distance, `nrm` the lens
+/// normal, `coverage` the clip edge alpha. The remaining fields are the
+/// lens/frost intermediates the stages hand to each other.
+struct GlassCtx {
+    px: vec2<f32>,
+    d: f32,
+    depth: f32,
+    inside: f32,
+    keep: f32,
+    ownK: f32,
+    ownGrp: f32,
+    count: i32,
+    halfMin: f32,
+    fillScale: f32,
+    light: f32,
+    tint: vec4<f32>,
+    rcB: vec4<f32>,
+    xb: vec4<f32>,
+    fxp: f32,
+    fxm: f32,
+    fyp: f32,
+    fym: f32,
+    nrm: vec2<f32>,
+    gradLen: f32,
+    lensAmt: f32,
+    dLens: f32,
+    vv: f32,
+    sp: vec2<f32>,
+    base: vec3<f32>,
+    col: vec3<f32>,
+    sw: f32,
+};
+
+/// Silhouette + attribute blending: the SDF union, the owning group's
+/// smoothing/clip/opacity, and the proximity-blended per-shape attributes.
+/// Returns `keep <= 0` when the pixel is clipped out (caller early-outs).
+fn glassSilhouette(px: vec2<f32>, count: i32) -> GlassCtx {
+    var g: GlassCtx;
+    g.px = px;
+    g.count = count;
     // Per-shape attributes blended by proximity (for merged regions).
     // Weights are shifted by the nearest distance (online softmax) so the
     // nearest shape always weighs 1: raw exp(-dist/k) underflows to 0
@@ -385,7 +429,7 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
     // opacity); the outline is the union of every group's smooth union.
     var d = 1e6;
     var dg = 1e6;
-    var g = -1.0;
+    var grp = -1.0;
     var dOwn = 1e6;
     var own = vec4<f32>(0.0, 0.0, 1.0, 0.0);
     var ownClip = vec4<f32>(-1e9, -1e9, 1e9, 1e9);
@@ -394,10 +438,10 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
             break;
         }
         let ex = u.u_extra[i];
-        if (ex.x != g) {
+        if (ex.x != grp) {
             d = min(d, dg);
             dg = 1e6;
-            g = ex.x;
+            grp = ex.x;
         }
         let di = shapeOf(px, u.u_rects[i], u.u_info[i], 1.0, u.u_global2.w);
         dg = smin(dg, di, ex.y);
@@ -408,28 +452,29 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
         }
     }
     d = min(d, dg);
-    let ownK = own.y;
-    let keep = own.z
+    g.d = d;
+    g.depth = -d;
+    g.ownK = own.y;
+    g.ownGrp = own.x;
+    g.keep = own.z
         * step(ownClip.x, px.x) * step(ownClip.y, px.y)
         * step(px.x, ownClip.z) * step(px.y, ownClip.w);
-    if (keep <= 0.0) {
-        return vec4<f32>(0.0);
-    }
+    g.inside = 1.0 - smoothstep(-0.75, 0.75, d);
 
     var wsum = 0.0;
-    var halfMin = 0.0;  // half the shorter side, for the lens size factor
-    var fillScale = 0.0;  // per-shape fillOpacity factor (fill size scaling)
-    var light = 0.0;  // per-shape press light (the pressed lift)
-    var tint = vec4<f32>(0.0);
-    var rcB = vec4<f32>(0.0);  // attribute-blended rect, for the ambient colour
-    var xb = vec4<f32>(0.0);  // extra frost (uBlur)
-    let wk = ownK * 0.5 + 1.0;
+    g.halfMin = 0.0;  // half the shorter side, for the lens size factor
+    g.fillScale = 0.0;  // per-shape fillOpacity factor (fill size scaling)
+    g.light = 0.0;  // per-shape press light (the pressed lift)
+    g.tint = vec4<f32>(0.0);
+    g.rcB = vec4<f32>(0.0);  // attribute-blended rect, for the ambient colour
+    g.xb = vec4<f32>(0.0);  // extra frost (uBlur)
+    let wk = g.ownK * 0.5 + 1.0;
     var dmin = 1e6;
     for (var i = 0; i < 24; i = i + 1) {
         if (i >= count) {
             break;
         }
-        if (u.u_extra[i].x != own.x) {
+        if (u.u_extra[i].x != g.ownGrp) {
             continue;
         }
         let info = u.u_info[i];
@@ -438,79 +483,50 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
         if (e < dmin) {
             let s = exp(-(dmin - e) / wk);
             wsum *= s;
-            halfMin *= s;
-            fillScale *= s;
-            light *= s;
-            tint *= s;
-            rcB *= s;
-            xb *= s;
+            g.halfMin *= s;
+            g.fillScale *= s;
+            g.light *= s;
+            g.tint *= s;
+            g.rcB *= s;
+            g.xb *= s;
             dmin = e;
         }
         let w = exp(-(e - dmin) / wk);
         wsum += w;
-        halfMin += w * 0.5 * min(u.u_rects[i].z, u.u_rects[i].w);
-        fillScale += w * info.w;
-        light += w * u.u_extra[i].w;
-        tint += w * u.u_tints[i];
-        rcB += w * u.u_rects[i];
-        xb += w * u.u_blur[i];
+        g.halfMin += w * 0.5 * min(u.u_rects[i].z, u.u_rects[i].w);
+        g.fillScale += w * info.w;
+        g.light += w * u.u_extra[i].w;
+        g.tint += w * u.u_tints[i];
+        g.rcB += w * u.u_rects[i];
+        g.xb += w * u.u_blur[i];
     }
-    halfMin /= wsum;
-    fillScale /= wsum;
-    light /= wsum;
-    tint /= wsum;
-    rcB /= wsum;
-    xb /= wsum;
+    g.halfMin /= wsum;
+    g.fillScale /= wsum;
+    g.light /= wsum;
+    g.tint /= wsum;
+    g.rcB /= wsum;
+    g.xb /= wsum;
+    g.sw = 0.0;
+    g.col = vec3<f32>(0.0);
+    return g;
+}
 
-    // Single bank: both uniform slots carry the same set (see the
-    // packer), so the first bank is read directly. No variant flags,
-    // no clearMix — every value on every shape is explicit.
+/// Refraction: lens-field gradient → normals → merge-neck scaling →
+/// exponential lens displacement + edge term. Sets `sp` (the displaced
+/// sample point), `nrm`, `lensAmt`, `dLens`, `vv`.
+fn stageRefract(g: GlassCtx) -> GlassCtx {
+    var o = g;
     let A = u.u_var[0];
-    let B = u.u_var[1];
-    let C = u.u_var[2];
-    let D = u.u_var[3];
-    let E = u.u_var[4];
-    let F = u.u_var[5];
-    let G = u.u_var[6];
-    let H = u.u_var[7];
     let I = u.u_var[8];
-    let J = u.u_var[9];
-    let K = u.u_var[10];
-    let L4 = u.u_var[11];
-    let R4 = u.u_var[34];
-    let M = u.u_var[24];
-    let N = u.u_var[25];
-    let O = u.u_var[26];
-    let P = u.u_var[30];
-    let Q = u.u_var[32];
+    let C = u.u_var[2];
     let hc = u.u_global2.z;
-
-    let inside = 1.0 - smoothstep(-0.75, 0.75, d);
-
-    // Outside the silhouette the optics pass emits nothing: the halo is
-    // the renderer's theatre-mode replay (blurred finished card under the
-    // sharp one, `refraction_replay`), not shading. A shader-side halo
-    // could only re-evaluate the lobe field — a second gradient that
-    // diverges from the card by construction — so it was deleted.
-    let glowGain = Q.w;
-    let glowIn = R4.x;
-    if (inside <= 0.0) {
-        return vec4<f32>(0.0);
-    }
-
-    // Opaque (Reduce Transparency).
-    if (u.u_global.w > 0.5) {
-        let solid = mix(u.u_opaque.rgb, tint.rgb, tint.a);
-        return cardBlend(solid * (inside * keep), inside * keep, px);
-    }
-
-    let fxp = lensField(px + vec2<f32>(1.0, 0.0));
-    let fxm = lensField(px - vec2<f32>(1.0, 0.0));
-    let fyp = lensField(px + vec2<f32>(0.0, 1.0));
-    let fym = lensField(px - vec2<f32>(0.0, 1.0));
-    let grad = vec2<f32>(fxp - fxm, fyp - fym) + vec2<f32>(1e-6);
-    let gradLen = length(grad);
-    let nrm = grad / gradLen;
+    o.fxp = lensField(o.px + vec2<f32>(1.0, 0.0));
+    o.fxm = lensField(o.px - vec2<f32>(1.0, 0.0));
+    o.fyp = lensField(o.px + vec2<f32>(0.0, 1.0));
+    o.fym = lensField(o.px - vec2<f32>(0.0, 1.0));
+    let grad = vec2<f32>(o.fxp - o.fxm, o.fyp - o.fym) + vec2<f32>(1e-6);
+    o.gradLen = length(grad);
+    o.nrm = grad / o.gradLen;
 
     // Merge necks: where the lens field's smooth union is active (smin
     // weight > 0) the lens treats the blob as one surface, after the
@@ -520,8 +536,8 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
     // sides (the crease a unit normal draws). Outside merge necks neck = 1
     // and the lens is unchanged.
     var neck = 1.0;
-    if (count > 1 && ownK > 0.0 && lensBlend(px, own.x) > 0.0) {
-        neck = clamp(0.5 * gradLen, 0.05, 1.0);
+    if (o.count > 1 && o.ownK > 0.0 && lensBlend(o.px, o.ownGrp) > 0.0) {
+        neck = clamp(0.5 * o.gradLen, 0.05, 1.0);
     }
 
     // Lens v3: the displacement along the normal falls off exponentially
@@ -530,27 +546,37 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
     // inside, so the band shows a mirrored, compressed copy of the
     // interior). Shapes with a half shorter side below the size ref get a
     // uniformly scaled-down lens.
-    let depth = -d;
-    let ldepth = depth / neck;
+    let ldepth = o.depth / neck;
     let band = max(A.y, 1.0);
     let decay = max(A.x, 1e-3);
-    let sc = select(1.0, min(1.0, halfMin / C.w), C.w > 0.0);
+    let sc = select(1.0, min(1.0, o.halfMin / C.w), C.w > 0.0);
     let cut = exp(-band / decay);
     let ls = max(decay * sc, 1e-3);
     let ex = exp(-max(ldepth, 0.0) / ls);
     let v = max(ex - cut, 0.0) / max(1.0 - cut, 1e-6);
     let lensK = A.z * (1.0 - 0.5 * hc) * band * sc;
-    var lensAmt = lensK * v;
+    o.lensAmt = lensK * v;
     // d(lensAmt)/d(depth), for the post-lens blur's Jacobian.
-    var dLens = select(0.0, -lensK * ex / ls / max(1.0 - cut, 1e-6), v > 0.0);
+    o.dLens = select(0.0, -lensK * ex / ls / max(1.0 - cut, 1e-6), v > 0.0);
     // Lens edge term: an extra inward offset I.y x exp(-depth / I.z).
     let le = I.y * exp(-max(ldepth, 0.0) / max(I.z, 1e-3));
-    lensAmt -= le;
-    dLens += le / max(I.z, 1e-3);
+    o.lensAmt -= le;
+    o.dLens += le / max(I.z, 1e-3);
     // d/ddepth of neck x f(depth / neck) is f'(depth / neck): dLens stays.
-    lensAmt *= neck;
-    var sp = px + nrm * lensAmt;
+    o.lensAmt *= neck;
+    o.vv = v;
+    o.sp = o.px + o.nrm * o.lensAmt;
+    return o;
+}
 
+/// Frost: core lens sample, post-lens Jacobian blur, extra frost taps,
+/// and the wide two-ring tail. Sets `base` and `col`.
+fn stageFrost(g: GlassCtx) -> GlassCtx {
+    var o = g;
+    let E = u.u_var[4];
+    let F = u.u_var[5];
+    let K = u.u_var[10];
+    let O = u.u_var[26];
     // Frost v2: a sharp core plus a wide tail, (1 - w) G(core) + w G(core
     // + wide). The texture is already blurred by the core sigma; the tail
     // is 16 taps of it on two rings (6 + 10; the 2-node Gauss-Laguerre
@@ -566,25 +592,25 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
     // the tangent (curvature of the lens field's level set, Laplacian /
     // |gradient|). Skipped below 0.25 px. The centre tap is the plain
     // lens sample `base`, reused by dispersion.
-    let base = tex(sp).rgb;
-    var col = base;
-    let sPost = K.z * select(1.0, min(1.0, halfMin / K.w), K.w > 0.0);
+    o.base = tex(o.sp).rgb;
+    o.col = o.base;
+    let sPost = K.z * select(1.0, min(1.0, o.halfMin / K.w), K.w > 0.0);
     if (sPost >= 0.25) {
         // The lens field equals the outline's field when no variant
         // rounds it and the outline has no continuous-corner zone.
         let fc = select(
-            lensField(px),
-            d,
+            lensField(o.px),
+            o.d,
             u.u_var[5].w == 1.0 && u.u_var[17].w == 1.0 && u.u_global2.w <= 1.0,
         );
-        let lap = fxp + fxm + fyp + fym - 4.0 * fc;
-        let kappa = lap / max(0.5 * gradLen, 1e-3);
+        let lap = o.fxp + o.fxm + o.fyp + o.fym - 4.0 * fc;
+        let kappa = lap / max(0.5 * o.gradLen, 1e-3);
         // The post-lens taps stretch at most O.w (postJacobianMax).
         let jm = max(O.w, 1e-3);
-        let ja = clamp(1.0 - dLens, -jm, jm) * sPost;
-        let jb = clamp(1.0 + lensAmt * kappa, -jm, jm) * sPost;
-        let tng = vec2<f32>(-nrm.y, nrm.x);
-        col = base * 0.44444445;
+        let ja = clamp(1.0 - o.dLens, -jm, jm) * sPost;
+        let jb = clamp(1.0 + o.lensAmt * kappa, -jm, jm) * sPost;
+        let tng = vec2<f32>(-o.nrm.y, o.nrm.x);
+        o.col = o.base * 0.44444445;
         for (var i = 0; i < 3; i = i + 1) {
             let on = f32(i - 1) * 1.7320508;
             let wn = select(0.1666667, 0.6666667, i == 1);
@@ -594,7 +620,7 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
                 }
                 let ot = f32(j - 1) * 1.7320508;
                 let wt = select(0.1666667, 0.6666667, j == 1);
-                col = col + (wn * wt) * tex(sp + nrm * (ja * on) + tng * (jb * ot)).rgb;
+                o.col = o.col + (wn * wt) * tex(o.sp + o.nrm * (ja * on) + tng * (jb * ot)).rgb;
             }
         }
     }
@@ -604,8 +630,8 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
     // taps. The input is already blurred, so the sparse taps do not alias
     // much: 16-32 taps are within about 1-3 of 255 of an exact blur.
     var xr2 = 0.0;
-    if (xb.z >= 1.0 && max(xb.x, xb.y) >= 0.25) {
-        let n = i32(xb.z + 0.5);
+    if (o.xb.z >= 1.0 && max(o.xb.x, o.xb.y) >= 0.25) {
+        let n = i32(o.xb.z + 0.5);
         var acc = vec3<f32>(0.0);
         var dir = vec2<f32>(1.0, 0.0);
         // cos and sin of the golden angle.
@@ -618,14 +644,14 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
                 break;
             }
             let r = sqrt(-2.0 * log(1.0 - (f32(i) + 0.5) / f32(n)));
-            acc += tex(sp + dir * xb.xy * r).rgb;
+            acc += tex(o.sp + dir * o.xb.xy * r).rgb;
             dir = turn * dir;
         }
-        col = col + acc / f32(n) - base;
-        xr2 = xb.x * xb.y;
+        o.col = o.col + acc / f32(n) - o.base;
+        xr2 = o.xb.x * o.xb.y;
     }
-    let hmw = max(halfMin, 1.0);
-    var wideW = E.y + (E.z - E.y) * (depth - lensAmt) / hmw;
+    let hmw = max(o.halfMin, 1.0);
+    var wideW = E.y + (E.z - E.y) * (o.depth - o.lensAmt) / hmw;
     if (E.w > 0.0) {
         wideW -= F.x * max(0.0, 1.0 - hmw / E.w);
     }
@@ -636,29 +662,37 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
         var ring1 = vec3<f32>(0.0);
         for (var i = 0; i < 6; i = i + 1) {
             let a = f32(i) * 1.0471976;
-            ring1 += tex(sp + (wsig * 1.0823922) * vec2<f32>(cos(a), sin(a))).rgb;
+            ring1 += tex(o.sp + (wsig * 1.0823922) * vec2<f32>(cos(a), sin(a))).rgb;
         }
         var ring2 = vec3<f32>(0.0);
         for (var i = 0; i < 10; i = i + 1) {
             let a = 0.31415927 + f32(i) * 0.62831853;
-            ring2 += tex(sp + (wsig * 2.6131259) * vec2<f32>(cos(a), sin(a))).rgb;
+            ring2 += tex(o.sp + (wsig * 2.6131259) * vec2<f32>(cos(a), sin(a))).rgb;
         }
         let wide = ring1 * (0.8535534 / 6.0) + ring2 * (0.1464466 / 10.0);
-        col = mix(col, wide, wideW);
+        o.col = mix(o.col, wide, wideW);
     }
+    return o;
+}
+
+/// Spectral refraction: widens the lens sample once per wavelength.
+/// Spread/reach 0 is an exact no-op.
+fn stageSpectral(g: GlassCtx) -> GlassCtx {
+    var o = g;
     // Spectral refraction widens the lens sample once per wavelength.
     // The spectral taps carry the core channel's full frost offset, and
     // the spectrum weights are normalized, so spread/reach 0 is an exact
     // no-op: the single-tap frosted path above is used unchanged, with no
     // extra backdrop taps. A grey backdrop stays grey because the offset
     // is measured after the wide mix, not before it.
+    let Q = u.u_var[32];
     if (Q.y != 0.0 && Q.z != 0.0) {
-        let baseLinear = spectralToLinear(base);
-        let coreOff = spectralToLinear(col) - baseLinear;
+        let baseLinear = spectralToLinear(o.base);
+        let coreOff = spectralToLinear(o.col) - baseLinear;
         let iorBase = max(Q.x, 1.0);
         let bendBase = max(1.0 - 1.0 / iorBase, 1e-4);
         let reach = max(Q.z, 0.0);
-        let phase = spectralPhase(px);
+        let phase = spectralPhase(o.px);
         var acc = vec3<f32>(0.0);
         var wsum = vec3<f32>(0.0);
         for (var k = 0; k < 8; k = k + 1) {
@@ -667,65 +701,87 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
             let um = lambda * 0.001;
             let iorWave = iorBase + Q.y * (1.0 / (um * um) - 2.8962) / 1.91;
             let bendWave = 1.0 - 1.0 / max(iorWave, 1.0);
-            let spoke = nrm * lensAmt * (reach * (bendWave / bendBase - 1.0));
+            let spoke = o.nrm * o.lensAmt * (reach * (bendWave / bendBase - 1.0));
             let w = spectralWeight(lambda);
-            acc = acc + (spectralToLinear(tex(sp + spoke).rgb) + coreOff) * w;
+            acc = acc + (spectralToLinear(tex(o.sp + spoke).rgb) + coreOff) * w;
             wsum = wsum + w;
         }
-        col = mix(col, spectralFromLinear(acc / max(wsum, vec3<f32>(1e-4))), v);
+        o.col = mix(o.col, spectralFromLinear(acc / max(wsum, vec3<f32>(1e-4))), o.vv);
     }
+    return o;
+}
 
-    let luma = dot(col, vec3<f32>(0.2126, 0.7152, 0.0722));
-    col = mix(vec3<f32>(luma), col, D.w);
+/// Tone: saturation, tone LUT (+ luma-keyed), small-shape shadow lift,
+/// fill wash, dim, small-shape tone curve, tint.
+fn stageTone(g: GlassCtx) -> GlassCtx {
+    var o = g;
+    let B = u.u_var[1];
+    let D = u.u_var[3];
+    let G = u.u_var[6];
+    let H = u.u_var[7];
+    let I = u.u_var[8];
+    let K = u.u_var[10];
+    let M = u.u_var[24];
+    let N = u.u_var[25];
+    let O = u.u_var[26];
+    let P = u.u_var[30];
+    let luma = dot(o.col, vec3<f32>(0.2126, 0.7152, 0.0722));
+    o.col = mix(vec3<f32>(luma), o.col, D.w);
 
     // Tone LUT: 9 grey knots at inputs i/8, hat-sum form, on the frosted
     // backdrop before the fill wash; identity knots reproduce col.
     // Luma-keyed tone: P.z of the way toward moving luma through the LUT
     // and carrying the chroma along unchanged.
-    var toned = toneLut(col, G, H, I.x);
+    var toned = toneLut(o.col, G, H, I.x);
     if (P.z != 0.0) {
-        let y = dot(col, vec3<f32>(0.2126, 0.7152, 0.0722));
-        let keyed = col + vec3<f32>(toneLut(vec3<f32>(y), G, H, I.x).x - y);
+        let y = dot(o.col, vec3<f32>(0.2126, 0.7152, 0.0722));
+        let keyed = o.col + vec3<f32>(toneLut(vec3<f32>(y), G, H, I.x).x - y);
         toned = mix(toned, keyed, P.z);
     }
-    col = toned;
+    o.col = toned;
 
     // Small-shape shadow lift: the dark end lifts behind small dark glass.
     // + I.w x size x max(0, 1 - col / K.x)^2, size = max(0, 1 - halfMin /
     // K.y).
     let liftSz = select(
         0.0,
-        max(0.0, 1.0 - halfMin / max(K.y, 1e-3)),
+        max(0.0, 1.0 - o.halfMin / max(K.y, 1e-3)),
         K.y > 0.0,
     );
-    let lk = max(vec3<f32>(1.0) - col / max(K.x, 1e-3), vec3<f32>(0.0));
-    col += (I.w * liftSz) * lk * lk;
+    let lk = max(vec3<f32>(1.0) - o.col / max(K.x, 1e-3), vec3<f32>(0.0));
+    o.col += (I.w * liftSz) * lk * lk;
 
-    col = mix(col, D.rgb, B.z * fillScale);
-    col *= (1.0 - B.w);
+    o.col = mix(o.col, D.rgb, B.z * o.fillScale);
+    o.col *= (1.0 - B.w);
 
     // Small-shape tone curve: small shapes (half shorter side <= ~32 pt)
     // switch to a steeper tone response. Applied after the fill wash and
     // dim, weighted from 1 at O.y (smallSizeLo) to 0 at O.z (smallSizeHi);
     // off when smallSizeHi <= 0.
-    var sw = 0.0;
+    o.sw = 0.0;
     if (O.z > 0.0) {
-        sw = clamp((O.z - halfMin) / max(O.z - O.y, 1e-3), 0.0, 1.0);
-        col = mix(col, toneLut(col, M, N, O.x), sw);
+        o.sw = clamp((O.z - o.halfMin) / max(O.z - O.y, 1e-3), 0.0, 1.0);
+        o.col = mix(o.col, toneLut(o.col, M, N, O.x), o.sw);
     }
 
-    col = mix(col, tint.rgb, tint.a);
+    o.col = mix(o.col, o.tint.rgb, o.tint.a);
+    return o;
+}
 
+/// Ambient: residual backdrop hue where the frosted sample went grey.
+fn stageAmbient(g: GlassCtx) -> GlassCtx {
+    var o = g;
+    let P = u.u_var[30];
     // Ambient colour: the residual sat where our frosted backdrop is grey
     // but the glass carries the backdrop's average hue: + P.x x (avg -
     // luma(avg)), avg = 5 x 5 taps of the blurred texture over the
     // blended rect inflated by P.y px; off in the small-shape class (x (1
     // - sw)). After the tint mix: tinted glass keeps the full ambient
     // chroma. Skipped when 0.
-    let am = P.x * (1.0 - sw);
+    let am = P.x * (1.0 - o.sw);
     if (am != 0.0) {
-        let a0 = rcB.xy - vec2<f32>(P.y);
-        let asz = rcB.zw + vec2<f32>(2.0 * P.y);
+        let a0 = o.rcB.xy - vec2<f32>(P.y);
+        let asz = o.rcB.zw + vec2<f32>(2.0 * P.y);
         var acc = vec3<f32>(0.0);
         for (var i = 0; i < 5; i = i + 1) {
             for (var j = 0; j < 5; j = j + 1) {
@@ -733,9 +789,16 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
             }
         }
         acc *= 0.04;
-        col += am * (acc - vec3<f32>(dot(acc, vec3<f32>(0.2126, 0.7152, 0.0722))));
+        o.col += am * (acc - vec3<f32>(dot(acc, vec3<f32>(0.2126, 0.7152, 0.0722))));
     }
+    return o;
+}
 
+/// Voice glow inside the slab, composited over the glass base.
+fn stageGlow(g: GlassCtx) -> GlassCtx {
+    var o = g;
+    let Q = u.u_var[32];
+    let R4 = u.u_var[34];
     // Voice glow inside the slab: the shared wash (`glowWash`) composited
     // over the glass base. Reference behaviour samples it at the
     // geometric pixel, unaffected by the lens; the opt-in deviation
@@ -746,40 +809,98 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
     // (blendMode returns src → mix(col, src, ov.a)), the other modes
     // tone the base like ink on glass. Before the rim lights, which stay
     // white.
+    let glowGain = Q.w;
+    let glowIn = R4.x;
     if (glowGain > 0.0) {
-        let gp = select(px, sp, u.u_glow_geom.z > 0.5);
+        let gp = select(o.px, o.sp, u.u_glow_geom.z > 0.5);
         let ov = glowWash(gp, glowGain * glowIn);
-        col = mix(col, blendMode(col, ov.rgb, i32(u.u_glow_geom.w)), ov.a);
+        o.col = mix(o.col, blendMode(o.col, ov.rgb, i32(u.u_glow_geom.w)), ov.a);
     }
+    return o;
+}
 
+/// Rim lights: specular streak plus isotropic white mix.
+fn stageRim(g: GlassCtx) -> GlassCtx {
+    var o = g;
+    let B = u.u_var[1];
+    let J = u.u_var[9];
+    let L4 = u.u_var[11];
+    let hc = u.u_global2.z;
     let L = vec2<f32>(cos(u.u_global.z), sin(u.u_global.z));
     let rimW = max(B.x * (1.0 + hc), 0.5);
-    let rim = 1.0 - smoothstep(0.0, rimW, depth);
-    let spec = rim * (max(dot(nrm, L), 0.0) + L4.x * max(dot(nrm, -L), 0.0));
-    col += B.y * (1.0 + hc) * spec;
+    let rim = 1.0 - smoothstep(0.0, rimW, o.depth);
+    let spec = rim * (max(dot(o.nrm, L), 0.0) + L4.x * max(dot(o.nrm, -L), 0.0));
+    o.col += B.y * (1.0 + hc) * spec;
 
     // Isotropic rim: a mix toward white, alpha J.x ramping to 0 at depth
     // J.y, cut at J.z; scaled by the glass luminance down to J.w (dark
     // mode).
-    let ra = J.x * clamp(1.0 - depth / max(J.y, 1e-3), 0.0, 1.0)
-        * (1.0 - smoothstep(J.z - 0.5, J.z + 0.5, depth));
-    let rl = dot(col, vec3<f32>(0.2126, 0.7152, 0.0722));
+    let ra = J.x * clamp(1.0 - o.depth / max(J.y, 1e-3), 0.0, 1.0)
+        * (1.0 - smoothstep(J.z - 0.5, J.z + 0.5, o.depth));
+    let rl = dot(o.col, vec3<f32>(0.2126, 0.7152, 0.0722));
     let ra0 = ra * (J.w + (1.0 - J.w) * clamp(rl / 0.5, 0.0, 1.0));
-    col += (vec3<f32>(1.0) - col) * ra0;
+    o.col += (vec3<f32>(1.0) - o.col) * ra0;
+    return o;
+}
 
+/// Pressed-state lighting: whole-shape lift plus touch Gaussian.
+fn stagePress(g: GlassCtx) -> GlassCtx {
+    var o = g;
+    let F = u.u_var[5];
+    let R4 = u.u_var[34];
     // Pressed glass lights the whole shape (R.z) and, more, the area
     // under the finger (the Gaussian below); both follow the press light,
     // not the press spring.
-    col += R4.z * light;
+    o.col += R4.z * o.light;
     if (u.u_touch.z > 0.0) {
-        let dt = px - u.u_touch.xy;
+        let dt = o.px - u.u_touch.xy;
         let gr = max(u.u_touch.w, 1.0);
-        col += F.y * u.u_touch.z * exp(-dot(dt, dt) / (2.0 * gr * gr));
+        o.col += F.y * u.u_touch.z * exp(-dot(dt, dt) / (2.0 * gr * gr));
+    }
+    return o;
+}
+
+@fragment
+fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
+    // Output is premultiplied colour composited srcOver onto the sharp
+    // backdrop: transparent outside the shape.
+    let px = pos.xy;
+    let count = i32(u.u_global.x);
+    if (count == 0) {
+        return vec4<f32>(0.0);
     }
 
+    // Outside the silhouette the optics pass emits nothing: the halo is
+    // the renderer's theatre-mode replay (blurred finished card under the
+    // sharp one, `refraction_replay`), not shading. A shader-side halo
+    // could only re-evaluate the lobe field — a second gradient that
+    // diverges from the card by construction — so it was deleted.
+    var g = glassSilhouette(px, count);
+    if (g.keep <= 0.0) {
+        return vec4<f32>(0.0);
+    }
+    if (g.inside <= 0.0) {
+        return vec4<f32>(0.0);
+    }
+
+    // Opaque (Reduce Transparency).
+    if (u.u_global.w > 0.5) {
+        let solid = mix(u.u_opaque.rgb, g.tint.rgb, g.tint.a);
+        return cardBlend(solid * (g.inside * g.keep), g.inside * g.keep, px);
+    }
+
+    g = stageRefract(g);
+    g = stageFrost(g);
+    g = stageSpectral(g);
+    g = stageTone(g);
+    g = stageAmbient(g);
+    g = stageGlow(g);
+    g = stageRim(g);
+    g = stagePress(g);
+
     return cardBlend(
-        clamp(col, vec3<f32>(0.0), vec3<f32>(1.0)) * (inside * keep),
-        inside * keep,
+        clamp(g.col, vec3<f32>(0.0), vec3<f32>(1.0)) * (g.inside * g.keep),
+        g.inside * g.keep,
         px,
     );
 }

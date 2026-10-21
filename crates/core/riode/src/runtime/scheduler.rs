@@ -284,9 +284,7 @@ impl FrameScheduler {
                     &mut n.style.appearance.fill,
                     &mut n.style.appearance.opacity,
                     &mut n.style.appearance.shadow,
-                    &mut n.style.appearance.filter,
-                    &mut n.style.appearance.glass,
-                    &mut n.style.appearance.blend,
+                    &mut n.style.appearance.effects,
                 );
                 // Stacking rides the paint path: it reorders paint without touching layout.
                 let z_changed = bindings.update_z(&mut n.style.z_index, n.style.is_absolute);

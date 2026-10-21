@@ -144,5 +144,5 @@ pub fn chain_applicable(filter: &Filter) -> bool {
     filter
         .ops()
         .iter()
-        .all(|op| matches!(op, FilterOp::Blur(_) | FilterOp::Brightness(_) | FilterOp::Saturate(_) | FilterOp::Contrast(_) | FilterOp::HueRotate(_)))
+        .all(|op| matches!(op, FilterOp::Blur(_) | FilterOp::Brightness(_) | FilterOp::Saturate(_) | FilterOp::Contrast(_) | FilterOp::HueRotate(_) | FilterOp::Matrix(_)))
 }

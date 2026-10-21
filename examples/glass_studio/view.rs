@@ -9,7 +9,7 @@
 // the lens band, frost, tone and rim read clearly).
 
 use riode::app::switcher::{BootCtx, BootedDemo};
-use riode::foundation::{Color, ColorStop, Glass, GlassStyle, Glow, LinearGradient, Point, Refraction, Spectral};
+use riode::foundation::{Color, ColorStop, Effect, EffectStack, Glass, GlassGroupEffect, GlassStyle, Glow, LinearGradient, Point, Refraction, Spectral};
 use riode::internal::group;
 use riode::prelude::*;
 use riode::reactive::{Prop, ReactiveRuntime};
@@ -199,6 +199,10 @@ fn apply_preset(p: &Params, idx: usize) {
 
 /// The studio UI from already-created signals. Runs inside any build scope:
 /// `boot` wraps it in `enter_keyed`, `Page` is a component scope already.
+fn glass_fx(glass: Prop<GlassStyle>) -> Prop<EffectStack> {
+    computed(move || glass.evaluate().into_effects())
+}
+
 fn ui(p: Params, rt: Rc<RefCell<ReactiveRuntime>>) -> Element {
     // The laboratory material: preset geometry + tone curve, every
     // stage from the sliders. Selecting a preset snaps the sliders;
@@ -444,7 +448,7 @@ fn ui(p: Params, rt: Rc<RefCell<ReactiveRuntime>>) -> Element {
                             width={220.0}
                             height={160.0}
                             radius={24.0}
-                            preset={glass.clone()}
+                            effects={glass_fx(glass.clone())}
                             alignment="center"
                             distribution="center"
                         >
@@ -454,7 +458,7 @@ fn ui(p: Params, rt: Rc<RefCell<ReactiveRuntime>>) -> Element {
                             width={160.0}
                             height={160.0}
                             radius="max"
-                            preset={glass.clone()}
+                            effects={glass_fx(glass.clone())}
                             alignment="center"
                             distribution="center"
                         >
@@ -465,7 +469,7 @@ fn ui(p: Params, rt: Rc<RefCell<ReactiveRuntime>>) -> Element {
                         width={320.0}
                         height={64.0}
                         radius="max"
-                        preset={glass.clone()}
+                        effects={glass_fx(glass.clone())}
                         alignment="center"
                         distribution="center"
                     >
@@ -477,13 +481,13 @@ fn ui(p: Params, rt: Rc<RefCell<ReactiveRuntime>>) -> Element {
                             direction="horizontal"
                             gap={32.0}
                             alignment="center"
-                            glass_group={40.0}
+                            effects={EffectStack::from(vec![GlassGroupEffect::new(40.0).boxed()])}
                         >
                             <Group
                                 width={170.0}
                                 height={96.0}
                                 radius={28.0}
-                                preset={GlassPreset::regular().style()}
+                                effects={GlassPreset::regular().style().into_effects()}
                                 alignment="center"
                                 distribution="center"
                             >
@@ -493,7 +497,7 @@ fn ui(p: Params, rt: Rc<RefCell<ReactiveRuntime>>) -> Element {
                                 width={170.0}
                                 height={96.0}
                                 radius={28.0}
-                                preset={GlassPreset::clear().style()}
+                                effects={GlassPreset::clear().style().into_effects()}
                                 alignment="center"
                                 distribution="center"
                             >
@@ -503,7 +507,7 @@ fn ui(p: Params, rt: Rc<RefCell<ReactiveRuntime>>) -> Element {
                                 width={170.0}
                                 height={96.0}
                                 radius={28.0}
-                                preset={GlassPreset::regular().style_tinted(Color::hex_alpha(0x3B82F6, 0.85))}
+                                effects={GlassPreset::regular().style_tinted(Color::hex_alpha(0x3B82F6, 0.85)).into_effects()}
                                 alignment="center"
                                 distribution="center"
                             >
@@ -517,13 +521,13 @@ fn ui(p: Params, rt: Rc<RefCell<ReactiveRuntime>>) -> Element {
                             direction="horizontal"
                             gap={60.0}
                             alignment="center"
-                            glass_group={8.0}
+                            effects={EffectStack::from(vec![GlassGroupEffect::new(8.0).boxed()])}
                         >
                             <Group
                                 width={170.0}
                                 height={96.0}
                                 radius={28.0}
-                                preset={GlassPreset::regular().style_union(7)}
+                                effects={GlassPreset::regular().style_union(7).into_effects()}
                                 alignment="center"
                                 distribution="center"
                             >
@@ -533,7 +537,7 @@ fn ui(p: Params, rt: Rc<RefCell<ReactiveRuntime>>) -> Element {
                                 width={170.0}
                                 height={96.0}
                                 radius={28.0}
-                                preset={GlassPreset::regular().style_union(7)}
+                                effects={GlassPreset::regular().style_union(7).into_effects()}
                                 alignment="center"
                                 distribution="center"
                             >
@@ -547,14 +551,14 @@ fn ui(p: Params, rt: Rc<RefCell<ReactiveRuntime>>) -> Element {
                             direction="horizontal"
                             gap={60.0}
                             alignment="center"
-                            glass_group={16.0}
+                            effects={EffectStack::from(vec![GlassGroupEffect::new(16.0).boxed()])}
                         >
                             <Group
                                 width={170.0}
                                 height={96.0}
                                 radius="max"
                                 x={ax.clone()}
-                                preset={GlassPreset::regular().style_morph(21)}
+                                effects={GlassPreset::regular().style_morph(21).into_effects()}
                                 alignment="center"
                                 distribution="center"
                             >
@@ -565,7 +569,7 @@ fn ui(p: Params, rt: Rc<RefCell<ReactiveRuntime>>) -> Element {
                                 height={96.0}
                                 radius="max"
                                 x={bx.clone()}
-                                preset={GlassPreset::clear().style_morph(22)}
+                                effects={GlassPreset::clear().style_morph(22).into_effects()}
                                 alignment="center"
                                 distribution="center"
                             >

@@ -1,6 +1,6 @@
 // Single responsibility: Node coordinate framing, transformation, and display list command emission.
 
-use crate::foundation::{GlassLayer, Point, Radius, ResolvedRect, ShadowShape, Transform};
+use crate::foundation::{EffectStack, Point, Radius, ResolvedRect, ShadowShape, Transform};
 use crate::scene::{LayerId, PaintContext, SceneChunk, SceneCommand};
 use crate::text::TextContext;
 use crate::tree::LayoutNode;
@@ -56,13 +56,24 @@ pub struct NodeLayer {
     /// rect is the union of member rects (group-local, may start
     /// off-origin when members overhang).
     pub rect: ResolvedRect,
-    /// `Single` (own material, radius stamped) or `Group` (collected
-    /// members); `None` for glass-free layers.
-    pub glass: Option<GlassLayer>,
+    /// Ordered effect stack cloned from the node's appearance; `None`
+    /// when the node declares no `effects()`.
+    pub effects: Option<EffectStack>,
     /// Press content transform (node-local, about the content centre):
     /// the pressed member's content scales with its lens. `None` when
     /// the press is glow/light only (identity transform).
     pub press: Option<Transform>,
+}
+
+impl NodeLayer {
+    /// Whether the emitted layer refracts a backdrop (a `Glass` stage in
+    /// the stack). The parent-target shadow hoist keys off this: inside
+    /// the glass offscreen the shadow would be masked by the lens.
+    pub fn has_glass(&self) -> bool {
+        self.effects
+            .as_ref()
+            .is_some_and(|s| s.glass_layer().is_some())
+    }
 }
 
 /// The corner radius of the single clip a node imposes on its content, or `None` when it clips
@@ -123,7 +134,7 @@ pub fn enter_node_frame(
     // skips the shadow when this hoist fires, so it draws exactly once.
     // Identity-transform glass (every shipped demo) is unaffected by the
     // hoist landing before the local transform below.
-    if layer.glass.is_some() {
+    if layer.has_glass() {
         if let Some(s) = &node.style.appearance.shadow {
             if !s.inset {
                 chunk.push(SceneCommand::DrawShadow {
@@ -139,10 +150,8 @@ pub fn enter_node_frame(
         chunk.push(SceneCommand::BeginLayer {
             id: layer_id,
             rect: layer.rect,
-            filter: node.style.appearance.filter.clone(),
-            glass: layer.glass.clone(),
+            effects: layer.effects.clone(),
             shadow_pad: node_alpha_shadow_pad(node),
-            blend: node.style.appearance.blend,
         });
     }
     let transform = node.effective_transform();
@@ -246,7 +255,7 @@ pub fn emit_node_content(
     // hoisted to the parent target in `enter_node_frame`, so it is skipped
     // here (inside the glass offscreen it would never be seen).
     if let Some(s) = &node.style.appearance.shadow {
-        if !s.inset && layer.glass.is_none() {
+        if !s.inset && !layer.has_glass() {
             chunk.push(SceneCommand::DrawShadow {
                 rect: surface_rect,
                 radius: node.style.appearance.radius,

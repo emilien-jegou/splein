@@ -1,7 +1,8 @@
 // Single responsibility: Node tree visual bounds evaluation, framing, and command emission.
 
 use crate::foundation::{
-    GlassGroup, GlassLayer, GlassMember, GlassPressGeometry, Point, ResolvedRect, Transform,
+    BuiltinStage, EffectShader, GlassEffect, GlassGroup, GlassLayer, GlassMember,
+    GlassPressGeometry, Glow, Point, Refraction, ResolvedRect, Spectral, Transform,
     GLASS_STANDARD,
 };
 use crate::pipeline::compile::emit::{
@@ -18,7 +19,14 @@ use crate::tree::{DirtyFlags, NodeId};
 fn enclosing_glass_group(arena: &TreeArena, id: NodeId) -> Option<NodeId> {
     let mut current = arena.parent(id);
     while let Some(p) = current {
-        if arena.get(p).style.glass_group.is_some() {
+        if arena
+            .get(p)
+            .style
+            .appearance
+            .effects
+            .as_ref()
+            .is_some_and(|s| s.glass_group_spacing().is_some())
+        {
             return Some(p);
         }
         current = arena.parent(p);
@@ -86,9 +94,20 @@ fn collect_glass_members(arena: &mut TreeArena, group_id: NodeId) -> (Vec<GlassM
             // A group marker never contributes its own material (a root's
             // is ignored by the layer decision; a nested marker is fully
             // transparent) — only members refract.
-            let is_marker = node.style.glass_group.is_some();
+            let is_marker = node
+                .style
+                .appearance
+                .effects
+                .as_ref()
+                .is_some_and(|s| s.glass_group_spacing().is_some());
             if !is_marker {
-                if let Some(mut material) = node.style.appearance.glass {
+                if let Some((mut material, member_backdrop, _, _, _)) = node
+                    .style
+                    .appearance
+                    .effects
+                    .as_ref()
+                    .and_then(|s| s.glass_single())
+                {
                 material.radius = node.style.appearance.radius;
                 let (w, h) = (node.resolved_rect.width, node.resolved_rect.height);
                 let (rect, rscale) = if skewed {
@@ -101,7 +120,7 @@ fn collect_glass_members(arena: &mut TreeArena, group_id: NodeId) -> (Vec<GlassM
                 let mut member = GlassMember {
                     rect,
                     glass: material,
-                    backdrop: node.style.appearance.backdrop.unwrap_or_default(),
+                    backdrop: member_backdrop,
                     light: 0.0,
                     radius_scale: 1.0,
                 };
@@ -196,22 +215,18 @@ pub fn compile_node_hierarchy(
     // contributes a shape instead of opening its own; a nested group
     // marker is transparent. Read off before any mutable borrow below.
     let enclosing = enclosing_glass_group(arena, id);
-    let is_group_root = node.style.glass_group.is_some() && enclosing.is_none();
-    let own_glass =
-        node.style.appearance.glass.is_some() && enclosing.is_none() && !is_group_root;
+    let effects = node.style.appearance.effects.clone();
+    let is_group_root = effects
+        .as_ref()
+        .is_some_and(|s| s.glass_group_spacing().is_some())
+        && enclosing.is_none();
+    let own_glass = effects.as_ref().and_then(|s| s.glass_single());
     let node_has_layer = node.style.has_layer;
-    let node_has_filter = node.style.appearance.filter.is_some();
-    // A blend mode composites against the backdrop: it needs the
-    // offscreen + snapshot, i.e. an isolated layer (CSS: a blend-mode
-    // element always isolates its content first).
-    let node_has_blend = !node.style.appearance.blend.is_normal();
-    let node_glass = node.style.appearance.glass;
-    let node_backdrop = node.style.appearance.backdrop.unwrap_or_default();
-    let node_spectral = node.style.appearance.spectral.unwrap_or_default();
-    let node_glow = node.style.appearance.glow.unwrap_or_default();
-    let node_refraction = node.style.appearance.refraction.unwrap_or_default();
+    let node_has_effects = node.style.appearance.effects.is_some();
     let node_glass_radius = node.style.appearance.radius;
-    let glass_spacing = node.style.glass_group;
+    let glass_spacing = effects
+        .as_ref()
+        .and_then(|s| s.glass_group_spacing());
     let group_clips = node.style.clip;
     let group_opacity = node.style.appearance.opacity;
     let group_size = (painted.width, painted.height);
@@ -259,9 +274,8 @@ pub fn compile_node_hierarchy(
     let shadow_pad = node_alpha_shadow_pad(arena.get(id));
     let needs_layer = is_group_root
         || node_has_layer
-        || node_has_filter
-        || node_has_blend
-        || own_glass
+        || node_has_effects
+        || own_glass.is_some()
         || shadow_pad > 0.0;
     let content_rect = ResolvedRect::new(0.0, 0.0, painted.width, painted.height);
     // Press on this node (single or member): the shape deforms in the
@@ -292,6 +306,11 @@ pub fn compile_node_hierarchy(
             Some(tx)
         }
     });
+    let (group_spectral, group_glow, group_refraction) = effects
+        .as_ref()
+        .and_then(|s| s.glass_single())
+        .map(|(_, _, sp, gl, r)| (sp, gl, r))
+        .unwrap_or((Spectral::NONE, Glow::NONE, Refraction::NONE));
     let (layer_rect, layer_glass) = if is_group_root {
         let (members, press_touch) = collect_glass_members(arena, id);
         let union = members.iter().fold(ResolvedRect::ZERO, |acc, m| {
@@ -313,16 +332,16 @@ pub fn compile_node_hierarchy(
                     .then(|| ResolvedRect::new(0.0, 0.0, group_size.0, group_size.1)),
                 opacity: group_opacity,
                 press_touch,
-                spectral: node_spectral,
-                glow: node_glow,
-                refraction: node_refraction,
+                spectral: group_spectral,
+                glow: group_glow,
+                refraction: group_refraction,
             })),
         )
-    } else if own_glass {
+    } else if let Some((g0, b0, _s0, _gl0, _r0)) = own_glass {
         // The glass SDF follows the node's declared corners: stamp the
         // radius into the material copy so engines resolve it against
         // the layer rect without re-reading tree style.
-        match (node_glass, pressed_geo) {
+        match (Some(g0), pressed_geo) {
             (Some(g), Some(geo)) => {
                 // A pressed single rides the group path as a group of
                 // one (same uniforms as Single plus the press extras):
@@ -339,7 +358,7 @@ pub fn compile_node_hierarchy(
                 let member = GlassMember {
                     rect,
                     glass: material,
-                    backdrop: node_backdrop,
+                    backdrop: b0,
                     light: geo.light,
                     radius_scale: geo.radius_scale(),
                 };
@@ -354,15 +373,16 @@ pub fn compile_node_hierarchy(
                             Point::new(rect.x + t.x, rect.y + t.y),
                             geo.glow,
                         )),
-                        spectral: node_spectral,
-                        glow: node_glow,
-                        refraction: node_refraction,
+                        spectral: group_spectral,
+                        glow: group_glow,
+                        refraction: group_refraction,
                     })),
                 )
             }
             (Some(mut g), None) => {
                 g.radius = node_glass_radius;
-                (content_rect, Some(GlassLayer::Single(g, node_backdrop, node_spectral, node_glow, node_refraction)))
+                let (_, b, s, gl, r) = own_glass.unwrap();
+                (content_rect, Some(GlassLayer::Single(g, b, s, gl, r)))
             }
             _ => (content_rect, None),
         }
@@ -372,7 +392,19 @@ pub fn compile_node_hierarchy(
     let layer = NodeLayer {
         needs_layer,
         rect: layer_rect,
-        glass: layer_glass,
+        effects: ({
+            // The emitted stack carries the resolved glass layer (group or
+            // single) so the engine snapshot/optics lowering reads one
+            // place. A root's own lens is ignored (members refract); the
+            // group's shared spectral/glow/refraction ride the root's own
+            // glass stage when present, else neutral.
+            let mut stack = arena.get(id).style.appearance.effects.clone().unwrap_or_default();
+            if let Some(gl) = layer_glass {
+                stack.0.retain(|e| !matches!(e.shader(), EffectShader::Builtin(BuiltinStage::Glass(_))));
+                stack.push(GlassEffect::new(gl));
+            }
+            Some(stack)
+        }),
         press: press_tx,
     };
     // Glass motion never marks dirty (it integrates in the damage pass),

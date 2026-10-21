@@ -1,34 +1,11 @@
 // Single responsibility: Rect + glyph + blit pipeline creation and vertex staging.
 
 use bytemuck::{Pod, Zeroable};
+use riode::foundation::effect::shaders::{
+    BLEND_COMPOSITE_COMBINED_WGSL as BLEND_COMPOSITE_WGSL, BLUR_WGSL,
+    COMPOSITE_WGSL as COMPOSITE_SRC, GLASS_COMBINED_WGSL as GLASS_WGSL,
+};
 use riode::foundation::glass::K_GLASS_UNIFORM_FLOATS;
-
-/// Glass optics shader: the blend-mode library prepended (WGSL has no
-/// include mechanism — sources concatenate at compile time; declaration
-/// order within the module is free).
-const GLASS_WGSL: &str = concat!(
-    include_str!("shaders/blend_nonseparable.wgsl"),
-    "\n",
-    include_str!("shaders/blend_separable.wgsl"),
-    "\n",
-    include_str!("shaders/blend.wgsl"),
-    "\n",
-    include_str!("shaders/glass.wgsl"),
-);
-
-/// Backdrop-blend composite: the same library + dispatcher, this time
-/// prepended to the layer composite (its second `blendMode()` consumer —
-/// one shader reads the BeginLayer parent snapshot and emits the full
-/// CSS compositing result).
-const BLEND_COMPOSITE_WGSL: &str = concat!(
-    include_str!("shaders/blend_nonseparable.wgsl"),
-    "\n",
-    include_str!("shaders/blend_separable.wgsl"),
-    "\n",
-    include_str!("shaders/blend.wgsl"),
-    "\n",
-    include_str!("shaders/composite_blend.wgsl"),
-);
 
 /// CPU-transformed rect vertex: screen-space pixels + straight-alpha color.
 #[repr(C)]
@@ -754,11 +731,11 @@ pub fn create_pipelines(
     // parent target (both render into the Rgba8Unorm scene targets).
     let blur_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("riode-wgpu-blur"),
-        source: wgpu::ShaderSource::Wgsl(include_str!("shaders/blur.wgsl").into()),
+        source: wgpu::ShaderSource::Wgsl(BLUR_WGSL.into()),
     });
     let composite_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("riode-wgpu-composite"),
-        source: wgpu::ShaderSource::Wgsl(include_str!("shaders/composite.wgsl").into()),
+        source: wgpu::ShaderSource::Wgsl(COMPOSITE_SRC.into()),
     });
     let filter_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("riode-wgpu-filter-layout"),

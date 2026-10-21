@@ -764,8 +764,10 @@ fn absorbs(arena: &TreeArena, id: NodeId) -> bool {
             .get(id)
             .style
             .appearance
-            .glass
-            .is_some_and(|g| g.is_interactive())
+            .effects
+            .as_ref()
+            .and_then(|s| s.glass_single())
+            .is_some_and(|(g, _, _, _, _)| g.is_interactive())
 }
 
 /// Whether a node has handlers to fire (vs. absorbing silently as Opaque space).
@@ -820,12 +822,20 @@ pub fn is_press(event: &PointerEvent) -> bool {
 fn glass_press_begin(arena: &mut TreeArena, chain: &[NodeId], pos: Point) {
     if let Some(&id) = chain.iter().find(|id| {
         let node = arena.get(**id);
-        node.style.glass_group.is_none()
-            && node
-                .style
-                .appearance
-                .glass
-                .is_some_and(|g| g.is_interactive())
+        let is_group = node
+            .style
+            .appearance
+            .effects
+            .as_ref()
+            .is_some_and(|s| s.glass_group_spacing().is_some());
+        let interactive = node
+            .style
+            .appearance
+            .effects
+            .as_ref()
+            .and_then(|s| s.glass_single())
+            .is_some_and(|(g, _, _, _, _)| g.is_interactive());
+        !is_group && interactive
     }) {
         arena.press_begin(id, pos);
     } else {

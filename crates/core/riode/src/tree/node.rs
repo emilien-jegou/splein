@@ -117,9 +117,10 @@ impl LayoutNode {
             || self.style.is_overlay
             || self.effective_opacity() < 1.0
             || self.effective_transform() != Transform::IDENTITY
-            // CSS: a blend-mode element creates a stacking context — the
-            // blend must see a well-defined backdrop painted beneath it.
-            || !self.style.appearance.blend.is_normal()
+            // An effect layer isolates its content — like a blend-mode
+            // element it creates a stacking context so stack stages see
+            // a well-defined backdrop painted beneath them.
+            || self.style.appearance.effects.is_some()
     }
 
     /// Painter layer this node occupies relative to its siblings.
@@ -257,26 +258,15 @@ impl LayoutNode {
             }
         }
 
-        // A blur filter spreads the element's isolated content ~3σ past
-        // its own bounds; the damage region must cover that fringe.
-        if let Some(filter) = &self.style.appearance.filter {
-            let sigma = filter.max_blur_sigma();
-            if sigma > 0.0 {
-                let pad = 3.0 * sigma;
-                let blur_rect = Self::project(tx, -pad, -pad, w + 2.0 * pad, h + 2.0 * pad);
-                bounds = bounds.union(&blur_rect);
+        // An effect stack spreads past the element's own bounds (blur
+        // reach, lens band, wide-tail rings, refraction halo); the
+        // damage region must cover that fringe.
+        if let Some(stack) = &self.style.appearance.effects {
+            let pad = stack.pad_total(1.0);
+            if pad > 0.0 {
+                let fx_rect = Self::project(tx, -pad, -pad, w + 2.0 * pad, h + 2.0 * pad);
+                bounds = bounds.union(&fx_rect);
             }
-        }
-
-        // A glass layer samples backdrop from outside its own rect (lens
-        // band, wide-tail rings, post-lens taps, backdrop inset, ambient
-        // reach, in-shader shadow); the pad covers all of them so
-        // backdrop damage just outside the glass repaints the lens too.
-        if let Some(glass) = &self.style.appearance.glass {
-            let backdrop = self.style.appearance.backdrop.unwrap_or_default();
-            let pad = glass.damage_pad(&backdrop);
-            let glass_rect = Self::project(tx, -pad, -pad, w + 2.0 * pad, h + 2.0 * pad);
-            bounds = bounds.union(&glass_rect);
         }
 
         if let Some(clip) = active_clip {

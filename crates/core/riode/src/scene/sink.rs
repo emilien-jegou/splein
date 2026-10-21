@@ -17,7 +17,7 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use crate::foundation::{
-    Appearance, Color, Filter, GlassLayer, LightEnvironment, Point, Radius, ResolvedRect, Shadow,
+    Appearance, Color, EffectStack, LightEnvironment, Point, Radius, ResolvedRect, Shadow,
     Transform,
 };
 use crate::scene::chunk::SceneChunk;
@@ -109,19 +109,10 @@ pub struct PlacedShadow<'a> {
 #[derive(Clone, Debug)]
 pub struct PlacedLayer<'a> {
     pub rect: ResolvedRect,
-    pub filter: Option<&'a Filter>,
-    /// Liquid-glass layer content (`Single` material or `Group` members):
-    /// `Some` means the engine must snapshot the backdrop behind `rect`
-    /// and run the optics pass, compositing the result under the layer's
-    /// content. Member rects are layer-local (see `GlassLayer`).
-    pub glass: Option<&'a GlassLayer>,
+    /// Ordered effect stack (bottom → top), borrowed from the command.
+    pub effects: Option<&'a EffectStack>,
     pub transform: Transform,
     pub shadow_pad: f32,
-    /// Blend mode the layer's content composites at against the
-    /// backdrop. `Normal` is plain source-over; anything else makes the
-    /// engine keep a backdrop snapshot and composite in-shader (needs an
-    /// offscreen, so it forces a real layer).
-    pub blend: crate::foundation::BlendMode,
 }
 
 fn warn_ignored(what: &'static str, flag: &AtomicBool, counter: &AtomicU64) {
@@ -250,18 +241,14 @@ pub fn lower_chunk(
             SceneCommand::PopClip => sink.pop_clip(),
             SceneCommand::BeginLayer {
                 rect,
-                filter,
-                glass,
+                effects,
                 shadow_pad,
-                blend,
                 ..
             } => sink.begin_layer(&PlacedLayer {
                 rect: *rect,
-                filter: filter.as_ref(),
-                glass: glass.as_ref(),
+                effects: effects.as_ref(),
                 transform: stack.transform(),
                 shadow_pad: *shadow_pad,
-                blend: *blend,
             }),
             SceneCommand::EndLayer { .. } => sink.end_layer(),
             SceneCommand::DrawRect { rect, appearance } => sink.rect(&PlacedRect {

@@ -1,7 +1,7 @@
-// Single responsibility: `blend=` on groups reaches the wire — layer
-// wrapping, DSL static/literal/dynamic plumbing, stacking-context rule,
-// and content-hash sensitivity to the mode. (Validated visually by the
-// blend_group demo; these lock the plumbing in.)
+// Single responsibility: `BlendEffect` in an `effects()` stack reaches the
+// wire — layer wrapping, DSL static/dynamic plumbing, stacking-context
+// rule, and content-hash sensitivity to the mode. (Validated visually by
+// the blend_group demo; these lock the plumbing in.)
 
 use riode::dsl::*;
 use riode::foundation::*;
@@ -9,7 +9,12 @@ use riode::reactive::*;
 use riode::runtime::Engine;
 use riode::scene::{command::hash_commands, SceneCommand};
 
-/// Every `BeginLayer` blend id currently in the compiled scene, in order.
+fn blend_stack(mode: BlendMode) -> EffectStack {
+    EffectStack::from(vec![BlendEffect::new(mode).boxed()])
+}
+
+/// Every `Blend` stage mode in the compiled scene's `BeginLayer` stacks,
+/// in order.
 fn layer_blends(engine: &Engine) -> Vec<BlendMode> {
     engine
         .scene()
@@ -17,7 +22,9 @@ fn layer_blends(engine: &Engine) -> Vec<BlendMode> {
         .iter()
         .flat_map(|c| c.commands.iter())
         .filter_map(|c| match c {
-            SceneCommand::BeginLayer { blend, .. } => Some(*blend),
+            SceneCommand::BeginLayer { effects, .. } => {
+                effects.as_ref().and_then(|s| s.blend_mode())
+            }
             _ => None,
         })
         .collect()
@@ -35,7 +42,7 @@ fn static_blend_group_wraps_subtree_in_begin_layer_with_mode() {
                 .width(50.0)
                 .height(50.0)
                 .fill(Color::RED)
-                .blend(BlendMode::Multiply)]),
+                .effects(blend_stack(BlendMode::Multiply))]),
     );
     engine.frame();
 
@@ -66,7 +73,7 @@ fn plain_group_without_blend_emits_no_layer() {
 
 #[test]
 #[ntest::timeout(5_000)]
-fn literal_blend_prop_parses_dashed_keywords() {
+fn static_soft_light_reaches_wire() {
     let mut engine = Engine::headless(200, 200);
     engine.mount(
         group()
@@ -76,13 +83,13 @@ fn literal_blend_prop_parses_dashed_keywords() {
                 .width(50.0)
                 .height(50.0)
                 .fill(Color::RED)
-                .blend("soft-light")]),
+                .effects(blend_stack(BlendMode::SoftLight))]),
     );
     engine.frame();
 
     assert!(
         layer_blends(&engine).contains(&BlendMode::SoftLight),
-        "blend=\"soft-light\" must parse and reach the wire"
+        "soft-light blend effect must parse and reach the wire"
     );
 }
 
@@ -100,7 +107,7 @@ fn dynamic_blend_change_reemits_layer_with_new_mode() {
                 .width(50.0)
                 .height(50.0)
                 .fill(Color::RED)
-                .blend(computed(move || m.get()))]),
+                .effects(computed(move || blend_stack(m.get())))]),
     );
     engine.frame();
     assert!(
@@ -122,15 +129,13 @@ fn dynamic_blend_change_reemits_layer_with_new_mode() {
 fn content_hash_distinguishes_blend_modes() {
     use riode::scene::{LayerId, SceneChunk};
 
-    let mk = |blend: BlendMode| {
+    let mk = |mode: BlendMode| {
         let mut chunk = SceneChunk::new(ResolvedRect::new(0.0, 0.0, 100.0, 100.0), Point::ZERO);
         chunk.push(SceneCommand::BeginLayer {
             id: LayerId(1),
             rect: ResolvedRect::new(0.0, 0.0, 50.0, 50.0),
-            filter: None,
-            glass: None,
+            effects: Some(blend_stack(mode)),
             shadow_pad: 0.0,
-            blend,
         });
         chunk.push(SceneCommand::EndLayer { id: LayerId(1) });
         hash_commands(&chunk.commands)
@@ -153,8 +158,9 @@ fn content_hash_distinguishes_blend_modes() {
 fn appearance_hash_distinguishes_blend_only_difference() {
     use riode::scene::SceneChunk;
 
-    let mk = |blend: BlendMode| {
-        let appearance = Appearance::EMPTY.with_fill(Fill::Solid(Color::RED)).with_blend(blend);
+    let mk = |mode: BlendMode| {
+        let mut appearance = Appearance::EMPTY.with_fill(Fill::Solid(Color::RED));
+        appearance.effects = Some(blend_stack(mode));
         let mut chunk = SceneChunk::new(ResolvedRect::new(0.0, 0.0, 100.0, 100.0), Point::ZERO);
         chunk.push(SceneCommand::DrawRect {
             rect: ResolvedRect::new(0.0, 0.0, 10.0, 10.0),

@@ -1,7 +1,7 @@
 // Single responsibility: Backend-agnostic display list drawing commands.
 
 use crate::foundation::{
-    Appearance, Color, Fill, FilterOp, GlassLayer, LightEnvironment, Point, Radius,
+    Appearance, Color, EffectStack, Fill, LightEnvironment, Point, Radius,
     ResolvedRect, Shadow, ShadowOffset, ShadowShape, StrokeAlign, Transform,
 };
 use crate::scene::image::ImageSource;
@@ -39,26 +39,16 @@ pub enum SceneCommand {
     BeginLayer {
         id: LayerId,
         rect: ResolvedRect,
-        /// Element filter to apply to the layer's isolated content.
-        /// `None` is a plain layer (clip-only, the pre-filter behavior).
-        filter: Option<crate::foundation::Filter>,
-        /// Liquid-glass layer content. `Single` (one material) means the
-        /// engine snapshots the backdrop behind `rect` and refracts it
-        /// through the material's SDF; `Group` (member shapes) shares one
-        /// snapshot and one optics pass across the members, whose rects
-        /// are group-layer-local. Either way the glass composites under
-        /// the layer's content.
-        glass: Option<GlassLayer>,
+        /// Ordered effect stack (bottom → top). `Some` opens an effect
+        /// layer executed in order by the engine; `None` is a plain
+        /// isolation layer (clip-only, the pre-filter behavior).
+        effects: Option<EffectStack>,
         /// Extra offscreen margin in layout px for an alpha-silhouette
         /// shadow (`ShadowShape::Alpha`): the layer's content alpha is the
         /// silhouette, so the offscreen must hold the offset + blur reach
-        /// around it, and the layer needs an offscreen even without a
-        /// filter. `0.0` when the node carries no alpha drop shadow.
+        /// around it, and the layer needs an offscreen even without
+        /// effects. `0.0` when the node carries no alpha drop shadow.
         shadow_pad: f32,
-        /// How the layer's content composites against the backdrop
-        /// (snapshot-taken-at-BeginLayer in the engines). `Normal` is
-        /// plain source-over — the pre-blend path untouched.
-        blend: crate::foundation::BlendMode,
     },
     EndLayer {
         id: LayerId,
@@ -143,83 +133,21 @@ pub fn hash_commands(commands: &[SceneCommand]) -> u64 {
             SceneCommand::BeginLayer {
                 id,
                 rect,
-                filter,
-                glass,
+                effects,
                 shadow_pad,
-                blend,
             } => {
                 8u8.hash(&mut h);
                 id.0.hash(&mut h);
                 rect_bits(rect).hash(&mut h);
                 shadow_pad.to_bits().hash(&mut h);
-                blend.hash(&mut h);
-                match filter {
+                match effects {
                     None => 0u8.hash(&mut h),
-                    Some(f) => {
+                    Some(stack) => {
                         1u8.hash(&mut h);
-                        for op in f.ops() {
-                            match op {
-                                FilterOp::Blur(s) => {
-                                    0u8.hash(&mut h);
-                                    s.to_bits().hash(&mut h);
-                                }
-                                FilterOp::Brightness(s) => {
-                                    1u8.hash(&mut h);
-                                    s.to_bits().hash(&mut h);
-                                }
-                                FilterOp::Saturate(s) => {
-                                    2u8.hash(&mut h);
-                                    s.to_bits().hash(&mut h);
-                                }
-                                FilterOp::Contrast(s) => {
-                                    3u8.hash(&mut h);
-                                    s.to_bits().hash(&mut h);
-                                }
-                                FilterOp::HueRotate(s) => {
-                                    4u8.hash(&mut h);
-                                    s.to_bits().hash(&mut h);
-                                }
-                            }
+                        (stack.len() as u64).hash(&mut h);
+                        for e in stack.0.iter() {
+                            e.id().hash(&mut h);
                         }
-                    }
-                }
-                match glass {
-                    None => 0u8.hash(&mut h),
-                    Some(g) => {
-                        1u8.hash(&mut h);
-                        let mut bits = Vec::new();
-                        match g {
-                            GlassLayer::Single(m, b, s, gl, r) => {
-                                0u8.hash(&mut h);
-                                m.write_bits(&mut |w| bits.push(w));
-                                b.write_bits(&mut |w| bits.push(w));
-                                s.write_bits(&mut |w| bits.push(w));
-                                gl.write_bits(&mut |w| bits.push(w));
-                                r.write_bits(&mut |w| bits.push(w));
-                            }
-                            GlassLayer::Group(group) => {
-                                1u8.hash(&mut h);
-                                (group.members.len() as u64).hash(&mut h);
-                                group.smoothing.to_bits().hash(&mut h);
-                                group.opacity.to_bits().hash(&mut h);
-                                match group.clip {
-                                    None => 0u8.hash(&mut h),
-                                    Some(c) => {
-                                        1u8.hash(&mut h);
-                                        rect_bits(&c).hash(&mut h);
-                                    }
-                                }
-                                group.spectral.write_bits(&mut |w| bits.push(w));
-                                group.glow.write_bits(&mut |w| bits.push(w));
-                                group.refraction.write_bits(&mut |w| bits.push(w));
-                                for m in &group.members {
-                                    rect_bits(&m.rect).hash(&mut h);
-                                    m.glass.write_bits(&mut |w| bits.push(w));
-                                    m.backdrop.write_bits(&mut |w| bits.push(w));
-                                }
-                            }
-                        }
-                        bits.hash(&mut h);
                     }
                 }
             }
@@ -443,81 +371,18 @@ fn appearance_bits(a: &Appearance) -> Vec<u32> {
             v.extend(light_bits(l));
         }
     }
-    match &a.filter {
+    match &a.effects {
         None => v.push(0),
-        Some(f) => {
+        Some(stack) => {
             v.push(1);
-            v.push(f.ops().len() as u32);
-            for op in f.ops() {
-                match op {
-                    FilterOp::Blur(s) => {
-                        v.push(0);
-                        v.push(s.to_bits());
-                    }
-                    FilterOp::Brightness(s) => {
-                        v.push(1);
-                        v.push(s.to_bits());
-                    }
-                    FilterOp::Saturate(s) => {
-                        v.push(2);
-                        v.push(s.to_bits());
-                    }
-                    FilterOp::Contrast(s) => {
-                        v.push(3);
-                        v.push(s.to_bits());
-                    }
-                    FilterOp::HueRotate(s) => {
-                        v.push(4);
-                        v.push(s.to_bits());
-                    }
-                }
+            v.push(stack.len() as u32);
+            for e in stack.0.iter() {
+                let id = e.id();
+                v.push((id.0 & 0xffff_ffff) as u32);
+                v.push((id.0 >> 32) as u32);
             }
         }
     }
-    match &a.glass {
-        None => v.push(0),
-        Some(g) => {
-            v.push(1);
-            g.write_bits(&mut |b| v.push(b));
-        }
-    }
-    // The backdrop stages hash alongside the glass: a stage change
-    // (blur, wash, saturation, tone) that omitted this would leave the
-    // chunk cache serving a stale frame.
-    match &a.backdrop {
-        None => v.push(0),
-        Some(b) => {
-            v.push(1);
-            b.write_bits(&mut |w| v.push(w));
-        }
-    }
-    // The spectral response hashes alongside the lens: a rainbow toggle
-    // that omitted this would leave the chunk cache serving stale pixels.
-    // Same for the emissive glow.
-    match &a.spectral {
-        None => v.push(0),
-        Some(s) => {
-            v.push(1);
-            s.write_bits(&mut |w| v.push(w));
-        }
-    }
-    match &a.glow {
-        None => v.push(0),
-        Some(g) => {
-            v.push(1);
-            g.write_bits(&mut |w| v.push(w));
-        }
-    }
-    match &a.refraction {
-        None => v.push(0),
-        Some(r) => {
-            v.push(1);
-            r.write_bits(&mut |w| v.push(w));
-        }
-    }
-    // Blend mode: unconditional word (`Normal` = 0), appended — a mode
-    // change must move the chunk hash or the cache serves stale pixels.
-    v.push(a.blend as u8 as u32);
     v
 }
 

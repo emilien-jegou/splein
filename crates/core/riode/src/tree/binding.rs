@@ -1,6 +1,8 @@
 // Single responsibility: Dynamic property evaluation closures on a layout node.
 
-use crate::foundation::{BlendMode, Fill, Filter, Glass, LayoutPresence, Shadow, Size, Transform};
+use crate::foundation::{
+    EffectStack, Fill, LayoutPresence, Shadow, Size, Transform,
+};
 use std::rc::Rc;
 
 /// Inner storage for dynamic property evaluators.
@@ -13,10 +15,8 @@ pub struct DynamicBindings {
     pub text: Option<Rc<dyn Fn() -> String>>,
     pub transform: Option<Rc<dyn Fn() -> Transform>>,
     pub shadow: Option<Rc<dyn Fn() -> Option<Shadow>>>,
-    pub filter: Option<Rc<dyn Fn() -> Option<Filter>>>,
-    pub glass: Option<Rc<dyn Fn() -> Option<Glass>>>,
-    /// Blend-mode evaluator, when the node declares a dynamic one.
-    pub blend: Option<Rc<dyn Fn() -> BlendMode>>,
+    /// Effect-stack evaluator, when the node declares a dynamic one.
+    pub effects: Option<Rc<dyn Fn() -> Option<EffectStack>>>,
     pub presence: Option<Rc<dyn Fn() -> LayoutPresence>>,
     /// Stacking order evaluator, when the node declares a dynamic one.
     pub z_index: Option<Rc<dyn Fn() -> i32>>,
@@ -115,8 +115,7 @@ impl DynamicBindings {
             && self.text.is_none()
             && self.transform.is_none()
             && self.shadow.is_none()
-            && self.filter.is_none()
-            && self.glass.is_none()
+            && self.effects.is_none()
             && self.presence.is_none()
             && self.z_index.is_none()
             && self.pose.as_ref().is_none_or(|p| !p.is_bound())
@@ -299,16 +298,14 @@ impl NodeBindings {
         }
     }
 
-    /// Re-evaluates bound fill, opacity, shadow, filter, glass, and blend
-    /// mode, returning true if any changed.
+    /// Re-evaluates bound fill, opacity, shadow, and effects, returning
+    /// true if any changed.
     pub fn update_paint(
         &self,
         fill: &mut Option<Fill>,
         opacity: &mut f32,
         shadow: &mut Option<Shadow>,
-        filter: &mut Option<Filter>,
-        glass: &mut Option<Glass>,
-        blend: &mut BlendMode,
+        effects: &mut Option<EffectStack>,
     ) -> bool {
         let b = match &self.inner {
             Some(b) => b,
@@ -336,24 +333,10 @@ impl NodeBindings {
                 changed = true;
             }
         }
-        if let Some(f) = &b.filter {
-            let fresh = f();
-            if *filter != fresh {
-                *filter = fresh;
-                changed = true;
-            }
-        }
-        if let Some(g) = &b.glass {
-            let fresh = g();
-            if *glass != fresh {
-                *glass = fresh;
-                changed = true;
-            }
-        }
-        if let Some(bl) = &b.blend {
-            let fresh = bl();
-            if *blend != fresh {
-                *blend = fresh;
+        if let Some(e) = &b.effects {
+            let fresh = e();
+            if *effects != fresh {
+                *effects = fresh;
                 changed = true;
             }
         }

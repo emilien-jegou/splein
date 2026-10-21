@@ -205,10 +205,16 @@ impl TreeArena {
             if !slot.is_active {
                 continue;
             }
-            let Some(glass) = slot.node.style.appearance.glass else {
+            let Some((glass, backdrop, _, _, _)) = slot
+                .node
+                .style
+                .appearance
+                .effects
+                .as_ref()
+                .and_then(|s| s.glass_single())
+            else {
                 continue;
             };
-            let backdrop = slot.node.style.appearance.backdrop.unwrap_or_default();
             let Some(bounds) = slot.node.state.paint.last_painted_bounds else {
                 continue;
             };
@@ -241,7 +247,13 @@ impl TreeArena {
     pub fn morph_unsettled(&self) -> bool {
         self.slots.iter().any(|slot| {
             slot.is_active
-                && slot.node.style.glass_group.is_some()
+                && slot
+                    .node
+                    .style
+                    .appearance
+                    .effects
+                    .as_ref()
+                    .is_some_and(|s| s.glass_group_spacing().is_some())
                 && slot.node.state.glass_morph.is_active()
         })
     }
@@ -370,7 +382,14 @@ impl TreeArena {
     pub fn advance_glass_morphs(&mut self) -> Vec<(ResolvedRect, f32, f32)> {
         let mut out = Vec::new();
         for slot in &mut self.slots {
-            if !slot.is_active || slot.node.style.glass_group.is_none() {
+            let is_group = slot
+                .node
+                .style
+                .appearance
+                .effects
+                .as_ref()
+                .is_some_and(|s| s.glass_group_spacing().is_some());
+            if !slot.is_active || !is_group {
                 continue;
             }
             let (moved, _) = slot.node.state.glass_morph.advance();

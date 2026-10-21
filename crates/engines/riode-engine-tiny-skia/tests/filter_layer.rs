@@ -1,10 +1,11 @@
-// Filter-layer raster: a `BeginLayer { filter }` renders content into an
-// offscreen, applies the filter, then composites. These tests check the
+// Effect-layer raster: a `BeginLayer { effects }` renders content into an
+// offscreen, applies the stack, then composites. These tests check the
 // plumbing end-to-end (no panic, blur spreads alpha past the rect, a color
-// filter tints the result) — not visual polish.
+// matrix tints the result) — not visual polish.
 
 use riode::foundation::{
-    Appearance, BlendMode, Color, DamageRegion, Fill, Filter, Point, ResolvedRect,
+    Appearance, Blur, Color, DamageRegion, Effect, EffectStack, Fill, Filter,
+    Point, ResolvedRect,
 };
 use riode::scene::{LayerId, Scene, SceneChunk, SceneCommand};
 use riode_tiny_skia::renderer::TinySkiaRenderer;
@@ -22,10 +23,8 @@ fn blurred_rect_scene(rect: ResolvedRect, sigma: f32) -> Scene {
     chunk.push(SceneCommand::BeginLayer {
         id: LayerId(1),
         rect,
-        filter: Some(Filter::blur(sigma)),
-        glass: None,
+        effects: Some(EffectStack::from(vec![Blur::new(sigma).boxed()])),
         shadow_pad: 0.0,
-        blend: BlendMode::Normal,
     });
     chunk.push(SceneCommand::DrawRect {
         rect,
@@ -80,10 +79,8 @@ fn color_filter_tints_the_layer() {
     chunk.push(SceneCommand::BeginLayer {
         id: LayerId(2),
         rect,
-        filter: Some(Filter::saturate(0.0)),
-        glass: None,
+        effects: Some(Filter::saturate(0.0).into_effects()),
         shadow_pad: 0.0,
-        blend: BlendMode::Normal,
     });
     chunk.push(SceneCommand::DrawRect {
         rect,
@@ -123,10 +120,8 @@ fn plain_layer_still_clips() {
     chunk.push(SceneCommand::BeginLayer {
         id: LayerId(3),
         rect: layer_rect,
-        filter: None,
-        glass: None,
+        effects: None,
         shadow_pad: 0.0,
-        blend: BlendMode::Normal,
     });
     chunk.push(SceneCommand::DrawRect {
         rect: big,

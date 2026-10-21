@@ -1113,13 +1113,23 @@ impl SceneSink for WgpuSink<'_> {
     }
 
     fn begin_layer(&mut self, layer: &PlacedLayer) {
-        // A plain layer is a clip — unless a filter, glass material,
-        // alpha-shadow pad, or a non-`Normal` blend mode demands the
-        // offscreen (the blend composites against a parent snapshot).
-        if layer.filter.is_none()
+        // Effect-stack lowering: blur sigmas as `Blur` ops, color stages
+        // as raw `Matrix` ops; glass params and the card blend mode read
+        // straight off the stack. A plain layer is a clip — unless
+        // filter-like stages, a glass refractor, the alpha-shadow pad,
+        // or a non-`Normal` blend mode demands the offscreen (the blend
+        // composites against a parent snapshot).
+        let filter = layer.effects.as_ref().and_then(|s| s.to_filter());
+        let glass_layer = layer.effects.as_ref().and_then(|s| s.glass_layer());
+        let card_blend_mode = layer
+            .effects
+            .as_ref()
+            .and_then(|s| s.blend_mode())
+            .unwrap_or(riode::foundation::BlendMode::Normal);
+        if filter.is_none()
             && layer.shadow_pad <= 0.0
-            && layer.glass.is_none()
-            && layer.blend.is_normal()
+            && glass_layer.is_none()
+            && card_blend_mode.is_normal()
         {
             // Plain isolation layer (pre-filter behavior): the trait
             // default — a clip, so unfiltered groups keep today's
@@ -1171,13 +1181,13 @@ impl SceneSink for WgpuSink<'_> {
         // layout=device), the glass folding/blur reach, plus the
         // alpha-shadow pad (offset + blur reach of the silhouette cast
         // this layer exists for).
-        let sigma = layer
-            .filter
+        let sigma = filter
+            .as_ref()
             .map(|f| f.max_blur_sigma())
             .unwrap_or(0.0)
             * self.batch.scale();
         let mut pad = 3.0 * sigma + layer.shadow_pad * self.batch.scale();
-        if let Some(g) = layer.glass {
+        if let Some(g) = glass_layer.as_ref() {
             pad += g.device_pad(self.batch.scale());
         }
         let region = ResolvedRect::new(
@@ -1193,16 +1203,16 @@ impl SceneSink for WgpuSink<'_> {
         // snapshot in-shader. `FilterGpu.blend` is the non-glass layer
         // path; the EndLayer blend pipeline gates on `gp.is_none()`, so
         // carrying the id here too for glass is inert.
-        let card_blend = layer.blend.as_uniform_id();
+        let card_blend = card_blend_mode.as_uniform_id();
         self.batch.filter_params.push(FilterGpu {
             sigma,
-            matrix: layer
-                .filter
+            matrix: filter
+                .as_ref()
                 .and_then(|f| f.color_matrix())
                 .unwrap_or(FilterGpu::IDENTITY),
             blend: card_blend,
         });
-        let (glass, spill_seed) = match layer.glass {
+        let (glass, spill_seed) = match glass_layer.as_ref() {
             None => (None, None),
             Some(g) => {
                 let (idx, spill) = match g {

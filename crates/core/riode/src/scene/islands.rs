@@ -13,7 +13,7 @@
 // order). Nested effect layers yield nested islands, each recorded.
 
 use crate::foundation::{
-    Filter, GlassGroup, GlassLayer, GlassMember, Point, Radius, ResolvedRect, Transform,
+    EffectStack, GlassGroup, GlassLayer, GlassMember, Point, Radius, ResolvedRect, Transform,
 };
 use crate::scene::sink::{chunk_base, lower_chunk, PlacedLayer, SceneSink};
 use crate::scene::Scene;
@@ -30,8 +30,9 @@ pub struct Island {
     /// here (the compositor packs straight from them); `Glass.radius`
     /// still carries the node's declared corners (stamped at emit).
     pub glass: Option<GlassLayer>,
-    /// Element filter chain (`None` when the island is glass-only).
-    pub filter: Option<Filter>,
+    /// Ordered effect stack (bottom → top); `None` when the layer
+    /// declares no `effects()`.
+    pub effects: Option<EffectStack>,
     /// Layout-px overscan the effect output can reach past `rect`
     /// (lens displacement, frost reach and the in-shader shadow). The backend
     /// expands the blur region by this; mirrors the visual-bounds pad.
@@ -83,23 +84,25 @@ struct Collector {
 
 impl SceneSink for Collector {
     fn begin_layer(&mut self, layer: &PlacedLayer) {
-        if layer.glass.is_none() && layer.filter.is_none() {
+        let Some(stack) = layer.effects else {
             return;
-        }
+        };
+        let Some(glass_layer) = stack.glass_layer() else {
+            return;
+        };
         // Groups collapse to one island: members mapped to surface
         // coordinates (the compositor packs straight from them), the
         // island rect is their union. The packed wire carries the full
         // member list; the union rect + first-member material below are
         // only the blur-region fallback the old wire used.
-        let (rect, glass) = match layer.glass {
-            None => (map_rect(&layer.transform, layer.rect), None),
-            Some(GlassLayer::Single(g, b, s, gl, r)) => {
+        let (rect, glass) = match glass_layer {
+            GlassLayer::Single(g, b, s, gl, r) => {
                 (
                     map_rect(&layer.transform, layer.rect),
-                    Some(GlassLayer::Single(*g, *b, *s, *gl, *r)),
+                    GlassLayer::Single(g, b, s, gl, r),
                 )
             }
-            Some(GlassLayer::Group(group)) => {
+            GlassLayer::Group(group) => {
                 // Members and clip ride the same surface mapping as the
                 // rect; the press touch undergoes the identical point
                 // transform (it is group-local, like the member rects).
@@ -132,7 +135,7 @@ impl SceneSink for Collector {
                 }
                 (
                     union,
-                    Some(GlassLayer::Group(GlassGroup {
+                    GlassLayer::Group(GlassGroup {
                         members,
                         smoothing: group.smoothing,
                         clip,
@@ -141,18 +144,18 @@ impl SceneSink for Collector {
                         spectral: group.spectral,
                         glow: group.glow,
                         refraction: group.refraction,
-                    })),
+                    }),
                 )
             }
         };
         if rect.width <= 0.0 || rect.height <= 0.0 {
             return;
         }
-        let pad = layer.glass.map(|g| g.damage_pad()).unwrap_or(0.0);
+        let pad = glass.damage_pad();
         self.islands.push(Island {
             rect,
-            glass,
-            filter: layer.filter.cloned(),
+            glass: Some(glass),
+            effects: Some(stack.clone()),
             pad,
         });
     }
@@ -179,7 +182,8 @@ pub fn extract_islands(scene: &Scene) -> Vec<Island> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::foundation::{Backdrop, Glass};
+    use crate::foundation::Effect;
+    use crate::foundation::{Backdrop, Blur, Glass, GlassEffect, Glow, Refraction, Spectral};
     use crate::scene::command::LayerId;
     use crate::scene::{SceneChunk, SceneCommand};
 
@@ -199,29 +203,45 @@ mod tests {
             SceneCommand::BeginLayer {
                 id: LayerId(1),
                 rect,
-                filter: None,
-                glass: Some(GlassLayer::Single(Glass::lens(1.0), Backdrop::NONE, crate::foundation::Spectral::NONE, crate::foundation::Glow::NONE, crate::foundation::Refraction::NONE)),
+                effects: Some(EffectStack::from(vec![GlassEffect::single(
+                    Glass::lens(1.0),
+                    Backdrop::NONE,
+                    Spectral::NONE,
+                    Glow::NONE,
+                    Refraction::NONE,
+                )
+                .boxed()])),
                 shadow_pad: 0.0,
-                blend: crate::foundation::BlendMode::Normal,
             },
             SceneCommand::EndLayer { id: LayerId(1) },
+        ]
+    }
+
+    fn blur_layer(rect: ResolvedRect) -> Vec<SceneCommand> {
+        vec![
+            SceneCommand::PushOffset(Point::ZERO),
+            SceneCommand::BeginLayer {
+                id: LayerId(2),
+                rect,
+                effects: Some(EffectStack::from(vec![Blur::new(8.0).boxed()])),
+                shadow_pad: 0.0,
+            },
+            SceneCommand::EndLayer { id: LayerId(2) },
         ]
     }
 
     #[test]
     fn skips_plain_layers_and_collects_glass_in_paint_order() {
         let mut scene = Scene::new();
-        // Plain isolation layer: no glass, no filter → not an island.
+        // Plain isolation layer: no effects → not an island.
         scene.push_chunk(chunk_with(
             vec![
                 SceneCommand::PushOffset(Point::ZERO),
                 SceneCommand::BeginLayer {
                     id: LayerId(0),
                     rect: ResolvedRect::new(0.0, 0.0, 100.0, 100.0),
-                    filter: None,
-                    glass: None,
+                    effects: None,
                     shadow_pad: 0.0,
-                    blend: crate::foundation::BlendMode::Normal,
                 },
                 SceneCommand::EndLayer { id: LayerId(0) },
             ],
@@ -231,35 +251,21 @@ mod tests {
             glass_layer(ResolvedRect::new(10.0, 20.0, 200.0, 100.0)),
             Point::ZERO,
         ));
-        // Filter-only island.
+        // Effect layer without glass: renders in-engine, not an island.
         scene.push_chunk(chunk_with(
-            vec![
-                SceneCommand::PushOffset(Point::ZERO),
-                SceneCommand::BeginLayer {
-                    id: LayerId(2),
-                    rect: ResolvedRect::new(300.0, 40.0, 120.0, 80.0),
-                    filter: Some(Filter::blur(8.0)),
-                    glass: None,
-                    shadow_pad: 0.0,
-                    blend: crate::foundation::BlendMode::Normal,
-                },
-                SceneCommand::EndLayer { id: LayerId(2) },
-            ],
+            blur_layer(ResolvedRect::new(300.0, 40.0, 120.0, 80.0)),
             Point::ZERO,
         ));
 
         let islands = extract_islands(&scene);
-        assert_eq!(islands.len(), 2);
+        assert_eq!(islands.len(), 1);
         assert_eq!(
             islands[0].rect,
             ResolvedRect::new(10.0, 20.0, 200.0, 100.0)
         );
         assert!(islands[0].glass.is_some());
-        assert!(islands[0].filter.is_none());
+        assert!(islands[0].effects.is_some());
         assert!(islands[0].pad > 0.0);
-        assert!(islands[1].glass.is_none());
-        assert_eq!(islands[1].filter, Some(Filter::blur(8.0)));
-        assert_eq!(islands[1].pad, 0.0);
     }
 
     #[test]
@@ -275,10 +281,15 @@ mod tests {
                 SceneCommand::BeginLayer {
                     id: LayerId(1),
                     rect: ResolvedRect::new(0.0, 0.0, 200.0, 100.0),
-                    filter: None,
-                    glass: Some(GlassLayer::Single(Glass::lens(1.0), Backdrop::NONE, crate::foundation::Spectral::NONE, crate::foundation::Glow::NONE, crate::foundation::Refraction::NONE)),
+                    effects: Some(EffectStack::from(vec![GlassEffect::single(
+                        Glass::lens(1.0),
+                        Backdrop::NONE,
+                        Spectral::NONE,
+                        Glow::NONE,
+                        Refraction::NONE,
+                    )
+                    .boxed()])),
                     shadow_pad: 0.0,
-                    blend: crate::foundation::BlendMode::Normal,
                 },
                 SceneCommand::EndLayer { id: LayerId(1) },
             ],
@@ -309,8 +320,8 @@ mod tests {
     fn region_expands_rect_by_pad() {
         let island = Island {
             rect: ResolvedRect::new(10.0, 20.0, 200.0, 100.0),
-            glass: Some(GlassLayer::Single(Glass::lens(1.0), Backdrop::NONE, crate::foundation::Spectral::NONE, crate::foundation::Glow::NONE, crate::foundation::Refraction::NONE)),
-            filter: None,
+            glass: Some(GlassLayer::Single(Glass::lens(1.0), Backdrop::NONE, Spectral::NONE, Glow::NONE, Refraction::NONE)),
+            effects: None,
             pad: 10.0,
         };
         assert_eq!(

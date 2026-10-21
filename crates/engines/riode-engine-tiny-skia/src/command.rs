@@ -102,11 +102,14 @@ impl SceneSink for ChunkSink<'_> {
     fn begin_layer(&mut self, layer: &PlacedLayer) {
         let _span = tracing::info_span!("Raster::Layer").entered();
         let floor = self.clip_stack.depth();
-        // A plain layer is a clip — unless a filter or the alpha-shadow pad
-        // demands an offscreen. Glass does not: this engine draws no glass
-        // (see the note at the top of this file), so a glass-only layer is
-        // isolation-free here, exactly like a pre-glass frame.
-        if layer.filter.is_none() && layer.shadow_pad <= 0.0 {
+        // Effect-stack lowering: blur sigmas as `Blur` ops, color stages
+        // as raw `Matrix` ops. Glass stages draw no glass on this engine
+        // (see the note at the top of this file) and contribute no ops,
+        // so a glass-only layer stays isolation-free, exactly like a
+        // pre-glass frame. A plain layer is a clip — unless filter-like
+        // stages or the alpha-shadow pad demand an offscreen.
+        let filter = layer.effects.as_ref().and_then(|s| s.to_filter());
+        if filter.is_none() && layer.shadow_pad <= 0.0 {
             // Plain isolation layer (pre-filter behavior): a clip.
             self.push_clip(&PlacedClip {
                 rect: layer.rect,
@@ -116,7 +119,7 @@ impl SceneSink for ChunkSink<'_> {
             self.layers.push(LayerFrame {
                 pixmap: None,
                 origin: (0.0, 0.0),
-                filter: None,
+                filter,
                 clip_floor: floor,
                 alpha_shadow: None,
             });
@@ -141,7 +144,7 @@ impl SceneSink for ChunkSink<'_> {
         }
         // Gaussian support: 3σ past the rect so blur tails stay complete,
         // plus the alpha-shadow pad.
-        let sigma = layer.filter.map(|f| f.max_blur_sigma()).unwrap_or(0.0);
+        let sigma = filter.as_ref().map(|f| f.max_blur_sigma()).unwrap_or(0.0);
         let pad = 3.0 * sigma + layer.shadow_pad;
         min_x -= pad;
         min_y -= pad;
@@ -165,7 +168,7 @@ impl SceneSink for ChunkSink<'_> {
         self.layers.push(LayerFrame {
             pixmap,
             origin: (ox, oy),
-            filter: layer.filter.cloned(),
+            filter,
             clip_floor: floor,
             alpha_shadow: None,
         });
