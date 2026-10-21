@@ -58,6 +58,10 @@ name = "filter_lab"
 path = "filter_lab/main.rs"
 
 [[example]]
+name = "effect_stack"
+path = "effect_stack/main.rs"
+
+[[example]]
 name = "liquid_glass"
 path = "liquid_glass/main.rs"
 

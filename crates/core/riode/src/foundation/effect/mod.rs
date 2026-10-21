@@ -143,6 +143,17 @@ impl EffectStack {
         self.0.push(Box::new(e));
     }
 
+    /// Concatenate another stack behind this one (execution order).
+    pub fn append(&mut self, other: EffectStack) {
+        self.0.extend(other.0);
+    }
+
+    /// Builder form of [`Self::append`]: `a.then(b)` runs `a` first.
+    pub fn then(mut self, other: EffectStack) -> Self {
+        self.append(other);
+        self
+    }
+
     pub fn len(&self) -> usize {
         self.0.len()
     }

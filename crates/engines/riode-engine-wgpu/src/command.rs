@@ -1771,7 +1771,7 @@ impl SceneSink for WgpuSink<'_> {
                             (s, n)
                         }
                     }
-                    None => (0, 0),
+                    None => (self.batch.rect_verts.len() as u32, 0),
                 };
                 // In-layer clips are balanced pops inside the layer, so
                 // `current()` is exactly the ancestor clips: what must

@@ -1599,7 +1599,6 @@ impl WgpuRenderer {
                                     let (sx, sy) = (gp.core[0], gp.core[1]);
                                     let region_sc = Self::scissor_rect(&Some(open.region), sw, sh);
                                     if let Some(rc) = region_sc {
-                                        let ping = self.blur_ping.as_ref().unwrap();
                                         let mut backdrop: &wgpu::TextureView = &gt.snap.1;
                                         if sx.max(sy) > 0.05 {
                                             // H writes region ⊕ 3·max(σx, σy) so
@@ -1616,17 +1615,25 @@ impl WgpuRenderer {
                                                 open.region.height + 2.0 * reach,
                                             );
                                             if let Some(h) = Self::scissor_rect(&Some(h_region), sw, sh) {
+                                                // H scratch must not alias `cur`: a
+                                                // prior stage may hold the current
+                                                // image in ping.0 (V always lands
+                                                // in the glass out texture).
+                                                let hscratch = match cur {
+                                                    CurLoc::Ping0 => CurLoc::Ping1,
+                                                    _ => CurLoc::Ping0,
+                                                };
                                                 self.run_blur_pass(
                                                     &mut enc,
                                                     &gt.snap.1,
-                                                    &ping.0 .1,
+                                                    self.stage_view(open.slot, hscratch),
                                                     sx,
                                                     (1.0, 0.0),
                                                     h,
                                                 );
                                                 self.run_blur_pass(
                                                     &mut enc,
-                                                    &ping.0 .1,
+                                                    self.stage_view(open.slot, hscratch),
                                                     &gt.a.1,
                                                     sy,
                                                     (0.0, 1.0),
