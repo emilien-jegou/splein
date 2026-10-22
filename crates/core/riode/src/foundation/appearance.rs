@@ -20,10 +20,14 @@ pub struct Appearance {
     /// dirty unaffected nodes.
     pub light_override: Option<LightEnvironment>,
     pub opacity: f32,
-    /// Ordered effect stack (bottom → top). `Some` (even empty) forces an
-    /// isolated layer; `None` means no effect layer. Replaces the legacy
-    /// `filter`/`glass`/`backdrop`/`blend` props (deleted).
-    pub effects: Option<EffectStack>,
+    /// Backdrop effects: transform the sampled background before the
+    /// layer composites (CSS `backdrop-filter` + the glass lens).
+    /// Read-only input for glass/blend sampling. `Some` (even empty)
+    /// forces an isolated layer.
+    pub backdrop_effects: Option<EffectStack>,
+    /// Layer effects: transform the layer's own rasterized content
+    /// (CSS `filter`). The sheet the backdrop card composites under.
+    pub layer_effects: Option<EffectStack>,
 }
 
 impl Appearance {
@@ -34,7 +38,8 @@ impl Appearance {
         shadow: None,
         light_override: None,
         opacity: 1.0,
-        effects: None,
+        backdrop_effects: None,
+        layer_effects: None,
     };
 
     pub fn with_fill(mut self, fill: Fill) -> Self {

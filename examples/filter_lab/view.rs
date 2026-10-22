@@ -27,7 +27,7 @@ const LABEL_COLOR: u32 = 0xC8D0E0;
 const CARD_FILL: u32 = 0x3B82F6;
 
 #[component]
-fn Card(label: &'static str, effects: EffectStack) -> impl IntoElement {
+fn Card(label: &'static str, layer_effects: EffectStack) -> impl IntoElement {
     view! {
         <Group direction="vertical" gap={24.0} alignment="center">
             <Text size={16.0} weight={500u16} color={LABEL_COLOR}>{label}</Text>
@@ -36,7 +36,7 @@ fn Card(label: &'static str, effects: EffectStack) -> impl IntoElement {
                 height={150.0}
                 radius={8.0}
                 fill={CARD_FILL}
-                effects={effects}
+                layer_effects={layer_effects}
             />
         </Group>
     }
@@ -60,12 +60,12 @@ pub(crate) fn Page() -> impl IntoElement {
                 alignment="center"
                 distribution="center"
             >
-                <Card label="Blur (8)" effects={Filter::blur(8.0).into_effects()} />
-                <Card label="Brightness (1.6)" effects={Filter::brightness(1.6).into_effects()} />
-                <Card label="Saturate (0)" effects={Filter::saturate(0.0).into_effects()} />
-                <Card label="Contrast (1.8)" effects={Filter::contrast(1.8).into_effects()} />
-                <Card label="Hue Rotate (120°)" effects={Filter::hue_rotate(120.0).into_effects()} />
-                <Card label="Blur + Saturate" effects={Filter::blur(4.0).with(FilterOp::Saturate(0.0)).into_effects()} />
+                <Card label="Blur (8)" layer_effects={Filter::blur(8.0).into_effects()} />
+                <Card label="Brightness (1.6)" layer_effects={Filter::brightness(1.6).into_effects()} />
+                <Card label="Saturate (0)" layer_effects={Filter::saturate(0.0).into_effects()} />
+                <Card label="Contrast (1.8)" layer_effects={Filter::contrast(1.8).into_effects()} />
+                <Card label="Hue Rotate (120°)" layer_effects={Filter::hue_rotate(120.0).into_effects()} />
+                <Card label="Blur + Saturate" layer_effects={Filter::blur(4.0).with(FilterOp::Saturate(0.0)).into_effects()} />
             </Group>
         </Group>
     }

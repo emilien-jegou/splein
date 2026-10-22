@@ -4,8 +4,8 @@
 // matrix tints the result) — not visual polish.
 
 use riode::foundation::{
-    Appearance, Blur, Color, DamageRegion, Effect, EffectStack, Fill, Filter,
-    Point, ResolvedRect,
+    Appearance, Blur, Color, DamageRegion, EffectStack, Fill, Filter,
+    IntoEffect, Point, ResolvedRect,
 };
 use riode::scene::{LayerId, Scene, SceneChunk, SceneCommand};
 use riode_tiny_skia::renderer::TinySkiaRenderer;
@@ -23,7 +23,8 @@ fn blurred_rect_scene(rect: ResolvedRect, sigma: f32) -> Scene {
     chunk.push(SceneCommand::BeginLayer {
         id: LayerId(1),
         rect,
-        effects: Some(EffectStack::from(vec![Blur::new(sigma).boxed()])),
+        layer_effects: Some(EffectStack::from(vec![Blur::new(sigma).into_effect()])),
+        backdrop_effects: None,
         shadow_pad: 0.0,
     });
     chunk.push(SceneCommand::DrawRect {
@@ -79,7 +80,8 @@ fn color_filter_tints_the_layer() {
     chunk.push(SceneCommand::BeginLayer {
         id: LayerId(2),
         rect,
-        effects: Some(Filter::saturate(0.0).into_effects()),
+        layer_effects: Some(Filter::saturate(0.0).into_effects()),
+        backdrop_effects: None,
         shadow_pad: 0.0,
     });
     chunk.push(SceneCommand::DrawRect {
@@ -120,7 +122,8 @@ fn plain_layer_still_clips() {
     chunk.push(SceneCommand::BeginLayer {
         id: LayerId(3),
         rect: layer_rect,
-        effects: None,
+        layer_effects: None,
+        backdrop_effects: None,
         shadow_pad: 0.0,
     });
     chunk.push(SceneCommand::DrawRect {

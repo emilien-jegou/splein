@@ -2,6 +2,7 @@
 
 use crate::foundation::{
     BuiltinStage, EffectShader, GlassEffect, GlassGroup, GlassLayer, GlassMember,
+    IntoEffect,
     GlassPressGeometry, Glow, Point, Refraction, ResolvedRect, Spectral, Transform,
     GLASS_STANDARD,
 };
@@ -23,7 +24,7 @@ fn enclosing_glass_group(arena: &TreeArena, id: NodeId) -> Option<NodeId> {
             .get(p)
             .style
             .appearance
-            .effects
+            .backdrop_effects
             .as_ref()
             .is_some_and(|s| s.glass_group_spacing().is_some())
         {
@@ -97,14 +98,14 @@ fn collect_glass_members(arena: &mut TreeArena, group_id: NodeId) -> (Vec<GlassM
             let is_marker = node
                 .style
                 .appearance
-                .effects
+                .backdrop_effects
                 .as_ref()
                 .is_some_and(|s| s.glass_group_spacing().is_some());
             if !is_marker {
                 if let Some((mut material, member_backdrop, _, _, _)) = node
                     .style
                     .appearance
-                    .effects
+                    .backdrop_effects
                     .as_ref()
                     .and_then(|s| s.glass_single())
                 {
@@ -215,16 +216,26 @@ pub fn compile_node_hierarchy(
     // contributes a shape instead of opening its own; a nested group
     // marker is transparent. Read off before any mutable borrow below.
     let enclosing = enclosing_glass_group(arena, id);
-    let effects = node.style.appearance.effects.clone();
-    let is_group_root = effects
+    // Glass is a backdrop-stage phenomenon (the lens refracts the
+    // backdrop): detection reads the backdrop stack.
+    let backdrop_stack = node.style.appearance.backdrop_effects.clone();
+    let is_group_root = backdrop_stack
         .as_ref()
         .is_some_and(|s| s.glass_group_spacing().is_some())
         && enclosing.is_none();
-    let own_glass = effects.as_ref().and_then(|s| s.glass_single());
+    // A lone lens only self-renders outside any group and off a group
+    // root: a member's shape joins the enclosing group's shared optics
+    // instead of opening its own (base parity — see `collect_glass_members`).
+    let own_glass = if enclosing.is_none() && !is_group_root {
+        backdrop_stack.as_ref().and_then(|s| s.glass_single())
+    } else {
+        None
+    };
     let node_has_layer = node.style.has_layer;
-    let node_has_effects = node.style.appearance.effects.is_some();
+    let node_has_effects = node.style.appearance.backdrop_effects.is_some()
+        || node.style.appearance.layer_effects.is_some();
     let node_glass_radius = node.style.appearance.radius;
-    let glass_spacing = effects
+    let glass_spacing = backdrop_stack
         .as_ref()
         .and_then(|s| s.glass_group_spacing());
     let group_clips = node.style.clip;
@@ -306,7 +317,7 @@ pub fn compile_node_hierarchy(
             Some(tx)
         }
     });
-    let (group_spectral, group_glow, group_refraction) = effects
+    let (group_spectral, group_glow, group_refraction) = backdrop_stack
         .as_ref()
         .and_then(|s| s.glass_single())
         .map(|(_, _, sp, gl, r)| (sp, gl, r))
@@ -392,18 +403,58 @@ pub fn compile_node_hierarchy(
     let layer = NodeLayer {
         needs_layer,
         rect: layer_rect,
-        effects: ({
-            // The emitted stack carries the resolved glass layer (group or
-            // single) so the engine snapshot/optics lowering reads one
-            // place. A root's own lens is ignored (members refract); the
-            // group's shared spectral/glow/refraction ride the root's own
-            // glass stage when present, else neutral.
-            let mut stack = arena.get(id).style.appearance.effects.clone().unwrap_or_default();
-            if let Some(gl) = layer_glass {
-                stack.0.retain(|e| !matches!(e.shader(), EffectShader::Builtin(BuiltinStage::Glass(_))));
-                stack.push(GlassEffect::new(gl));
+        // The sheet: `layer_effects` only — glass never lives here (a
+        // transparent sheet has nothing to refract).
+        layer_effects: arena.get(id).style.appearance.layer_effects.clone(),
+        // The backdrop side, carrying the resolved glass layer (group
+        // or single) so the engine snapshot/optics lowering reads one
+        // place. A root's own lens is ignored (members refract); the
+        // group's shared spectral/glow/refraction ride the root's own
+        // glass stage when present, else neutral.
+        backdrop_effects: ({
+            let mut stack = backdrop_stack.clone().unwrap_or_default();
+            // Members of a group don't self-render their lens (it joins
+            // the group's shared optics — base parity); strip Glass
+            // stages from a member's own backdrop stack.
+            if enclosing.is_some() && !is_group_root {
+                stack.0.retain(|e| {
+                    !matches!(
+                        e.shader(),
+                        EffectShader::Builtin(BuiltinStage::Glass(_))
+                    )
+                });
             }
-            Some(stack)
+            if let Some(gl) = layer_glass {
+                let fx = GlassEffect::new(gl);
+                // In place: the resolved lens (stamped radius, press
+                // geometry, merged group) takes the position the author
+                // gave the glass — appending would force glass-last and
+                // destroy stack order.
+                if let Some(pos) = stack.0.iter().position(|e| {
+                    matches!(
+                        e.shader(),
+                        EffectShader::Builtin(BuiltinStage::Glass(_))
+                    )
+                }) {
+                    stack.0[pos] = fx.into_effect();
+                } else if let Some(mpos) = stack.0.iter().position(|e| {
+                    matches!(
+                        e.shader(),
+                        EffectShader::Builtin(BuiltinStage::GlassGroup { .. })
+                    )
+                }) {
+                    // Group roots carry the marker, not a lens: the
+                    // merged group takes the marker's position.
+                    stack.0[mpos] = fx.into_effect();
+                } else {
+                    stack.push(fx);
+                }
+            }
+            if stack.0.is_empty() {
+                None
+            } else {
+                Some(stack)
+            }
         }),
         press: press_tx,
     };

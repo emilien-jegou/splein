@@ -101,14 +101,26 @@ impl SceneSink for ChunkSink<'_> {
 
     fn begin_layer(&mut self, layer: &PlacedLayer) {
         let _span = tracing::info_span!("Raster::Layer").entered();
+        // Backdrop effects read the parent pixels — this engine samples no
+        // backdrop (no glass, no blend), so the stack is ignored here.
+        if layer.backdrop_effects.is_some() {
+            use std::sync::atomic::{AtomicBool, Ordering};
+            static WARNED: AtomicBool = AtomicBool::new(false);
+            if !WARNED.swap(true, Ordering::Relaxed) {
+                tracing::warn!(
+                    "riode-tiny-skia: backdrop_effects ignored (this engine samples no backdrop; use wgpu)"
+                );
+            }
+        }
         let floor = self.clip_stack.depth();
-        // Effect-stack lowering: blur sigmas as `Blur` ops, color stages
-        // as raw `Matrix` ops. Glass stages draw no glass on this engine
-        // (see the note at the top of this file) and contribute no ops,
+        // Effect-stack lowering: the sheet's stack (`layer_effects`)
+        // lowers to blur sigmas as `Blur` ops and color stages as raw
+        // `Matrix` ops. Glass lives on the backdrop side and draws no
+        // glass on this engine (see the note at the top of this file),
         // so a glass-only layer stays isolation-free, exactly like a
         // pre-glass frame. A plain layer is a clip — unless filter-like
         // stages or the alpha-shadow pad demand an offscreen.
-        let filter = layer.effects.as_ref().and_then(|s| s.to_filter());
+        let filter = layer.layer_effects.as_ref().and_then(|s| s.to_filter());
         if filter.is_none() && layer.shadow_pad <= 0.0 {
             // Plain isolation layer (pre-filter behavior): a clip.
             self.push_clip(&PlacedClip {

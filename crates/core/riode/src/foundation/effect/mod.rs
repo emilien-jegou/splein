@@ -97,15 +97,87 @@ pub trait Effect: Send + Sync + std::fmt::Debug {
     fn shader(&self) -> EffectShader;
     /// Object-safe clone for `EffectStack: Clone` (needed by `Prop<T>`).
     fn clone_box(&self) -> Box<dyn Effect>;
-    /// Box a concrete effect for heterogeneous stacks:
-    /// `vec![Blur::new(4.0).boxed(), Saturate::new(1.3).boxed()]`.
-    fn boxed(self) -> Box<dyn Effect>
+}
+
+/// Convert anything effect-like into a boxed trait object — the single
+/// vocabulary for heterogeneous stacks, replacing manual `.boxed()`
+/// calls: `vec![Blur::new(4.0).into_effect(), Saturate::new(1.3).into_effect()]`.
+/// (A blanket `From<T> for Box<dyn Effect>` is impossible: it would
+/// overlap the reflexive `From` once any downstream crate implements
+/// `Effect` for a boxed type.)
+pub trait IntoEffect {
+    fn into_effect(self) -> Box<dyn Effect>;
+}
+
+impl<T: Effect + 'static> IntoEffect for T {
+    fn into_effect(self) -> Box<dyn Effect> {
+        Box::new(self)
+    }
+}
+
+/// Sheet-safe vocabulary: effects that make sense on the layer's own
+/// rasterized content (`layer_effects`, CSS `filter`). Cannot read the
+/// backdrop — a transparent sheet has nothing to refract.
+pub trait LayerEffect: Effect {
+    /// Box for a heterogeneous `layer_effects=[...]` list.
+    fn into_layer_effect(self) -> Box<dyn Effect>
     where
         Self: Sized + 'static,
     {
         Box::new(self)
     }
 }
+
+/// Backdrop-side vocabulary: effects that transform the sampled
+/// background (`backdrop_effects`, CSS `backdrop-filter` plus the glass
+/// lens). The lens card is what the layer's sheet composites over.
+/// `Glass` lives here only — it is a backdrop phenomenon.
+pub trait BackdropEffect: Effect {
+    /// Box for a heterogeneous `backdrop_effects=[...]` list.
+    fn into_backdrop_effect(self) -> Box<dyn Effect>
+    where
+        Self: Sized + 'static,
+    {
+        Box::new(self)
+    }
+}
+
+/// Convert anything stack-like into an [`EffectStack`]: a single effect
+/// becomes a singleton, a stack passes through, a boxed vec collects.
+pub trait IntoStack {
+    fn into_stack(self) -> EffectStack;
+}
+
+impl IntoStack for EffectStack {
+    fn into_stack(self) -> EffectStack {
+        self
+    }
+}
+
+impl<T: IntoEffect> IntoStack for T {
+    fn into_stack(self) -> EffectStack {
+        EffectStack(vec![self.into_effect()])
+    }
+}
+
+impl IntoStack for Vec<Box<dyn Effect>> {
+    fn into_stack(self) -> EffectStack {
+        EffectStack(self)
+    }
+}
+
+/// Fluent chaining for every effect primitive:
+/// `Blur::new(6.0).then(Glass::clear())`,
+/// `effect.then(stack)` and `stack.then(effect)` all yield stacks.
+pub trait ThenExt: IntoEffect + Sized {
+    fn then<I: IntoStack>(self, other: I) -> EffectStack {
+        let mut stack = self.into_stack();
+        stack.append(other.into_stack());
+        stack
+    }
+}
+
+impl<T: IntoEffect> ThenExt for T {}
 
 /// Ordered effect stack: index order is execution order (bottom → top).
 #[derive(Debug, Default)]
@@ -149,8 +221,9 @@ impl EffectStack {
     }
 
     /// Builder form of [`Self::append`]: `a.then(b)` runs `a` first.
-    pub fn then(mut self, other: EffectStack) -> Self {
-        self.append(other);
+    /// Accepts stacks, single effects, and boxed vecs alike.
+    pub fn then<I: IntoStack>(mut self, other: I) -> Self {
+        self.append(other.into_stack());
         self
     }
 
@@ -593,3 +666,19 @@ impl Effect for GlassGroupEffect {
         Box::new(self.clone())
     }
 }
+
+// Vocabulary impls: what may be authored in `layer_effects=[...]` (the
+// sheet) versus `backdrop_effects=[...]` (the sampled backdrop + lens).
+// `Glass` is backdrop-only: it refracts the backdrop, so it has no
+// meaning on a transparent sheet.
+
+impl LayerEffect for Blur {}
+impl LayerEffect for ColorMatrix {}
+impl LayerEffect for Saturate {}
+impl LayerEffect for ShadowEffect {}
+
+impl BackdropEffect for Blur {}
+impl BackdropEffect for ColorMatrix {}
+impl BackdropEffect for Saturate {}
+impl BackdropEffect for GlassEffect {}
+impl BackdropEffect for BlendEffect {}

@@ -39,10 +39,15 @@ pub enum SceneCommand {
     BeginLayer {
         id: LayerId,
         rect: ResolvedRect,
-        /// Ordered effect stack (bottom → top). `Some` opens an effect
-        /// layer executed in order by the engine; `None` is a plain
-        /// isolation layer (clip-only, the pre-filter behavior).
-        effects: Option<EffectStack>,
+        /// Layer effects (bottom → top): the sheet's own transform
+        /// (CSS `filter`). `Some` (or backdrop effects / shadow pad)
+        /// opens an effect layer; `None` everywhere is a plain isolation
+        /// layer (clip-only, the pre-filter behavior).
+        layer_effects: Option<EffectStack>,
+        /// Backdrop effects: transform the sampled background before the
+        /// layer composites (CSS `backdrop-filter` + the glass lens).
+        /// Read-only input for glass/blend sampling.
+        backdrop_effects: Option<EffectStack>,
         /// Extra offscreen margin in layout px for an alpha-silhouette
         /// shadow (`ShadowShape::Alpha`): the layer's content alpha is the
         /// silhouette, so the offscreen must hold the offset + blur reach
@@ -133,14 +138,25 @@ pub fn hash_commands(commands: &[SceneCommand]) -> u64 {
             SceneCommand::BeginLayer {
                 id,
                 rect,
-                effects,
+                layer_effects,
+                backdrop_effects,
                 shadow_pad,
             } => {
                 8u8.hash(&mut h);
                 id.0.hash(&mut h);
                 rect_bits(rect).hash(&mut h);
                 shadow_pad.to_bits().hash(&mut h);
-                match effects {
+                match backdrop_effects {
+                    None => 0u8.hash(&mut h),
+                    Some(stack) => {
+                        1u8.hash(&mut h);
+                        (stack.len() as u64).hash(&mut h);
+                        for e in stack.0.iter() {
+                            e.id().hash(&mut h);
+                        }
+                    }
+                }
+                match layer_effects {
                     None => 0u8.hash(&mut h),
                     Some(stack) => {
                         1u8.hash(&mut h);
@@ -371,15 +387,17 @@ fn appearance_bits(a: &Appearance) -> Vec<u32> {
             v.extend(light_bits(l));
         }
     }
-    match &a.effects {
-        None => v.push(0),
-        Some(stack) => {
-            v.push(1);
-            v.push(stack.len() as u32);
-            for e in stack.0.iter() {
-                let id = e.id();
-                v.push((id.0 & 0xffff_ffff) as u32);
-                v.push((id.0 >> 32) as u32);
+    for stack in [&a.layer_effects, &a.backdrop_effects] {
+        match stack {
+            None => v.push(0),
+            Some(stack) => {
+                v.push(1);
+                v.push(stack.len() as u32);
+                for e in stack.0.iter() {
+                    let id = e.id();
+                    v.push((id.0 & 0xffff_ffff) as u32);
+                    v.push((id.0 >> 32) as u32);
+                }
             }
         }
     }

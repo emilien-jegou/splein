@@ -56,9 +56,13 @@ pub struct NodeLayer {
     /// rect is the union of member rects (group-local, may start
     /// off-origin when members overhang).
     pub rect: ResolvedRect,
-    /// Ordered effect stack cloned from the node's appearance; `None`
-    /// when the node declares no `effects()`.
-    pub effects: Option<EffectStack>,
+    /// Layer effects (the sheet's transform) cloned from the node's
+    /// appearance; `None` when the node declares no `layer_effects()`.
+    pub layer_effects: Option<EffectStack>,
+    /// Backdrop effects (sampled-background transform + the lens)
+    /// cloned from the node's appearance; `None` when the node declares
+    /// no `backdrop_effects()`.
+    pub backdrop_effects: Option<EffectStack>,
     /// Press content transform (node-local, about the content centre):
     /// the pressed member's content scales with its lens. `None` when
     /// the press is glow/light only (identity transform).
@@ -70,9 +74,17 @@ impl NodeLayer {
     /// the stack). The parent-target shadow hoist keys off this: inside
     /// the glass offscreen the shadow would be masked by the lens.
     pub fn has_glass(&self) -> bool {
-        self.effects
+        self.backdrop_effects
             .as_ref()
             .is_some_and(|s| s.glass_layer().is_some())
+    }
+
+    /// Whether the emitted layer samples the backdrop: any backdrop
+    /// stage at all (glass included — it is a backdrop stage).
+    pub fn needs_backdrop(&self) -> bool {
+        self.backdrop_effects
+            .as_ref()
+            .is_some_and(|s| !s.is_empty())
     }
 }
 
@@ -150,7 +162,8 @@ pub fn enter_node_frame(
         chunk.push(SceneCommand::BeginLayer {
             id: layer_id,
             rect: layer.rect,
-            effects: layer.effects.clone(),
+            layer_effects: layer.layer_effects.clone(),
+            backdrop_effects: layer.backdrop_effects.clone(),
             shadow_pad: node_alpha_shadow_pad(node),
         });
     }

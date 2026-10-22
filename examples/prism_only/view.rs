@@ -98,7 +98,7 @@ pub fn Page() -> impl IntoElement {
                     width={200.0}
                     height={150.0}
                     radius={24.0}
-                    effects={normal.into_effects()}
+                    backdrop_effects={normal.into_effects()}
                     alignment="center"
                     distribution="center"
                     z_index={2}
@@ -107,7 +107,7 @@ pub fn Page() -> impl IntoElement {
                     width={200.0}
                     height={150.0}
                     radius={24.0}
-                    effects={overlay.into_effects()}
+                    backdrop_effects={overlay.into_effects()}
                     alignment="center"
                     distribution="center"
                     z_index={2}
@@ -116,7 +116,7 @@ pub fn Page() -> impl IntoElement {
                     width={200.0}
                     height={150.0}
                     radius={24.0}
-                    effects={soft.into_effects()}
+                    backdrop_effects={soft.into_effects()}
                     alignment="center"
                     distribution="center"
                     z_index={2}

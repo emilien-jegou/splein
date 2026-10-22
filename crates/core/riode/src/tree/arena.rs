@@ -209,7 +209,7 @@ impl TreeArena {
                 .node
                 .style
                 .appearance
-                .effects
+                .backdrop_effects
                 .as_ref()
                 .and_then(|s| s.glass_single())
             else {
@@ -251,7 +251,7 @@ impl TreeArena {
                     .node
                     .style
                     .appearance
-                    .effects
+                    .backdrop_effects
                     .as_ref()
                     .is_some_and(|s| s.glass_group_spacing().is_some())
                 && slot.node.state.glass_morph.is_active()
@@ -386,7 +386,7 @@ impl TreeArena {
                 .node
                 .style
                 .appearance
-                .effects
+                .backdrop_effects
                 .as_ref()
                 .is_some_and(|s| s.glass_group_spacing().is_some());
             if !slot.is_active || !is_group {

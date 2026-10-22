@@ -42,7 +42,8 @@ pub fn reconcile_group(
     let has_dyn_paint = def.fill.as_ref().is_some_and(|p| p.is_dynamic())
         || def.opacity.as_ref().is_some_and(|p| p.is_dynamic())
         || def.shadow.as_ref().is_some_and(|p| p.is_dynamic())
-        || def.effects.as_ref().is_some_and(|p| p.is_dynamic())
+        || def.backdrop_effects.as_ref().is_some_and(|p| p.is_dynamic())
+        || def.layer_effects.as_ref().is_some_and(|p| p.is_dynamic())
         || def.transform.as_ref().is_some_and(|p| p.is_dynamic())
         || def.z_index.as_ref().is_some_and(|p| p.is_dynamic())
         || def.x.as_ref().is_some_and(|p| p.is_dynamic())
@@ -69,8 +70,13 @@ pub fn reconcile_group(
             .as_ref()
             .and_then(|p| p.dynamic_closure())
             .map(|s| Rc::new(move || Some(s())) as _),
-        effects: def
-            .effects
+        backdrop_effects: def
+            .backdrop_effects
+            .as_ref()
+            .and_then(|p| p.dynamic_closure())
+            .map(|s| Rc::new(move || Some(s())) as _),
+        layer_effects: def
+            .layer_effects
             .as_ref()
             .and_then(|p| p.dynamic_closure())
             .map(|s| Rc::new(move || Some(s())) as _),
@@ -169,7 +175,8 @@ pub fn reconcile_group(
     }
     node.style.appearance.stroke = def.stroke;
     node.style.appearance.shadow = props.shadow.clone();
-    node.style.appearance.effects = props.effects.clone();
+    node.style.appearance.backdrop_effects = props.backdrop_effects.clone();
+    node.style.appearance.layer_effects = props.layer_effects.clone();
     node.style.appearance.light_override = def.light_override;
     node.style.appearance.radius = def.radius;
 
@@ -343,8 +350,10 @@ struct ResolvedProps {
     opacity: Option<f32>,
     /// Static or dynamic shadow the node actually paints.
     shadow: Option<Shadow>,
-    /// Static or dynamic ordered effect stack the node actually paints.
-    effects: Option<EffectStack>,
+    /// Static or dynamic backdrop-effect stack (sampled background + lens).
+    backdrop_effects: Option<EffectStack>,
+    /// Static or dynamic layer-effect stack (own content, runs last).
+    layer_effects: Option<EffectStack>,
     /// Effective stacking order, absoluteness folded in, read under the paint observer when
     /// dynamic so a signal change repaints.
     z_index: i32,
@@ -404,10 +413,17 @@ impl ResolvedProps {
             }
             None => None,
         };
-        let effects = match &def.effects {
+        let backdrop_effects = match &def.backdrop_effects {
             Some(Prop::Static(s)) => Some(s.clone()),
             Some(Prop::Dynamic(_)) | Some(Prop::Context(_)) => {
-                evaluate_prop(&def.effects, p_sub, runtime)
+                evaluate_prop(&def.backdrop_effects, p_sub, runtime)
+            }
+            None => None,
+        };
+        let layer_effects = match &def.layer_effects {
+            Some(Prop::Static(s)) => Some(s.clone()),
+            Some(Prop::Dynamic(_)) | Some(Prop::Context(_)) => {
+                evaluate_prop(&def.layer_effects, p_sub, runtime)
             }
             None => None,
         };
@@ -420,7 +436,8 @@ impl ResolvedProps {
             fill: evaluate_prop(&def.fill, p_sub, runtime).flatten(),
             opacity: evaluate_prop(&def.opacity, p_sub, runtime),
             shadow,
-            effects,
+            backdrop_effects,
+            layer_effects,
             z_index: resolve_z_index(evaluate_prop(&def.z_index, p_sub, runtime), def.is_absolute),
         }
     }
@@ -455,7 +472,8 @@ impl ChangeSet {
         let paint = app.fill != props.fill
             || (props.opacity.is_some() && props.opacity != Some(app.opacity))
             || app.shadow != props.shadow
-            || app.effects != props.effects
+            || app.backdrop_effects != props.backdrop_effects
+            || app.layer_effects != props.layer_effects
             || app.light_override != def.light_override
             || app.stroke != def.stroke
             || app.radius != def.radius

@@ -27,11 +27,17 @@ pub struct GroupDef {
     pub scale: Option<Prop<f32>>,
     pub rotate_degrees: Option<Prop<f32>>,
     pub shadow: Option<Prop<Shadow>>,
-    /// Ordered effect stack (bottom → top): `effects(vec![Blur::new(4.0),
-    /// Saturate::new(1.3)])`. Any `Some` value opens an isolated layer;
-    /// the executor runs the stack in order. Replaces `filter`/`glass`/
-    /// `blend` (deleted).
-    pub effects: Option<Prop<EffectStack>>,
+    /// Backdrop effects: run on the sampled background before the layer
+    /// composites (CSS `backdrop-filter`, plus the glass lens). The
+    /// snapshot is read-only input — these stages transform a copy the
+    /// glass optics and blend then sample; the layer's sheet composites
+    /// over the result. Vocabulary: `Blur`/`Saturate`/`ColorMatrix`
+    /// and `Glass` (backdrop-only — it refracts the backdrop).
+    pub backdrop_effects: Option<Prop<EffectStack>>,
+    /// Layer effects: run on the layer's own rasterized content (CSS
+    /// `filter`). Vocabulary: `Blur`/`Saturate`/`ColorMatrix`/`Shadow`
+    /// — never `Glass` (a transparent sheet has nothing to refract).
+    pub layer_effects: Option<Prop<EffectStack>>,
     pub light_override: Option<LightEnvironment>,
     pub layout: LayoutConfig,
     pub margin: Margin,
@@ -114,7 +120,8 @@ pub fn group() -> GroupDef {
         scale: None,
         rotate_degrees: None,
         shadow: None,
-        effects: None,
+        backdrop_effects: None,
+        layer_effects: None,
         light_override: None,
         layout: LayoutConfig::default(),
         margin: Margin::ZERO,
@@ -215,11 +222,18 @@ impl GroupDef {
         self
     }
 
-    /// Ordered effect stack: `vec![Blur::new(4.0).boxed(),
-    /// Saturate::new(1.3).boxed()]`, a closure `move || …`, or a reactive
-    /// signal. Index order is execution order (bottom → top).
-    pub fn effects<P: IntoProp<EffectStack>>(mut self, e: P) -> Self {
-        self.effects = Some(e.into_prop());
+    /// Backdrop effects: transform the sampled background before the
+    /// layer composites (CSS `backdrop-filter` + the glass lens). The
+    /// sheet composites over the result.
+    pub fn backdrop_effects<P: IntoProp<EffectStack>>(mut self, e: P) -> Self {
+        self.backdrop_effects = Some(e.into_prop());
+        self
+    }
+
+    /// Layer effects: transform the layer's own rasterized content
+    /// (CSS `filter`). Never `Glass` — the lens is a backdrop stage.
+    pub fn layer_effects<P: IntoProp<EffectStack>>(mut self, e: P) -> Self {
+        self.layer_effects = Some(e.into_prop());
         self
     }
 
@@ -900,7 +914,7 @@ pub fn flatten_segments(segments: &[ChildSegment]) -> Vec<Element> {
     out
 }
 
-/// `effects(vec![Blur::new(4.0).boxed(), Saturate::new(1.3).boxed()])`:
+/// `effects(vec![Blur::new(4.0).into_effect(), Saturate::new(1.3).into_effect()])`:
 /// a boxed-effect vec converts into a static stack prop.
 impl IntoProp<EffectStack> for Vec<Box<dyn Effect>> {
     fn into_prop(self) -> Prop<EffectStack> {

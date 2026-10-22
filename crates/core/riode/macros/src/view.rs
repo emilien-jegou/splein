@@ -150,11 +150,47 @@ fn event_method_ref(key: &str, attr: &KeyedAttribute) -> Option<TokenStream2> {
     }
 }
 
+/// `layer_effects=[Blur::new(6.0), Saturate::new(0.0)]` / /
+/// `backdrop_effects=[…, Glass::clear()]` bracket syntax: an array
+/// literal of heterogeneous effect items becomes one `EffectStack`,
+/// each element boxed through its side's vocabulary trait (bare `[...]`
+/// and braced `{[...]}` forms both reach this as `Expr::Array`). Empty
+/// `[]` → empty stack. The vocabulary is type-enforced:
+/// `layer_effects=[Glass::clear()]` fails (`Glass` is backdrop-only);
+/// any other key keeps normal expression semantics.
+fn effect_list_value(key: &str, attr: &KeyedAttribute) -> Option<TokenStream2> {
+    let method = match key {
+        "layer_effects" => quote! { ::riode::foundation::LayerEffect::into_layer_effect },
+        "backdrop_effects" => {
+            quote! { ::riode::foundation::BackdropEffect::into_backdrop_effect }
+        }
+        _ => return None,
+    };
+    let e = attr_expr(attr)?;
+    let syn::Expr::Array(arr) = e else { return None };
+    if !arr.attrs.is_empty() {
+        return None;
+    }
+    if arr.elems.is_empty() {
+        return Some(quote! { ::riode::foundation::EffectStack::new() });
+    }
+    let items = arr.elems.into_iter();
+    Some(quote! {
+        ::riode::foundation::EffectStack::from(::std::vec![
+            #(#method(#items)),*
+        ])
+    })
+}
+
 /// The final value tokens for an attribute: method-reference sugar for `on:` events
-/// with a bare `sig.method`, otherwise the normal (possibly slotted) value.
+/// with a bare `sig.method`, bracket-list sugar for the effect-stack props,
+/// otherwise the normal (possibly slotted) value.
 fn attr_value(key: &str, attr: &KeyedAttribute, flow: &FlowTables) -> TokenStream2 {
     if let Some(sugar) = event_method_ref(key, attr) {
         return sugar;
+    }
+    if let Some(list) = effect_list_value(key, attr) {
+        return slot_literal_value(list, flow);
     }
     slot_literal_value(attr_value_tokens(attr), flow)
 }

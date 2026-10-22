@@ -134,6 +134,11 @@ pub enum Op {
         params: u32,
         glass: Option<u32>,
         stages: Vec<StageGpu>,
+        /// Ordered backdrop stages, lowered from `backdrop_effects`:
+        /// Blur/ColorMatrix transform the snapshot, `Glass` refracts it
+        /// into the lens card, trailing stages transform the card
+        /// (others warn + skip at lowering).
+        backdrop_stages: Vec<StageGpu>,
     },
     /// Closes the innermost filter layer: the renderer runs the blur
     /// passes over the layer's offscreen, then draws the composite quad
@@ -1143,23 +1148,68 @@ impl SceneSink for WgpuSink<'_> {
     }
 
     fn begin_layer(&mut self, layer: &PlacedLayer) {
-        // Effect-stack lowering: blur sigmas as `Blur` ops, color stages
-        // as raw `Matrix` ops; glass params and the card blend mode read
-        // straight off the stack. A plain layer is a clip — unless
-        // filter-like stages, a glass refractor, the alpha-shadow pad,
-        // or a non-`Normal` blend mode demands the offscreen (the blend
+        // Effect-stack lowering: the sheet's stack (`layer_effects`)
+        // lowers to blur/color executor stages; the backdrop stack
+        // (`backdrop_effects`) carries the glass lens and the card
+        // blend mode — glass is a backdrop phenomenon (the lens
+        // refracts the sampled backdrop; the sheet composites over
+        // the card). A plain layer is a clip — unless filter-like
+        // stages, a glass refractor, the alpha-shadow pad, or a
+        // non-`Normal` blend mode demands the offscreen (the blend
         // composites against a parent snapshot).
-        let filter = layer.effects.as_ref().and_then(|s| s.to_filter());
-        let glass_layer = layer.effects.as_ref().and_then(|s| s.glass_layer());
+        let filter = layer.layer_effects.as_ref().and_then(|s| s.to_filter());
+        let glass_layer = layer.backdrop_effects.as_ref().and_then(|s| s.glass_layer());
         let card_blend_mode = layer
-            .effects
+            .backdrop_effects
             .as_ref()
             .and_then(|s| s.blend_mode())
             .unwrap_or(riode::foundation::BlendMode::Normal);
+        // Backdrop stages build the lens card from the parent snapshot:
+        // Blur/ColorMatrix transform the snapshot before glass, glass
+        // refracts it into the card, trailing Blur/ColorMatrix transform
+        // the card. Blend rides the final composite via `card_blend_mode`
+        // (and the glass frame header).
+        let mut backdrop_stages: Vec<StageGpu> = Vec::new();
+        let mut backdrop_sigma = 0.0f32;
+        if let Some(bd) = layer.backdrop_effects {
+            use riode::foundation::effect::{BuiltinStage, EffectShader};
+            let sc = self.batch.scale();
+            for e in bd.0.iter() {
+                match e.shader() {
+                    EffectShader::Builtin(BuiltinStage::Blur { sigma }) => {
+                        backdrop_sigma = backdrop_sigma.max(sigma * sc);
+                        backdrop_stages.push(StageGpu::Blur { sigma: sigma * sc });
+                    }
+                    EffectShader::Builtin(BuiltinStage::ColorMatrix { matrix }) => {
+                        backdrop_stages.push(StageGpu::ColorMatrix { matrix });
+                    }
+                    EffectShader::Builtin(BuiltinStage::Glass(_)) => {
+                        backdrop_stages.push(StageGpu::Glass);
+                    }
+                    EffectShader::Builtin(BuiltinStage::Blend { .. }) => {
+                        // Rides the final composite via `card_blend_mode`.
+                    }
+                    EffectShader::Builtin(
+                        BuiltinStage::ClipRound { .. }
+                        | BuiltinStage::GlassGroup { .. },
+                    ) => {}
+                    other => {
+                        static WARNED_BD: std::sync::atomic::AtomicBool =
+                            std::sync::atomic::AtomicBool::new(false);
+                        if !WARNED_BD.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                            tracing::warn!(
+                                "riode-wgpu: backdrop stage {other:?} is not backdrop-meaningful (skipped)"
+                            );
+                        }
+                    }
+                }
+            }
+        }
         if filter.is_none()
             && layer.shadow_pad <= 0.0
             && glass_layer.is_none()
             && card_blend_mode.is_normal()
+            && backdrop_stages.is_empty()
         {
             // Plain isolation layer (pre-filter behavior): the trait
             // default — a clip, so unfiltered groups keep today's
@@ -1217,6 +1267,8 @@ impl SceneSink for WgpuSink<'_> {
             .unwrap_or(0.0)
             * self.batch.scale();
         let mut pad = 3.0 * sigma + layer.shadow_pad * self.batch.scale();
+        // Backdrop blur tails sample past the region too.
+        pad += 3.0 * backdrop_sigma;
         if let Some(g) = glass_layer.as_ref() {
             pad += g.device_pad(self.batch.scale());
         }
@@ -1526,16 +1578,17 @@ impl SceneSink for WgpuSink<'_> {
             alpha_shadows: Vec::new(),
             spill: spill_seed,
         });
-        // Ordered executor stages, lowered from the stack in declaration
-        // order. Blur sigmas scale with the root device matrix; color
-        // stages carry their own matrix each (no pre-combining — order
-        // is the point). Shadow stages stash like `DrawShadow` and are
-        // drawn by the existing silhouette machinery; ClipRound and the
-        // group marker are compile-time only (clips already baked into
-        // verts, groups already collected). Custom stages have no
-        // executor pass yet (Phase E) — warn once and skip.
+        // Ordered executor stages for the SHEET, lowered from
+        // `layer_effects` in declaration order. Blur sigmas scale with
+        // the root device matrix; color stages carry their own matrix
+        // each (no pre-combining — order is the point). Shadow stages
+        // stash like `DrawShadow` and are drawn by the existing
+        // silhouette machinery; ClipRound and the group marker are
+        // compile-time only (clips already baked into verts, groups
+        // already collected). Glass/Blend are backdrop phenomena — a
+        // stray one here (Rust-built stack) warns once and skips.
         let mut stages: Vec<StageGpu> = Vec::new();
-        if let Some(stack) = layer.effects {
+        if let Some(stack) = layer.layer_effects {
             use riode::foundation::effect::{BuiltinStage, EffectShader};
             let sc = self.batch.scale();
             for e in stack.0.iter() {
@@ -1546,11 +1599,14 @@ impl SceneSink for WgpuSink<'_> {
                     EffectShader::Builtin(BuiltinStage::ColorMatrix { matrix }) => {
                         stages.push(StageGpu::ColorMatrix { matrix });
                     }
-                    EffectShader::Builtin(BuiltinStage::Glass(_)) => {
-                        stages.push(StageGpu::Glass);
-                    }
-                    EffectShader::Builtin(BuiltinStage::Blend { mode }) => {
-                        stages.push(StageGpu::Blend { mode: mode.as_uniform_id() });
+                    EffectShader::Builtin(BuiltinStage::Glass(_) | BuiltinStage::Blend { .. }) => {
+                        static WARNED_LYR: std::sync::atomic::AtomicBool =
+                            std::sync::atomic::AtomicBool::new(false);
+                        if !WARNED_LYR.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                            tracing::warn!(
+                                "riode-wgpu: glass/blend in layer_effects are backdrop stages (skipped)"
+                            );
+                        }
                     }
                     EffectShader::Builtin(BuiltinStage::Shadow(p)) => {
                         self.batch
@@ -1586,6 +1642,7 @@ impl SceneSink for WgpuSink<'_> {
             params,
             glass,
             stages,
+            backdrop_stages,
         });
     }
 

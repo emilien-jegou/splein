@@ -21,17 +21,17 @@
 // section — only the composite differs; that sameness is what the eyes
 // check. Human judges; no test asserts.
 
-use riode::foundation::{BlendEffect, Effect, EffectStack, GlassEffect, GlassStyle, Glow, Refraction, Spectral};
+use riode::foundation::{BlendEffect, EffectStack, GlassEffect, GlassStyle, Glow, Refraction, Spectral};
 
 fn blend_stack(blend: BlendMode) -> EffectStack {
-    EffectStack::from(vec![BlendEffect::new(blend).boxed()])
+    EffectStack::from(vec![BlendEffect::new(blend).into_effect()])
 }
 
 fn glass_blend_stack(style: GlassStyle, blend: BlendMode) -> EffectStack {
     let GlassStyle { glass, backdrop, spectral, glow, refraction, .. } = style;
     EffectStack::from(vec![
-        GlassEffect::single(glass, backdrop, spectral, glow, refraction).boxed(),
-        BlendEffect::new(blend).boxed(),
+        GlassEffect::single(glass, backdrop, spectral, glow, refraction).into_effect(),
+        BlendEffect::new(blend).into_effect(),
     ])
 }
 use riode::internal::group;
@@ -96,7 +96,7 @@ fn Row(label: &'static str, blend: BlendMode) -> impl IntoElement {
                     height={72.0}
                     radius={16.0}
                     fill={ACCENT}
-                    effects={blend_stack(blend)}
+                    backdrop_effects={blend_stack(blend)}
                     z_index={2}
                     alignment="center"
                     distribution="center"
@@ -139,7 +139,7 @@ fn GlassRow(label: &'static str, blend: BlendMode) -> impl IntoElement {
                     width={220.0}
                     height={88.0}
                     radius={24.0}
-                    effects={glass_blend_stack(style, blend)}
+                    backdrop_effects={glass_blend_stack(style, blend)}
                     z_index={2}
                     alignment="center"
                     distribution="center"

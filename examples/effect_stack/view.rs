@@ -1,19 +1,26 @@
-// Single responsibility: effect-order composition demo — identical cards
-// whose `effects` stacks differ only in stage order, over one shared
-// colorful backdrop. Order is execution order (bottom → top).
+// Single responsibility: effect-order composition demo on the two
+// effect stacks — `layer_effects` (the sheet, CSS `filter`) and
+// `backdrop_effects` (sampled backdrop + lens, CSS
+// `backdrop-filter`). Order within each list is execution order
+// (bottom → top). `=[...]` bracket syntax throughout.
 // NOTE: run with the wgpu engine (`-- wgpu` / `example effect_stack
 // wgpu`); tiny-skia ignores glass layers by design, so every pair
 // renders identically there.
-//   - "SAT → GLASS": text desaturates first, then the lens refracts the
-//     still-colored backdrop — grey text, colored lens.
-//   - "GLASS → SAT": the finished card (lens + text) desaturates —
-//     everything grey, lens included.
-//   - "BLUR → GLASS": text blurs first, then the lens refracts the sharp
-//     backdrop — soft text, crisp lens.
-//   - "GLASS → BLUR": the finished card blurs — lens and text both soft.
+//   - "SAT → GLASS": layer desaturates the sheet (grey text); the lens
+//     refracts the still-colored backdrop — grey text, colored lens.
+//   - "GLASS → SAT": backdrop stack runs glass then Saturate, so the
+//     finished lens card also desaturates — everything grey.
+//   - "BLUR → GLASS": layer blurs the sheet — soft text, crisp lens.
+//   - "GLASS → BLUR": backdrop stack runs glass then Blur — lens and
+//     text both soft.
+//   - "LAYER SAT": layer_effects only — no glass; grey text sheet, the
+//     split backdrop under it stays red/blue (intentional no-glass
+//     control card).
+//   - "BACKDROP GLASS+SAT": backdrop stack only — glass then Saturate
+//     over the sampled backdrop; no sheet content.
 // Frozen inspection via F8 / `.` / `s` comes from the shared harness.
 
-use riode::foundation::{Blur, Effect, EffectStack, Filter};
+use riode::foundation::{Blur, EffectStack, GlassEffect, Saturate};
 use riode::internal::group;
 use riode::prelude::*;
 
@@ -35,28 +42,29 @@ const BG: u32 = 0xFFFFFF;
 const LABEL_COLOR: u32 = 0x333A44;
 const INK_COLOR: u32 = 0xC81E3A;
 
-fn glass_fx() -> EffectStack {
-    GlassPreset::clear().style().into_effects()
-}
-
-fn sat_fx() -> EffectStack {
-    Filter::saturate(0.0).into_effects()
-}
-
-fn blur_fx() -> EffectStack {
-    EffectStack::from(vec![Blur::new(6.0).boxed()])
+/// The preset lens as one bracket element (hot and release resolve the
+/// same preset values).
+fn glass() -> GlassEffect {
+    GlassPreset::clear().style().into_effect()
 }
 
 #[component]
-fn Card(label: &'static str, effects: EffectStack) -> impl IntoElement {
+fn Card(
+    label: &'static str,
+    layer_effects: Option<EffectStack>,
+    backdrop_effects: Option<EffectStack>,
+) -> impl IntoElement {
+    let layer_effects = layer_effects.unwrap_or_default();
+    let backdrop_effects = backdrop_effects.unwrap_or_default();
     view! {
         <Group direction="vertical" gap={16.0} alignment="center">
             <Text size={13.0} weight={600u16} color={LABEL_COLOR}>{label}</Text>
             <Group
-                width={220.0}
+                width={200.0}
                 height={160.0}
                 radius={24.0}
-                effects={effects}
+                layer_effects={layer_effects}
+                backdrop_effects={backdrop_effects}
                 alignment="center"
                 distribution="center"
             >
@@ -70,9 +78,16 @@ fn Card(label: &'static str, effects: EffectStack) -> impl IntoElement {
 /// (opaque), slightly larger than the card so frost tails also sample
 /// colour. Identical per card on purpose — order differences must read
 /// from the effect stack, never from the backdrop. Card grid estimates:
-/// 220×160 cards, columns at x≈396/664, rows at y≈272/484.
+/// 220×160 cards, columns at x≈397/665, rows at y≈158/386/614.
 fn backdrop_blobs() -> Vec<Element> {
-    let cards = [(396.0, 272.0), (664.0, 272.0), (396.0, 484.0), (664.0, 484.0)];
+    let cards = [
+        (397.0, 158.0),
+        (665.0, 158.0),
+        (397.0, 386.0),
+        (665.0, 386.0),
+        (397.0, 614.0),
+        (665.0, 614.0),
+    ];
     let mut out = Vec::new();
     for (x0, y0) in cards {
         for (dx, w, fill) in [
@@ -108,12 +123,16 @@ pub fn Page() -> impl IntoElement {
             {backdrop_blobs()}
             <Group direction="vertical" gap={36.0} alignment="center" distribution="center" z_index={2}>
                 <Group direction="horizontal" gap={48.0} alignment="center">
-                    <Card label="SAT → GLASS" effects={sat_fx().then(glass_fx())} />
-                    <Card label="GLASS → SAT" effects={glass_fx().then(sat_fx())} />
+                    <Card label="SAT → GLASS" layer_effects=[Saturate::new(0.0)] backdrop_effects=[glass()] />
+                    <Card label="GLASS → SAT" layer_effects=[Saturate::new(0.0)] backdrop_effects=[glass(), Saturate::new(0.0)] />
                 </Group>
                 <Group direction="horizontal" gap={48.0} alignment="center">
-                    <Card label="BLUR → GLASS" effects={blur_fx().then(glass_fx())} />
-                    <Card label="GLASS → BLUR" effects={glass_fx().then(blur_fx())} />
+                    <Card label="BLUR → GLASS" layer_effects=[Blur::new(6.0)] backdrop_effects=[glass()] />
+                    <Card label="GLASS → BLUR" layer_effects=[Blur::new(6.0)] backdrop_effects=[glass(), Blur::new(6.0)] />
+                </Group>
+                <Group direction="horizontal" gap={48.0} alignment="center">
+                    <Card label="LAYER SAT" layer_effects=[Saturate::new(0.0)] backdrop_effects=[glass()] />
+                    <Card label="BACKDROP GLASS+SAT" backdrop_effects=[glass(), Saturate::new(0.0)] />
                 </Group>
             </Group>
         </Group>

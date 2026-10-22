@@ -120,7 +120,8 @@ impl LayoutNode {
             // An effect layer isolates its content — like a blend-mode
             // element it creates a stacking context so stack stages see
             // a well-defined backdrop painted beneath them.
-            || self.style.appearance.effects.is_some()
+            || self.style.appearance.layer_effects.is_some()
+            || self.style.appearance.backdrop_effects.is_some()
     }
 
     /// Painter layer this node occupies relative to its siblings.
@@ -260,13 +261,27 @@ impl LayoutNode {
 
         // An effect stack spreads past the element's own bounds (blur
         // reach, lens band, wide-tail rings, refraction halo); the
-        // damage region must cover that fringe.
-        if let Some(stack) = &self.style.appearance.effects {
-            let pad = stack.pad_total(1.0);
-            if pad > 0.0 {
-                let fx_rect = Self::project(tx, -pad, -pad, w + 2.0 * pad, h + 2.0 * pad);
-                bounds = bounds.union(&fx_rect);
-            }
+        // damage region must cover that fringe. Both stacks spread:
+        // layer stages fringe the sheet, backdrop stages fringe the
+        // lens card.
+        let pad = self
+            .style
+            .appearance
+            .layer_effects
+            .as_ref()
+            .map(|s| s.pad_total(1.0))
+            .unwrap_or(0.0)
+            .max(
+                self.style
+                    .appearance
+                    .backdrop_effects
+                    .as_ref()
+                    .map(|s| s.pad_total(1.0))
+                    .unwrap_or(0.0),
+            );
+        if pad > 0.0 {
+            let fx_rect = Self::project(tx, -pad, -pad, w + 2.0 * pad, h + 2.0 * pad);
+            bounds = bounds.union(&fx_rect);
         }
 
         if let Some(clip) = active_clip {

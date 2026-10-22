@@ -182,6 +182,28 @@ impl Glass {
         }
     }
 
+    /// The isolation lens as an effect: a unit-strength bare lens over
+    /// neutral stages (sharp, unwashed, monochrome, no glow, no halo).
+    /// It refracts without tinting or frosting — the compositional
+    /// primitive for stacking under/over other effects:
+    /// `Blur::new(6.0).then(Glass::clear())`.
+    ///
+    /// Deliberately minimal, not a look: bare geometry over neutral
+    /// stages (documented here, not fitted). For Apple-matched looks,
+    /// use userland presets (e.g. anodeui's `GlassPreset`) and
+    /// [`GlassStyle::into_effects`](super::style::GlassStyle::into_effects).
+    pub fn clear() -> crate::foundation::effect::GlassEffect {
+        use crate::foundation::effect::GlassEffect;
+        use super::{backdrop::Backdrop, glow::Glow, refraction::Refraction, spectral::Spectral};
+        GlassEffect::single(
+            Self::lens(1.0),
+            Backdrop::NONE,
+            Spectral::NONE,
+            Glow::NONE,
+            Refraction::NONE,
+        )
+    }
+
     /// A copy that reacts to touch when `enabled` (stretch, glow, bounce).
     pub const fn interactive(mut self, enabled: bool) -> Self {
         self.interactive = Some(enabled);

@@ -356,11 +356,13 @@ impl ChunkCache {
                 params,
                 glass,
                 stages,
+                backdrop_stages,
             } => Op::BeginLayer {
                 region,
                 params,
                 glass,
                 stages: stages.clone(),
+                backdrop_stages: backdrop_stages.clone(),
             },
             Op::EndLayer {
                 start,

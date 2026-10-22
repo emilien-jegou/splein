@@ -19,8 +19,8 @@ pub use crate::dsl::{
 };
 pub use crate::foundation::{
     Alignment, Anchor, BlendMode, Color, Direction, Distribution, Edges, FalloffCurve, Fill, Filter,
-    FilterOp, Gap, LayoutPresence, LightEnvironment, Margin, Padding, Radius, RenderDriver, Shadow,
-    ShadowOffset, ShadowShape, Size, Stroke, StrokeAlign, Transform,
+    FilterOp, Gap, IntoEffect, IntoStack, LayoutPresence, LightEnvironment, Margin, Padding, Radius,
+    RenderDriver, Shadow, ShadowOffset, ShadowShape, Size, Stroke, StrokeAlign, ThenExt, Transform,
 };
 pub use crate::hot_reload::{
     component_abi_fingerprint, host_sentinel_address, remote_abi_fingerprint, toolchain_id,

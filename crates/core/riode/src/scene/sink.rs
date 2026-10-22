@@ -109,8 +109,10 @@ pub struct PlacedShadow<'a> {
 #[derive(Clone, Debug)]
 pub struct PlacedLayer<'a> {
     pub rect: ResolvedRect,
-    /// Ordered effect stack (bottom → top), borrowed from the command.
-    pub effects: Option<&'a EffectStack>,
+    /// Layer effects (the sheet's transform), borrowed from the command.
+    pub layer_effects: Option<&'a EffectStack>,
+    /// Backdrop effects, borrowed from the command.
+    pub backdrop_effects: Option<&'a EffectStack>,
     pub transform: Transform,
     pub shadow_pad: f32,
 }
@@ -241,12 +243,14 @@ pub fn lower_chunk(
             SceneCommand::PopClip => sink.pop_clip(),
             SceneCommand::BeginLayer {
                 rect,
-                effects,
+                layer_effects,
+                backdrop_effects,
                 shadow_pad,
                 ..
             } => sink.begin_layer(&PlacedLayer {
                 rect: *rect,
-                effects: effects.as_ref(),
+                layer_effects: layer_effects.as_ref(),
+                backdrop_effects: backdrop_effects.as_ref(),
                 transform: stack.transform(),
                 shadow_pad: *shadow_pad,
             }),

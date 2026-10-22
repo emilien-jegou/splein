@@ -764,7 +764,7 @@ fn absorbs(arena: &TreeArena, id: NodeId) -> bool {
             .get(id)
             .style
             .appearance
-            .effects
+            .backdrop_effects
             .as_ref()
             .and_then(|s| s.glass_single())
             .is_some_and(|(g, _, _, _, _)| g.is_interactive())
@@ -825,13 +825,13 @@ fn glass_press_begin(arena: &mut TreeArena, chain: &[NodeId], pos: Point) {
         let is_group = node
             .style
             .appearance
-            .effects
+            .backdrop_effects
             .as_ref()
             .is_some_and(|s| s.glass_group_spacing().is_some());
         let interactive = node
             .style
             .appearance
-            .effects
+            .backdrop_effects
             .as_ref()
             .and_then(|s| s.glass_single())
             .is_some_and(|(g, _, _, _, _)| g.is_interactive());

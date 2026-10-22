@@ -13,7 +13,8 @@
 // order). Nested effect layers yield nested islands, each recorded.
 
 use crate::foundation::{
-    EffectStack, GlassGroup, GlassLayer, GlassMember, Point, Radius, ResolvedRect, Transform,
+    EffectStack, GlassGroup, GlassLayer, GlassMember, Point, Radius, ResolvedRect,
+    Transform,
 };
 use crate::scene::sink::{chunk_base, lower_chunk, PlacedLayer, SceneSink};
 use crate::scene::Scene;
@@ -84,7 +85,9 @@ struct Collector {
 
 impl SceneSink for Collector {
     fn begin_layer(&mut self, layer: &PlacedLayer) {
-        let Some(stack) = layer.effects else {
+        // Glass is a backdrop-stage phenomenon: islands read the lens
+        // from the backdrop stack.
+        let Some(stack) = layer.backdrop_effects else {
             return;
         };
         let Some(glass_layer) = stack.glass_layer() else {
@@ -182,7 +185,7 @@ pub fn extract_islands(scene: &Scene) -> Vec<Island> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::foundation::Effect;
+    use crate::foundation::effect::IntoEffect;
     use crate::foundation::{Backdrop, Blur, Glass, GlassEffect, Glow, Refraction, Spectral};
     use crate::scene::command::LayerId;
     use crate::scene::{SceneChunk, SceneCommand};
@@ -203,14 +206,15 @@ mod tests {
             SceneCommand::BeginLayer {
                 id: LayerId(1),
                 rect,
-                effects: Some(EffectStack::from(vec![GlassEffect::single(
+                layer_effects: None,
+                backdrop_effects: Some(EffectStack::from(vec![GlassEffect::single(
                     Glass::lens(1.0),
                     Backdrop::NONE,
                     Spectral::NONE,
                     Glow::NONE,
                     Refraction::NONE,
                 )
-                .boxed()])),
+                .into_effect()])),
                 shadow_pad: 0.0,
             },
             SceneCommand::EndLayer { id: LayerId(1) },
@@ -223,7 +227,8 @@ mod tests {
             SceneCommand::BeginLayer {
                 id: LayerId(2),
                 rect,
-                effects: Some(EffectStack::from(vec![Blur::new(8.0).boxed()])),
+                layer_effects: Some(EffectStack::from(vec![Blur::new(8.0).into_effect()])),
+                backdrop_effects: None,
                 shadow_pad: 0.0,
             },
             SceneCommand::EndLayer { id: LayerId(2) },
@@ -240,7 +245,8 @@ mod tests {
                 SceneCommand::BeginLayer {
                     id: LayerId(0),
                     rect: ResolvedRect::new(0.0, 0.0, 100.0, 100.0),
-                    effects: None,
+                    layer_effects: None,
+                    backdrop_effects: None,
                     shadow_pad: 0.0,
                 },
                 SceneCommand::EndLayer { id: LayerId(0) },
@@ -281,14 +287,15 @@ mod tests {
                 SceneCommand::BeginLayer {
                     id: LayerId(1),
                     rect: ResolvedRect::new(0.0, 0.0, 200.0, 100.0),
-                    effects: Some(EffectStack::from(vec![GlassEffect::single(
+                    layer_effects: None,
+                    backdrop_effects: Some(EffectStack::from(vec![GlassEffect::single(
                         Glass::lens(1.0),
                         Backdrop::NONE,
                         Spectral::NONE,
                         Glow::NONE,
                         Refraction::NONE,
                     )
-                    .boxed()])),
+                    .into_effect()])),
                     shadow_pad: 0.0,
                 },
                 SceneCommand::EndLayer { id: LayerId(1) },

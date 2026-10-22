@@ -15,8 +15,10 @@ pub struct DynamicBindings {
     pub text: Option<Rc<dyn Fn() -> String>>,
     pub transform: Option<Rc<dyn Fn() -> Transform>>,
     pub shadow: Option<Rc<dyn Fn() -> Option<Shadow>>>,
-    /// Effect-stack evaluator, when the node declares a dynamic one.
-    pub effects: Option<Rc<dyn Fn() -> Option<EffectStack>>>,
+    /// Backdrop-effect evaluator, when the node declares a dynamic one.
+    pub backdrop_effects: Option<Rc<dyn Fn() -> Option<EffectStack>>>,
+    /// Layer-effect evaluator, when the node declares a dynamic one.
+    pub layer_effects: Option<Rc<dyn Fn() -> Option<EffectStack>>>,
     pub presence: Option<Rc<dyn Fn() -> LayoutPresence>>,
     /// Stacking order evaluator, when the node declares a dynamic one.
     pub z_index: Option<Rc<dyn Fn() -> i32>>,
@@ -115,7 +117,8 @@ impl DynamicBindings {
             && self.text.is_none()
             && self.transform.is_none()
             && self.shadow.is_none()
-            && self.effects.is_none()
+            && self.backdrop_effects.is_none()
+            && self.layer_effects.is_none()
             && self.presence.is_none()
             && self.z_index.is_none()
             && self.pose.as_ref().is_none_or(|p| !p.is_bound())
@@ -305,7 +308,8 @@ impl NodeBindings {
         fill: &mut Option<Fill>,
         opacity: &mut f32,
         shadow: &mut Option<Shadow>,
-        effects: &mut Option<EffectStack>,
+        backdrop_effects: &mut Option<EffectStack>,
+        layer_effects: &mut Option<EffectStack>,
     ) -> bool {
         let b = match &self.inner {
             Some(b) => b,
@@ -333,10 +337,17 @@ impl NodeBindings {
                 changed = true;
             }
         }
-        if let Some(e) = &b.effects {
+        if let Some(e) = &b.backdrop_effects {
             let fresh = e();
-            if *effects != fresh {
-                *effects = fresh;
+            if *backdrop_effects != fresh {
+                *backdrop_effects = fresh;
+                changed = true;
+            }
+        }
+        if let Some(e) = &b.layer_effects {
+            let fresh = e();
+            if *layer_effects != fresh {
+                *layer_effects = fresh;
                 changed = true;
             }
         }

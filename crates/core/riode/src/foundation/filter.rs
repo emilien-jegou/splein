@@ -129,15 +129,15 @@ impl Filter {
     /// engine fold order). Migration helper from `filter={f}` to
     /// `effects={f.into_effects()}`.
     pub fn into_effects(self) -> crate::foundation::EffectStack {
-        use crate::foundation::{Blur, ColorMatrix, Effect};
+        use crate::foundation::{Blur, ColorMatrix, Effect, IntoEffect};
         let mut items: Vec<Box<dyn Effect>> = Vec::new();
         for op in &self.ops {
             if let FilterOp::Blur(s) = op {
-                items.push(Blur::new(*s).boxed());
+                items.push(Blur::new(*s).into_effect());
             }
         }
         if let Some(m) = self.color_matrix() {
-            items.push(ColorMatrix::new(m).boxed());
+            items.push(ColorMatrix::new(m).into_effect());
         }
         crate::foundation::EffectStack::from(items)
     }
