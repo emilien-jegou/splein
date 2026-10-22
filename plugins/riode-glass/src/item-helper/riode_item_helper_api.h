@@ -17,10 +17,10 @@ extern "C" {
 struct wl_display;
 struct wl_resource;
 
-// Bumped to 7 (wire v5: the packed frame carries the full uniform
-// stream — the 736-float prefix plus the 56-float glow tail the optics
-// shader's glow/blend stages consume; header layout unchanged).
-#define RIODE_ITEM_HELPER_V1_ABI_VERSION 7u
+// Bumped to 8 (item v3: the ordered effect-stage list rides the state
+// struct — glass_stack_index + effect_count + fixed effect slots; see
+// riode_effect_stage below. Layout change, hence the bump).
+#define RIODE_ITEM_HELPER_V1_ABI_VERSION 8u
 
 // v5 packed frame: version tag + frame blur σx/σy + integer sample box
 // (x0, y0, w, h, device px) + the full uniform stream (prefix + glow
@@ -45,6 +45,30 @@ enum riode_item_shape_mode {
     RIODE_ITEM_SHAPE_EXPLICIT = 1, // x/y/width/height + radii below
 };
 
+// v3 effect stages: bounded fixed slots so the whole state stays a
+// POD (pending -> cached -> current are by-value copies; pointers
+// would dangle across pending mutations). 8 stages x 4 KiB WGSL is
+// far above any real stack; oversized payloads are dropped per-request
+// (hints never raise protocol errors).
+#define RIODE_ITEM_HELPER_MAX_EFFECTS          8
+#define RIODE_ITEM_HELPER_EFFECT_WGSL_MAX      4096u // bytes, NUL included
+#define RIODE_ITEM_HELPER_EFFECT_UNIFORMS_MAX  32    // f32s (8 whole vec4s)
+
+// One latched custom effect stage: absolute stack position (over ALL
+// stages, the glass included), the complete WGSL module (ABI header
+// prepended by the client), packed f32 uniforms, which backdrop texture
+// the stage reads (0 none, 1 sharp, 2 frame-blurred), and that
+// backdrop's blur sigma in device px (read_blurred only, else 0).
+struct riode_effect_stage {
+    int32_t  stack_index;
+    uint32_t backdrop_need;
+    float    backdrop_sigma;
+    uint32_t wgsl_len;                            // strlen(wgsl), NUL excluded
+    uint32_t uniform_count;                       // f32s used of uniforms[]
+    char     wgsl[RIODE_ITEM_HELPER_EFFECT_WGSL_MAX];
+    float    uniforms[RIODE_ITEM_HELPER_EFFECT_UNIFORMS_MAX];
+};
+
 // Plain C mirror of one surface's latched (post-commit) item state.
 struct riode_item_state {
     enum riode_item_glass_mode glass_mode;
@@ -59,6 +83,9 @@ struct riode_item_state {
     enum riode_item_shape_mode shape_mode;
     double                     x, y, width, height; // surface-local logical px, EXPLICIT only
     double                     radii[4];           // TL, TR, BR, BL, EXPLICIT only
+    int32_t                    glass_stack_index;  // v3: glass position among stages (-1 = none)
+    uint32_t                   effect_count;       // v3: latched custom stages (0..MAX)
+    struct riode_effect_stage  effects[RIODE_ITEM_HELPER_MAX_EFFECTS];
 };
 
 typedef void (*riode_item_created_fn)(struct wl_resource* surface, void* userdata);

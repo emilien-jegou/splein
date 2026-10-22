@@ -28,6 +28,7 @@
 #include <hyprutils/math/Vector2D.hpp>
 
 #include "GlassOptics.hpp"
+#include "ItemHints.hpp"
 #include "item-helper/riode_item_helper_api.h"
 
 #include <memory>
@@ -62,6 +63,12 @@ class CGlassBlurElement : public IPassElement {
         float packed[RIODE_ITEM_HELPER_GLASS_PACKED_FLOATS] = {};
         CBox  shapeLocal{0, 0, 0, 0};
         float shapeRadii[4] = {};
+        // v3: latched custom effect stages (sorted at queue time by
+        // stack_index) + the glass position among them (-1 = none).
+        // Copied at queue time like the pack above — strings/vectors,
+        // still per-draw copies with no shared mutable state.
+        std::vector<ItemHints::ItemInfo::EffectStage> effects;
+        int32_t                                        glassIndex = -1;
     };
 
     explicit CGlassBlurElement(SData data);

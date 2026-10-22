@@ -1,7 +1,9 @@
 // See GlassBlur.hpp for the design.
 
+#include "Format.hpp"
 #include "GlassBlur.hpp"
 #include "ItemHints.hpp"
+#include "ShaderGlue.hpp"
 
 #include <hyprland/src/desktop/view/WLSurface.hpp>
 #include <hyprland/src/output/Monitor.hpp>
@@ -37,6 +39,15 @@ inline SP<CShader>          g_copyShader;
 inline SP<Render::IFramebuffer>       g_sampleFB;
 inline SP<Render::IFramebuffer>       g_tempFB;
 inline SP<Render::IFramebuffer>       g_coreFB;
+// v3 stage chain: two box-sized pings (snapshot never written), the
+// ReadBlurred backdrop source, and the offscreen lens card (only while
+// post-glass stages exist — without them optics composites direct as
+// before).
+inline SP<Render::IFramebuffer>       g_fx0;
+inline SP<Render::IFramebuffer>       g_fx1;
+inline SP<Render::IFramebuffer>       g_bdFB;
+inline SP<Render::IFramebuffer>       g_cardFB;
+inline GLuint                         g_fxUbo = 0;
 inline GLuint                         g_vao  = 0;
 inline GLuint                         g_vbo  = 0;
 // Plain (no-material) blur radius in px = 3σ of the iOS core blur
@@ -156,7 +167,10 @@ void main() {
 )GLSL";
 
 // Own masked copy-back: gl_FragCoord (GL-px, y-up) mapped into the sample
-// texture. Scissor confines each draw to one region rect.
+// texture. Scissor confines each draw to one region rect. Alpha passes
+// through: the post-stage card composite relies on the optics' rounded
+// silhouette (premultiplied, transparent outside the shape); forcing it
+// to 1.0 would paint a full rectangle and square off the corners.
 constexpr const char* COPY_FRAG = R"GLSL(
 #version 300 es
 precision highp float;
@@ -167,7 +181,7 @@ in vec2 v_uv;
 layout(location = 0) out vec4 fragColor;
 void main() {
     vec2 uv = (gl_FragCoord.xy - sampleMin) * invSample;
-    fragColor = vec4(texture(tex, uv).rgb, 1.0);
+    fragColor = texture(tex, uv);
 }
 )GLSL";
 
@@ -356,7 +370,11 @@ void hkRenderPassAdd(Render::CRenderPass* pass, UP<IPassElement>&& el) {
                 // client doing anything special.
                 if (rawSurface) {
                     ItemHints::ItemInfo info;
-                    if (ItemHints::get(rawSurface, info) && info.has_packed) {
+                    if (ItemHints::get(rawSurface, info)) {
+                        data.effects = info.effects;
+                        data.glassIndex = info.glass_stack_index;
+                    }
+                    if (info.has_packed) {
                         data.useOptics = true;
                         data.packSigmaX = info.pack_sigma_x;
                         data.packSigmaY = info.pack_sigma_y;
@@ -421,7 +439,7 @@ void hkRenderPassAdd(Render::CRenderPass* pass, UP<IPassElement>&& el) {
                     const auto mon = se->m_data.pMonitor.lock();
                     if (mon) {
                         const bool haveRect = !regionRects.empty();
-                        logPlacementChanged(std::format(
+                        logPlacementChanged(rfmt::format(
                             "[riode-glass] place: mon=({:.0f},{:.0f} {:.0f}x{:.0f}) scale={:.2f} global=({:.0f},{:.0f}) "
                             "surfLocal=({:.0f},{:.0f}) nrects={} regionLocal=[{:.0f},{:.0f},{:.0f},{:.0f}] "
                             "regionScreen=[{:.0f},{:.0f},{:.0f},{:.0f}] shapeScreen=[{:.0f},{:.0f},{:.0f},{:.0f}] optics={}",
@@ -717,7 +735,7 @@ std::vector<UP<IPassElement>> CGlassBlurElement::draw() {
     glGetIntegerv(GL_STENCIL_FUNC, &stencilFunc);
     glGetIntegerv(GL_STENCIL_REF, &stencilRef);
     glGetIntegerv(GL_STENCIL_VALUE_MASK, &stencilMask);
-    logPlacementChanged(std::format(
+    logPlacementChanged(rfmt::format(
         "[riode-glass] draw: fb={}x{} scale={:.2f} surfLocal=({:.0f},{:.0f}) unionFBpx=[{},{},{},{}] "
         "glY=[{},{}] glX=[{},{}] scis={} [{},{},{},{}] vp=[{},{},{},{}] sten={} func={} ref={} mask={}",
         fbW, fbH, scale, m_data.surfacePos.x, m_data.surfacePos.y, ux0, uy0, ux1, uy1, uy0, uy1, ux0, ux1,
@@ -737,6 +755,25 @@ std::vector<UP<IPassElement>> CGlassBlurElement::draw() {
         restore();
         return {};
     }
+    // v3 latched stack: sort by absolute index; the glass position
+    // splits it into the backdrop walk (before glass: transform the
+    // capture) and the card walk (after glass: transform the lens card).
+    // No pack (or index -1) => every stage is a backdrop stage.
+    std::vector<ItemHints::ItemInfo::EffectStage> stages = m_data.effects;
+    std::stable_sort(stages.begin(), stages.end(),
+                     [](const auto& a, const auto& b) { return a.stack_index < b.stack_index; });
+    const bool    hasGlass = m_data.useOptics;
+    const int32_t glassAt  = hasGlass ? m_data.glassIndex : -1;
+    std::vector<size_t> preStages, postStages;
+    for (size_t i = 0; i < stages.size(); ++i) {
+        if (glassAt < 0 || stages[i].stack_index < glassAt)
+            preStages.push_back(i);
+        else if (stages[i].stack_index > glassAt)
+            postStages.push_back(i);
+        // stack_index == glassAt: a custom stage on the pack's own slot —
+        // the glass owns it; skip (defensive; client sends distinct slots).
+    }
+
     bool allocOk = true;
     auto ensureBox = [&](const SP<Render::IFramebuffer>& fb) {
         if (fb->m_size.x != sw || fb->m_size.y != sh)
@@ -745,6 +782,31 @@ std::vector<UP<IPassElement>> CGlassBlurElement::draw() {
     ensureBox(g_sampleFB);
     ensureBox(g_tempFB);
     ensureBox(g_coreFB);
+    if (!stages.empty()) {
+        if (!g_fx0)
+            g_fx0 = g_pHyprRenderer->createFB("riode-glass-fx0");
+        if (!g_fx1)
+            g_fx1 = g_pHyprRenderer->createFB("riode-glass-fx1");
+        if (g_fx0)
+            ensureBox(g_fx0);
+        if (g_fx1)
+            ensureBox(g_fx1);
+        const bool needBlur = std::any_of(stages.begin(), stages.end(), [](const auto& s) {
+            return s.backdrop_need == 2u && s.backdrop_sigma > 0.0f;
+        });
+        if (needBlur) {
+            if (!g_bdFB)
+                g_bdFB = g_pHyprRenderer->createFB("riode-glass-bd");
+            if (g_bdFB)
+                ensureBox(g_bdFB);
+        }
+    }
+    if (hasGlass && !postStages.empty()) {
+        if (!g_cardFB)
+            g_cardFB = g_pHyprRenderer->createFB("riode-glass-card");
+        if (g_cardFB)
+            ensureBox(g_cardFB);
+    }
     if (!allocOk || !g_sampleFB->getTexture()) {
         g_exitStage[0]++;
         restore();
@@ -803,6 +865,75 @@ std::vector<UP<IPassElement>> CGlassBlurElement::draw() {
         return true;
     };
 
+    // One v3 custom stage: input (previous image) on unit 0, the
+    // backdrop on 1 (the raw capture; ReadBlurred swaps in its Gaussian
+    // at the stage sigma), the raw capture as the sharp parent on 2,
+    // the fixed 8-vec4 uniform block on buffer slot 0. A failed
+    // program (transpile/compile/link/reflection, logged once per hash
+    // by the glue) makes the stage a no-op — the chain continues; that
+    // is the no-fallback contract: unsupported = no effect, loudly.
+    if (!g_fxUbo) {
+        glGenBuffers(1, &g_fxUbo);
+        glBindBuffer(GL_UNIFORM_BUFFER, g_fxUbo);
+        glBufferData(GL_UNIFORM_BUFFER, 32 * sizeof(float), nullptr, GL_STREAM_DRAW);
+        glBindBuffer(GL_UNIFORM_BUFFER, 0);
+    }
+    float uData[32] = {};
+    auto runStage = [&](const ItemHints::ItemInfo::EffectStage& st, const SP<Render::IFramebuffer>& src,
+                        const SP<Render::IFramebuffer>& dst) -> bool {
+        if (!fbId(dst) || !src || !src->getTexture())
+            return false;
+        const auto sp = ShaderGlue::programFor(st.wgsl);
+        if (!sp.shader)
+            return false;
+        // Backdrop source: raw capture (none/sharp; sigma-0 read_blurred
+        // is an identity blur), else the frame blur at the stage sigma.
+        SP<Render::IFramebuffer> backdropFb = g_sampleFB;
+        if (st.backdrop_need == 2u && st.backdrop_sigma > 0.0f && g_bdFB && fbId(g_bdFB)) {
+            runSeparable(g_sampleFB, g_bdFB, 3.0f * st.backdrop_sigma, 3.0f * st.backdrop_sigma, sw, sh);
+            backdropFb = g_bdFB;
+        }
+        auto shader = gl->useShader(sp.shader).lock();
+        if (!shader)
+            return false;
+        shader->setUniformMatrix3fv(SHADER_PROJ, 1, GL_FALSE, FULLSCREEN_PROJECTION);
+        glActiveTexture(GL_TEXTURE0);
+        src->getTexture()->bind();
+        glActiveTexture(GL_TEXTURE1);
+        backdropFb->getTexture()->bind();
+        glActiveTexture(GL_TEXTURE2);
+        g_sampleFB->getTexture()->bind();
+        // Exactly 128 bytes (std140 array<vec4,8>): shorter latched
+        // streams zero-pad, longer ones cannot exist (helper caps).
+        std::fill(uData, uData + 32, 0.0f);
+        const size_t n = std::min<size_t>(st.uniforms.size(), 32);
+        std::copy_n(st.uniforms.begin(), n, uData);
+        glBindBuffer(GL_UNIFORM_BUFFER, g_fxUbo);
+        glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(uData), uData);
+        glBindBufferBase(GL_UNIFORM_BUFFER, 0, g_fxUbo);
+        glBindBuffer(GL_UNIFORM_BUFFER, 0);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbId(dst));
+        glViewport(0, 0, sw, sh);
+        glBindVertexArray(g_vao);
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+        glBindVertexArray(0);
+        return true;
+    };
+
+    // ── v3 pre-glass backdrop walk ────────────────────────────────────────
+    // Mirrors the wgpu backdrop walk: the capture (snapshot) is never
+    // written; every stage reads the current image and writes the other
+    // ping; glass then blurs the walk's current image (below).
+    SP<Render::IFramebuffer> chain = g_sampleFB;
+    auto nextPing = [&](const SP<Render::IFramebuffer>& cur) {
+        return cur.get() == g_fx0.get() ? g_fx1 : g_fx0;
+    };
+    for (const size_t i : preStages) {
+        auto dst = nextPing(chain);
+        if (dst && fbId(dst) && runStage(stages[i], chain, dst))
+            chain = dst;
+    }
+
     if (m_data.useOptics) {
         // v5 packed island: single anisotropic core blur at the wire
         // σx/σy (the reference's composed blur — one blur per group at
@@ -814,10 +945,13 @@ std::vector<UP<IPassElement>> CGlassBlurElement::draw() {
         }
         const float sx = std::max(m_data.packSigmaX, 0.0f);
         const float sy = std::max(m_data.packSigmaY, 0.0f);
+        // The glass core blur reads the walk's CURRENT image (wgpu:
+        // glass blurs the backdrop after the pre-glass stages; the raw
+        // snapshot stays the sharp source via the blend target).
         if (std::max(sx, sy) > 0.05f) {
-            runSeparable(g_sampleFB, g_coreFB, 3.0f * sx, 3.0f * sy, sw, sh);
+            runSeparable(chain, g_coreFB, 3.0f * sx, 3.0f * sy, sw, sh);
         } else {
-            blitFB(fbId(g_sampleFB), fbId(g_coreFB), 0, 0, sw, sh);
+            blitFB(fbId(chain), fbId(g_coreFB), 0, 0, sw, sh);
         }
         GlassOptics::DrawArgs args;
         args.coreFb    = g_coreFB;
@@ -840,11 +974,51 @@ std::vector<UP<IPassElement>> CGlassBlurElement::draw() {
             restore();
             return {};
         }
-        GlassOptics::draw(args);
+        if (postStages.empty() || !g_cardFB || !fbId(g_cardFB)) {
+            // No trailing stages (or no card FB): optics composites
+            // straight into the pass target, exactly as before.
+            GlassOptics::draw(args);
+        } else {
+            // Trailing stages transform the lens card: render it to an
+            // offscreen box-sized FB (cleared — card over transparent),
+            // run the chain, composite the result masked like any
+            // sample. Same final math: card srcOver onto the real
+            // backdrop below.
+            GLfloat prevClear[4];
+            glGetFloatv(GL_COLOR_CLEAR_VALUE, prevClear);
+            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbId(g_cardFB));
+            glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+            glClear(GL_COLOR_BUFFER_BIT);
+            glClearColor(prevClear[0], prevClear[1], prevClear[2], prevClear[3]);
+            args.offscreenFbid = fbId(g_cardFB);
+            GlassOptics::draw(args);
+            SP<Render::IFramebuffer> cardChain = g_cardFB;
+            for (const size_t i : postStages) {
+                auto dst = nextPing(cardChain);
+                if (dst && fbId(dst) && runStage(stages[i], cardChain, dst))
+                    cardChain = dst;
+            }
+            if (!compositeMasked(cardChain))
+                return {};
+        }
     } else {
-        runSeparable(g_sampleFB, g_sampleFB, radius, radius, sw, sh);
-        if (!compositeMasked(g_sampleFB))
-            return {};
+        if (stages.empty()) {
+            runSeparable(g_sampleFB, g_sampleFB, radius, radius, sw, sh);
+            if (!compositeMasked(g_sampleFB))
+                return {};
+        } else {
+            // Custom stages without a glass pack: chain over the capture,
+            // then the legacy radius blur, then the masked composite.
+            // The ping (never the snapshot) takes the blur output.
+            auto dst = nextPing(chain);
+            if (!dst || !fbId(dst)) {
+                restore();
+                return {};
+            }
+            runSeparable(chain, dst, radius, radius, sw, sh);
+            if (!compositeMasked(dst))
+                return {};
+        }
     }
 
     // Restore the caller's frame state exactly (see SavedGLState).
@@ -965,14 +1139,14 @@ uint64_t    exitStage(int stage) {
 }
 const char* geoSnapshot() {
     static std::string cache;
-    cache = std::format("pos=({:.1f},{:.1f}) scale={:.2f} fb={}x{} nrects={} first=[{},{},{},{}] kept={}", g_geoPos[0],
+    cache = rfmt::format("pos=({:.1f},{:.1f}) scale={:.2f} fb={}x{} nrects={} first=[{},{},{},{}] kept={}", g_geoPos[0],
                         g_geoPos[1], g_geoScale, g_geoFb[0], g_geoFb[1], g_geoNRects, g_geoFirst[0], g_geoFirst[1],
                         g_geoFirst[2], g_geoFirst[3], g_geoKept);
     return cache.c_str();
 }
 const char* geoLastSnapshot() {
     static std::string cache;
-    cache = std::format("pos=({:.1f},{:.1f}) region=[{:.0f},{:.0f},{:.0f},{:.0f}] shape=[{:.0f},{:.0f},{:.0f},{:.0f}] radii=[{:.0f},{:.0f},{:.0f},{:.0f}] optics={}",
+    cache = rfmt::format("pos=({:.1f},{:.1f}) region=[{:.0f},{:.0f},{:.0f},{:.0f}] shape=[{:.0f},{:.0f},{:.0f},{:.0f}] radii=[{:.0f},{:.0f},{:.0f},{:.0f}] optics={}",
                         g_geoLastPos[0], g_geoLastPos[1], g_geoLastRegion[0], g_geoLastRegion[1], g_geoLastRegion[2],
                         g_geoLastRegion[3], g_geoLastShape[0], g_geoLastShape[1], g_geoLastShape[2], g_geoLastShape[3],
                         g_geoLastRadii[0], g_geoLastRadii[1], g_geoLastRadii[2], g_geoLastRadii[3], g_geoLastOptics);

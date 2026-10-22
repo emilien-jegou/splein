@@ -54,6 +54,10 @@ struct riode_item_v1_interface {
                       wl_fixed_t height, wl_fixed_t radius_top_left, wl_fixed_t radius_top_right, wl_fixed_t radius_bottom_right,
                       wl_fixed_t radius_bottom_left);
     void (*unset_shape)(struct wl_client* client, struct wl_resource* resource);
+    void (*set_effect)(struct wl_client* client, struct wl_resource* resource, int32_t stack_index, const char* wgsl,
+                       struct wl_array* uniforms, uint32_t backdrop_need, wl_fixed_t backdrop_sigma);
+    void (*clear_effects)(struct wl_client* client, struct wl_resource* resource);
+    void (*set_glass_stage)(struct wl_client* client, struct wl_resource* resource, int32_t stack_index);
 };
 
 #define RIODE_ITEM_V1_DESTROY               0
@@ -61,11 +65,17 @@ struct riode_item_v1_interface {
 #define RIODE_ITEM_V1_UNSET_GLASS           2
 #define RIODE_ITEM_V1_SET_SHAPE             3
 #define RIODE_ITEM_V1_UNSET_SHAPE           4
+#define RIODE_ITEM_V1_SET_EFFECT            5
+#define RIODE_ITEM_V1_CLEAR_EFFECTS         6
+#define RIODE_ITEM_V1_SET_GLASS_STAGE       7
 #define RIODE_ITEM_V1_DESTROY_SINCE_VERSION      1
 #define RIODE_ITEM_V1_SET_GLASS_SINCE_VERSION    2
 #define RIODE_ITEM_V1_UNSET_GLASS_SINCE_VERSION  2
 #define RIODE_ITEM_V1_SET_SHAPE_SINCE_VERSION    1
 #define RIODE_ITEM_V1_UNSET_SHAPE_SINCE_VERSION  1
+#define RIODE_ITEM_V1_SET_EFFECT_SINCE_VERSION   3
+#define RIODE_ITEM_V1_CLEAR_EFFECTS_SINCE_VERSION 3
+#define RIODE_ITEM_V1_SET_GLASS_STAGE_SINCE_VERSION 3
 
 // No extern declarations for the interface descriptors on purpose: the
 // helper defines them static (internal linkage) so a previous resident

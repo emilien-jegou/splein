@@ -952,6 +952,32 @@ impl Batch {
         }
     }
 
+    /// One base-color quad in device px, same replace pipeline as
+    /// [`Self::emit_damage_base`]. Merges into a trailing `BaseQuads`
+    /// op so consecutive base rects share one draw call.
+    pub fn emit_base_rect_dev(&mut self, r: &ResolvedRect, base: Color) {
+        let (x0, y0) = (r.x, r.y);
+        let (x1, y1) = (r.x + r.width, r.y + r.height);
+        if x1 <= x0 || y1 <= y0 {
+            return;
+        }
+        let c = [base.r, base.g, base.b, base.a];
+        for (px, py) in [(x0, y0), (x1, y0), (x0, y1), (x1, y0), (x1, y1), (x0, y1)] {
+            self.rect_verts.push(RectVertex { pos: [px, py], color: c });
+        }
+        let extend = match self.ops.last_mut() {
+            Some(Op::BaseQuads { count, .. }) => Some(count),
+            _ => None,
+        };
+        match extend {
+            Some(n) => *n += 6,
+            None => self.ops.push(Op::BaseQuads {
+                start: self.rect_verts.len() as u32 - 6,
+                count: 6,
+            }),
+        }
+    }
+
     fn emit_solid(&mut self, rect: &ResolvedRect, color: Color, t: Transform, op: f32) {
         if rect.width <= 0.0 || rect.height <= 0.0 {
             return;

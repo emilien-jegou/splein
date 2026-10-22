@@ -60,8 +60,8 @@ use riode_shared::tiny_skia::HeadlessRaster;
 use crate::island_layers::IslandLayerPool;
 use crate::item_hints::{RiodeItemManagerV1, RiodeItemV1};
 use crate::{
-    bind_manager, effect_for_surface, item_for_surface, upload_blur_region, upload_glass_frame,
-    upload_item_shape,
+    bind_manager, effect_for_surface, item_for_surface, upload_blur_region, upload_effect_stages,
+    upload_glass_frame, upload_item_shape,
 };
 use crate::surface::create_overlay_surface;
 
@@ -415,6 +415,7 @@ impl OverlayHost {
                 )
             });
             upload_glass_frame(item, words.as_deref().unwrap_or(&[]));
+            upload_effect_stages(item, bar.effects.as_ref());
             upload_item_shape(item, r.x as f64, r.y as f64, w as f64, h as f64, radii);
         }
     }

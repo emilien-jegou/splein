@@ -19,6 +19,14 @@
 namespace ItemHints {
 
 struct ItemInfo {
+    // One latched v3 custom effect stage (copies of the helper's POD).
+    struct EffectStage {
+        int32_t       stack_index = 0;   // absolute, glass included
+        uint32_t      backdrop_need = 0;  // 0 none, 1 sharp, 2 frame-blurred
+        float         backdrop_sigma = 0.0f; // ReadBlurred sigma, device px
+        std::string   wgsl;             // complete module (ABI header prepended)
+        std::vector<float> uniforms;
+    };
     // v5 packed frame: present when the helper latched a packed upload
     // (plain-blur fallback without it).
     bool  has_packed = false;
@@ -31,6 +39,10 @@ struct ItemInfo {
     float packed[RIODE_ITEM_HELPER_GLASS_PACKED_FLOATS] = {};
     // "none" or "x,y,wxh r1,r2,r3,r4"
     std::string shape;
+    // v3: glass position among stages + the latched custom stages
+    // (unsorted here; the executor sorts by stack_index).
+    int32_t                   glass_stack_index = -1; // -1 = no glass stage
+    std::vector<EffectStage>  effects;
 };
 
 /// Loads (or adopts) the helper and starts its global. False = protocol

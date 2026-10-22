@@ -30,6 +30,10 @@ name = "desktop_glass"
 path = "desktop_glass/main.rs"
 
 [[example]]
+name = "wire_grain"
+path = "wire_grain/main.rs"
+
+[[example]]
 name = "border_lab"
 path = "border_lab/main.rs"
 

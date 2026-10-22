@@ -1,0 +1,19 @@
+[package]
+name = "riode-shader-glue"
+version = "0.1.0"
+edition = "2021"
+
+# WGSL -> GLSL ES 3.00 transpile for the riode-glass compositor plugin.
+# Built as a cdylib, embedded in riode-glass.so and dlopen'd (RTLD_NODELETE)
+# like the item helper — the plugin itself stays pure C++/GL.
+
+[lib]
+name = "riode_shader_glue"
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "riode-shader-glue"
+path = "src/main.rs"
+
+[dependencies]
+naga = { version = "0.20", features = ["wgsl-in", "glsl-out"] }

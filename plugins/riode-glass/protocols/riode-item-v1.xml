@@ -44,7 +44,7 @@
     plugin speak the same `Glass` language, no names anywhere.
   </description>
 
-  <interface name="riode_item_manager_v1" version="2">
+  <interface name="riode_item_manager_v1" version="3">
     <description summary="manager to associate glass item hints with surfaces">
       This is a Hyprland-riode-glass-specific extension. It lets a client hint
       how the riode-glass compositor plugin should render the effect it
@@ -99,7 +99,7 @@
     </enum>
   </interface>
 
-  <interface name="riode_item_v1" version="2">
+  <interface name="riode_item_v1" version="3">
     <description summary="glass rendering hints for one surface">
       Carries optional per-surface hints for the riode-glass effect:
       the raw liquid-glass material, and what rounded-rect shape to clip
@@ -119,21 +119,24 @@
     <request name="set_glass" since="2">
       <description summary="describe the packed liquid-glass frame">
         Sets the pending material: the packed glass frame as
-        little-endian u32 words — version tag 4, frame blur sigma x/y
+        little-endian u32 words — version tag 5, frame blur sigma x/y
         (device px), integer sample box x0, y0, w, h (device px, used
         verbatim for blit/scissor/uSize; shape rects in the floats are
-        box-relative), then the 736 uniform
-        floats the optics shader consumes directly (count/dpr/light,
+        box-relative), then the 792 uniform
+        floats the optics shader consumes directly (the 736-float
+        prefix plus the 56-float glow tail: count/dpr/light,
         per-shape rects/radii/variants/tints, the 36 variant-constant
-        vec4s, group/extra/clip/blur arrays). 743 words exactly; any
+        vec4s, group/extra/clip/blur arrays, glow/blend tail).
+        799 words exactly; any
         other size or version is ignored (unset behavior —
         the plain-blur fallback applies). The client packs
         (`pack_glass_wire`); the plugin uploads blindly, so there is one
         source of truth and no C++ pack to drift. There are no preset
         names. Version history: 1 was the P1 30-float material (retired
-        with the P1 port); 2/3 were engine-internal and never consumed.
+        with the P1 port); 2/3 were engine-internal and never consumed;
+        4 was the 736-float prefix wire; 5 adds the 56-float glow tail.
       </description>
-      <arg name="material" type="array" summary="v4 packed glass frame: version + sigma + box + 736 floats, LE u32s"/>
+      <arg name="material" type="array" summary="v5 packed glass frame: version + sigma + box + 792 floats, LE u32s"/>
     </request>
 
     <request name="unset_glass" since="2">
@@ -167,6 +170,58 @@
         Reverts to the compositor's normal shape fallback: the extents of
         the surface's ext-background-effect-v1 blur region.
       </description>
+    </request>
+
+    <enum name="backdrop_need">
+      <entry name="none" value="0" summary="stage reads no backdrop texture"/>
+      <entry name="read_sharp" value="1" summary="stage reads the unblurred capture"/>
+      <entry name="read_blurred" value="2" summary="stage reads the frame-blurred backdrop"/>
+    </enum>
+
+    <request name="set_effect" since="3">
+      <description summary="describe one custom effect stage in the ordered stack">
+        Sets one pending custom effect stage: its position in the
+        layer's ordered effect stack (`stack_index`, the absolute index
+        over ALL stages — the glass stage included), the complete WGSL
+        module implementing the effect ABI (the client prepends the ABI
+        definitions; the module defines exactly `fn apply(...) ->
+        EffectCtx` plus any helpers it needs), packed little-endian f32
+        uniforms (whole vec4s only), which backdrop texture the
+        stage reads (`backdrop_need`), and that backdrop's blur sigma in
+        device px (`backdrop_sigma`, meaningful for `read_blurred`
+        only; 0 elsewhere). Indices may arrive in any order;
+        the executor sorts by index. A duplicate index replaces the
+        earlier pending stage at that index. The whole set is cleared by
+        `clear_effects`, which the client sends at the head of every
+        commit's batch, so a shrinking stack can never leak stale stages
+        across commits. Out-of-range or misaligned payloads are ignored
+        per-request — hints never raise protocol errors.
+      </description>
+      <arg name="stack_index" type="int" summary="absolute position among all stages, bottom to top"/>
+      <arg name="wgsl" type="string" summary="complete WGSL module: ABI header (client-prepended) + apply definition"/>
+      <arg name="uniforms" type="array" summary="packed f32 uniforms, LE bytes, whole vec4s"/>
+      <arg name="backdrop_need" type="uint" enum="backdrop_need"/>
+      <arg name="backdrop_sigma" type="fixed" summary="ReadBlurred sigma, device px (0 when unused)"/>
+    </request>
+
+    <request name="clear_effects" since="3">
+      <description summary="clear all pending custom effect stages">
+        Drops every pending effect stage for the next commit's apply.
+        Sent at the head of each commit's batch so the latched set
+        always mirrors the current stack exactly.
+      </description>
+    </request>
+
+    <request name="set_glass_stage" since="3">
+      <description summary="position of the glass frame within the ordered stack">
+        Sets the pending stack index of the glass frame (`set_glass`)
+        among all stages: -1 when the stack carries no glass stage
+        (every latched stage is a plain backdrop stage). Values below
+        -1 clamp to -1; an omitted request keeps the previous value.
+        Sent every commit alongside `clear_effects`, so the position
+        tracks stack edits (moving Glass, then Glass at the bottom).
+      </description>
+      <arg name="stack_index" type="int"/>
     </request>
   </interface>
 </protocol>

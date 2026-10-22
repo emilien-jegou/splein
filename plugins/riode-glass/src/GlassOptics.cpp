@@ -851,7 +851,10 @@ void draw(const DrawArgs& args) {
     glActiveTexture(GL_TEXTURE0);
     coreTex->bind();
     glUniform1i(U("backdrop"), 0);
-    glUniform2f(U("u_boxMin"), args.sampleMinX, args.sampleMinY);
+    // Offscreen card FBs are box-sized: fragCoord 0.5 IS box-local 0.5,
+    // identical to the window-path fragCoord − boxMin. Same px values.
+    const bool offscreen = args.offscreenFbid != 0;
+    glUniform2f(U("u_boxMin"), offscreen ? 0.0f : args.sampleMinX, offscreen ? 0.0f : args.sampleMinY);
 
     if (!g_ubo)
         glGenBuffers(1, &g_ubo);
@@ -882,12 +885,18 @@ void draw(const DrawArgs& args) {
     glBindBuffer(GL_UNIFORM_BUFFER, 0);
 
     glBindVertexArray(g_vao);
-    // The caller leaves DRAW bound to a pre-blur temp; rebind the pass target.
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, args.drawFbid);
+    // The caller leaves DRAW bound to a pre-blur temp; rebind the pass
+    // target (offscreen card: box-sized viewport/scissor at the origin —
+    // window-path coords are monitor-FB px).
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, offscreen ? args.offscreenFbid : args.drawFbid);
     gl->blend(true);
-    glViewport(0, 0, args.fbW, args.fbH);
+    glViewport(0, 0, offscreen ? static_cast<int>(args.sampleW) : args.fbW,
+               offscreen ? static_cast<int>(args.sampleH) : args.fbH);
     glEnable(GL_SCISSOR_TEST);
-    glScissor(args.scissorX, args.scissorY, args.scissorW, args.scissorH);
+    if (offscreen)
+        glScissor(0, 0, static_cast<int>(args.sampleW), static_cast<int>(args.sampleH));
+    else
+        glScissor(args.scissorX, args.scissorY, args.scissorW, args.scissorH);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     glDisable(GL_SCISSOR_TEST);
     glBindVertexArray(0);

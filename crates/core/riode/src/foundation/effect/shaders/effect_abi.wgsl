@@ -12,8 +12,14 @@
 //
 // `backdrop` is the parent snapshot (meaningful only when the stage
 // declared `BackdropNeed`); `sharp` is the unblurred parent snapshot for
-// card-blend stages. Builtin stages follow the same convention with
-// their own uniform structs.
+// card-blend stages. Sampling goes through `effect_sampler` (below) —
+// `apply` receives textures but no sampler. Builtin stages follow the
+// same convention with their own uniform structs.
+//
+// On the compositor wire this header rides every custom module
+// (client-prepended); the transpile entry (riode-shader-glue) appends
+// `fs_main` and binds: 0 sampler (here), 1 uniforms, 2 input,
+// 3 backdrop, 4 sharp.
 
 /// Per-pixel state threaded through the effect stack.
 struct EffectCtx {
@@ -40,3 +46,15 @@ fn effect_ctx_identity(px: vec2<f32>) -> EffectCtx {
     ctx.coverage = 1.0;
     return ctx;
 }
+
+/// Uniform block for custom stages: whole vec4s, padded by the client
+/// to the fixed 8-vec4 stream the wire carries (32 f32s). Reads index
+/// `u.data[i]`; use `u.data` lengths the uniforms actually fill.
+struct CustomUniforms {
+    data: array<vec4<f32>, 8>,
+};
+
+/// Shared sampler for custom effects (textureSample goes through this;
+/// `apply` gets textures but no sampler). Binding 0 of group 0 — the
+/// executor owns bindings 1..5 of the same group.
+@group(0) @binding(0) var effect_sampler: sampler;

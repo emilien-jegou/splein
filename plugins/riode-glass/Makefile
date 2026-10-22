@@ -19,7 +19,7 @@ ifneq ($(shell $(CXX) --version 2>/dev/null | grep -c 'Free Software Foundation'
 endif
 
 TARGET = riode-glass.so
-SOURCES = src/main.cpp src/GlassBlur.cpp src/ItemHints.cpp src/GlassOptics.cpp
+SOURCES = src/main.cpp src/GlassBlur.cpp src/ItemHints.cpp src/GlassOptics.cpp src/ShaderGlue.cpp
 OBJ = $(SOURCES:.cpp=.o)
 HEADERS = $(wildcard src/*.hpp)
 
@@ -43,6 +43,29 @@ ITEM_HELPER_BLOB_OBJ = src/ItemHelperBlob.o
 
 all: $(TARGET)
 
+# ── shader glue (WGSL → GLSL transpile for v3 effect stages) ─────────────────
+# Built by cargo as a cdylib and embedded (via ShaderGlueBlob.S) inside
+# riode-glass.so, then memfd+dlopen'd with RTLD_NODELETE — the same
+# transport as the item helper, so naga never links this plugin and a
+# plugin manager shipping only riode-glass.so still carries it. Requires
+# a Rust toolchain at build time (workspace member ../riode-shader-glue).
+
+SHADER_GLUE_DIR   = src/shader-glue
+SHADER_GLUE_SO    = $(SHADER_GLUE_DIR)/riode-shader-glue.so
+SHADER_GLUE_SOURCES = $(wildcard ../riode-shader-glue/src/*.rs)
+SHADER_GLUE_BLOB_OBJ = src/ShaderGlueBlob.o
+
+$(SHADER_GLUE_SO): $(SHADER_GLUE_SOURCES) ../riode-shader-glue/Cargo.toml
+	@echo "[cargo] riode-shader-glue"
+	@cargo build --release --manifest-path ../riode-shader-glue/Cargo.toml
+	@mkdir -p $(SHADER_GLUE_DIR)
+	@cp ../../target/release/libriode_shader_glue.so $@
+
+$(SHADER_GLUE_BLOB_OBJ): src/ShaderGlueBlob.S $(SHADER_GLUE_SO)
+	@echo "[as] $<"
+	@$(CC) -c $< -o $@
+
+
 %.o : %.cpp $(HEADERS)
 	@echo "[$(CXX)] $<"
 	@$(CXX) -c $(CXXFLAGS) $(INCLUDES) $< -o $@
@@ -59,12 +82,13 @@ $(ITEM_HELPER_BLOB_OBJ): src/ItemHelperBlob.S $(HELPER_SO)
 	@echo "[as] $<"
 	@$(CC) -c $< -o $@
 
-$(TARGET): $(OBJ) $(ITEM_HELPER_BLOB_OBJ)
+$(TARGET): $(OBJ) $(ITEM_HELPER_BLOB_OBJ) $(SHADER_GLUE_BLOB_OBJ)
 	@echo "Linking $(TARGET)..."
-	@$(CXX) $(LDFLAGS) $(OBJ) $(ITEM_HELPER_BLOB_OBJ) -o $@ $(LIBS)
+	@$(CXX) $(LDFLAGS) $(OBJ) $(ITEM_HELPER_BLOB_OBJ) $(SHADER_GLUE_BLOB_OBJ) -o $@ $(LIBS)
 	@echo "Done!"
 
 clean:
-	rm -f $(OBJ) $(TARGET) $(ITEM_HELPER_BLOB_OBJ) $(HELPER_OBJ) $(HELPER_SO)
+	rm -f $(OBJ) $(TARGET) $(ITEM_HELPER_BLOB_OBJ) $(SHADER_GLUE_BLOB_OBJ) $(HELPER_OBJ) $(HELPER_SO)
+	rm -rf $(SHADER_GLUE_DIR)
 
 .PHONY: all clean

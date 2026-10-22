@@ -8,6 +8,7 @@
 //
 // Built against Hyprland 0.56.2 headers (see hyprpm.toml commit_pins).
 
+#include "Format.hpp"
 #include <hyprland/src/helpers/Color.hpp>
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/plugins/PluginSystem.hpp>
@@ -15,6 +16,7 @@
 #include "GlassBlur.hpp"
 #include "GlassOptics.hpp"
 #include "ItemHints.hpp"
+#include "ShaderGlue.hpp"
 
 #include <hyprland/src/Compositor.hpp>
 
@@ -87,17 +89,19 @@ std::string formatStatus(eHyprCtlOutputFormat format) {
     for (size_t i = 0; i < items.size() && i < 8; ++i) {
         if (i)
             itemList += " | ";
-        itemList += std::format("{}:{}", items[i].has_packed ? "glass" : "-", items[i].shape);
+        itemList += rfmt::format("{}:{}", items[i].has_packed ? "glass" : "-", items[i].shape);
+        if (!items[i].effects.empty())
+            itemList += rfmt::format("+fx{}@{}", items[i].effects.size(), items[i].glass_stack_index);
     }
     if (items.size() > 8)
-        itemList += std::format(" (+{} more)", items.size() - 8);
+        itemList += rfmt::format(" (+{} more)", items.size() - 8);
     if (format == FORMAT_JSON) {
-        return std::format("{{\"plugin\": \"{}\", \"version\": \"{}\", \"built_for\": {{\"tag\": \"{}\", \"hash\": \"{}}}\", "
+        return rfmt::format("{{\"plugin\": \"{}\", \"version\": \"{}\", \"built_for\": {{\"tag\": \"{}\", \"hash\": \"{}}}\", "
                            "\"rendering\": {}, \"radius\": {:.1f}, \"regions_last_frame\": {}, \"total_draws\": {}, \"draw_entry\": {}, \"exits\": [{}, {}, {}, {}, {}, {}], "
                            "\"items\": {}, \"items_detail\": \"{}\", \"hints_live\": {}, \"managers\": {}, \"items_total\": {}, \"items_active\": {}, "
                             "\"pass_adds\": {}, \"surface_adds\": {}, \"no_res\": {}, \"no_view\": {}, "
                             "\"no_effect\": {}, \"empty_region\": {}, \"noview_win\": {}, \"noview_layer\": {}, "
-                            "\"noview_other\": {}, \"geo\": \"{}\", \"geo_last\": \"{}\", \"helper\": \"{}\", \"hints_init\": \"{}\", \"load_detail\": \"{}\", \"global_probe\": \"{}\", \"optics_draws\": {}, \"gl_errors\": {}}}\n",
+                            "\"noview_other\": {}, \"geo\": \"{}\", \"geo_last\": \"{}\", \"helper\": \"{}\", \"hints_init\": \"{}\", \"load_detail\": \"{}\", \"global_probe\": \"{}\", \"optics_draws\": {}, \"gl_errors\": {}, \"glue_init\": \"{}\", \"glue_load\": \"{}\", \"stage_programs\": {}, \"stage_failures\": {}}}\n",
                            PLUGIN_NAME, PLUGIN_VERSION, BUILT_FOR_TAG, BUILT_FOR_HASH, GlassBlur::active(),
                            GlassBlur::radius(), regions, GlassBlur::totalDraws(), GlassBlur::drawEntry(),
                            GlassBlur::exitStage(0), GlassBlur::exitStage(1), GlassBlur::exitStage(2),
@@ -107,13 +111,14 @@ std::string formatStatus(eHyprCtlOutputFormat format) {
                            GlassBlur::surfaceAdds(), GlassBlur::dbgNoRes(), GlassBlur::dbgNoView(),
                             GlassBlur::dbgNoEffect(), GlassBlur::dbgEmptyRegion(), GlassBlur::dbgNoViewWin(),
                             GlassBlur::dbgNoViewLayer(), GlassBlur::dbgNoViewOther(), GlassBlur::geoSnapshot(), GlassBlur::geoLastSnapshot(),
-                            ItemHints::debugState(), ItemHints::initState(), ItemHints::loadDetail(), probeGlobalCreate(), GlassOptics::opticsDraws(), GlassBlur::glErrors());
+                            ItemHints::debugState(), ItemHints::initState(), ItemHints::loadDetail(), probeGlobalCreate(), GlassOptics::opticsDraws(), GlassBlur::glErrors(),
+                            ShaderGlue::initState(), ShaderGlue::loadDetail(), ShaderGlue::stagePrograms(), ShaderGlue::stageFailures());
     }
-    return std::format(
-        "{} {} (built for Hyprland {} {}): {} (radius {:.1f}px, {} region(s) last frame, {} draws, {} adds/{} surface)\n",
+    return rfmt::format(
+        "{} {} (built for Hyprland {} {}): {} (radius {:.1f}px, {} region(s) last frame, {} draws, {} adds/{} surface, glue {})\n",
         PLUGIN_NAME, PLUGIN_VERSION, BUILT_FOR_TAG, BUILT_FOR_HASH,
         GlassBlur::active() ? "plugin blur active" : "rendering disabled (hook not installed)", GlassBlur::radius(), regions,
-        GlassBlur::totalDraws(), GlassBlur::addCalls(), GlassBlur::surfaceAdds());
+        GlassBlur::totalDraws(), GlassBlur::addCalls(), GlassBlur::surfaceAdds(), ShaderGlue::initState());
 }
 
 void registerCommand(HANDLE handle) {
@@ -134,7 +139,7 @@ void registerCommand(HANDLE handle) {
                                                try {
                                                    const float r = std::stof(std::string(rest.substr(10)));
                                                    GlassBlur::setRadius(r);
-                                                   return std::format("riode-glass: radius set to {:.1f}px\n", GlassBlur::radius());
+                                                   return rfmt::format("riode-glass: radius set to {:.1f}px\n", GlassBlur::radius());
                                                } catch (...) {
                                                    return "riode-glass: usage: hyprctl riode set radius <px>\n";
                                                }
@@ -159,14 +164,14 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     const std::string_view runningHash{running.hash};
 
     auto paused = [&](const std::string& reason, const std::string& message) {
-        HyprlandAPI::addNotification(handle, std::format("[{}] Paused: {}", PLUGIN_NAME, message), CHyprColor{1.0, 0.8, 0.2, 1.0}, 10000);
-        return PLUGIN_DESCRIPTION_INFO{std::string(PLUGIN_NAME), std::format("Paused ({}): {}", reason, message), std::string(PLUGIN_AUTHOR),
+        HyprlandAPI::addNotification(handle, rfmt::format("[{}] Paused: {}", PLUGIN_NAME, message), CHyprColor{1.0, 0.8, 0.2, 1.0}, 10000);
+        return PLUGIN_DESCRIPTION_INFO{std::string(PLUGIN_NAME), rfmt::format("Paused ({}): {}", reason, message), std::string(PLUGIN_AUTHOR),
                                        std::string(PLUGIN_VERSION)};
     };
 
     if (!skipRequested()) {
         if (runningTag != BUILT_FOR_TAG || !runningHash.starts_with(BUILT_FOR_HASH))
-            return paused("hyprland_version", std::format("built for Hyprland {} {}, running {} {}", BUILT_FOR_TAG, BUILT_FOR_HASH,
+            return paused("hyprland_version", rfmt::format("built for Hyprland {} {}, running {} {}", BUILT_FOR_TAG, BUILT_FOR_HASH,
                                                          runningTag, runningHash));
         // _get_hash() is Hyprland's, _get_client_hash() the one compiled into this plugin.
         if (std::string_view{__hyprland_api_get_hash()} != std::string_view{__hyprland_api_get_client_hash()})
@@ -179,7 +184,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         using FActive = bool (*)();
         const auto active = reinterpret_cast<FActive>(dlsym(plugin->m_handle, "riode_glass_instance_active"));
         if (!active || active())
-            return paused("duplicate", std::format("already loaded from {}", plugin->m_path));
+            return paused("duplicate", rfmt::format("already loaded from {}", plugin->m_path));
     }
 
     PHANDLE = handle;
@@ -187,13 +192,15 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     registerCommand(handle);
 
     const bool itemsLive = ItemHints::init(handle);
+    const bool glueLive  = ShaderGlue::init(handle);
     const bool hookLive  = GlassBlur::install(handle);
-    GlassBlur::logLine(std::format("[riode-glass] loaded hook={} items={}", hookLive ? "active" : "FAILED", itemsLive ? "active" : "FAILED"));
+    GlassBlur::logLine(rfmt::format("[riode-glass] loaded hook={} items={} glue={}", hookLive ? "active" : "FAILED",
+                                   itemsLive ? "active" : "FAILED", glueLive ? "active" : "FAILED"));
     HyprlandAPI::addNotification(handle,
-                                 std::format("[{}] loaded ({}), IPC ready: `hyprctl riode status`, blur hook {}, item hints {}",
+                                 rfmt::format("[{}] loaded ({}), IPC ready: `hyprctl riode status`, blur hook {}, item hints {}, shader glue {}",
                                              PLUGIN_NAME, PLUGIN_VERSION, hookLive ? "active" : "FAILED",
-                                             itemsLive ? "active" : "FAILED"),
-                                 hookLive && itemsLive ? CHyprColor{0.2, 0.9, 0.4, 1.0} : CHyprColor{1.0, 0.8, 0.2, 1.0}, 5000);
+                                             itemsLive ? "active" : "FAILED", glueLive ? "active" : "FAILED"),
+                                 hookLive && itemsLive && glueLive ? CHyprColor{0.2, 0.9, 0.4, 1.0} : CHyprColor{1.0, 0.8, 0.2, 1.0}, 5000);
     return {std::string(PLUGIN_NAME), std::string("riode desktop-backdrop glass (v2 raw-material IPC)"),
             std::string(PLUGIN_AUTHOR), std::string(PLUGIN_VERSION)};
 }

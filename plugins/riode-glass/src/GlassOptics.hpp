@@ -49,6 +49,11 @@ struct DrawArgs {
     // Bound pass target (GL framebuffer id) — the caller leaves DRAW bound
     // to a pre-blur temp; optics must rebind the pass target.
     unsigned int drawFbid = 0;
+    // When nonzero, render the lens card HERE instead of `drawFbid`
+    // (box-sized, cleared): the caller runs trailing stages on it and
+    // composites masked afterwards. Box-relative px starts at the
+    // framebuffer origin, so u_boxMin is zeroed for that draw.
+    unsigned int offscreenFbid = 0;
     // Sample-box origin + size, capture rows (y-down == GL rows here).
     float sampleMinX = 0.0f, sampleMinY = 0.0f;
     float sampleW = 0.0f, sampleH = 0.0f;

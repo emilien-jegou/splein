@@ -84,7 +84,7 @@ def "main watch" [] {
 def "main example" [
   name: string@spleen-complete-examples = "demo1",
   engine: string@spleen-complete-engines = "",
-  --overlay  # Transparent layer-shell overlay (desktop_glass, prism_only).
+  --overlay  # Transparent layer-shell overlay (desktop_glass, prism_only, wire_grain).
 ] {
   cd (spleen--root)
   if $overlay {
@@ -110,6 +110,7 @@ def "main load-plugin" [] {
   let so = (spleen--root | path join plugins riode-glass riode-glass.so)
   do { ^hyprctl plugin unload $so } | ignore
   ^hyprctl plugin load $so
+  ^systemctl --user restart xwayland-satellite.service
 }
 
 # Run a standalone overlay app (UI lives next to the app, e.g. apps/dock/src).

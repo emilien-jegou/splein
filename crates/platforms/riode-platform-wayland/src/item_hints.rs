@@ -89,6 +89,96 @@ pub fn upload_glass_frame(item: &RiodeItemV1, words: &[u32]) {
     item.set_glass(bytes);
 }
 
+/// Uniform stream per stage, in f32s. The wire always carries the
+/// full fixed 8-vec4 block the ABI's `CustomUniforms` declares (shorter
+/// streams are zero-padded); longer ones cannot be represented and the
+/// client skips the stage with a warning before the helper drops it.
+const EFFECT_UNIFORMS_MAX: usize = 32;
+
+/// Upload one island's ordered effect stack (its `backdrop_effects`):
+/// clears every previously-latched stage, sends one `set_effect` per
+/// custom stage (WGSL composed as ABI header + module, uniforms padded
+/// to whole vec4s and packed little-endian), then declares where the
+/// glass frame sits among the stages. Builtin stages other than Glass
+/// have no wire representation yet and are skipped once with a warning;
+/// hints never raise protocol errors. Always call alongside
+/// [`upload_glass_frame`] in the same commit batch.
+pub fn upload_effect_stages(item: &RiodeItemV1, effects: Option<&riode_shared::foundation::EffectStack>) {
+    use riode_shared::foundation::effect::shaders::EFFECT_ABI_WGSL;
+    use riode_shared::foundation::effect::{BackdropNeed, BuiltinStage, EffectShader};
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    item.clear_effects();
+    // -1 = no Glass in the stack (every latched stage is a backdrop stage);
+    // any Glass at index i overwrites it below.
+    let mut glass_index = -1i32;
+    if let Some(stack) = effects {
+        for (idx, e) in stack.0.iter().enumerate() {
+            let idx = idx as i32;
+            match e.shader() {
+                EffectShader::Custom(c) => {
+                    // Full module on the wire: ABI definitions first so
+                    // the plugin's transpile sees one complete unit.
+                    if c.wgsl.contains('\0') {
+                        static WARNED_NUL: AtomicBool = AtomicBool::new(false);
+                        if !WARNED_NUL.swap(true, Ordering::Relaxed) {
+                            tracing::warn!("riode-wayland: custom effect WGSL contains NUL (skipped)");
+                        }
+                        continue;
+                    }
+                    let mut floats = c.uniforms.clone();
+                    if floats.len() <= EFFECT_UNIFORMS_MAX {
+                        floats.resize(EFFECT_UNIFORMS_MAX, 0.0);
+                    }
+                    if floats.len() > EFFECT_UNIFORMS_MAX {
+                        static WARNED_LONG: AtomicBool = AtomicBool::new(false);
+                        if !WARNED_LONG.swap(true, Ordering::Relaxed) {
+                            tracing::warn!(
+                                "riode-wayland: custom effect uniforms exceed {EFFECT_UNIFORMS_MAX} f32s (stage skipped)"
+                            );
+                        }
+                        continue;
+                    }
+                    let mut uniforms = Vec::with_capacity(floats.len() * 4);
+                    for u in &floats {
+                        uniforms.extend_from_slice(&u.to_le_bytes());
+                    }
+                    let (need, sigma) = match c.backdrop {
+                        BackdropNeed::None => {
+                            (generated::client::riode_item_v1::BackdropNeed::None, 0.0)
+                        }
+                        BackdropNeed::ReadSharp => (
+                            generated::client::riode_item_v1::BackdropNeed::ReadSharp,
+                            0.0,
+                        ),
+                        BackdropNeed::ReadBlurred { sigma } => (
+                            generated::client::riode_item_v1::BackdropNeed::ReadBlurred,
+                            sigma as f64,
+                        ),
+                    };
+                    item.set_effect(
+                        idx,
+                        format!("{EFFECT_ABI_WGSL}\n{}", c.wgsl),
+                        uniforms,
+                        need,
+                        sigma,
+                    );
+                }
+                EffectShader::Builtin(BuiltinStage::Glass(_)) => glass_index = idx,
+                other => {
+                    static WARNED_BUILTIN: AtomicBool = AtomicBool::new(false);
+                    if !WARNED_BUILTIN.swap(true, Ordering::Relaxed) {
+                        tracing::warn!(
+                            "riode-wayland: builtin stage {other:?} has no wire representation (skipped)"
+                        );
+                    }
+                }
+            }
+        }
+    }
+    item.set_glass_stage(glass_index);
+}
+
 /// Upload one island's shape hint. Idempotent: sending the same values
 /// every commit is harmless (pending state is simply overwritten).
 ///

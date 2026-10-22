@@ -87,7 +87,7 @@ static const struct wl_message riode_item_manager_v1_events[] = {
 // load-order priority, silently downgrading this instance's interface
 // version (v2 request against a v1 descriptor → wl_global_create
 // refuses). Static keeps each generation on its own descriptors.
-static const struct wl_interface riode_item_manager_v1_interface = {"riode_item_manager_v1", 2, 2, riode_item_manager_v1_requests, 1,
+static const struct wl_interface riode_item_manager_v1_interface = {"riode_item_manager_v1", 3, 2, riode_item_manager_v1_requests, 1,
                                                              riode_item_manager_v1_events};
 
 static const struct wl_message riode_item_v1_requests[] = {
@@ -96,9 +96,12 @@ static const struct wl_message riode_item_v1_requests[] = {
     {"unset_glass", "", NULL},
     {"set_shape", "ffffffff", NULL},
     {"unset_shape", "", NULL},
+    {"set_effect", "isauf", NULL},
+    {"clear_effects", "", NULL},
+    {"set_glass_stage", "i", NULL},
 };
 
-static const struct wl_interface riode_item_v1_interface = {"riode_item_v1", 2, 5, riode_item_v1_requests, 0, NULL};
+static const struct wl_interface riode_item_v1_interface = {"riode_item_v1", 3, 8, riode_item_v1_requests, 0, NULL};
 
 // ── internals ───────────────────────────────────────────────────────────────
 
@@ -239,12 +242,83 @@ static void item_handle_unset_shape(struct wl_client* client, struct wl_resource
     clear_pending_shape(item);
 }
 
+// v3: one pending custom effect stage. Fixed buffers keep the whole
+// state POD (by-value snapshot/apply); payloads that do not fit are
+// ignored per-request — hints never raise protocol errors.
+static void item_handle_set_effect(struct wl_client* client, struct wl_resource* resource, int32_t stack_index, const char* wgsl,
+                                   struct wl_array* uniforms, uint32_t backdrop_need, wl_fixed_t backdrop_sigma) {
+    (void)client;
+    struct item_object* item = wl_resource_get_user_data(resource);
+    if (item->inert)
+        return;
+    if (stack_index < 0 || backdrop_need > 2u)
+        return;
+    // ReadBlurred sigma, device px: non-finite or negative -> 0; cap the
+    // absurd (a 640px gaussian already reaches the whole screen).
+    double sigma = wl_fixed_to_double(backdrop_sigma);
+    if (!(sigma > 0.0) || sigma > 640.0)
+        sigma = 0.0;
+    if (!wgsl || !wgsl[0])
+        return;
+    size_t wlen = strlen(wgsl);
+    if (wlen >= RIODE_ITEM_HELPER_EFFECT_WGSL_MAX)
+        return;
+    if (!uniforms || !uniforms->data || (uniforms->size % 4) != 0)
+        return;
+    uint32_t ucount = uniforms->size / 4;
+    if (ucount > RIODE_ITEM_HELPER_EFFECT_UNIFORMS_MAX)
+        return;
+
+    // Replace at the same stack index, else append; drop when full.
+    struct riode_effect_stage* stage = NULL;
+    for (uint32_t i = 0; i < item->pending.effect_count; ++i) {
+        if (item->pending.effects[i].stack_index == stack_index) {
+            stage = &item->pending.effects[i];
+            break;
+        }
+    }
+    if (!stage) {
+        if (item->pending.effect_count >= RIODE_ITEM_HELPER_MAX_EFFECTS) {
+            RIODE_HELPER_LOG("set_effect: full (%u stages), dropping index=%d", item->pending.effect_count, stack_index);
+            return;
+        }
+        stage = &item->pending.effects[item->pending.effect_count++];
+    }
+    stage->stack_index    = stack_index;
+    stage->backdrop_need  = backdrop_need;
+    stage->backdrop_sigma = (float)sigma;
+    stage->wgsl_len      = (uint32_t)wlen;
+    stage->uniform_count = ucount;
+    memcpy(stage->wgsl, wgsl, wlen + 1);
+    memcpy(stage->uniforms, uniforms->data, (size_t)ucount * 4);
+}
+
+static void item_handle_clear_effects(struct wl_client* client, struct wl_resource* resource) {
+    (void)client;
+    struct item_object* item = wl_resource_get_user_data(resource);
+    if (item->inert)
+        return;
+    item->pending.effect_count = 0;
+}
+
+static void item_handle_set_glass_stage(struct wl_client* client, struct wl_resource* resource, int32_t stack_index) {
+    (void)client;
+    struct item_object* item = wl_resource_get_user_data(resource);
+    if (item->inert)
+        return;
+    // -1 = the stack carries no glass stage (all-latched backdrop-only).
+    item->pending.glass_stack_index = stack_index < -1 ? -1 : stack_index;
+}
+
 static const struct riode_item_v1_interface item_impl = {
-    .destroy      = item_handle_destroy,
-    .set_glass    = item_handle_set_glass,
-    .unset_glass  = item_handle_unset_glass,
-    .set_shape    = item_handle_set_shape,
-    .unset_shape  = item_handle_unset_shape,
+    .destroy         = item_handle_destroy,
+    .set_glass       = item_handle_set_glass,
+    .unset_glass     = item_handle_unset_glass,
+    .set_shape       = item_handle_set_shape,
+    .unset_shape     = item_handle_unset_shape,
+    .set_effect      = item_handle_set_effect,
+    .clear_effects   = item_handle_clear_effects,
+    .set_glass_stage = item_handle_set_glass_stage,
 };
 
 static void handle_surface_destroy(struct wl_listener* listener, void* data) {
@@ -382,7 +456,7 @@ static int api_start(struct wl_display* display) {
         free(retired);
     }
 
-    struct wl_global* global = wl_global_create(display, &riode_item_manager_v1_interface, 2, NULL, bind_manager);
+    struct wl_global* global = wl_global_create(display, &riode_item_manager_v1_interface, 3, NULL, bind_manager);
     if (!global)
         return -1;
 

@@ -83,6 +83,16 @@ pub struct WgpuRenderer {
     /// only known once the layer's content has emitted). Dropped on
     /// resize.
     shadow_snap: Option<(wgpu::Texture, wgpu::TextureView)>,
+    /// Device-px regions of the PREVIOUS frame's root offscreen layers.
+    /// A partial-damage frame Loads the persistent target, preserving
+    /// the last frame's layer composite wherever damage didn't cover;
+    /// a glass layer's BeginLayer snapshot would then capture its own
+    /// previous output and the optics would re-apply to it every frame
+    /// (progressive white-out). The damage-base repaints these regions
+    /// to the base color at the start of the next frame so the snapshot
+    /// always sees fresh parent content. Collected during the op walk;
+    /// consumed (and replaced) at the next frame's start.
+    stale_root_layers: Vec<ResolvedRect>,
 }
 
 fn make_ortho(
@@ -382,6 +392,7 @@ impl WgpuRenderer {
             blur_ping: None,
             shadow_snap: None,
             glass_pool: Vec::new(),
+            stale_root_layers: Vec::new(),
         }
     }
 
@@ -424,6 +435,7 @@ impl WgpuRenderer {
             self.blur_ping = None;
             self.glass_pool.clear();
             self.shadow_snap = None;
+            self.stale_root_layers.clear();
         }
     }
 
@@ -888,6 +900,10 @@ impl WgpuRenderer {
         // Resolve the one-shot clear flag before the per-field borrows
         // below (must_clear takes &mut self).
         let clear = self.must_clear(damage);
+        // Previous frame's root offscreen-layer regions: repainted to
+        // base below so a Load frame never preserves a layer's own
+        // composite under its next snapshot (the glass feedback loop).
+        let stale_layers = std::mem::take(&mut self.stale_root_layers);
 
         // Batch scene content: viewport cull + damage cull, then per-chunk
         // vertex cache replay (static chunks skip command re-emit and
@@ -916,6 +932,14 @@ impl WgpuRenderer {
             // `clear` was resolved before the per-field borrows below.
             if !clear {
                 batch.emit_damage_base(damage, self.scale, base_color);
+                // Same tile rule for last frame's root layer composites:
+                // they re-render every frame, so their region is
+                // implicitly damaged — repaint it to base before any
+                // parent draw, or the layer's BeginLayer snapshot
+                // captures its own previous output.
+                for r in &stale_layers {
+                    batch.emit_base_rect_dev(r, base_color);
+                }
             }
             let sq16 = (riode::text::quantize_raster_scale(self.scale) * 16.0).round() as u16;
             let agen = atlas.generation();
@@ -1248,6 +1272,9 @@ impl WgpuRenderer {
             let (sw, sh) = (self.gpu.config.width.max(1), self.gpu.config.height.max(1));
             // Open filter layers, outermost first (pool slot = depth).
             let mut stack: Vec<OpenLayer> = Vec::new();
+            // Root offscreen layers opened this frame (device-px regions):
+            // next frame's damage-base candidates (see `stale_root_layers`).
+            let mut root_layer_regions: Vec<ResolvedRect> = Vec::new();
             for op in self.batch.ops.iter() {
                 match op {
                     #[allow(unused_assignments)] // the `pass = None` drop is the point
@@ -1359,6 +1386,15 @@ impl WgpuRenderer {
                                     },
                                 );
                             }
+                        }
+                        // Root offscreen layers composite into the
+                        // persistent target, so their region must be
+                        // repainted to base on the next Load frame
+                        // (`stale_root_layers`). Nested layers composite
+                        // into the enclosing offscreen, which clears on
+                        // open every frame — no staleness there.
+                        if stack.is_empty() {
+                            root_layer_regions.push(*region);
                         }
                         stack.push(OpenLayer {
                             slot,
@@ -2440,6 +2476,9 @@ impl WgpuRenderer {
                     }
                 }
             }
+            // Hand this frame's root layer regions to the next frame's
+            // damage-base (field-disjoint from the borrows above).
+            self.stale_root_layers = root_layer_regions;
             if !stack.is_empty() {
                 tracing::warn!(
                     "riode-wgpu: {} filter layer(s) never closed (unbalanced BeginLayer/EndLayer)",

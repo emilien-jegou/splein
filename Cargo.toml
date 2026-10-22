@@ -25,6 +25,7 @@ members = [
   "crates/shims/riode-wgpu",
   "crates/shims/riode-windows",
   "crates/tools/riode-cli",
+  "plugins/riode-shader-glue",
   "examples",
 ]
 

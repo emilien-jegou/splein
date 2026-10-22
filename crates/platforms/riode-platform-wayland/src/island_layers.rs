@@ -13,7 +13,7 @@
 // The parent fullscreen surface stays as a robust fallback underneath.
 
 use crate::{
-    bind_manager, effect_for_surface, upload_blur_region, item_for_surface,
+    bind_manager, effect_for_surface, upload_blur_region, item_for_surface, upload_effect_stages,
     upload_glass_frame, upload_item_shape,
 };
 use crate::island_pool::blit_rgba_to_bgra;
@@ -215,6 +215,7 @@ impl IslandLayerPool {
                     )
                 });
                 upload_glass_frame(item, words.as_deref().unwrap_or(&[]));
+                upload_effect_stages(item, island.effects.as_ref());
                 upload_item_shape(item, 0.0, 0.0, w as f64, h as f64, radii);
             }
             pooled.layer.wl_surface().commit();

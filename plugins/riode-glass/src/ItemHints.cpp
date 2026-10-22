@@ -1,5 +1,6 @@
 // See ItemHints.hpp.
 
+#include "Format.hpp"
 #include "ItemHints.hpp"
 #include "item-helper/riode_item_helper_api.h"
 
@@ -58,7 +59,15 @@ bool loadHelper(HANDLE handle) {
     {
         const auto blobSize = static_cast<size_t>(riodeItemHelperBlobEnd - riodeItemHelperBlobStart);
         if (blobSize >= 1000) {
-            int fd = memfd_create("riode-item-helper", MFD_CLOEXEC);
+            // Unique memfd name AND a kept-open fd: glibc's dlopen
+            // de-duplicates by PATH STRING, and a closed fd lets the
+            // number be recycled — the next loader would then get the
+            // PREVIOUS object back (stale helper, wrong ABI). Same
+            // discipline as the shader glue loader.
+            static unsigned g_helperSeq = 0;
+            char blobName[64];
+            std::snprintf(blobName, sizeof(blobName), "riode-item-helper-%d-%u", (int)getpid(), g_helperSeq++);
+            int fd = memfd_create(blobName, MFD_CLOEXEC);
             if (fd >= 0) {
                 auto* data = reinterpret_cast<const char*>(riodeItemHelperBlobStart);
                 size_t written = 0;
@@ -69,36 +78,40 @@ bool loadHelper(HANDLE handle) {
                     written += static_cast<size_t>(n);
                 }
                 if (written == blobSize) {
-                    const auto fdPath = std::format("/proc/self/fd/{}", fd);
+                    const auto fdPath = rfmt::format("/proc/self/fd/{}", fd);
                     dlerror();
                     if (void* h = dlopen(fdPath.c_str(), RTLD_NOW | RTLD_GLOBAL | RTLD_NODELETE)) {
                         if (const auto* fresh = static_cast<const struct riode_item_helper_v1_api*>(
                                 dlsym(h, "riode_item_helper_v1_api"))) {
                             if (fresh->abi_version == RIODE_ITEM_HELPER_V1_ABI_VERSION) {
                                 g_api = fresh;
-                                g_loadDetail = std::format("fresh-blob api={} start={}", (const void*)g_api,
+                                g_loadDetail = rfmt::format("fresh-blob api={} start={}", (const void*)g_api,
                                                            (void*)g_api->start);
                                 freshOk = true;
                             } else {
-                                g_loadDetail = std::format("fresh-blob-abi-mismatch={} (want {})",
+                                g_loadDetail = rfmt::format("fresh-blob-abi-mismatch={} (want {})",
                                                            fresh->abi_version,
                                                            RIODE_ITEM_HELPER_V1_ABI_VERSION);
                             }
                         } else {
-                            g_loadDetail = std::format("fresh-dlsym-failed:{}", dlerror() ? dlerror() : "?");
+                            const char* err = dlerror();
+                            g_loadDetail = rfmt::format("fresh-dlsym-failed:{}", err ? err : "?");
                         }
                     } else {
-                        g_loadDetail = std::format("fresh-dlopen-failed:{}", dlerror() ? dlerror() : "?");
+                        const char* err = dlerror();
+                        g_loadDetail = rfmt::format("fresh-dlopen-failed:{}", err ? err : "?");
                     }
                 } else {
-                    g_loadDetail = std::format("fresh-write-short={}/{}", written, blobSize);
+                    g_loadDetail = rfmt::format("fresh-write-short={}/{}", written, blobSize);
                 }
-                close(fd);
+                // NOTE: the fd is intentionally NOT closed — the
+                // /proc/self/fd path must stay unique for this object
+                // (see the memfd name comment above).
             } else {
                 g_loadDetail = "fresh-memfd-failed";
             }
         } else {
-            g_loadDetail = std::format("fresh-blob-too-small={}", blobSize);
+            g_loadDetail = rfmt::format("fresh-blob-too-small={}", blobSize);
         }
         if (freshOk) {
             g_initState = "fresh";
@@ -110,11 +123,11 @@ bool loadHelper(HANDLE handle) {
         g_api = static_cast<const struct riode_item_helper_v1_api*>(adopted);
         if (g_api && g_api->abi_version == RIODE_ITEM_HELPER_V1_ABI_VERSION) {
             g_initState = "adopted";
-            g_loadDetail = std::format("adopted-resident api={} start={} (fresh failed: {})", (void*)g_api,
+            g_loadDetail = rfmt::format("adopted-resident api={} start={} (fresh failed: {})", (void*)g_api,
                                        (void*)g_api->start, g_loadDetail);
             return true;
         }
-        g_loadDetail += std::format(" | adopt-rejected-abi-{}", g_api ? g_api->abi_version : 9999);
+        g_loadDetail += rfmt::format(" | adopt-rejected-abi-{}", g_api ? g_api->abi_version : 9999);
         g_api = nullptr;
     } else {
         g_loadDetail += " | adopt-no-resident";
@@ -131,7 +144,7 @@ bool loadHelper(HANDLE handle) {
 std::string formatShape(const riode_item_state& s) {
     if (s.shape_mode != RIODE_ITEM_SHAPE_EXPLICIT)
         return "none";
-    return std::format("{:.0f},{:.0f},{:.0f}x{:.0f} {:.0f},{:.0f},{:.0f},{:.0f}", s.x, s.y, s.width, s.height, s.radii[0],
+    return rfmt::format("{:.0f},{:.0f},{:.0f}x{:.0f} {:.0f},{:.0f},{:.0f},{:.0f}", s.x, s.y, s.width, s.height, s.radii[0],
                        s.radii[1], s.radii[2], s.radii[3]);
 }
 
@@ -166,7 +179,7 @@ bool init(HANDLE handle) {
         return false;
     }
     HyprlandAPI::addNotification(handle,
-                                 std::format("[riode-glass] item helper ABI {} live", RIODE_ITEM_HELPER_V1_ABI_VERSION),
+                                 rfmt::format("[riode-glass] item helper ABI {} live", RIODE_ITEM_HELPER_V1_ABI_VERSION),
                                  CHyprColor{0.2, 0.9, 0.4, 1.0}, 3000);
     // Recover listeners for items left behind by a load that never ran its
     // exit path: re-attach snapshot/apply so their state keeps latching.
@@ -266,6 +279,22 @@ bool get(wl_resource* surface, ItemInfo& infoOut) {
         memcpy(infoOut.packed, state.glass_packed, sizeof(infoOut.packed));
     }
     infoOut.shape = formatShape(state);
+    // v3 effect stages: bounded POD slots -> owned copies.
+    infoOut.glass_stack_index = state.glass_stack_index;
+    infoOut.effects.clear();
+    infoOut.effects.reserve(state.effect_count);
+    for (uint32_t i = 0; i < state.effect_count && i < RIODE_ITEM_HELPER_MAX_EFFECTS; ++i) {
+        const auto& s = state.effects[i];
+        if (s.wgsl_len == 0 || s.wgsl_len >= RIODE_ITEM_HELPER_EFFECT_WGSL_MAX)
+            continue;
+        ItemInfo::EffectStage e;
+        e.stack_index    = s.stack_index;
+        e.backdrop_need  = s.backdrop_need;
+        e.backdrop_sigma = s.backdrop_sigma;
+        e.wgsl.assign(s.wgsl, s.wgsl_len);
+        e.uniforms.assign(s.uniforms, s.uniforms + s.uniform_count);
+        infoOut.effects.push_back(std::move(e));
+    }
     return true;
 }
 
