@@ -1,7 +1,7 @@
 // Non-separable blend modes (PDF 1.4 / CSS Compositing and Blending
 // Level 1): Hue, Saturation, Color, Luminosity — plus the Lum/SetLum/
-// SetSat/ClipColor colour-space helpers they share. Prepended to
-// `glass.wgsl` at pipeline build (WGSL has no include mechanism).
+// SetSat/ClipColor colour-space helpers they share. Prepended to the
+// glass modules at pipeline build (WGSL has no include mechanism).
 //
 // All colours are straight (non-premultiplied) 0..1 channels.
 

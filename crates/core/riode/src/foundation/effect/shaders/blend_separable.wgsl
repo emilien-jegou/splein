@@ -1,6 +1,6 @@
 // Separable blend modes (PDF 1.4 / CSS Compositing and Blending
 // Level 1), 1..11 in wire order — each blends channel pairs
-// independently. Prepended to `glass.wgsl` at pipeline build.
+// independently. Prepended to the glass modules at pipeline build.
 //
 // All colours are straight (non-premultiplied) 0..1 channels. `base` is
 // the backdrop, `src` the source pass.

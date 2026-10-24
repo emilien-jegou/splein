@@ -1,10 +1,9 @@
 // Single responsibility: Node tree visual bounds evaluation, framing, and command emission.
 
 use crate::foundation::{
-    BuiltinStage, EffectShader, GlassEffect, GlassGroup, GlassLayer, GlassMember,
-    IntoEffect,
-    GlassPressGeometry, Glow, Point, Refraction, ResolvedRect, Spectral, Transform,
-    GLASS_STANDARD,
+    Backdrop, BuiltinStage, EffectShader, Glass, GlassEffect, GlassGroup, GlassLayer,
+    GlassMember, IntoEffect, GlassPressGeometry, Glow, Point, Refraction, ResolvedRect,
+    Spectral, Transform, GLASS_STANDARD,
 };
 use crate::pipeline::compile::emit::{
     emit_node_content, enter_node_frame, exit_node_frame, node_alpha_shadow_pad, NodeLayer,
@@ -424,6 +423,29 @@ pub fn compile_node_hierarchy(
                     )
                 });
             }
+            // Units without a lens: stamp a default material so the
+            // fold has one Glass item to ride — the snapshot, the pack
+            // and the islands all key off it. Group members never
+            // self-render (their units stay inert).
+            let layer_glass = if layer_glass.is_none()
+                && !(enclosing.is_some() && !is_group_root)
+                && !stack.0.iter().any(|e| {
+                    matches!(e.shader(), EffectShader::Builtin(BuiltinStage::Glass(_)))
+                })
+                && stack.0.iter().any(|e| {
+                    matches!(e.shader(), EffectShader::Builtin(s) if !s.glass_stage_ids().is_empty())
+                })
+            {
+                Some(GlassLayer::Single(
+                    Glass::default(),
+                    Backdrop::NONE,
+                    Spectral::NONE,
+                    Glow::NONE,
+                    Refraction::NONE,
+                ))
+            } else {
+                layer_glass
+            };
             if let Some(gl) = layer_glass {
                 let fx = GlassEffect::new(gl);
                 // In place: the resolved lens (stamped radius, press

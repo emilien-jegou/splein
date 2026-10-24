@@ -1,10 +1,10 @@
 #pragma once
 
 // Compositor-side liquid-glass optics: GLSL ES 3.00 port of the wgpu
-// optics shader (`crates/engines/riode-engine-wgpu/src/shaders/
-// glass.wgsl`, itself a port of
+// optics shader (`crates/core/riode/src/foundation/effect/shaders/
+// glass/`, one WGSL file per effect, itself a port of
 // `adaptive_liquid_glass/shaders/liquid_glass.frag`). Line-for-line
-// translation; the WGSL file documents every stage.
+// translation; the WGSL modules document every stage.
 //
 // Deliberate deltas vs the wgpu twin (all plumbing, none visual):
 // - One texture (the core-blurred backdrop): the wide tail, post-lens

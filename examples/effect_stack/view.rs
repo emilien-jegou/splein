@@ -18,9 +18,21 @@
 //     control card).
 //   - "BACKDROP GLASS+SAT": backdrop stack only — glass then Saturate
 //     over the sampled backdrop; no sheet content.
+// Stage-fold rows (the regular preset — strong grade/rim knobs; one
+// variable per step down the ladder):
+//   - "FULL (regular)": glass only — the canonical chain (count 0).
+//   - "OPTICS ONLY": refract+frost+disperse — grade/rim removed.
+//   - "OPTICS + GRADE": grade family returns; rim still absent.
+//   - "OPTICS + GRADE + RIM": rim returns — matches FULL statically.
+//   - "GRADE BEFORE OPTICS": same items, grade listed first — frost
+//     resets `col`, so the early grade must be swallowed (order proof);
+//     its right-hand control repeats OPTICS + GRADE on the same row.
 // Frozen inspection via F8 / `.` / `s` comes from the shared harness.
 
-use riode::foundation::{Blur, EffectStack, GlassEffect, Saturate};
+use riode::foundation::{
+    Ambient, Blur, Dim, Disperse, EffectStack, Frost, GlassEffect, Refract, Rim, Saturate,
+    Saturation, Tint, Tone, Wash,
+};
 use riode::internal::group;
 use riode::prelude::*;
 
@@ -35,7 +47,7 @@ use riode_anodeui::GlassPreset;
 /// (`hot.rs`): declared once here, referenced by both — never mirrored.
 pub const HOT_TITLE: &str = "Aurora — Effect Stack";
 pub const HOT_WIDTH: u32 = 1280;
-pub const HOT_HEIGHT: u32 = 900;
+pub const HOT_HEIGHT: u32 = 1584;
 pub const HOT_BG: u32 = BG;
 
 const BG: u32 = 0xFFFFFF;
@@ -46,6 +58,12 @@ const INK_COLOR: u32 = 0xC81E3A;
 /// same preset values).
 fn glass() -> GlassEffect {
     GlassPreset::clear().style().into_effect()
+}
+
+/// The regular preset: strong grade (sat 1.49, wash 0.68, ambient 0.18)
+/// and a visible rim (0.23) — the stage-fold rows need observable knobs.
+fn glass_regular() -> GlassEffect {
+    GlassPreset::regular().style().into_effect()
 }
 
 #[component]
@@ -78,7 +96,7 @@ fn Card(
 /// (opaque), slightly larger than the card so frost tails also sample
 /// colour. Identical per card on purpose — order differences must read
 /// from the effect stack, never from the backdrop. Card grid estimates:
-/// 220×160 cards, columns at x≈397/665, rows at y≈158/386/614.
+/// 220×160 cards, columns at x≈397/665, rows at y≈158/386/614/842/1070/1298.
 fn backdrop_blobs() -> Vec<Element> {
     let cards = [
         (397.0, 158.0),
@@ -87,6 +105,12 @@ fn backdrop_blobs() -> Vec<Element> {
         (665.0, 386.0),
         (397.0, 614.0),
         (665.0, 614.0),
+        (397.0, 842.0),
+        (665.0, 842.0),
+        (397.0, 1070.0),
+        (665.0, 1070.0),
+        (397.0, 1298.0),
+        (665.0, 1298.0),
     ];
     let mut out = Vec::new();
     for (x0, y0) in cards {
@@ -133,6 +157,18 @@ pub fn Page() -> impl IntoElement {
                 <Group direction="horizontal" gap={48.0} alignment="center">
                     <Card label="LAYER SAT" layer_effects=[Saturate::new(0.0)] backdrop_effects=[glass()] />
                     <Card label="BACKDROP GLASS+SAT" backdrop_effects=[glass(), Saturate::new(0.0)] />
+                </Group>
+                <Group direction="horizontal" gap={48.0} alignment="center">
+                    <Card label="FULL (regular)" backdrop_effects=[glass_regular()] />
+                    <Card label="OPTICS ONLY" backdrop_effects=[glass_regular(), Refract(), Frost(), Disperse()] />
+                </Group>
+                <Group direction="horizontal" gap={48.0} alignment="center">
+                    <Card label="OPTICS + GRADE" backdrop_effects=[glass_regular(), Refract(), Frost(), Disperse(), Saturation(), Tone(), Wash(), Dim(), Tint(), Ambient()] />
+                    <Card label="OPTICS + GRADE + RIM" backdrop_effects=[glass_regular(), Refract(), Frost(), Disperse(), Saturation(), Tone(), Wash(), Dim(), Tint(), Ambient(), Rim()] />
+                </Group>
+                <Group direction="horizontal" gap={48.0} alignment="center">
+                    <Card label="GRADE BEFORE OPTICS" backdrop_effects=[glass_regular(), Saturation(), Tone(), Wash(), Dim(), Tint(), Ambient(), Refract(), Frost(), Disperse()] />
+                    <Card label="OPTICS + GRADE (control)" backdrop_effects=[glass_regular(), Refract(), Frost(), Disperse(), Saturation(), Tone(), Wash(), Dim(), Tint(), Ambient()] />
                 </Group>
             </Group>
         </Group>

@@ -1197,6 +1197,10 @@ impl SceneSink for WgpuSink<'_> {
         // (and the glass frame header).
         let mut backdrop_stages: Vec<StageGpu> = Vec::new();
         let mut backdrop_sigma = 0.0f32;
+        // Author-ordered glass-stage ids from the unit items (the fold);
+        // empty = the shader's canonical chain. Consumed by the glass
+        // pack below — units never open a pass of their own.
+        let mut stage_ids: Vec<u32> = Vec::new();
         if let Some(bd) = layer.backdrop_effects {
             use riode::foundation::effect::{BuiltinStage, EffectShader};
             let sc = self.batch.scale();
@@ -1219,6 +1223,11 @@ impl SceneSink for WgpuSink<'_> {
                         BuiltinStage::ClipRound { .. }
                         | BuiltinStage::GlassGroup { .. },
                     ) => {}
+                    // Unit items: fold their stage ids into the glass
+                    // pass's dispatch list, in author order.
+                    EffectShader::Builtin(s) if !s.glass_stage_ids().is_empty() => {
+                        stage_ids.extend_from_slice(s.glass_stage_ids());
+                    }
                     other => {
                         static WARNED_BD: std::sync::atomic::AtomicBool =
                             std::sync::atomic::AtomicBool::new(false);
@@ -1408,6 +1417,7 @@ impl SceneSink for WgpuSink<'_> {
                     spectral: *s,
                     voice_glow: *gl,
                     refraction: *r,
+                    stages: &stage_ids,
                 };
                 let packed = pack_glass_uniforms(&frame);
                 let idx = self.batch.glass_params.len() as u32;
@@ -1563,6 +1573,7 @@ impl SceneSink for WgpuSink<'_> {
                     spectral: group.spectral,
                     voice_glow: group.glow,
                     refraction: group.refraction,
+                    stages: &stage_ids,
                 };
                 let packed = pack_glass_uniforms(&frame);
                 let idx = self.batch.glass_params.len() as u32;

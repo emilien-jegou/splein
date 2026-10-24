@@ -48,12 +48,19 @@ pub enum BuiltinStage {
     Glass(GlassParams),
     Blend { mode: BlendMode },
     Shadow(ShadowParams),
-    // Phase C split of the glass optics pass (unit stages for now —
-    // params ride `Glass` until the WGSL decomposition lands).
+    // Phase C split of the glass optics pass. Authorable unit items
+    // (`backdrop_effects=[Refract(), …]`): they carry no knobs — the
+    // material rides `Glass`, the fold collects their stage ids into the
+    // pass's dispatch list (see `glass_stage_ids`).
     Refract,
     Frost,
     Spectral,
     Tone,
+    Saturation,
+    Wash,
+    Dim,
+    Tint,
+    Ambient,
     FillDimTint,
     Glow,
     Rim,
@@ -64,6 +71,32 @@ pub enum BuiltinStage {
     /// shared layer (spacing = smin merge radius factor input). Consumed
     /// by compile; the executor emits no pass for it.
     GlassGroup { spacing: f32 },
+}
+
+impl BuiltinStage {
+    /// The glass-pass stage ids this unit contributes to the fold's
+    /// dispatch list (`fs_main`'s switch: 1 refract … 13 press), in
+    /// canonical run order. `Tone` carries its small-shape partner
+    /// (shapeTone rides the same author item). Empty for stages that are
+    /// not listable glass units (material, blur, blend, markers).
+    pub fn glass_stage_ids(&self) -> &'static [u32] {
+        match self {
+            BuiltinStage::Refract => &[1],
+            BuiltinStage::Frost => &[2],
+            BuiltinStage::Spectral => &[3],
+            BuiltinStage::Saturation => &[4],
+            BuiltinStage::Tone => &[5, 8],
+            BuiltinStage::Wash => &[6],
+            BuiltinStage::Dim => &[7],
+            BuiltinStage::Tint => &[9],
+            BuiltinStage::Ambient => &[10],
+            BuiltinStage::Glow => &[11],
+            BuiltinStage::Rim => &[12],
+            BuiltinStage::Press => &[13],
+            BuiltinStage::FillDimTint => &[6, 7, 9],
+            _ => &[],
+        }
+    }
 }
 
 /// Material bundle a `Glass` effect refracts through: today's `GlassLayer`
@@ -667,6 +700,258 @@ impl Effect for GlassGroupEffect {
     }
 }
 
+// Unit items of the glass pass: authorable in `backdrop_effects=[...]`,
+// no knobs of their own — the material (strength, sigmas, colours) rides
+// the stack's `Glass` item, the fold collects their stage ids (one per
+// item, `Tone` two) into the pass's dispatch list. They never open a
+// pass of their own: `Glass` owns the snapshot (`needs_backdrop`).
+
+/// Lens displacement — the backdrop read position (`stageRefract`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Refract();
+
+impl Effect for Refract {
+    fn id(&self) -> EffectId {
+        debug_id(0x20, self)
+    }
+    fn needs_backdrop(&self) -> bool {
+        false
+    }
+    fn pad(&self, _scale: f32) -> f32 {
+        0.0
+    }
+    fn shader(&self) -> EffectShader {
+        EffectShader::Builtin(BuiltinStage::Refract)
+    }
+    fn clone_box(&self) -> Box<dyn Effect> {
+        Box::new(self.clone())
+    }
+}
+
+/// Frost core / post-lens / wide taps — also the pass's backdrop read
+/// (`stageFrost` fills `col` from the sample point).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Frost();
+
+impl Effect for Frost {
+    fn id(&self) -> EffectId {
+        debug_id(0x21, self)
+    }
+    fn needs_backdrop(&self) -> bool {
+        false
+    }
+    fn pad(&self, _scale: f32) -> f32 {
+        0.0
+    }
+    fn shader(&self) -> EffectShader {
+        EffectShader::Builtin(BuiltinStage::Frost)
+    }
+    fn clone_box(&self) -> Box<dyn Effect> {
+        Box::new(self.clone())
+    }
+}
+
+/// Per-wavelength widening of the sample (`stageSpectral`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Disperse();
+
+impl Effect for Disperse {
+    fn id(&self) -> EffectId {
+        debug_id(0x22, self)
+    }
+    fn needs_backdrop(&self) -> bool {
+        false
+    }
+    fn pad(&self, _scale: f32) -> f32 {
+        0.0
+    }
+    fn shader(&self) -> EffectShader {
+        EffectShader::Builtin(BuiltinStage::Spectral)
+    }
+    fn clone_box(&self) -> Box<dyn Effect> {
+        Box::new(self.clone())
+    }
+}
+
+/// Luma-keyed chroma grade (`stageSaturation`; distinct from the
+/// `Saturate` ColorMatrix item — that one is a `layer_effects` pass).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Saturation();
+
+impl Effect for Saturation {
+    fn id(&self) -> EffectId {
+        debug_id(0x23, self)
+    }
+    fn needs_backdrop(&self) -> bool {
+        false
+    }
+    fn pad(&self, _scale: f32) -> f32 {
+        0.0
+    }
+    fn shader(&self) -> EffectShader {
+        EffectShader::Builtin(BuiltinStage::Saturation)
+    }
+    fn clone_box(&self) -> Box<dyn Effect> {
+        Box::new(self.clone())
+    }
+}
+
+/// Tone LUT plus the small-shape tone curve (`stageToneCurve` +
+/// `stageShapeTone` — one author item, two stage ids).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Tone();
+
+impl Effect for Tone {
+    fn id(&self) -> EffectId {
+        debug_id(0x24, self)
+    }
+    fn needs_backdrop(&self) -> bool {
+        false
+    }
+    fn pad(&self, _scale: f32) -> f32 {
+        0.0
+    }
+    fn shader(&self) -> EffectShader {
+        EffectShader::Builtin(BuiltinStage::Tone)
+    }
+    fn clone_box(&self) -> Box<dyn Effect> {
+        Box::new(self.clone())
+    }
+}
+
+/// Fill wash over the card (`stageWash`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Wash();
+
+impl Effect for Wash {
+    fn id(&self) -> EffectId {
+        debug_id(0x25, self)
+    }
+    fn needs_backdrop(&self) -> bool {
+        false
+    }
+    fn pad(&self, _scale: f32) -> f32 {
+        0.0
+    }
+    fn shader(&self) -> EffectShader {
+        EffectShader::Builtin(BuiltinStage::Wash)
+    }
+    fn clone_box(&self) -> Box<dyn Effect> {
+        Box::new(self.clone())
+    }
+}
+
+/// Post-tone multiply (`stageDim`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Dim();
+
+impl Effect for Dim {
+    fn id(&self) -> EffectId {
+        debug_id(0x26, self)
+    }
+    fn needs_backdrop(&self) -> bool {
+        false
+    }
+    fn pad(&self, _scale: f32) -> f32 {
+        0.0
+    }
+    fn shader(&self) -> EffectShader {
+        EffectShader::Builtin(BuiltinStage::Dim)
+    }
+    fn clone_box(&self) -> Box<dyn Effect> {
+        Box::new(self.clone())
+    }
+}
+
+/// Flat tint mix (`stageTint`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Tint();
+
+impl Effect for Tint {
+    fn id(&self) -> EffectId {
+        debug_id(0x27, self)
+    }
+    fn needs_backdrop(&self) -> bool {
+        false
+    }
+    fn pad(&self, _scale: f32) -> f32 {
+        0.0
+    }
+    fn shader(&self) -> EffectShader {
+        EffectShader::Builtin(BuiltinStage::Tint)
+    }
+    fn clone_box(&self) -> Box<dyn Effect> {
+        Box::new(self.clone())
+    }
+}
+
+/// Backdrop hue pickup (`stageAmbient`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Ambient();
+
+impl Effect for Ambient {
+    fn id(&self) -> EffectId {
+        debug_id(0x28, self)
+    }
+    fn needs_backdrop(&self) -> bool {
+        false
+    }
+    fn pad(&self, _scale: f32) -> f32 {
+        0.0
+    }
+    fn shader(&self) -> EffectShader {
+        EffectShader::Builtin(BuiltinStage::Ambient)
+    }
+    fn clone_box(&self) -> Box<dyn Effect> {
+        Box::new(self.clone())
+    }
+}
+
+/// Emissive voice-glow wash (`stageGlow`). Named `GlowEffect` because
+/// `Glow` is the material struct.
+#[derive(Clone, Debug, PartialEq)]
+pub struct GlowEffect();
+
+impl Effect for GlowEffect {
+    fn id(&self) -> EffectId {
+        debug_id(0x29, self)
+    }
+    fn needs_backdrop(&self) -> bool {
+        false
+    }
+    fn pad(&self, _scale: f32) -> f32 {
+        0.0
+    }
+    fn shader(&self) -> EffectShader {
+        EffectShader::Builtin(BuiltinStage::Glow)
+    }
+    fn clone_box(&self) -> Box<dyn Effect> {
+        Box::new(self.clone())
+    }
+}
+
+/// Specular streak + isotropic rim (`stageRim`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Rim();
+
+impl Effect for Rim {
+    fn id(&self) -> EffectId {
+        debug_id(0x2A, self)
+    }
+    fn needs_backdrop(&self) -> bool {
+        false
+    }
+    fn pad(&self, _scale: f32) -> f32 {
+        0.0
+    }
+    fn shader(&self) -> EffectShader {
+        EffectShader::Builtin(BuiltinStage::Rim)
+    }
+    fn clone_box(&self) -> Box<dyn Effect> {
+        Box::new(self.clone())
+    }
+}
+
 // Vocabulary impls: what may be authored in `layer_effects=[...]` (the
 // sheet) versus `backdrop_effects=[...]` (the sampled backdrop + lens).
 // `Glass` is backdrop-only: it refracts the backdrop, so it has no
@@ -682,3 +967,14 @@ impl BackdropEffect for ColorMatrix {}
 impl BackdropEffect for Saturate {}
 impl BackdropEffect for GlassEffect {}
 impl BackdropEffect for BlendEffect {}
+impl BackdropEffect for Refract {}
+impl BackdropEffect for Frost {}
+impl BackdropEffect for Disperse {}
+impl BackdropEffect for Saturation {}
+impl BackdropEffect for Tone {}
+impl BackdropEffect for Wash {}
+impl BackdropEffect for Dim {}
+impl BackdropEffect for Tint {}
+impl BackdropEffect for Ambient {}
+impl BackdropEffect for GlowEffect {}
+impl BackdropEffect for Rim {}

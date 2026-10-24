@@ -10,8 +10,8 @@
 // non-separable four), so the shader samples the backdrop itself and
 // emits the full CSS compositing result, backdrop contribution
 // included. Concatenated after the blend libraries (pipeline.rs) —
-// this file is the second consumer of `blendMode()`; `glass.wgsl` is
-// the first.
+// this file is the second consumer of `blendMode()`; the glass modules
+// (`shaders/glass/card_blend.wgsl`, `glow.wgsl`) are the first.
 //
 // Source path is `composite.wgsl` verbatim up through the colour
 // matrix (unpremultiply → matrix → clamp → re-premultiply by source

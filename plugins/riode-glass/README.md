@@ -5,7 +5,9 @@ load/unload-safe with a version/hash guard, `hyprctl riode status`, the
 item-helper IPC (ABI 8, wire v5 — exact-size packed frames), per-island
 backdrop blur (`GlassBlur`) and the optics pass (`GlassOptics`: lens,
 frost, glow, 16 blend modes — line-for-line with the wgpu twin
-`riode-engine-wgpu/src/shaders/glass.wgsl`; change both together).
+`crates/core/riode/src/foundation/effect/shaders/glass/` (one WGSL file
+per effect, concatenated by `GLASS_COMBINED_WGSL` in
+`effect/shaders.rs`; change both together).
 Program-supplied custom effect stages ride the same helper
 (`set_effect`/`clear_effects`/`set_glass_stage`): the module is
 transpiled by the embedded naga glue blob (`src/shader-glue/`, see
@@ -87,5 +89,5 @@ hyprpm reload
 - renderLayer redirect ("3b") — the cure noted in `GlassBlur.hpp`; the
   current hook cannot hit every case.
 - Node/layer blend and glass/shadow/DSL blend: `plan-blend-mode-full.md`.
-- The shader twins (`glass.wgsl`, `GlassOptics.cpp`) must stay in sync —
-  a stage retired on one side must be retired on the other.
+- The shader twins (`shaders/glass/`, `GlassOptics.cpp`) must stay in
+  sync — a stage retired on one side must be retired on the other.

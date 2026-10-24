@@ -54,8 +54,18 @@ pub const K_GLOW_AT: usize = K_BLUR_AT + 4 * K_MAX_PASS_SHAPES;
 /// count, boost, alpha cap — `Refraction`).
 pub const K_GLOW_VEC4S: usize = 14;
 
+/// Floats up to and including the glow tail: the frozen compositor-wire
+/// stream length (`GLASS_WIRE_PACKED_FLOATS`) — the plugin's GLSL port
+/// reads exactly this and never sees the stage list appended after it.
+pub const K_GLASS_WIRE_FLOATS: usize = K_GLOW_AT + 4 * K_GLOW_VEC4S;
+
+/// Stage list (wgpu-only, appended after the glow tail): count in the
+/// first float, then up to 13 author-ordered glass-stage ids (`fs_main`'s
+/// dispatch), pad to the vec4 boundary. Count 0 = the canonical chain.
+pub const K_STAGES_FLOATS: usize = 16;
+
 /// Number of user floats after `uSize`: the packed buffer length in `f32`.
-pub const K_GLASS_UNIFORM_FLOATS: usize = K_GLOW_AT + 4 * K_GLOW_VEC4S;
+pub const K_GLASS_UNIFORM_FLOATS: usize = K_GLASS_WIRE_FLOATS + K_STAGES_FLOATS;
 
 /// Largest usable `postBlurShare` (the composed blur keeps `√0.1` of σ).
 pub const K_MAX_POST_BLUR_SHARE: f32 = 0.9;
@@ -348,6 +358,9 @@ pub struct GlassFrameUniforms<'a> {
     /// Outer refraction halo shared by the whole frame (theatre-mode
     /// blur of the card). Independent of the glow. Off by default.
     pub refraction: Refraction,
+    /// Author-ordered glass-stage ids for the explicit fold (`fs_main`
+    /// dispatch); empty = the canonical chain (count 0 in the pack).
+    pub stages: &'a [u32],
 }
 
 /// Composed frost sigma (logical px) for a shape of variant constants `v`
@@ -552,10 +565,11 @@ fn union_rect(a: ResolvedRect, b: ResolvedRect) -> ResolvedRect {
 /// | 640–735 | uBlur[N]  | extra sigma x px, extra sigma y px, taps, 0 |
 /// | 736–791 | uGlow/uOuter | 6 lobes (centre, σ, amp, 0) + 6 colours + geom + outer rule |
 ///
-/// The last 56 floats are the glow tail: since wire v5 they ride the
-/// compositor wire too (the `riode-glass` plugin's GLSL optics is a
-/// line-for-line port of the wgpu shader, glow and blend library
-/// included — see `GLASS_WIRE_PACKED_FLOATS`).
+/// The glow tail (floats up to `K_GLASS_WIRE_FLOATS`) rides the
+/// compositor wire too since wire v5 (the `riode-glass` plugin's GLSL
+/// optics is a line-for-line port of the wgpu shader, glow and blend
+/// library included — see `GLASS_WIRE_PACKED_FLOATS`); the stage list
+/// appended after it is wgpu-only.
 pub fn pack_glass_uniforms(u: &GlassFrameUniforms<'_>) -> Vec<f32> {
     let dpr = u.device_pixel_ratio;
     let k = u.constants;
@@ -758,8 +772,18 @@ pub fn pack_glass_uniforms(u: &GlassFrameUniforms<'_>) -> Vec<f32> {
             f[d + 2] = o[2];
             f[d + 3] = o[3];
             d += 4;
-            debug_assert_eq!(d, K_GLASS_UNIFORM_FLOATS, "glow tail must fill the stream");
+            debug_assert_eq!(d, K_GLASS_WIRE_FLOATS, "glow tail must fill the wire stream");
         }
+    }
+    // Stage list (wgpu-only, appended after the glow tail — the wire
+    // stops at `K_GLASS_WIRE_FLOATS`): count, then the author-ordered
+    // glass-stage ids in stack order (`fs_main` dispatch). Count 0 is
+    // the canonical chain, byte-identical to a stack with no units.
+    debug_assert!(u.stages.len() <= 13, "at most 13 glass-stage ids");
+    let d = K_GLASS_WIRE_FLOATS;
+    f[d] = u.stages.len() as f32;
+    for (i, id) in u.stages.iter().enumerate() {
+        f[d + 1 + i] = *id as f32;
     }
     f
 }
@@ -799,7 +823,8 @@ pub fn light_spill_replay(data: &[[f32; 4]]) -> Option<(f32, f32, usize, f32)> {
 
 /// Deprecated: theatre-halo entry point. Reinterpreted as a downward
 /// light spill — same wire, new composite (below-edge strip only).
-/// Layout (must match the packer above and `glass.wgsl`): banks are
+/// Layout (must match the packer above and `shaders/glass/core.wgsl`):
+/// banks are
 /// section-major (A–L×2, M–O×2, P×2, Q×2, R×2), so the first bank's `R4.y`
 /// is `K_VAR_AT + 136 + 1`; the tail's outer rule (`K_GLOW_AT + 52/53`:
 /// reach in edge-σ, tap count 1/3/5) and the lobe geom (`K_GLOW_AT + 49`:
@@ -884,13 +909,14 @@ fn pack_a_to_l(f: &mut [f32], base: usize, v: GlassBank, dpr: f32) {
 /// Packed-frame wire version for the compositor (`set_glass` payload).
 /// v1 was the P1 30-float material (retired with the P1 port); v2/v3
 /// were engine-internal material iterations no helper ever consumed.
-/// v4 was the 736-float prefix (no glow tail). v5 is the full packed
-/// stream below — the only layout the current helper decodes.
+/// v4 was the 736-float prefix (no glow tail). v5 is the stream through
+/// the glow tail (frozen at `GLASS_WIRE_PACKED_FLOATS`) — the only
+/// layout the current helper decodes.
 pub const GLASS_WIRE_PACKED_VERSION: u32 = 5;
-/// Floats in one packed wire frame: the full uniform stream, glow tail
-/// included (see `K_GLOW_AT`) — the plugin's GLSL optics consumes it
-/// exactly like the wgpu one.
-pub const GLASS_WIRE_PACKED_FLOATS: usize = K_GLASS_UNIFORM_FLOATS;
+/// Floats in one packed wire frame: the stream through the glow tail
+/// (frozen — see `K_GLASS_WIRE_FLOATS`); the stage list after it is
+/// wgpu-only until the plugin's port grows a dispatch.
+pub const GLASS_WIRE_PACKED_FLOATS: usize = K_GLASS_WIRE_FLOATS;
 /// u32 words in one `set_glass` payload: version + frame σx/σy + integer
 /// sample box (x0, y0, w, h, device px) + the packed floats. All shape
 /// rects, clip rects and the touch point in the packed floats are
@@ -1069,6 +1095,9 @@ pub fn pack_glass_wire(rect: ResolvedRect, layer: &GlassLayer, scale: f32) -> Ve
         spectral,
         voice_glow: glow,
         refraction,
+        // The wire carries no dispatch: islands run the canonical chain
+        // (count 0) until the plugin's port grows a stage list.
+        stages: &[],
     };
     let packed = pack_glass_uniforms(&frame);
     debug_assert_eq!(packed.len(), K_GLASS_UNIFORM_FLOATS);
@@ -1080,9 +1109,10 @@ pub fn pack_glass_wire(rect: ResolvedRect, layer: &GlassLayer, scale: f32) -> Ve
     words.push(y0.to_bits());
     words.push(box_w.to_bits());
     words.push(box_h.to_bits());
-    // Full stream: the glow tail rides the wire since v5 (the plugin's
-    // GLSL optics is a line-for-line port of the wgpu twin).
-    words.extend(packed.iter().map(|f| f.to_bits()));
+    // Full stream through the glow tail: it rides the wire since v5 (the
+    // plugin's GLSL optics is a line-for-line port of the wgpu twin).
+    // The stage list after the tail is wgpu-only — frozen wire length.
+    words.extend(packed[..GLASS_WIRE_PACKED_FLOATS].iter().map(|f| f.to_bits()));
     debug_assert_eq!(words.len(), GLASS_WIRE_PACKED_WORDS);
     words
 }
@@ -1131,6 +1161,7 @@ mod override_tests {
             spectral: Spectral::NONE,
             voice_glow: Glow::new().strength(0.6).inside(0.5),
             refraction: Refraction::new(0.9).reach(1.5).softness(5.0),
+            stages: &[],
         };
         let packed = pack_glass_uniforms(&frame);
         let data: Vec<[f32; 4]> = packed
@@ -1212,5 +1243,141 @@ mod override_tests {
         let s = shape_with(g, Backdrop::NONE);
         assert!(s.hidden);
         assert!(!super::drawable(&s));
+    }
+
+    #[test]
+    fn stage_tail_roundtrip() {
+        use crate::foundation::{Glow, Refraction, Spectral, GLASS_STANDARD};
+        let shape = GlassShapeUniform::new(
+            ResolvedRect::new(0.0, 0.0, 200.0, 150.0),
+            24.0,
+            false,
+        );
+        let frame = GlassFrameUniforms {
+            shapes: std::slice::from_ref(&shape),
+            device_pixel_ratio: 1.0,
+            light_angle: 0.0,
+            smoothing: 0.0,
+            constants: &GLASS_STANDARD,
+            high_contrast: false,
+            opaque_color: None,
+            touch: None,
+            glow: 0.0,
+            blur_sigma: 0.0,
+            blur_aspect: 1.0,
+            spectral: Spectral::NONE,
+            voice_glow: Glow::NONE,
+            refraction: Refraction::NONE,
+            stages: &[1, 5, 8],
+        };
+        let packed = pack_glass_uniforms(&frame);
+        assert_eq!(packed.len(), K_GLASS_UNIFORM_FLOATS);
+        let d = K_GLASS_WIRE_FLOATS;
+        assert_eq!(packed[d], 3.0, "count first");
+        assert_eq!(packed[d + 1], 1.0);
+        assert_eq!(packed[d + 2], 5.0);
+        assert_eq!(packed[d + 3], 8.0);
+        assert_eq!(packed[d + 4], 0.0, "rest of the first vec4 pads to zero");
+        // Wire frozen at the glow tail: the stage tail must not ride it.
+        assert_eq!(
+            K_GLASS_WIRE_FLOATS,
+            K_GLOW_AT + 4 * K_GLOW_VEC4S,
+            "wire stream must end after the glow tail"
+        );
+        assert_eq!(
+            K_GLASS_UNIFORM_FLOATS,
+            K_GLASS_WIRE_FLOATS + 16,
+            "stage tail is one 16-float vec4 group"
+        );
+        assert_eq!(
+            GLASS_WIRE_PACKED_FLOATS,
+            K_GLASS_WIRE_FLOATS,
+            "wire length frozen at 792"
+        );
+        assert_eq!(GLASS_WIRE_PACKED_WORDS, 7 + K_GLASS_WIRE_FLOATS);
+    }
+
+    #[test]
+    fn stage_tail_defaults_to_canonical() {
+        use crate::foundation::{Glow, Refraction, Spectral, GLASS_STANDARD};
+        let shape = GlassShapeUniform::new(
+            ResolvedRect::new(0.0, 0.0, 200.0, 150.0),
+            24.0,
+            false,
+        );
+        let frame = GlassFrameUniforms {
+            shapes: std::slice::from_ref(&shape),
+            device_pixel_ratio: 1.0,
+            light_angle: 0.0,
+            smoothing: 0.0,
+            constants: &GLASS_STANDARD,
+            high_contrast: false,
+            opaque_color: None,
+            touch: None,
+            glow: 0.0,
+            blur_sigma: 0.0,
+            blur_aspect: 1.0,
+            spectral: Spectral::NONE,
+            voice_glow: Glow::NONE,
+            refraction: Refraction::NONE,
+            stages: &[],
+        };
+        let packed = pack_glass_uniforms(&frame);
+        let d = K_GLASS_WIRE_FLOATS;
+        assert_eq!(packed[d], 0.0, "empty list = count 0 = canonical chain");
+        assert!(packed[d + 1..].iter().all(|f| *f == 0.0));
+    }
+
+    #[test]
+    fn wire_frame_stops_at_the_glow_tail() {
+        // The wire packer must never carry stage ids: islands run the
+        // canonical chain until the plugin grows a dispatch.
+        let wire = pack_glass_wire(
+            ResolvedRect::new(0.0, 0.0, 100.0, 100.0),
+            &crate::foundation::GlassLayer::Single(
+                crate::foundation::Glass::lens(1.0),
+                crate::foundation::Backdrop::NONE,
+                crate::foundation::Spectral::NONE,
+                crate::foundation::Glow::NONE,
+                crate::foundation::Refraction::NONE,
+            ),
+            1.0,
+        );
+        assert_eq!(wire.len(), GLASS_WIRE_PACKED_WORDS);
+        assert_eq!(wire[0], GLASS_WIRE_PACKED_VERSION);
+        let floats = &wire[7..];
+        let d = K_GLASS_WIRE_FLOATS;
+        assert_eq!(floats.len(), d);
+        // The wire's last float is the glow tail's final slot, not a count.
+        assert_eq!(floats.len(), K_GLASS_UNIFORM_FLOATS - K_STAGES_FLOATS);
+        // The floats before the stage tail belong to the glow-tail region;
+        // with glow inactive it packs zeros (inactive lanes keep zeros).
+        assert_eq!(
+            floats[K_GLOW_AT..],
+            [0u32; K_GLOW_VEC4S * 4],
+            "glow tail inactive → zeros"
+        );
+    }
+
+    #[test]
+    fn glass_stage_ids_cover_the_dispatch() {
+        use crate::foundation::effect::BuiltinStage;
+        // Actual contract: units map to their dispatch ids.
+        assert_eq!(BuiltinStage::Refract.glass_stage_ids(), &[1]);
+        assert_eq!(BuiltinStage::Frost.glass_stage_ids(), &[2]);
+        assert_eq!(BuiltinStage::Spectral.glass_stage_ids(), &[3]);
+        assert_eq!(BuiltinStage::Saturation.glass_stage_ids(), &[4]);
+        assert_eq!(BuiltinStage::Tone.glass_stage_ids(), &[5, 8]);
+        assert_eq!(BuiltinStage::Wash.glass_stage_ids(), &[6]);
+        assert_eq!(BuiltinStage::Dim.glass_stage_ids(), &[7]);
+        assert_eq!(BuiltinStage::Tint.glass_stage_ids(), &[9]);
+        assert_eq!(BuiltinStage::Ambient.glass_stage_ids(), &[10]);
+        assert_eq!(BuiltinStage::Glow.glass_stage_ids(), &[11]);
+        assert_eq!(BuiltinStage::Rim.glass_stage_ids(), &[12]);
+        assert_eq!(BuiltinStage::Press.glass_stage_ids(), &[13]);
+        assert!(BuiltinStage::Blend { mode: crate::foundation::BlendMode::Normal }
+            .glass_stage_ids()
+            .is_empty());
+        assert!(BuiltinStage::Blur { sigma: 4.0 }.glass_stage_ids().is_empty());
     }
 }

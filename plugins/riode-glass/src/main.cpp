@@ -4,7 +4,8 @@
 // `hyprctl riode status` command, clean unload; the item-helper (embedded,
 // ABI 7) latches v5 packed frames and GlassBlur/GlassOptics render the
 // per-island backdrop blur, lens/frost optics, glow and blend modes —
-// line-for-line with the wgpu twin in riode-engine-wgpu's glass.wgsl.
+// line-for-line with the wgpu twin in
+// `crates/core/riode/src/foundation/effect/shaders/glass/`.
 //
 // Built against Hyprland 0.56.2 headers (see hyprpm.toml commit_pins).
 

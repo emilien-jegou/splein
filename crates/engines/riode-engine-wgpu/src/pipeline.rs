@@ -299,11 +299,11 @@ pub const GLASS_VEC4S: usize = K_GLASS_UNIFORM_FLOATS / 4;
 /// (core pre-blur sigmas, target size) followed by the floats
 /// `pack_glass_uniforms` produces, laid out as `GLASS_VEC4S` `vec4`s.
 ///
-/// Byte-for-byte the WGSL `GlassU` struct in `shaders/glass.wgsl`: the
-/// header is 32 bytes, then `data[0]` carries user float 0 (`uGlobal`),
-/// `data[4]` carries `uRects[0]` (user float 16), and so on. Uniform
-/// address space needs 16-byte array stride, hence `vec4`s rather than a
-/// flat `f32` array.
+/// Byte-for-byte the WGSL `GlassU` struct in `shaders/glass/core.wgsl`:
+/// the header is 32 bytes, then `data[0]` carries user float 0
+/// (`uGlobal`), `data[4]` carries `uRects[0]` (user float 16), and so on.
+/// Uniform address space needs 16-byte array stride, hence `vec4`s
+/// rather than a flat `f32` array.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct GlassFrameGpu {
@@ -385,8 +385,9 @@ pub struct Pipelines {
     pub blend_composite_pipeline: wgpu::RenderPipeline,
     /// Liquid-glass optics pass: the core-blurred backdrop sampled
     /// bilinearly through the reference's SDF lens (superellipse SDF,
-    /// lens field, tone LUT — see `shaders/glass.wgsl`, a line-for-line
-    /// port of `adaptive_liquid_glass/shaders/liquid_glass.frag`). Group
+    /// lens field, tone LUT — see `shaders/glass/`, one file per effect
+    /// in `GLASS_COMBINED_WGSL`, a line-for-line port of
+    /// `adaptive_liquid_glass/shaders/liquid_glass.frag`). Group
     /// 0: backdrop, linear sampler, `GlassFrameGpu` uniform. Blend
     /// disabled — like the blur it writes into a cleared offscreen.
     pub glass_layout: wgpu::BindGroupLayout,
@@ -905,7 +906,8 @@ pub fn create_pipelines(
     // pre-blur); fullscreen triangle into a cleared surface-sized
     // offscreen (blend disabled, like the blur). One texture only for
     // the lens — the wide tail / post-lens / extra frost are shader
-    // taps on it. The blend-mode library is prepended (WGSL has no
+    // taps on it. The blend-mode library and the per-effect glass
+    // modules are concatenated by `GLASS_COMBINED_WGSL` (WGSL has no
     // include mechanism; order is free — module-scope declarations are
     // hoisted).
     let glass_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {

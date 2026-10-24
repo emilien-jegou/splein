@@ -1,7 +1,7 @@
 // Blend-mode dispatch: one entry point the glass composite calls, one
 // switch over the packed wire id (`BlendMode::as_uniform_id` — the Rust
 // discriminant, never renumbered). Concatenated after the separable and
-// non-separable libraries, before `glass.wgsl` (pipeline.rs).
+// non-separable libraries, before the glass modules (pipeline.rs).
 //
 // Contract: `base` is the backdrop (the glass base inside the slab),
 // `src` the source pass (the glow wash), both straight (non-premultiplied)

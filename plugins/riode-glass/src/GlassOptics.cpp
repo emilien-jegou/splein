@@ -49,11 +49,13 @@ void main() {
 constexpr const char* OPTICS_FRAG = R"GLSL(
 #version 300 es
 // Liquid-glass optics pass — line-for-line GLSL ES 3.00 port of
-// `crates/engines/riode-engine-wgpu/src/shaders/glass.wgsl` (itself a
-// line-for-line port of `adaptive_liquid_glass/shaders/liquid_glass.frag`).
+// `crates/core/riode/src/foundation/effect/shaders/glass/` (one WGSL
+// file per effect, concatenated by `GLASS_COMBINED_WGSL` in
+// `effect/shaders.rs`; itself a line-for-line port of
+// `adaptive_liquid_glass/shaders/liquid_glass.frag`).
 // Function names (`sdSuperellipseBox`, `shapeOf`, `smin`, `lensField`,
 // `lensBlend`, `toneLut`, `blendMode`, `glowWash`) and stage order are
-// kept so the three files diff by eye. Deviations from the WGSL twin:
+// kept so the two sides diff by eye. Deviations from the WGSL twin:
 //
 //  * `textureSampleLevel` → `textureLod(..., 0.0)`: the early returns put
 //    texture sampling in non-uniform control flow in both languages.
@@ -378,7 +380,8 @@ vec3 blendMode(vec3 base, vec3 src, int mode) {
 
 // ----------------------------------------------------------------------
 // Glow (emissive wash inside the slab) — line-for-line GLSL port of the
-// wgpu twin's `glowOverlay`/`glowWash` (see glass.wgsl: the CPU resolves
+// wgpu twin's `glowOverlay`/`glowWash` (see shaders/glass/glow.wgsl:
+// the CPU resolves
 // the stop list to these uniform lobes at pack time and the shader only
 // evaluates them — no palette or geometry is hardcoded). Interior only:
 // the halo outside the edge is the renderer's theatre-mode replay, not
