@@ -5,6 +5,21 @@ tests, headless renders, and unit tests are **not** sources of truth for
 visual correctness. They may guard against regressions after a fix lands;
 they may never declare a fix correct.
 
+## Docs map
+
+Orientation for a fresh session (paths from repo root):
+
+- **`current.md`** — the active roadmap of record (8-step glass/effects order, step status,
+  phase history). Start every session here. **Gitignored by design** — disk-only working notes,
+  never committed.
+- **`liquid/writeup-bis/`** — the gap analysis the roadmap executes (taxonomy 01, missing effects
+  03, substrate gaps 04, decision record 12). The whole `liquid/` tree is gitignored too.
+  Its `work:`/`v2:` line citations quote phase docs consolidated into `current.md` — they dangle;
+  do not hunt for the files.
+- **`docs/`** (git-tracked) — `glass-pipeline-cases.md` overlay/`riode-glass` playbook (read
+  before debugging the plugin path); `missing-features.md` / `other-features.md` /
+  `removed-inerts.md` backend and backlog references.
+
 ## Roles
 
 - **Human**: owns eyes and verdict. Runs demos, takes screenshots and frame
