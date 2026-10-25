@@ -184,3 +184,7 @@ path = "view_demo/main.rs"
 [[example]]
 name = "fresnel"
 path = "fresnel/main.rs"
+
+[[example]]
+name = "ggx"
+path = "ggx/main.rs"

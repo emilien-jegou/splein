@@ -85,6 +85,10 @@ pub const GLASS_COMBINED_WGSL: &str = concat!(
     // Tier D — Fresnel (A1): Schlick edge glint off the widened `n3`.
     include_str!("shaders/glass/fresnel.wgsl"),
     "\n",
+    // Tier D — GGX (A2): microfacet directional glint off `n3`, gated to
+    // the bevel band.
+    include_str!("shaders/glass/ggx.wgsl"),
+    "\n",
     // Tier D — Press (08.7): press lift + touch Gaussian.
     include_str!("shaders/glass/press.wgsl"),
     "\n",

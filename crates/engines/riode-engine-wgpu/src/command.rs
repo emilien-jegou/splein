@@ -1403,6 +1403,9 @@ impl SceneSink for WgpuSink<'_> {
                 shape.fresnel_strength = g.fresnel;
                 shape.fresnel_f0 = g.fresnel_f0;
                 shape.fresnel_power = g.fresnel_power;
+                shape.ggx_roughness = g.ggx_roughness;
+                shape.ggx_gain = g.ggx_gain;
+                shape.ggx_light_dir = g.ggx_light_dir;
                 let frame = GlassFrameUniforms {
                     shapes: std::slice::from_ref(&shape),
                     device_pixel_ratio: sc,
@@ -1536,6 +1539,9 @@ impl SceneSink for WgpuSink<'_> {
                     shape.fresnel_strength = m.glass.fresnel;
                     shape.fresnel_f0 = m.glass.fresnel_f0;
                     shape.fresnel_power = m.glass.fresnel_power;
+                    shape.ggx_roughness = m.glass.ggx_roughness;
+                    shape.ggx_gain = m.glass.ggx_gain;
+                    shape.ggx_light_dir = m.glass.ggx_light_dir;
                     shapes.push(shape);
                 }
                 // Union merge (Phase 5.3): same-`union_id` members draw as

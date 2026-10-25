@@ -129,10 +129,14 @@ struct GlassU {
     u_outer: vec4<f32>,
     // Stage list (wgpu-only, appended after the glow tail — the v5 wire
     // stops at the tail and its shader has no dispatch): count in [0].x,
-    // then up to 13 author-ordered stage ids across the four vec4s
-    // (ids 1..13 — see `fs_main`'s switch). Count 0 = run the canonical
+    // then up to 15 author-ordered stage ids across the four vec4s
+    // (ids 1..15 — see `fs_main`'s switch). Count 0 = run the canonical
     // chain, byte-identical to a stack with no unit items.
     u_stages: array<vec4<f32>, 4>,
+    // GGX knobs (wgpu-only, appended after the stage list — the v5 wire
+    // stops at the tail): [0].x roughness α, [0].y gain (0 = the stage
+    // no-ops), [0].zw + [1].x the light direction xyz.
+    u_ggx: array<vec4<f32>, 2>,
 };
 
 @group(0) @binding(0)

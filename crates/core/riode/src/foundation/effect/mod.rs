@@ -66,6 +66,7 @@ pub enum BuiltinStage {
     Rim,
     Press,
     Fresnel,
+    Ggx,
     LightSpill,
     CardBlend { mode_id: u32 },
     /// Group-root marker: merges descendant members' glass into one
@@ -95,6 +96,7 @@ impl BuiltinStage {
             BuiltinStage::Rim => &[12],
             BuiltinStage::Press => &[13],
             BuiltinStage::Fresnel => &[14],
+            BuiltinStage::Ggx => &[15],
             BuiltinStage::FillDimTint => &[6, 7, 9],
             _ => &[],
         }
@@ -980,6 +982,31 @@ impl Effect for Fresnel {
     }
 }
 
+/// GGX microfacet specular glint (`stageGGX`) — the directional lobe the
+/// dot-product rim streak fakes. Knobs ride the appended GGX tail
+/// (`ggx`/`ggx_roughness`/`ggx_light_dir` on `Glass`); the material
+/// carries them, the item is the stack position.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Ggx();
+
+impl Effect for Ggx {
+    fn id(&self) -> EffectId {
+        debug_id(0x2C, self)
+    }
+    fn needs_backdrop(&self) -> bool {
+        false
+    }
+    fn pad(&self, _scale: f32) -> f32 {
+        0.0
+    }
+    fn shader(&self) -> EffectShader {
+        EffectShader::Builtin(BuiltinStage::Ggx)
+    }
+    fn clone_box(&self) -> Box<dyn Effect> {
+        Box::new(self.clone())
+    }
+}
+
 // Vocabulary impls: what may be authored in `layer_effects=[...]` (the
 // sheet) versus `backdrop_effects=[...]` (the sampled backdrop + lens).
 // `Glass` is backdrop-only: it refracts the backdrop, so it has no
@@ -1007,3 +1034,4 @@ impl BackdropEffect for Ambient {}
 impl BackdropEffect for GlowEffect {}
 impl BackdropEffect for Rim {}
 impl BackdropEffect for Fresnel {}
+impl BackdropEffect for Ggx {}

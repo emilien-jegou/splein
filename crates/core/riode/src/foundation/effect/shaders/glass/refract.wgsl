@@ -80,7 +80,15 @@ fn stageRefract(g: GlassCtx) -> GlassCtx {
     o.sample_point = o.px + o.normal * o.lensAmt;
 
     // Substrate: the 3-D normal and the optical path (see header).
-    o.n3 = normalize(vec3<f32>(o.normal * (-o.dLens * 3.0), 1.0));
+    // The tilt is OUTWARD (the height falls toward the rim, so the
+    // surface faces away from the centre — matching the reference's
+    // `n = normalize(vec3(-grad, 1))`, where `grad` points inward).
+    // `dLens` is positive (the inward displacement grows with depth),
+    // so the outward tilt is `+normal * dLens * 3`, not negated: the
+    // old `-` put the glint on the far bevel (NoL = 0 on the lit
+    // side), which is why the ON card looked identical to OFF and the
+    // light steer read inverted.
+    o.n3 = normalize(vec3<f32>(o.normal * (o.dLens * 3.0), 1.0));
     o.path_length = max(o.depth, 0.0);
     return o;
 }

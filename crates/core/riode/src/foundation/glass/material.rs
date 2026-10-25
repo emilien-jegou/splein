@@ -100,6 +100,15 @@ pub struct Glass {
     /// Schlick exponent (`fresnel_power`; `None`/zero = shader default
     /// 5).
     pub fresnel_power: Option<f32>,
+    /// GGX microfacet roughness (`ggx.wgsl`, stage id 15; `None`/zero =
+    /// shader default 0.2).
+    pub ggx_roughness: Option<f32>,
+    /// GGX specular gain (`None`/zero = the stage no-ops).
+    pub ggx_gain: Option<f32>,
+    /// GGX light direction, surface→light, surface coords (x right,
+    /// y down, z out); normalized in the setter. `None` = the shader's
+    /// default key light.
+    pub ggx_light_dir: Option<[f32; 3]>,
     // --- Reference-geometry knobs ------------------------------------
     // Every one of these used to ride a fitted bank behind a variant
     // flag; now each is spelled explicitly (or left neutral) and
@@ -158,6 +167,9 @@ impl Glass {
             fresnel: None,
             fresnel_f0: None,
             fresnel_power: None,
+            ggx_roughness: None,
+            ggx_gain: None,
+            ggx_light_dir: None,
             lens_decay: None,
             lens_size_ref: None,
             lens_edge: None,
@@ -287,6 +299,26 @@ impl Glass {
     /// Fresnel exponent (absolute; shader default 5).
     pub const fn fresnel_power(mut self, p: f32) -> Self { self.fresnel_power = Some(p.max(0.0)); self }
 
+    /// GGX specular glint (`ggx.wgsl`): `ggx(gain)` lights the bevel
+    /// band with a microfacet lobe; off (no-op) until called.
+    pub const fn ggx(mut self, gain: f32) -> Self { self.ggx_gain = Some(gain.max(0.0)); self }
+
+    /// GGX roughness α (absolute, clamped to the model's 0.001..1; shader
+    /// default 0.2).
+    pub const fn ggx_roughness(mut self, r: f32) -> Self { self.ggx_roughness = Some(r.clamp(0.001, 1.0)); self }
+
+    /// GGX light direction (surface→light; normalized here, zero-length
+    /// keeps the shader's default key light).
+    pub fn ggx_light_dir(mut self, dir: [f32; 3]) -> Self {
+        let len = (dir[0] * dir[0] + dir[1] * dir[1] + dir[2] * dir[2]).sqrt();
+        self.ggx_light_dir = if len > 1e-6 {
+            Some([dir[0] / len, dir[1] / len, dir[2] / len])
+        } else {
+            None
+        };
+        self
+    }
+
     /// Reference-geometry knobs (one line each; `None` keeps the neutral
     /// base — zero, off, untouched. See the field docs for units).
     pub const fn lens_decay(mut self, v: f32) -> Self { self.lens_decay = Some(v.max(0.0)); self }
@@ -357,6 +389,15 @@ impl Glass {
         }
         if let Some(x) = self.fresnel_power {
             v.fresnel_power = x.max(0.0);
+        }
+        if let Some(x) = self.ggx_roughness {
+            v.ggx_roughness = x.clamp(0.001, 1.0);
+        }
+        if let Some(x) = self.ggx_gain {
+            v.ggx_gain = x.max(0.0);
+        }
+        if let Some(x) = self.ggx_light_dir {
+            v.ggx_light = x;
         }
         if let Some(x) = self.lens_edge_decay {
             v.lens_edge_decay = x.max(0.0);
@@ -549,6 +590,8 @@ impl Glass {
             self.fresnel,
             self.fresnel_f0,
             self.fresnel_power,
+            self.ggx_roughness,
+            self.ggx_gain,
             self.frost_wide_sigma,
             self.frost_wide_mix_edge,
             self.frost_wide_mix_centre,
@@ -561,6 +604,17 @@ impl Glass {
                     out(1);
                     out(v.to_bits());
                 }
+            }
+        }
+        // GGX light direction: a vec, not a scalar — tag + xyz bits,
+        // appended after the scalar loop (same None/Some discipline).
+        match self.ggx_light_dir {
+            None => out(0),
+            Some(l) => {
+                out(1);
+                out(l[0].to_bits());
+                out(l[1].to_bits());
+                out(l[2].to_bits());
             }
         }
     }

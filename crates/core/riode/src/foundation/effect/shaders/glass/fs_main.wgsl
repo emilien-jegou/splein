@@ -28,7 +28,7 @@
 
 // Stage id at 0-based index `i` of the explicit list packed in
 // `u_stages` (count in [0].x, then ids across the four vec4s — ids
-// 1..14, so the list carries up to 14 author-ordered stages).
+// 1..15, so the list carries up to 15 author-ordered stages).
 fn stageIdAt(i: i32) -> i32 {
     let k = i + 1;
     if (k <= 3) {
@@ -48,9 +48,11 @@ fn stageIdAt(i: i32) -> i32 {
     } else if (k == 12) {
         return i32(u.u_stages[3].x);
     } else if (k == 13) {
+        return i32(u.u_stages[3].y);
+    } else if (k == 14) {
         return i32(u.u_stages[3].z);
     }
-    return i32(u.u_stages[3].y);
+    return i32(u.u_stages[3].w);
 }
 
 @fragment
@@ -100,6 +102,7 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
         g = stageGlow(g);
         g = stageRim(g);
         g = stageFresnel(g);
+        g = stageGGX(g);
         g = stagePress(g);
     } else {
         // Explicit fold: the author's stage list, in author order.
@@ -119,6 +122,7 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
                 case 12 { g = stageRim(g); }
                 case 13 { g = stagePress(g); }
                 case 14 { g = stageFresnel(g); }
+                case 15 { g = stageGGX(g); }
                 default {}
             }
         }

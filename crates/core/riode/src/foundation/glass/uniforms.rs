@@ -60,12 +60,17 @@ pub const K_GLOW_VEC4S: usize = 14;
 pub const K_GLASS_WIRE_FLOATS: usize = K_GLOW_AT + 4 * K_GLOW_VEC4S;
 
 /// Stage list (wgpu-only, appended after the glow tail): count in the
-/// first float, then up to 14 author-ordered glass-stage ids (`fs_main`'s
+/// first float, then up to 15 author-ordered glass-stage ids (`fs_main`'s
 /// dispatch), pad to the vec4 boundary. Count 0 = the canonical chain.
 pub const K_STAGES_FLOATS: usize = 16;
 
+/// GGX knobs (wgpu-only, appended after the stage list): roughness,
+/// gain, light direction xyz — 2 vec4s, 5 used. Not in the v5 wire.
+pub const K_GGX_FLOATS: usize = 8;
+
 /// Number of user floats after `uSize`: the packed buffer length in `f32`.
-pub const K_GLASS_UNIFORM_FLOATS: usize = K_GLASS_WIRE_FLOATS + K_STAGES_FLOATS;
+pub const K_GLASS_UNIFORM_FLOATS: usize =
+    K_GLASS_WIRE_FLOATS + K_STAGES_FLOATS + K_GGX_FLOATS;
 
 /// Largest usable `postBlurShare` (the composed blur keeps `√0.1` of σ).
 pub const K_MAX_POST_BLUR_SHARE: f32 = 0.9;
@@ -172,6 +177,12 @@ pub struct GlassShapeUniform {
     pub fresnel_strength: Option<f32>,
     pub fresnel_f0: Option<f32>,
     pub fresnel_power: Option<f32>,
+    /// GGX glint knobs (`ggx.wgsl`, stage 15): roughness α, gain, light
+    /// direction (surface→light, normalized on the CPU). `None` =
+    /// shader defaults (gain 0 = no-op, roughness 0.2, key light).
+    pub ggx_roughness: Option<f32>,
+    pub ggx_gain: Option<f32>,
+    pub ggx_light_dir: Option<[f32; 3]>,
 }
 
 impl GlassShapeUniform {
@@ -232,6 +243,9 @@ impl GlassShapeUniform {
             fresnel_strength: None,
             fresnel_f0: None,
             fresnel_power: None,
+            ggx_roughness: None,
+            ggx_gain: None,
+            ggx_light_dir: None,
         }
     }
     /// Packed constants with this shape's explicit knobs applied.
@@ -326,6 +340,9 @@ impl GlassShapeUniform {
         if let Some(x) = self.fresnel_strength { v.fresnel_strength = x.max(0.0); }
         if let Some(x) = self.fresnel_f0 { v.fresnel_f0 = x.max(0.0); }
         if let Some(x) = self.fresnel_power { v.fresnel_power = x.max(0.0); }
+        if let Some(x) = self.ggx_roughness { v.ggx_roughness = x.clamp(0.001, 1.0); }
+        if let Some(x) = self.ggx_gain { v.ggx_gain = x.max(0.0); }
+        if let Some(x) = self.ggx_light_dir { v.ggx_light = x; }
         v
     }
 }
@@ -524,6 +541,9 @@ pub fn merge_unions(shapes: &[GlassShapeUniform]) -> Vec<GlassShapeUniform> {
                     fresnel_strength: prev.fresnel_strength.or(s.fresnel_strength),
                     fresnel_f0: prev.fresnel_f0.or(s.fresnel_f0),
                     fresnel_power: prev.fresnel_power.or(s.fresnel_power),
+                    ggx_roughness: prev.ggx_roughness.or(s.ggx_roughness),
+                    ggx_gain: prev.ggx_gain.or(s.ggx_gain),
+                    ggx_light_dir: prev.ggx_light_dir.or(s.ggx_light_dir),
                     glow_strength: prev.glow_strength.or(s.glow_strength),
                     press_lift: prev.press_lift.or(s.press_lift),
                     dim: prev.dim.or(s.dim),
@@ -792,11 +812,24 @@ pub fn pack_glass_uniforms(u: &GlassFrameUniforms<'_>) -> Vec<f32> {
     // stops at `K_GLASS_WIRE_FLOATS`): count, then the author-ordered
     // glass-stage ids in stack order (`fs_main` dispatch). Count 0 is
     // the canonical chain, byte-identical to a stack with no units.
-    debug_assert!(u.stages.len() <= 14, "at most 14 glass-stage ids");
+    debug_assert!(u.stages.len() <= 15, "at most 15 glass-stage ids");
     let d = K_GLASS_WIRE_FLOATS;
     f[d] = u.stages.len() as f32;
     for (i, id) in u.stages.iter().enumerate() {
         f[d + 1 + i] = *id as f32;
+    }
+    // GGX knobs (wgpu-only, appended after the stage list): x roughness,
+    // y gain, zw + next vec4's x = the light direction xyz. Single-bank
+    // discipline like the constants: the first drawn shape's effective
+    // values; the gain-0 default keeps the stage a no-op.
+    let d = K_GLASS_WIRE_FLOATS + K_STAGES_FLOATS;
+    if let Some(first) = shapes.first() {
+        let v = first.effective();
+        f[d] = v.ggx_roughness;
+        f[d + 1] = v.ggx_gain;
+        f[d + 2] = v.ggx_light[0];
+        f[d + 3] = v.ggx_light[1];
+        f[d + 4] = v.ggx_light[2];
     }
     f
 }
@@ -1294,7 +1327,8 @@ mod override_tests {
         assert_eq!(packed[d + 2], 5.0);
         assert_eq!(packed[d + 3], 8.0);
         assert_eq!(packed[d + 4], 0.0, "rest of the first vec4 pads to zero");
-        // Wire frozen at the glow tail: the stage tail must not ride it.
+        // Wire frozen at the glow tail: the stage + GGX tails must not
+        // ride it (both wgpu-only, appended after the frozen v5 prefix).
         assert_eq!(
             K_GLASS_WIRE_FLOATS,
             K_GLOW_AT + 4 * K_GLOW_VEC4S,
@@ -1302,8 +1336,8 @@ mod override_tests {
         );
         assert_eq!(
             K_GLASS_UNIFORM_FLOATS,
-            K_GLASS_WIRE_FLOATS + 16,
-            "stage tail is one 16-float vec4 group"
+            K_GLASS_WIRE_FLOATS + K_STAGES_FLOATS + K_GGX_FLOATS,
+            "uniform stream is wire prefix + stage tail + GGX tail"
         );
         assert_eq!(
             GLASS_WIRE_PACKED_FLOATS,
@@ -1365,7 +1399,10 @@ mod override_tests {
         let d = K_GLASS_WIRE_FLOATS;
         assert_eq!(floats.len(), d);
         // The wire's last float is the glow tail's final slot, not a count.
-        assert_eq!(floats.len(), K_GLASS_UNIFORM_FLOATS - K_STAGES_FLOATS);
+        assert_eq!(
+            floats.len(),
+            K_GLASS_UNIFORM_FLOATS - K_STAGES_FLOATS - K_GGX_FLOATS
+        );
         // The floats before the stage tail belong to the glow-tail region;
         // with glow inactive it packs zeros (inactive lanes keep zeros).
         assert_eq!(
@@ -1392,6 +1429,7 @@ mod override_tests {
         assert_eq!(BuiltinStage::Rim.glass_stage_ids(), &[12]);
         assert_eq!(BuiltinStage::Press.glass_stage_ids(), &[13]);
         assert_eq!(BuiltinStage::Fresnel.glass_stage_ids(), &[14]);
+        assert_eq!(BuiltinStage::Ggx.glass_stage_ids(), &[15]);
         assert!(BuiltinStage::Blend { mode: crate::foundation::BlendMode::Normal }
             .glass_stage_ids()
             .is_empty());

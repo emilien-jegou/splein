@@ -118,6 +118,17 @@ pub struct GlassBank {
     /// Fresnel edge-glint gain. 0 = off (the stage no-ops) — the
     /// conservative default that keeps every preset unchanged.
     pub fresnel_strength: f32,
+    /// GGX microfacet roughness α (`ggx.wgsl` folds it as α = r²; the
+    /// shader default 0.2 when zero). Rides the appended wgpu-only GGX
+    /// tail, not the frozen v5 wire.
+    pub ggx_roughness: f32,
+    /// GGX specular gain. 0 = off (the stage no-ops) — the
+    /// conservative default that keeps every preset unchanged.
+    pub ggx_gain: f32,
+    /// GGX light direction, surface→light in surface coords (x right,
+    /// y down, z out of the screen); normalized in the stage. Zero
+    /// length = the shader's default key light.
+    pub ggx_light: [f32; 3],
     /// Depth inside the outline where the edge lens ends (displacement 0).
     pub lens_band: f32,
     /// Edge displacement as a multiple of `lensBand`; negative samples
@@ -203,6 +214,9 @@ impl GlassBank {
         fresnel_f0: 0.0,
         fresnel_power: 0.0,
         fresnel_strength: 0.0,
+        ggx_roughness: 0.0,
+        ggx_gain: 0.0,
+        ggx_light: [0.0; 3],
         lens_band: 0.0,
         lens_strength: 0.0,
         lens_decay: 0.0,
