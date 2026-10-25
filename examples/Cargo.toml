@@ -180,3 +180,7 @@ path = "wave1_repro/main.rs"
 [[example]]
 name = "view_demo"
 path = "view_demo/main.rs"
+
+[[example]]
+name = "fresnel"
+path = "fresnel/main.rs"

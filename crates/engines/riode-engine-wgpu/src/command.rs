@@ -1400,6 +1400,9 @@ impl SceneSink for WgpuSink<'_> {
                 shape.dim = b.dim;
                 shape.post_jacobian_max = g.post_jacobian_max;
                 shape.ambient_reach = b.ambient_reach;
+                shape.fresnel_strength = g.fresnel;
+                shape.fresnel_f0 = g.fresnel_f0;
+                shape.fresnel_power = g.fresnel_power;
                 let frame = GlassFrameUniforms {
                     shapes: std::slice::from_ref(&shape),
                     device_pixel_ratio: sc,
@@ -1530,6 +1533,9 @@ impl SceneSink for WgpuSink<'_> {
                     shape.dim = m.backdrop.dim;
                     shape.post_jacobian_max = m.glass.post_jacobian_max;
                     shape.ambient_reach = m.backdrop.ambient_reach;
+                    shape.fresnel_strength = m.glass.fresnel;
+                    shape.fresnel_f0 = m.glass.fresnel_f0;
+                    shape.fresnel_power = m.glass.fresnel_power;
                     shapes.push(shape);
                 }
                 // Union merge (Phase 5.3): same-`union_id` members draw as

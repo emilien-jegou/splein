@@ -96,10 +96,11 @@ struct GlassU {
     //   mix edge, wide mix centre, wide size ref px) F(wide size drop,
     //   glow strength, post-lens blur share, normal radius scale) G, H,
     //   I.x: tone LUT, 9 grey output knots at inputs i/8; I.yzw(lens
-    //   edge px, lens edge decay px, tone lift) J(rim mix, rim mix width
-    //   px, rim mix cut px, rim mix luma floor) K(tone lift knee, tone
-    //   lift size ref px, post-lens sigma px, blur size ref px) L(rim
-    //   back strength, retired, retired, retired) M, N, O.x: small-shape
+//   edge px, lens edge decay px, tone lift) J(rim mix, rim mix width
+//   px, rim mix cut px, rim mix luma floor) K(tone lift knee, tone
+//   lift size ref px, post-lens sigma px, blur size ref px) L(rim
+//   back strength, fresnel F0, fresnel power, fresnel gain) M, N,
+//   O.x: small-shape
     //   tone LUT; O.yz(smallSizeLo px,
     //   smallSizeHi px); O.w post-lens Jacobian clamp P(ambient mix,
     //   ambient reach px, luma-keyed tone mix, retired)
@@ -197,6 +198,17 @@ struct GlassCtx {
     fyp: f32,
     fym: f32,
     normal: vec2<f32>,
+    /// 3-D surface normal from the height field (`stageShape` publishes
+    /// the flat baseline `(normal.xy, 1)`; `stageRefract` bends it with
+    /// the lens profile slope via the Snell lift). Enables `dot(N, V)`
+    /// shading effects (`Fresnel`, GGX). Mirrors `EffectCtx.normal`.
+    n3: vec3<f32>,
+    /// Optical path through the glass in device px, written by
+    /// `stageRefract` (our glass is a half-space: the refracted travel
+    /// distance is the compressed read depth). 0 when Refract did not
+    /// run — that is the `Absorb`/`Slab` flat-mix degeneration. Mirrors
+    /// `EffectCtx.path_length`.
+    path_length: f32,
     gradLen: f32,
     lensAmt: f32,
     dLens: f32,

@@ -30,8 +30,22 @@ struct EffectCtx {
     /// Signed distance to the clip silhouette (negative inside).
     /// `1e6` when no clip stage has run.
     depth: f32,
-    /// Lens normal from the SDF gradient (meaningful inside the shape).
-    normal: vec2<f32>,
+    /// 3-D surface normal (the widened field, substrate decision D1):
+    /// xy is the lens/clip normal as before, z is the height-field lift
+    /// — `(normal.xy, 1.0)` is the flat surface, the glass host bends z
+    /// with the lens profile slope (see `glass/refract.wgsl`). Shading
+    /// effects (`Fresnel`, GGX) form `dot(N, V)` from this. The
+    /// composition contract: every stage that bends the surface writes
+    /// it, everything downstream of it reads it — absent producers
+    /// leave the flat baseline, so consumer stages degrade to grazing
+    /// angle 0, not NaN.
+    normal: vec3<f32>,
+    /// Optical path through the glass in device px (the other widened
+    /// field): the glass host writes it where a real depth exists (the
+    /// inside depth, see `glass/refract.wgsl`). 0 when no `Refract`
+    /// stage ran — `Absorb`/`Slab`-style consumers degenerate to the
+    /// flat mix (the pre-widen look), so the field is backward-safe.
+    path_length: f32,
     /// Clip coverage 0..1 (anti-aliased edge alpha from `ClipRound`).
     coverage: f32,
 };
@@ -42,7 +56,8 @@ fn effect_ctx_identity(px: vec2<f32>) -> EffectCtx {
     ctx.color = vec4<f32>(0.0);
     ctx.px = px;
     ctx.depth = 1e6;
-    ctx.normal = vec2<f32>(0.0);
+    ctx.normal = vec3<f32>(0.0, 0.0, 1.0);
+    ctx.path_length = 0.0;
     ctx.coverage = 1.0;
     return ctx;
 }

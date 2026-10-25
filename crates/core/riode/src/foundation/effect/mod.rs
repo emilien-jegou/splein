@@ -65,6 +65,7 @@ pub enum BuiltinStage {
     Glow,
     Rim,
     Press,
+    Fresnel,
     LightSpill,
     CardBlend { mode_id: u32 },
     /// Group-root marker: merges descendant members' glass into one
@@ -93,6 +94,7 @@ impl BuiltinStage {
             BuiltinStage::Glow => &[11],
             BuiltinStage::Rim => &[12],
             BuiltinStage::Press => &[13],
+            BuiltinStage::Fresnel => &[14],
             BuiltinStage::FillDimTint => &[6, 7, 9],
             _ => &[],
         }
@@ -952,6 +954,32 @@ impl Effect for Rim {
     }
 }
 
+/// Schlick Fresnel edge glint (`stageFresnel`) — the first consumer of
+/// the D1 substrate widen: `F = F0 + (1−F0)·(1−N·V)^power` off the
+/// 3-D normal's z against the flat view. Knobs ride the `L` bank
+/// (`fresnel` on `Glass`); the material carries them, the item is the
+/// stack position.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Fresnel();
+
+impl Effect for Fresnel {
+    fn id(&self) -> EffectId {
+        debug_id(0x2B, self)
+    }
+    fn needs_backdrop(&self) -> bool {
+        false
+    }
+    fn pad(&self, _scale: f32) -> f32 {
+        0.0
+    }
+    fn shader(&self) -> EffectShader {
+        EffectShader::Builtin(BuiltinStage::Fresnel)
+    }
+    fn clone_box(&self) -> Box<dyn Effect> {
+        Box::new(self.clone())
+    }
+}
+
 // Vocabulary impls: what may be authored in `layer_effects=[...]` (the
 // sheet) versus `backdrop_effects=[...]` (the sampled backdrop + lens).
 // `Glass` is backdrop-only: it refracts the backdrop, so it has no
@@ -978,3 +1006,4 @@ impl BackdropEffect for Tint {}
 impl BackdropEffect for Ambient {}
 impl BackdropEffect for GlowEffect {}
 impl BackdropEffect for Rim {}
+impl BackdropEffect for Fresnel {}

@@ -60,7 +60,7 @@ pub const K_GLOW_VEC4S: usize = 14;
 pub const K_GLASS_WIRE_FLOATS: usize = K_GLOW_AT + 4 * K_GLOW_VEC4S;
 
 /// Stage list (wgpu-only, appended after the glow tail): count in the
-/// first float, then up to 13 author-ordered glass-stage ids (`fs_main`'s
+/// first float, then up to 14 author-ordered glass-stage ids (`fs_main`'s
 /// dispatch), pad to the vec4 boundary. Count 0 = the canonical chain.
 pub const K_STAGES_FLOATS: usize = 16;
 
@@ -166,6 +166,12 @@ pub struct GlassShapeUniform {
     pub blur_size_ref: Option<f32>,
     pub fill_size_ref: Option<f32>,
     pub fill_size_drop: Option<f32>,
+    /// Fresnel edge-glint knobs (`fresnel.wgsl`, stage 14): gain, F0
+    /// base reflectance, Schlick exponent. `None` = shader defaults
+    /// (gain 0 = no-op, F0 0.2, power 5).
+    pub fresnel_strength: Option<f32>,
+    pub fresnel_f0: Option<f32>,
+    pub fresnel_power: Option<f32>,
 }
 
 impl GlassShapeUniform {
@@ -223,9 +229,11 @@ impl GlassShapeUniform {
             blur_size_ref: None,
             fill_size_ref: None,
             fill_size_drop: None,
+            fresnel_strength: None,
+            fresnel_f0: None,
+            fresnel_power: None,
         }
     }
-
     /// Packed constants with this shape's explicit knobs applied.
     /// Starts from the neutral base (zero/off/untouched — no bank, no
     /// variant): unset means nothing renders for that stage.
@@ -315,6 +323,9 @@ impl GlassShapeUniform {
         if let Some(x) = self.dim { v.dim = x.clamp(0.0, 1.0); }
         if let Some(x) = self.post_jacobian_max { v.post_jacobian_max = x.max(0.0); }
         if let Some(x) = self.ambient_reach { v.ambient_reach = x.max(0.0); }
+        if let Some(x) = self.fresnel_strength { v.fresnel_strength = x.max(0.0); }
+        if let Some(x) = self.fresnel_f0 { v.fresnel_f0 = x.max(0.0); }
+        if let Some(x) = self.fresnel_power { v.fresnel_power = x.max(0.0); }
         v
     }
 }
@@ -506,11 +517,13 @@ pub fn merge_unions(shapes: &[GlassShapeUniform]) -> Vec<GlassShapeUniform> {
                     frost_wide_sigma: prev.frost_wide_sigma.or(s.frost_wide_sigma),
                     frost_wide_mix_edge: prev.frost_wide_mix_edge.or(s.frost_wide_mix_edge),
                     frost_wide_mix_centre: prev.frost_wide_mix_centre.or(s.frost_wide_mix_centre),
-                    frost_wide_size_ref: prev.frost_wide_size_ref.or(s.frost_wide_size_ref),
-                    frost_wide_size_drop: prev.frost_wide_size_drop.or(s.frost_wide_size_drop),
+                    frost_wide_size_ref: prev.frost_wide_size_ref.or(s.frost_wide_size_ref),                    frost_wide_size_drop: prev.frost_wide_size_drop.or(s.frost_wide_size_drop),
                     blur_size_ref: prev.blur_size_ref.or(s.blur_size_ref),
                     fill_size_ref: prev.fill_size_ref.or(s.fill_size_ref),
                     fill_size_drop: prev.fill_size_drop.or(s.fill_size_drop),
+                    fresnel_strength: prev.fresnel_strength.or(s.fresnel_strength),
+                    fresnel_f0: prev.fresnel_f0.or(s.fresnel_f0),
+                    fresnel_power: prev.fresnel_power.or(s.fresnel_power),
                     glow_strength: prev.glow_strength.or(s.glow_strength),
                     press_lift: prev.press_lift.or(s.press_lift),
                     dim: prev.dim.or(s.dim),
@@ -779,7 +792,7 @@ pub fn pack_glass_uniforms(u: &GlassFrameUniforms<'_>) -> Vec<f32> {
     // stops at `K_GLASS_WIRE_FLOATS`): count, then the author-ordered
     // glass-stage ids in stack order (`fs_main` dispatch). Count 0 is
     // the canonical chain, byte-identical to a stack with no units.
-    debug_assert!(u.stages.len() <= 13, "at most 13 glass-stage ids");
+    debug_assert!(u.stages.len() <= 14, "at most 14 glass-stage ids");
     let d = K_GLASS_WIRE_FLOATS;
     f[d] = u.stages.len() as f32;
     for (i, id) in u.stages.iter().enumerate() {
@@ -901,9 +914,12 @@ fn pack_a_to_l(f: &mut [f32], base: usize, v: GlassBank, dpr: f32) {
     k += 4;
 
     f[k] = v.rim_back;
-    f[k + 1] = 0.0;
-    f[k + 2] = 0.0;
-    f[k + 3] = 0.0;
+    // L's retired slots: the Fresnel stage's knobs (`fresnel.wgsl`:
+    // w the gain, y F0, z the exponent — the shader defaults F0 0.2,
+    // power 5 when zeroed).
+    f[k + 1] = v.fresnel_f0;
+    f[k + 2] = v.fresnel_power;
+    f[k + 3] = v.fresnel_strength;
 }
 
 /// Packed-frame wire version for the compositor (`set_glass` payload).
@@ -1375,6 +1391,7 @@ mod override_tests {
         assert_eq!(BuiltinStage::Glow.glass_stage_ids(), &[11]);
         assert_eq!(BuiltinStage::Rim.glass_stage_ids(), &[12]);
         assert_eq!(BuiltinStage::Press.glass_stage_ids(), &[13]);
+        assert_eq!(BuiltinStage::Fresnel.glass_stage_ids(), &[14]);
         assert!(BuiltinStage::Blend { mode: crate::foundation::BlendMode::Normal }
             .glass_stage_ids()
             .is_empty());

@@ -14,7 +14,8 @@
 // former fused `stageTone` — `Saturation, ToneCurve, Wash, Dim, Tint` —
 // with the small-shape tone curve between `Dim` and `Tint` (08.6's
 // `stageShapeTone`), then `Ambient` (after the tint, so tinted glass
-// keeps the full ambient chroma), then Tier D lighting, then
+// keeps the full ambient chroma), then Tier D lighting (`Glow`, `Rim`,
+// `Fresnel`), then
 // `cardBlend`. Tier E composites outside the loop: the card blend runs
 // on the finished colour.
 //
@@ -26,7 +27,8 @@
 // branch below, byte-identical to the pre-fold shader.
 
 // Stage id at 0-based index `i` of the explicit list packed in
-// `u_stages` (count in [0].x, then ids across the four vec4s).
+// `u_stages` (count in [0].x, then ids across the four vec4s — ids
+// 1..14, so the list carries up to 14 author-ordered stages).
 fn stageIdAt(i: i32) -> i32 {
     let k = i + 1;
     if (k <= 3) {
@@ -43,10 +45,12 @@ fn stageIdAt(i: i32) -> i32 {
         if (k == 9) { return i32(u.u_stages[2].y); }
         if (k == 10) { return i32(u.u_stages[2].z); }
         return i32(u.u_stages[2].w);
-    } else {
-        if (k == 12) { return i32(u.u_stages[3].x); }
-        return i32(u.u_stages[3].y);
+    } else if (k == 12) {
+        return i32(u.u_stages[3].x);
+    } else if (k == 13) {
+        return i32(u.u_stages[3].z);
     }
+    return i32(u.u_stages[3].y);
 }
 
 @fragment
@@ -95,6 +99,7 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
         g = stageAmbient(g);
         g = stageGlow(g);
         g = stageRim(g);
+        g = stageFresnel(g);
         g = stagePress(g);
     } else {
         // Explicit fold: the author's stage list, in author order.
@@ -113,6 +118,7 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
                 case 11 { g = stageGlow(g); }
                 case 12 { g = stageRim(g); }
                 case 13 { g = stagePress(g); }
+                case 14 { g = stageFresnel(g); }
                 default {}
             }
         }

@@ -204,12 +204,30 @@ fn glassSilhouette(px: vec2<f32>, count: i32) -> GlassCtx {
     g.xb /= wsum;
     g.sw = 0.0;
     g.col = vec3<f32>(0.0);
+    // Substrate defaults: flat surface (unit z normal) and zero optical
+    // path until the stages that own them publish (`stageShape` keeps
+    // the flat baseline, `stageRefract` bends + fills).
+    g.n3 = vec3<f32>(0.0, 0.0, 1.0);
+    g.path_length = 0.0;
+    // Refract-owned fields, identity until Refract publishes: the
+    // explicit fold may run Frost/Spectral/Rim without Refract, and
+    // every one of those reads through `sample_point` (and the rim
+    // reads the lens amounts). Unwritten WGSL struct fields are
+    // undefined — without this, a Refract-less fold sampled garbage
+    // (the black-card fold bug).
+    g.sample_point = px;
+    g.lensAmt = 0.0;
+    g.dLens = 0.0;
+    g.vv = 0.0;
     return g;
 }
 
 /// Lens normals from the lens field's gradient: the first-class `normal`
 /// output (08.5 B1). Everything the displacement, the frost Jacobian and
 /// the rim lights read as a normal is produced here and nowhere else.
+/// The 3-D normal starts at the flat baseline (`normal.xy`, 1): the
+/// height field that bends it is Refract's — with Refract absent
+/// (Shape-only stacks) the surface stays flat, which is honest.
 fn stageShape(g: GlassCtx) -> GlassCtx {
     var o = g;
     o.fxp = lensField(o.px + vec2<f32>(1.0, 0.0));
@@ -219,5 +237,6 @@ fn stageShape(g: GlassCtx) -> GlassCtx {
     let grad = vec2<f32>(o.fxp - o.fxm, o.fyp - o.fym) + vec2<f32>(1e-6);
     o.gradLen = length(grad);
     o.normal = grad / o.gradLen;
+    o.n3 = vec3<f32>(o.normal, 1.0);
     return o;
 }

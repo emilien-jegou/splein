@@ -82,6 +82,9 @@ pub const GLASS_COMBINED_WGSL: &str = concat!(
     // Tier D — Rim (08.7): specular streak + isotropic rim.
     include_str!("shaders/glass/rim.wgsl"),
     "\n",
+    // Tier D — Fresnel (A1): Schlick edge glint off the widened `n3`.
+    include_str!("shaders/glass/fresnel.wgsl"),
+    "\n",
     // Tier D — Press (08.7): press lift + touch Gaussian.
     include_str!("shaders/glass/press.wgsl"),
     "\n",

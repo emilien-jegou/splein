@@ -2,16 +2,34 @@
 //
 // Taxonomy: L3 refraction (bending). L6 (slab thickness / volume) is
 // only *approximated* here: the lens `band` + `lens_decay` profile is
-// what stands in for an optical path. There is no `path_length` in the
-// ctx yet, so `Absorb` (08.5 B5, Beer-Lambert) cannot exist — that is
-// the one output this stage will gain when it does.
+// what stands in for an optical path. `path_length` is now published
+// (the half-space model in the header), so `Absorb` (08.5 B5,
+// Beer-Lambert) and `Slab` can be written as separate stage files —
+// their knobs are the remaining work.
 //
 // Reads: `normal`, `depth`, `gradLen`, `halfMin`, `count`, `ownK`,
 // `ownGrp`; `u_var[0]` (lens decay, band, strength), `u_var[2].w`
 // (lens size ref), `u_var[8].yz` (lens edge px + edge decay px),
 // `u_global2.z` (high-contrast), and the merge neck through
 // `lensBlend` (shape.wgsl).
-// Writes: `lensAmt`, `dLens`, `vv`, `sample_point`.
+// Writes: `lensAmt`, `dLens`, `vv`, `sample_point`, `n3`, `path_length`.
+//
+// The two substrate outputs the widen adds (04 §4.1/4.2 made writable;
+// the consumers — Fresnel/GGX, `Absorb`/`Slab` — are the next cuts):
+//   * `n3` — the 3-D surface normal. Our lens field is implicitly a
+//     height field whose horizontal gradient is the refraction: inverting
+//     Snell at the reference's fitted ior gives the lift
+//     ior/(ior-1) = 3 at ior 1.5 between height slope and displacement
+//     slope, so the gradient magnitude is |dLens| x 3 along -normal
+//     (the height rises inward). Normalized as
+//     `normalize(vec3(-grad_xy, 1.0))`, matching `liquid-glass`'s
+//     analytic normals (`glass.frag:301-302`).
+//   * `path_length` — the optical travel through the glass. Our model is
+//     a half-space (depth grows inward without bound) whose visible
+//     compression is the displaced read; the refracted travel distance
+//     is therefore the inside depth. Absent Refract publishes 0, which
+//     is exactly the `Absorb`/`Slab` flat-mix degeneration (tint.wgsl)
+//     and needs no knob.
 
 /// Merge necks, exponential lens falloff, edge term: sets `sample_point`
 /// (the displaced backdrop read), `lensAmt`, `dLens`, `vv`.
@@ -60,5 +78,9 @@ fn stageRefract(g: GlassCtx) -> GlassCtx {
     o.lensAmt *= neck;
     o.vv = v;
     o.sample_point = o.px + o.normal * o.lensAmt;
+
+    // Substrate: the 3-D normal and the optical path (see header).
+    o.n3 = normalize(vec3<f32>(o.normal * (-o.dLens * 3.0), 1.0));
+    o.path_length = max(o.depth, 0.0);
     return o;
 }

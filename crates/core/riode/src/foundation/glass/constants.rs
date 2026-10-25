@@ -110,6 +110,14 @@ pub struct GlassBank {
     /// Rim strength on the side facing away from the light, relative to the
     /// lit side.
     pub rim_back: f32,
+    /// Schlick base reflectance of the Fresnel edge glint (`fresnel.wgsl`
+    /// defaults 0.2 when zero). Rider of the L bank's retired slot.
+    pub fresnel_f0: f32,
+    /// Fresnel exponent (`fresnel.wgsl` defaults 5 = Schlick when zero).
+    pub fresnel_power: f32,
+    /// Fresnel edge-glint gain. 0 = off (the stage no-ops) — the
+    /// conservative default that keeps every preset unchanged.
+    pub fresnel_strength: f32,
     /// Depth inside the outline where the edge lens ends (displacement 0).
     pub lens_band: f32,
     /// Edge displacement as a multiple of `lensBand`; negative samples
@@ -192,6 +200,9 @@ impl GlassBank {
         rim_width: 0.0,
         rim_intensity: 0.0,
         rim_back: 0.35,
+        fresnel_f0: 0.0,
+        fresnel_power: 0.0,
+        fresnel_strength: 0.0,
         lens_band: 0.0,
         lens_strength: 0.0,
         lens_decay: 0.0,

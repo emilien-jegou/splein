@@ -91,6 +91,15 @@ pub struct Glass {
     pub press_lift: Option<f32>,
     /// Post-lens tap stretch cap (`postJacobianMax`).
     pub post_jacobian_max: Option<f32>,
+    /// Fresnel edge-glint gain (`fresnel.wgsl`, stage id 14). `None`
+    /// keeps it off — the stage no-ops, matching every existing preset.
+    pub fresnel: Option<f32>,
+    /// Schlick base reflectance (`fresnel_f0`; `None`/zero = shader
+    /// default 0.2).
+    pub fresnel_f0: Option<f32>,
+    /// Schlick exponent (`fresnel_power`; `None`/zero = shader default
+    /// 5).
+    pub fresnel_power: Option<f32>,
     // --- Reference-geometry knobs ------------------------------------
     // Every one of these used to ride a fitted bank behind a variant
     // flag; now each is spelled explicitly (or left neutral) and
@@ -146,6 +155,9 @@ impl Glass {
             glow_strength: None,
             press_lift: None,
             post_jacobian_max: None,
+            fresnel: None,
+            fresnel_f0: None,
+            fresnel_power: None,
             lens_decay: None,
             lens_size_ref: None,
             lens_edge: None,
@@ -265,6 +277,16 @@ impl Glass {
     /// Post-lens tap stretch cap.
     pub const fn post_jacobian(mut self, v: f32) -> Self { self.post_jacobian_max = Some(v.max(0.0)); self }
 
+    /// Fresnel edge glint (`fresnel.wgsl`): `fresnel(gain)` lights the
+    /// bevel by Schlick off the 3-D normal; off (no-op) until called.
+    pub const fn fresnel(mut self, strength: f32) -> Self { self.fresnel = Some(strength.max(0.0)); self }
+
+    /// Fresnel Schlick base reflectance (absolute; shader default 0.2).
+    pub const fn fresnel_f0(mut self, f0: f32) -> Self { self.fresnel_f0 = Some(f0.max(0.0)); self }
+
+    /// Fresnel exponent (absolute; shader default 5).
+    pub const fn fresnel_power(mut self, p: f32) -> Self { self.fresnel_power = Some(p.max(0.0)); self }
+
     /// Reference-geometry knobs (one line each; `None` keeps the neutral
     /// base — zero, off, untouched. See the field docs for units).
     pub const fn lens_decay(mut self, v: f32) -> Self { self.lens_decay = Some(v.max(0.0)); self }
@@ -326,6 +348,15 @@ impl Glass {
         }
         if let Some(x) = self.blur_aspect_power {
             v.blur_aspect_power = x.max(0.0);
+        }
+        if let Some(x) = self.fresnel {
+            v.fresnel_strength = x.max(0.0);
+        }
+        if let Some(x) = self.fresnel_f0 {
+            v.fresnel_f0 = x.max(0.0);
+        }
+        if let Some(x) = self.fresnel_power {
+            v.fresnel_power = x.max(0.0);
         }
         if let Some(x) = self.lens_edge_decay {
             v.lens_edge_decay = x.max(0.0);
@@ -515,6 +546,9 @@ impl Glass {
             self.rim_mix_cut,
             self.rim_mix_floor,
             self.post_blur_share,
+            self.fresnel,
+            self.fresnel_f0,
+            self.fresnel_power,
             self.frost_wide_sigma,
             self.frost_wide_mix_edge,
             self.frost_wide_mix_centre,
