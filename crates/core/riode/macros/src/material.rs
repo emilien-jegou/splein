@@ -875,7 +875,14 @@ fn is_material_shape(e: &syn::Expr) -> bool {
             }
         }
         syn::Expr::Binary(b) => matches!(b.op, syn::BinOp::Mul(_) | syn::BinOp::Add(_)),
-        syn::Expr::MethodCall(_) => true,
+        // Only the material terminal (and the Phase-2a `.frost` shape) are
+        // material methods. Every other method call (`sig.get()`, helpers)
+        // is a plain runtime value — falling through to a slot, never a
+        // loud error here. (Unknown material *constructors* still error in
+        // `eval_method` when the block IS material.)
+        syn::Expr::MethodCall(m) => {
+            m.method == "into_surface" || m.method == "frost" || m.method.to_string().starts_with("with_")
+        }
         _ => false,
     }
 }
