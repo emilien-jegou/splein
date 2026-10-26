@@ -1,28 +1,22 @@
 // Material lab: live instrument for the custom-stage mechanism (G0) and
-// the macro-time DSL (G1).
+// the macro-time DSL (G1). Layout mirrors `glass_studio`: a scrollable
+// control sidebar left, one big editable card right.
 //
-// Left: reference rows, one variable apart — the human compares by eye:
-//   - "OFF" (control): a neutral `Glass::geometry()` host alone. The
-//     bare card: silhouette, coverage, merge-under-sheet, zero shading.
-//   - "ON" (custom surface): the same host + a hand-written passthrough
-//     surface. Must render IDENTICALLY to OFF — this falsifies host
-//     neutrality (D-M4).
-//   - "DSL" (macro surface): the same look as TINT/plaque but written in
-//     DSL syntax — must render identically to its raw-WGSL twin.
-//
-// Right: the live DSL card. Every numeric value position in the material
-// block is bound to a slider signal; dragging a slider refills that one
-// uniform slot (same WGSL source — the pipeline cache must hit). The
-// readout line shows the actual filler values each frame, and the hover
-// toggle flips the `gloss` slot between its two states without touching
-// structure.
+// The single card has three modes, cycled by the top button:
+//   - "host"   : the bare `Glass::geometry()` host alone — silhouette,
+//     coverage, merge-under-sheet, zero shading.
+//   - "copy"   : same host + a hand-written passthrough surface. Must
+//     render IDENTICALLY to "host" — this falsifies host neutrality
+//     (D-M4). If it differs in anything, the negative result reopens the
+//     pre-glass stage position, not the scaffold.
+//   - "live"   : the macro-time DSL surface from the sidebar sliders.
+//     Dragging a slider refills one uniform slot; the generated WGSL
+//     source never changes (pipeline cache must hit — D-M5).
 //
 // Per AGENTS.md: predictions live below for the human to check, not
 // claims. Drag every slider end to end: if any slider changes the card's
 // *shape* (rounded corners, silhouette) instead of its *shading*, the
-// structure/value split is leaking. If ON differs from OFF in anything,
-// the negative result reopens the pre-glass stage position or the
-// missing composite path — not the scaffold.
+// structure/value split is leaking.
 
 use riode::foundation::{BackdropNeed, CustomEffect, EffectStack};
 use riode::foundation::Glass;
@@ -34,20 +28,25 @@ use std::rc::Rc;
 /// Window chrome shared by the release driver (`main.rs`) and the hot
 /// entry (`hot.rs`): declared once here, referenced by both.
 pub const HOT_TITLE: &str = "Material lab";
-pub const HOT_WIDTH: u32 = 1480;
-pub const HOT_HEIGHT: u32 = 720;
-pub const HOT_BG: u32 = 0x2A3F55;
-
-const LABEL_COLOR: u32 = 0xFFFFFF;
-const INK_COLOR: u32 = 0xC81E3A;
+pub const HOT_WIDTH: u32 = 1100;
+pub const HOT_HEIGHT: u32 = 700;
+pub const HOT_BG: u32 = 0x14161C;
 
 const TRACK_W: f32 = 200.0;
 const TRACK_H: f32 = 28.0;
 const THUMB_W: f32 = 14.0;
 
+const MODE_NAMES: [&str; 3] = ["host", "copy", "live"];
+const MODE_DESCRIPTIONS: [&str; 3] = [
+    "bare host: silhouette + coverage, zero shading",
+    "host + hand-written passthrough (must equal host)",
+    "host + DSL surface from the sliders below",
+];
+
 /// Identity surface: copies the card through untouched. The G0 proof —
-/// ON must equal OFF pixel-for-pixel (compare with `s` captures under
-/// F8 freeze). Reads nothing but `ctx.color` (the card the host built).
+/// "copy" must equal "host" pixel-for-pixel (compare with `s` captures
+/// under F8 freeze). Reads nothing but `ctx.color` (the card the host
+/// built).
 const PASSTHROUGH_WGSL: &str = r#"
 fn apply(
     ctx: EffectCtx,
@@ -61,59 +60,19 @@ fn apply(
 }
 "#;
 
-/// Tint surface: the same passthrough plus a uniform-driven red lift
-/// (`u.data[0].x`). Proves the stage executes and uniforms arrive.
-const TINT_WGSL: &str = r#"
-fn apply(
-    ctx: EffectCtx,
-    backdrop: texture_2d<f32>,
-    sharp: texture_2d<f32>,
-    u: CustomUniforms,
-) -> EffectCtx {
-    var out = ctx;
-    let lift = u.data[0].x;
-    out.color = vec4<f32>(
-        min(ctx.color.rgb + vec3<f32>(lift, 0.0, 0.0), vec3<f32>(ctx.color.a)),
-        ctx.color.a,
-    );
-    return out;
-}
-"#;
-
-/// A material card: `backdrop_effects` drives the whole look. The host is
-/// auto-stamped by `hierarchy.rs` whenever a Custom-bearing stack has no
-/// authored glass (D-M4) — so these stacks spell only the surface.
-#[component]
-fn Card(label: &'static str, backdrop_effects: Option<EffectStack>) -> impl IntoElement {
-    let backdrop_effects = backdrop_effects.unwrap_or_default();
-    view! {
-        <Group direction="vertical" gap={8.0} alignment="center">
-            <Text size={13.0} weight={600u16} color={LABEL_COLOR}>{label}</Text>
-            <Group
-                width={280.0}
-                height={220.0}
-                radius={24.0}
-                backdrop_effects={backdrop_effects}
-                alignment="center"
-                distribution="center"
-            >
-                <Text size={48.0} weight={700u16} color={Color::hex(INK_COLOR)}>{"Aa"}</Text>
-            </Group>
-        </Group>
-    }
-}
-
 fn surface(wgsl: &'static str, uniforms: Vec<f32>) -> EffectStack {
     EffectStack(vec![
         CustomEffect::new(wgsl, uniforms, BackdropNeed::None).into_effect(),
     ])
 }
 
-/// All live DSL values: one signal per numeric position in the material
-/// block. Dragging a slider refills one uniform slot; the generated WGSL
-/// source never changes (pipeline cache must hit — D-M5).
+/// All live state, one signal per control. `mode` picks which stack the
+/// card wears (0 = host, 1 = copy, 2 = live DSL). `bg` is the stage
+/// lightness so shading reads on light and dark grounds alike.
 #[derive(Clone)]
 struct Params {
+    mode: Signal<i32>,
+    bg: Signal<f32>,
     roughness: Signal<f32>,
     tint_r: Signal<f32>,
     tint_g: Signal<f32>,
@@ -123,13 +82,15 @@ struct Params {
     hover_gloss: Signal<bool>,
 }
 
-/// A labeled slider bound to `value` over `[min, max]`.
+/// A labeled slider bound to `value` over `[min, max]`, with a one-line
+/// `about` saying what the control is expected to do.
 ///
 /// Relative dragging (glass_studio pattern): the gesture anchors on grab,
 /// then maps horizontal travel to the range, so no geometry reads needed.
 fn slider(
     rt: &Rc<RefCell<ReactiveRuntime>>,
     label: &'static str,
+    about: &'static str,
     value: Signal<f32>,
     min: f32,
     max: f32,
@@ -155,11 +116,12 @@ fn slider(
                 <Text size={13.0} color={0x9AA0AE}>{label}</Text>
                 <Text size={13.0} color={0xFFFFFF}>{readout}</Text>
             </Group>
+            <Text size={11.0} color={0x6B7280} width="fold">{about}</Text>
             <Group
                 width={TRACK_W}
                 height={TRACK_H}
                 radius={6.0}
-                fill={0x1E2230}
+                fill={0x2A2E38}
                 hit_test={HitTest::Opaque}
                 on:drag-start={{
                     move |info: &DragInfo| {
@@ -191,7 +153,7 @@ fn slider(
     .into_element()
 }
 
-/// A small labeled toggle button.
+/// A small labeled button.
 fn button(label: Prop<String>, on_press: impl Fn() + 'static) -> Element {
     view! {
         <Group
@@ -211,39 +173,24 @@ fn button(label: Prop<String>, on_press: impl Fn() + 'static) -> Element {
     }
 }
 
-/// Backdrop food: a saturated gradient field so refraction/host edges
-/// would show. Y-invariant stripes keep rows comparable.
-fn stripes() -> Vec<Element> {
-    const W: f32 = 74.0;
-    const COLORS: [u32; 4] = [0x3A2424, 0x3D3416, 0x1E3329, 0x1E2A45];
-    let mut out = Vec::new();
-    for i in 0..20 {
-        out.push(
-            riode::internal::group()
-                .width(W)
-                .height(720.0)
-                .absolute()
-                .fill(Color::hex(COLORS[i % 4]))
-                .transform(Transform::from_translation(i as f32 * W, 0.0))
-                .into_element(),
-        );
-    }
-    out
-}
-
 fn ui(p: Params, rt: Rc<RefCell<ReactiveRuntime>>) -> Element {
-    // The live DSL card: every value position reads its slider signal.
-    // All reads are plain numerics (value-level) — the tree shape is
-    // fixed, the filler refills slots per frame (D-M6). The Dynamic prop
-    // (slots > 0) re-evaluates under the paint subscriber, so each drag
-    // subscribes and repaints with new uniform *values*, byte-identical
-    // WGSL source (pipeline cache hit per D-M5).
-    let f2: Rc<dyn Fn(f32) -> String> = Rc::new(|v| format!("{v:.2}"));
+    // Stage ground follows the `bg` slider: the signal maps straight to
+    // a `Color`, and `fill` accepts `Signal<Color>` (`dsl/prop.rs`) —
+    // no `computed` wrapper, no `Prop<Color>` mismatch.
+    let stage_fill = p.bg.map(|v| {
+        let v = v.clamp(0.0, 1.0);
+        Color::rgb(v, v, v)
+    });
+    // Readout values through one `computed` (folded, so the panel keeps
+    // the sliders' width as it lengthens).
     let readout = {
         let p = p.clone();
         computed(move || {
+            let idx = p.mode.get().clamp(0, 2) as usize;
             format!(
-                "rough {:.2} · tint ({:.2}, {:.2}, {:.2}) · gain {:.2} · gloss {:.2}{}",
+                "mode {} · bg {:.2} · rough {:.2} · tint ({:.2}, {:.2}, {:.2}) · gain {:.2} · gloss {:.2}{}",
+                MODE_NAMES[idx],
+                p.bg.get(),
                 p.roughness.get(),
                 p.tint_r.get(),
                 p.tint_g.get(),
@@ -258,93 +205,134 @@ fn ui(p: Params, rt: Rc<RefCell<ReactiveRuntime>>) -> Element {
             )
         })
     };
+    let mode_about = {
+        let m = p.mode;
+        computed(move || MODE_DESCRIPTIONS[m.get().clamp(0, 2) as usize].to_string())
+    };
+    let f2: Rc<dyn Fn(f32) -> String> = Rc::new(|v| format!("{v:.2}"));
+    let mode = p.mode;
+    let is_host = mode.map(|m| m == 0);
+    let is_copy = mode.map(|m| m == 1);
+    let is_live = mode.map(|m| m != 0 && m != 1);
     view! {
         <Group
             direction="horizontal"
             width="fill"
             height="fill"
-            fill={Color::hex(HOT_BG)}
+            fill={HOT_BG}
             alignment="center"
         >
-            {stripes()}
-            // Reference rows: G0 identity proof + DSL/raw-WGSL twins.
-            <Group direction="vertical" gap={16.0} alignment="center" distribution="center" z_index={2}>
-                <Group direction="horizontal" gap={32.0} alignment="center">
-                    <Card
-                        label="OFF (host only)"
-                        backdrop_effects={EffectStack(vec![Glass::geometry().into_effect()])}
-                    />
-                    <Card
-                        label="ON (passthrough)"
-                        backdrop_effects={surface(PASSTHROUGH_WGSL, vec![])}
-                    />
-                    <Card
-                        label="DSL (plaque)"
-                        backdrop_effects={
-                            let n = Normal::flat();
-                            let lobe = Microfacet::ggx(n, 0.35);
-                            let tinted = Color::rgb(1.0, 0.25, 0.2) * lobe;
-                            (tinted * Sky::gain(1.0)).into_surface()
-                        }
-                    />
-                </Group>
-                <Text size={12.0} color={0x9AA0AE}>{"OFF vs ON: identical (host neutral). DSL plaque: opaque reddish sheen."}</Text>
+            // Control sidebar: scrolls, so every control fits at 700 px.
+            <ScrollView width={248.0} height="fill">
+            <Group direction="vertical" gap={10.0} margin={24.0}>
+                {button(
+                    {
+                        let mode = p.mode;
+                        computed(move || {
+                            let idx = mode.get().clamp(0, 2) as usize;
+                            format!("card: {} (tap: next)", MODE_NAMES[idx])
+                        })
+                    },
+                    {
+                        let p = p.clone();
+                        move || p.mode.set((p.mode.get() + 1).rem_euclid(3))
+                    },
+                )}
+                {mode_about}
+                {slider(&rt, "background", "stage lightness: slide to read the sheen on dark and light grounds.", p.bg, 0.0, 1.0, f2.clone())}
+                {slider(&rt, "roughness", "GGX lobe width: low = tight mirror highlight, high = broad matte sheen.", p.roughness, 0.02, 1.0, f2.clone())}
+                {slider(&rt, "tint_r", "sheen red channel: the diffuse tint multiplied under the lobe.", p.tint_r, 0.0, 1.0, f2.clone())}
+                {slider(&rt, "tint_g", "sheen green channel: drag to zero for a magenta cast.", p.tint_g, 0.0, 1.0, f2.clone())}
+                {slider(&rt, "tint_b", "sheen blue channel: the demo default leans warm-red.", p.tint_b, 0.0, 1.0, f2.clone())}
+                {slider(&rt, "env gain", "sky brightness into the tinted lobe: overall sheen level.", p.gain, 0.0, 2.0, f2.clone())}
+                {slider(&rt, "gloss", "clearcoat strength: a second tight lobe layered over the base.", p.gloss, 0.0, 1.0, f2.clone())}
+                {button(
+                    {
+                        let v = p.hover_gloss;
+                        computed(move || {
+                            if v.get() {
+                                "hover: ON (tap: release)".to_string()
+                            } else {
+                                "hover: OFF (tap: press)".to_string()
+                            }
+                        })
+                    },
+                    {
+                        let v = p.hover_gloss;
+                        move || v.set(!v.get())
+                    },
+                )}
+                <Text size={11.0} color={0x6B7280} width="fold">{"hover flips only the gloss slot 0.9 / slider: same source, values-only change."}</Text>
+                <Text size={12.0} color={0x9AA0AE} width="fold">{readout}</Text>
             </Group>
-            // Live instrument: sliders left, DSL card right.
-            <Group direction="horizontal" gap={24.0} alignment="center" z_index={2}>
-                <ScrollView width={248.0} height="fill">
-                <Group direction="vertical" gap={10.0} margin={24.0}>
-                    {slider(&rt, "roughness", p.roughness, 0.02, 1.0, f2.clone())}
-                    {slider(&rt, "tint_r", p.tint_r, 0.0, 1.0, f2.clone())}
-                    {slider(&rt, "tint_g", p.tint_g, 0.0, 1.0, f2.clone())}
-                    {slider(&rt, "tint_b", p.tint_b, 0.0, 1.0, f2.clone())}
-                    {slider(&rt, "env gain", p.gain, 0.0, 2.0, f2.clone())}
-                    {slider(&rt, "gloss", p.gloss, 0.0, 1.0, f2.clone())}
-                    {button(
-                        {
-                            let v = p.hover_gloss;
-                            computed(move || {
-                                if v.get() {
-                                    "hover: ON (tap: release)".to_string()
-                                } else {
-                                    "hover: OFF (tap: press)".to_string()
-                                }
-                            })
-                        },
-                        {
-                            let v = p.hover_gloss;
-                            move || v.set(!v.get())
-                        },
-                    )}
-                    <Text size={12.0} color={0x9AA0AE} width="fold">{readout}</Text>
-                </Group>
-                </ScrollView>
-                <Group direction="vertical" gap={8.0} alignment="center">
-                    <Text size={13.0} weight={600u16} color={LABEL_COLOR}>{"LIVE (drag sliders)"}</Text>
-                    <Group
-                        width={280.0}
-                        height={220.0}
-                        radius={24.0}
-                        backdrop_effects={
-                            let rough = p.roughness.get();
-                            let tr = p.tint_r.get();
-                            let tg = p.tint_g.get();
-                            let tb = p.tint_b.get();
-                            let g = p.gain.get();
-                            let gloss = if p.hover_gloss.get() { 0.9 } else { p.gloss.get() };
-                            let n = Normal::flat();
-                            let lobe = Microfacet::ggx(n, rough);
-                            let tinted = Color::rgb(tr, tg, tb) * lobe;
-                            let lit = tinted * Sky::gain(g);
-                            let coat = Microfacet::ggx(n, 0.15) * Sky::gain(gloss);
-                            let sheen = Color::rgb(0.55, 0.6, 0.7) * coat;
-                            (lit + sheen).into_surface()
-                        }
-                        alignment="center"
-                        distribution="center"
-                    >
-                        <Text size={48.0} weight={700u16} color={Color::hex(INK_COLOR)}>{"Aa"}</Text>
-                    </Group>
+            </ScrollView>
+            // Preview stage: one big editable card on the sliding ground.
+            // Each mode is its own branch with its stack INLINE in the
+            // `backdrop_effects` attribute — the macro only intercepts
+            // material blocks there. Host/copy wear ready-built stacks;
+            // the live branch's block reads slider signals as plain
+            // numerics (value-level), refilling one uniform slot per
+            // drag with byte-identical WGSL source (cache hit — D-M5).
+            <Group
+                width="fill"
+                height="fill"
+                fill={stage_fill}
+                clip={true}
+                alignment="center"
+                distribution="center"
+            >
+                <Group direction="vertical" gap={12.0} alignment="center">
+                    <if is_host.get()>
+                        <Group
+                            width={420.0}
+                            height={330.0}
+                            radius={24.0}
+                            backdrop_effects={EffectStack(vec![Glass::geometry().into_effect()])}
+                            alignment="center"
+                            distribution="center"
+                        >
+                            <Text size={72.0} weight={700u16} color={Color::hex(0xC81E3A)}>{"Aa"}</Text>
+                        </Group>
+                    </if>
+                    <if is_copy.get()>
+                        <Group
+                            width={420.0}
+                            height={330.0}
+                            radius={24.0}
+                            backdrop_effects={surface(PASSTHROUGH_WGSL, vec![])}
+                            alignment="center"
+                            distribution="center"
+                        >
+                            <Text size={72.0} weight={700u16} color={Color::hex(0xC81E3A)}>{"Aa"}</Text>
+                        </Group>
+                    </if>
+                    <if is_live.get()>
+                        <Group
+                            width={420.0}
+                            height={330.0}
+                            radius={24.0}
+                            backdrop_effects={
+                                let rough = p.roughness.get();
+                                let tr = p.tint_r.get();
+                                let tg = p.tint_g.get();
+                                let tb = p.tint_b.get();
+                                let g = p.gain.get();
+                                let gloss = if p.hover_gloss.get() { 0.9 } else { p.gloss.get() };
+                                let n = Normal::flat();
+                                let lobe = Microfacet::ggx(n, rough);
+                                let tinted = Color::rgb(tr, tg, tb) * lobe;
+                                let lit = tinted * Sky::gain(g);
+                                let coat = Microfacet::ggx(n, 0.15) * Sky::gain(gloss);
+                                let sheen = Color::rgb(0.55, 0.6, 0.7) * coat;
+                                (lit + sheen).into_surface()
+                            }
+                            alignment="center"
+                            distribution="center"
+                        >
+                            <Text size={72.0} weight={700u16} color={Color::hex(0xC81E3A)}>{"Aa"}</Text>
+                        </Group>
+                    </if>
+                    <Text size={12.0} color={0x6B7280}>{"drag any slider end to end: shading may move, shape must not."}</Text>
                 </Group>
             </Group>
         </Group>
@@ -355,6 +343,8 @@ fn ui(p: Params, rt: Rc<RefCell<ReactiveRuntime>>) -> Element {
 #[component]
 pub fn Page() -> impl IntoElement {
     let p = Params {
+        mode: use_signal(2i32),
+        bg: use_signal(0.16),
         roughness: use_signal(0.35),
         tint_r: use_signal(1.0),
         tint_g: use_signal(0.25),
