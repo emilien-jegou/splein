@@ -83,6 +83,13 @@ pub struct WgpuRenderer {
     /// every frame. Grown on demand (a structurally new material compiles
     /// its pipeline on first sight).
     custom_pipelines: std::collections::HashMap<u64, Option<std::sync::Arc<wgpu::RenderPipeline>>>,
+    /// G1 proof counters (D-M5): `custom_cache_builds` counts sync pipeline
+    /// builds (first sight of a source); `custom_cache_hits` counts
+    /// immutable cache reads in the walk. A hover repaint must move hits
+    /// only — builds stay flat (same source, new uniform values). `Cell`
+    /// because the walk reader holds `&self`.
+    custom_cache_hits: std::cell::Cell<u64>,
+    custom_cache_builds: std::cell::Cell<u64>,
     /// Parent snapshot for blend-mode alpha shadows (one surface-sized
     /// slot, reused across EndLayers): copied from the parent target
     /// after the spill and before the shadow draws, so a shadow
@@ -401,6 +408,8 @@ impl WgpuRenderer {
             shadow_snap: None,
             glass_pool: Vec::new(),
             custom_pipelines: std::collections::HashMap::new(),
+            custom_cache_hits: std::cell::Cell::new(0),
+            custom_cache_builds: std::cell::Cell::new(0),
             stale_root_layers: Vec::new(),
         }
     }
@@ -754,6 +763,7 @@ impl WgpuRenderer {
             h = h.wrapping_mul(0x100000001b3);
         }
         if let Some(cached) = self.custom_pipelines.get(&h) {
+            self.custom_cache_hits.set(self.custom_cache_hits.get() + 1);
             return cached.clone();
         }
         let full = format!("{EFFECT_ABI_WGSL}\n{source}\n{ENGINE_ENTRY_WGSL}");
@@ -761,6 +771,7 @@ impl WgpuRenderer {
         if let Err(reason) = &built {
             tracing::warn!("riode-wgpu: custom stage dropped ({reason})");
         }
+        self.custom_cache_builds.set(self.custom_cache_builds.get() + 1);
         let entry = built.ok().map(std::sync::Arc::new);
         self.custom_pipelines.insert(h, entry.clone());
         entry
@@ -770,6 +781,8 @@ impl WgpuRenderer {
     /// above the op loop already inserted every custom source (`Some` =
     /// ready pipeline, `None` = failed build, warned once), so the walk
     /// — which holds `&self.batch` — never needs `&mut self` here.
+    /// A successful read bumps the G1 hit counter (builds stay flat on
+    /// hover repaints — same source, new uniform values).
     fn custom_pipeline_cached(
         &self,
         source: &str,
@@ -779,7 +792,29 @@ impl WgpuRenderer {
             h ^= *b as u64;
             h = h.wrapping_mul(0x100000001b3);
         }
-        self.custom_pipelines.get(&h).cloned().flatten()
+        let hit = self.custom_pipelines.get(&h).cloned().flatten();
+        if hit.is_some() {
+            self.custom_cache_hits.set(self.custom_cache_hits.get() + 1);
+        }
+        hit
+    }
+
+    /// Startup pre-warm entry (D-M6): compile every custom source in the
+    /// app-level const manifest (`MATERIAL_SURFACE_SOURCES`) before frame
+    /// 1, so first paint never pays a sync build. Idempotent — already
+    /// cached sources count as hits, not builds. Settled form: app-level
+    /// manifest, not linkme (no new link-section dependency; the macro
+    /// cannot cross crate boundaries anyway).
+    pub fn prewarm_material_sources(&mut self, sources: &[&str]) {
+        for src in sources {
+            self.custom_pipeline_for(src);
+        }
+    }
+
+    /// G1 proof counters: `(hits, builds)`. After first paint, hovering
+    /// the sheen row must move hits only.
+    pub fn custom_cache_stats(&self) -> (u64, u64) {
+        (self.custom_cache_hits.get(), self.custom_cache_builds.get())
     }
 
     /// Validate + build one custom-stage pipeline from a complete WGSL
