@@ -26,13 +26,13 @@
 //   slot (the whole `if` becomes one uniform expression); `if` choosing
 //   between two closures, or any `match`/`loop`/closure in the block,
 //   is a loud compile error naming the rule (D-M6, reactivity rule).
-// - `.with_*` post passes are rejected loudly (deferred D-M2).
+// - `.with_*` post passes are rejected loudly (dropped D-M2/D-M10d).
 //
 // Phase 1 subset (mirrors `material_lower`): `Normal::flat`,
 // `Microfacet::ggx`, `Sky::gain` / `Color` / `Intensity` modulators,
 // `fresnel` / scalar weights, `+` / `*` / `mix` composition. Refraction,
 // Beer, ThinFilm, and the extended closures are rejected loudly with
-// their gate phase — never a silent mis-lowering.
+// their gate phase (5a/5b/5c/6) — never a silent mis-lowering.
 
 use std::collections::HashMap;
 
@@ -61,6 +61,15 @@ enum Binding {
 
 /// Interpreter state for one `backdrop={...}` block.
 struct Interp {
+    /// `Some(name)` when the block is the `|geo|` closure-param form:
+    /// `geo.*` reads lower to per-pixel host fields, never slots.
+    geo_param: Option<String>,
+    /// True once any `geo.*` read was seen in this block.
+    saw_geo: bool,
+    /// True once any bare geometry constructor was seen in this block
+    /// (flat/constant form). Mixing with `geo.*` is a loud error
+    /// (one geometry source — D-M10a).
+    saw_bare_geo: bool,
     arena: UniformArena,
     bindings: HashMap<String, Binding>,
     /// Value expressions in slot order: `filler[slot]` evaluates to f32.
@@ -113,6 +122,9 @@ fn func_path(call: &syn::ExprCall) -> Option<String> {
 impl Interp {
     fn new() -> Self {
         Self {
+            geo_param: None,
+            saw_geo: false,
+            saw_bare_geo: false,
             arena: UniformArena::new(),
             bindings: HashMap::new(),
             filler: Vec::new(),
@@ -121,41 +133,28 @@ impl Interp {
         }
     }
 
-    /// A numeric position: float/int literal → `Lit` (baked into
-    /// source); anything else → allocate a slot and remember the
-    /// expression tokens for the filler (evaluated in arena order).
+    /// A numeric position: literals and identifiers both allocate
+    /// a uniform slot (D-M10b: every numeric parameter rides uniforms,
+    /// never WGSL text). The emitted filler evaluates the remembered
+    /// expression tokens in arena order (fill == consume, no drift).
+    /// `Value::Lit` exists only for internal degenerate defaults, never
+    /// for user-written numbers.
     fn numeric(&mut self, e: &syn::Expr) -> syn::Result<Value> {
         match e {
             syn::Expr::Lit(syn::ExprLit {
-                lit: syn::Lit::Float(f),
+                lit: syn::Lit::Float(_),
                 ..
-            }) => {
-                let v: f32 = f.base10_parse().map_err(|_| {
-                    syn::Error::new_spanned(f, "material DSL: float literal out of f32 range")
-                })?;
-                Ok(Value::Lit(v))
-            }
-            syn::Expr::Lit(syn::ExprLit {
-                lit: syn::Lit::Int(i),
+            })
+            | syn::Expr::Lit(syn::ExprLit {
+                lit: syn::Lit::Int(_),
                 ..
-            }) => {
-                // Integer in numeric position (e.g. `Sky::gain(1)`):
-                // f32 literal — structure, baked into source.
-                let v: f32 = i
-                    .base10_parse::<i64>()
-                    .map_err(|_| {
-                        syn::Error::new_spanned(i, "material DSL: integer literal out of range")
-                    })? as f32;
-                Ok(Value::Lit(v))
-            }
-            syn::Expr::Path(p) if p.path.is_ident("true") => Ok(Value::Lit(1.0)),
-            syn::Expr::Path(p) if p.path.is_ident("false") => Ok(Value::Lit(0.0)),
-            other => {
+            })
+            | syn::Expr::Path(_) => {
                 let slot = self.arena.alloc();
                 // A slot referring to an earlier plain `let` binding
                 // must see that binding's tokens: emit it into the
                 // preamble once, before the constructor.
-                if let syn::Expr::Path(p) = other {
+                if let syn::Expr::Path(p) = e {
                     if p.qself.is_none() && p.path.segments.len() == 1 {
                         let name = p.path.segments[0].ident.to_string();
                         if !self.emitted.contains(&name) {
@@ -169,6 +168,11 @@ impl Interp {
                         }
                     }
                 }
+                self.filler.push(e.to_token_stream());
+                Ok(Value::Slot { slot })
+            }
+            other => {
+                let slot = self.arena.alloc();
                 self.filler.push(other.to_token_stream());
                 Ok(Value::Slot { slot })
             }
@@ -217,6 +221,159 @@ impl Interp {
         Ok(Some(self.numeric(&call.args[0])?))
     }
 
+    /// `Spread::px(s)` — dispersion width in px (D-M10c preset param).
+    fn peel_spread(&mut self, e: &syn::Expr) -> syn::Result<Option<Value>> {
+        let syn::Expr::Call(call) = e else {
+            return Ok(None);
+        };
+        let Some(fp) = func_path(call) else {
+            return Ok(None);
+        };
+        if fp != "Spread::px" {
+            return Ok(None);
+        }
+        if call.args.len() != 1 {
+            return Err(syn::Error::new_spanned(
+                &call.func,
+                "material DSL: `Spread::px(s)` takes exactly one argument",
+            ));
+        }
+        Ok(Some(self.numeric(&call.args[0])?))
+    }
+
+    /// `Thickness::px(d)` — slab depth in px (D-M10c preset param).
+    fn peel_thickness(&mut self, e: &syn::Expr) -> syn::Result<Option<Value>> {
+        let syn::Expr::Call(call) = e else {
+            return Ok(None);
+        };
+        let Some(fp) = func_path(call) else {
+            return Ok(None);
+        };
+        if fp != "Thickness::px" {
+            return Ok(None);
+        }
+        if call.args.len() != 1 {
+            return Err(syn::Error::new_spanned(
+                &call.func,
+                "material DSL: `Thickness::px(d)` takes exactly one argument",
+            ));
+        }
+        Ok(Some(self.numeric(&call.args[0])?))
+    }
+
+    /// `Tint(color)` — slab tint: a `Color::rgb/call/const` lowers to
+    /// three slotted channels (D-M10b).
+    fn peel_tint(&mut self, e: &syn::Expr) -> syn::Result<(Value, Value, Value)> {
+        let syn::Expr::Call(call) = e else {
+            return Err(syn::Error::new_spanned(
+                e,
+                "material DSL (Phase 4): `Slab::thick` wants `Tint(color)` — \
+                 `Tint(Color::rgb(r, g, b))` or a named color",
+            ));
+        };
+        let Some(fp) = func_path(call) else {
+            return Err(syn::Error::new_spanned(
+                &call.func,
+                "material DSL (Phase 4): `Slab::thick` wants `Tint(color)`",
+            ));
+        };
+        if fp != "Tint" {
+            return Err(syn::Error::new_spanned(
+                &call.func,
+                format!(
+                    "material DSL (Phase 4): `Slab::thick` wants `Tint(color)`, not `{fp}`"
+                ),
+            ));
+        }
+        if call.args.len() != 1 {
+            return Err(syn::Error::new_spanned(
+                &call.func,
+                "material DSL: `Tint(color)` takes exactly one argument",
+            ));
+        }
+        let arg = &call.args[0];
+        // `Color::rgb(r, g, b)` call form.
+        if let syn::Expr::Call(c) = arg {
+            if let syn::Expr::Path(p) = c.func.as_ref() {
+                if path_is(&p.path, &["Color", "rgb"]) {
+                    if c.args.len() != 3 {
+                        return Err(syn::Error::new_spanned(
+                            &c.func,
+                            "material DSL: `Color::rgb` takes exactly 3 arguments",
+                        ));
+                    }
+                    return Ok((
+                        self.numeric(&c.args[0])?,
+                        self.numeric(&c.args[1])?,
+                        self.numeric(&c.args[2])?,
+                    ));
+                }
+                if let Some((r, g, b)) = color_name(&p.path) {
+                    if !c.args.is_empty() {
+                        return Err(syn::Error::new_spanned(
+                            &c.func,
+                            "material DSL: `Color::named()` takes no arguments",
+                        ));
+                    }
+                    return Ok((self.lit_slot(r)?, self.lit_slot(g)?, self.lit_slot(b)?));
+                }
+            }
+        }
+        // `Color::RED`-style const path or a runtime color expression:
+        // resolve consts to slotted channels, anything else errors
+        // loudly (tint is a value triple, not an arbitrary term).
+        if let syn::Expr::Path(p) = arg {
+            if p.qself.is_none() {
+                if let Some((r, g, b)) = const_color_name(&p.path) {
+                    return Ok((self.lit_slot(r)?, self.lit_slot(g)?, self.lit_slot(b)?));
+                }
+            }
+        }
+        Err(syn::Error::new_spanned(
+            arg,
+            "material DSL (Phase 4): `Tint` wants a color — \
+             `Color::rgb(r, g, b)` or a named color",
+        ))
+    }
+
+    /// `Absorb(k)` — Beer density factor (D-M10c preset param).
+    fn peel_absorb(&mut self, e: &syn::Expr) -> syn::Result<Option<Value>> {
+        let syn::Expr::Call(call) = e else {
+            return Ok(None);
+        };
+        let Some(fp) = func_path(call) else {
+            return Ok(None);
+        };
+        if fp != "Absorb" {
+            return Ok(None);
+        }
+        if call.args.len() != 1 {
+            return Err(syn::Error::new_spanned(
+                &call.func,
+                "material DSL: `Absorb(k)` takes exactly one argument",
+            ));
+        }
+        Ok(Some(self.numeric(&call.args[0])?))
+    }
+
+    /// One slotted literal channel (preset defaults / named colors —
+    /// D-M10b: every numeric rides a slot, never WGSL text).
+    fn lit_slot(&mut self, v: f32) -> syn::Result<Value> {
+        let slot = self.arena.alloc();
+        self.filler.push(syn::parse_str::<syn::Expr>(&format!("{v:?}")).unwrap().to_token_stream());
+        Ok(Value::Slot { slot })
+    }
+
+    /// The preset base IOR default (1.5 crown glass): a slotted
+    /// literal, so the source never bakes it (D-M10b).
+    fn bare_ior(&mut self) -> Value {
+        let slot = self.arena.alloc();
+        self.filler.push(
+            syn::parse_str::<syn::Expr>("1.5").unwrap().to_token_stream(),
+        );
+        Value::Slot { slot }
+    }
+
     /// Classify an expression into a material binding value.
     fn eval(&mut self, e: &syn::Expr) -> syn::Result<Binding> {
         // Benign parens (`(a * b)`, `((x))`) unwrap — the DSL is
@@ -227,6 +384,43 @@ impl Interp {
         }
         if let syn::Expr::Group(g) = e {
             return self.eval(&g.expr);
+        }
+        // `geo.normal` / `geo.thickness` / ... field reads (D-M10a):
+        // only legal in the `|geo|` closure-param form; lower to
+        // per-pixel host-field bindings (never uniform slots).
+        if let syn::Expr::Field(f) = e {
+            if let syn::Expr::Path(base) = f.base.as_ref() {
+                if base.qself.is_none() && base.path.segments.len() == 1 {
+                    let name = base.path.segments[0].ident.to_string();
+                    if Some(name.clone()) == self.geo_param {
+                        return self.eval_geo_field(&f.member);
+                    }
+                }
+            }
+        }
+        // `Color::RED` / `Color::WHITE` const paths (syn `Path`, not
+        // `Call`): the const-color term, same as `Color::red()`.
+        if let syn::Expr::Path(p) = e {
+            if p.qself.is_none() {
+                if let Some((r, g, b)) = const_color_name(&p.path) {
+                    return Ok(Binding::Term(self.const_color_term(r, g, b)));
+                }
+                if p.path.segments.len() == 1 {
+                    let name = p.path.segments[0].ident.to_string();
+                    match self.bindings.get(&name) {
+                        Some(b) => return Ok(b.clone()),
+                        None => {
+                            return Err(syn::Error::new_spanned(
+                                &p.path,
+                                format!(
+                                    "material DSL: unknown binding `{name}` — bind a material value \
+                                     with `let` first (structure is fixed at compile time)"
+                                ),
+                            ));
+                        }
+                    }
+                }
+            }
         }
         match e {
             syn::Expr::Call(call) => self.eval_call(call),
@@ -257,6 +451,78 @@ impl Interp {
         }
     }
 
+    /// Mark a bare (context-free) geometry constructor. Mixing with
+    /// `geo.*` reads in one block is a loud error (one source — D-M10a).
+    fn mark_bare_geo(&mut self, span: &dyn quote::ToTokens) -> syn::Result<()> {
+        if self.saw_geo {
+            return Err(syn::Error::new_spanned(
+                span,
+                "material DSL (Phase 2): one geometry source per block — bare geometry \
+                 constructors (`Normal::flat()`) cannot mix with `geo.*` reads; pick the \
+                 bare `backdrop={ ... }` form (flat/constant) or `backdrop={ |geo| ... }`",
+            ));
+        }
+        self.saw_bare_geo = true;
+        Ok(())
+    }
+
+    /// Lower one `geo.*` field read (D-M10a). Phase 2 proves plumbing
+    /// with geometry-driven weights/tints only: `.normal` binds the
+    /// flat normal (geometry tracking verified by the host-field read,
+    /// not by optical content — `Refract` still gates Phase 5a).
+    /// Unknown fields are a loud error.
+    fn eval_geo_field(&mut self, member: &syn::Member) -> syn::Result<Binding> {
+        let field = match member {
+            syn::Member::Named(id) => id.to_string(),
+            syn::Member::Unnamed(ix) => {
+                return Err(syn::Error::new(
+                    ix.span,
+                    "material DSL (Phase 2): `geo` fields are named \
+                     (`geo.normal`, `geo.thickness`, `geo.edge`) — no tuple access",
+                ));
+            }
+        };
+        if self.geo_param.is_none() {
+            return Err(syn::Error::new_spanned(
+                member,
+                "material DSL (Phase 2): `geo.*` reads need the closure-param form \
+                 `backdrop={ |geo| ... }` — the bare block means flat/constant geometry",
+            ));
+        }
+        if self.saw_bare_geo {
+            return Err(syn::Error::new_spanned(
+                member,
+                "material DSL (Phase 2): one geometry source per block — `geo.*` reads \
+                 cannot mix with bare geometry constructors (`Normal::flat()`); pick one",
+            ));
+        }
+        self.saw_geo = true;
+        match field.as_str() {
+            // Phase 2 plumbing: `geo.normal` resolves to the flat
+            // normal; geometry-dependent closures (`Refract`,
+            // `fresnel(geo.normal, ...)`) still gate Phase 5a/5b and
+            // reject loudly there — Phase 2 proves the HOST-FIELD
+            // path, not the optics.
+            "normal" => Ok(Binding::Normal(Normal::GeoNormal)),
+            // `geo.thickness` / `geo.edge` / `geo.position` /
+            // `geo.curvature` lower to host-field-driven SCALAR weights
+            // (uniform-slot expressions the lowerer renders as the
+            // corresponding `ctx` reads — Phase 5a wires the real
+            // fields; Phase 2 proves variation tracks geometry via
+            // the edge-driven `mix` demo weight).
+            "thickness" | "edge" | "position" | "curvature" => {
+                Ok(Binding::Weight(Weight::GeoField(field)))
+            }
+            _ => Err(syn::Error::new_spanned(
+                member,
+                format!(
+                    "material DSL (Phase 2): unknown `geo` field `.{field}` — known: \
+                     `.normal`, `.position`, `.curvature`, `.thickness`, `.edge`"
+                ),
+            )),
+        }
+    }
+
     /// Constructor calls: `Normal::flat()`, `Microfacet::ggx(n, a)`,
     /// `Sky::gain(g)`, `Color::rgb(r,g,b)`, `fresnel(n, ior)`, `mix(...)`.
     fn eval_call(&mut self, call: &syn::ExprCall) -> syn::Result<Binding> {
@@ -268,6 +534,7 @@ impl Interp {
         };
         if path_is(&p.path, &["Normal", "flat"]) {
             expect_no_args(call, "Normal::flat()")?;
+            self.mark_bare_geo(call)?;
             return Ok(Binding::Normal(Normal::Flat));
         }
         if path_is(&p.path, &["Sky", "gain"]) {
@@ -289,20 +556,9 @@ impl Interp {
         }
         if let Some((r, g, b)) = color_name(&p.path) {
             expect_no_args(call, "Color::named()")?;
-            return Ok(Binding::Term(MaterialExpr::Modulated(
-                Modulator::Color {
-                    r: Value::Lit(r),
-                    g: Value::Lit(g),
-                    b: Value::Lit(b),
-                },
-                // Bare `Color` in term position tints the unit ambient
-                // (a degenerate lobe); `*` with a real closure replaces
-                // the inner term (factors attach inward).
-                Box::new(MaterialExpr::Closure(Closure::Ggx {
-                    normal: Normal::Flat,
-                    roughness: Value::Lit(1.0),
-                })),
-            )));
+            // D-M10b: named colors slot per channel (same as the const
+            // path and `Color::rgb` forms) — no literal reaches WGSL.
+            return Ok(Binding::Term(self.named_color_term(r, g, b)));
         }
         if path_is(&p.path, &["Intensity", "factor"]) || path_is(&p.path, &["Intensity", "lumens"])
         {
@@ -342,21 +598,72 @@ impl Interp {
         if path_is(&p.path, &["Refract", "new"]) {
             return Err(syn::Error::new_spanned(
                 &call.func,
-                "material DSL (Phase 1): `Refract` lowers in Phase 2a \
+                "material DSL (Phase 1): `Refract` lowers in Phase 5a \
                  (displaced backdrop reads + frost blur) — use `Microfacet::ggx` / `Sky` / `Color` until then",
+            ));
+        }
+        // Phase 4 presets (D-M10c): `Dispersion::prism` / `Slab::thick`
+        // parse now (uniform-bound params), reject at lowering until
+        // their Phase 5 optics land (G1* unaffected — spec only).
+        if path_is(&p.path, &["Dispersion", "prism"]) {
+            let args = expect_args(call, "Dispersion::prism(spread)", 1)?;
+            let spread = match self.peel_spread(&args[0])? {
+                Some(v) => v,
+                None => self.value_of(&args[0])?,
+            };
+            return Ok(Binding::Term(MaterialExpr::Closure(Closure::Dispersion {
+                normal: Normal::Flat,
+                base_ior: self.bare_ior(),
+                spread_px: spread,
+            })));
+        }
+        if path_is(&p.path, &["Slab", "thick"]) {
+            let args = expect_args(call, "Slab::thick(thickness, tint, absorb)", 3)?;
+            let thickness = match self.peel_thickness(&args[0])? {
+                Some(v) => v,
+                None => self.value_of(&args[0])?,
+            };
+            let (tr, tg, tb) = self.peel_tint(&args[1])?;
+            let absorb = match self.peel_absorb(&args[2])? {
+                Some(v) => v,
+                None => self.value_of(&args[2])?,
+            };
+            return Ok(Binding::Term(MaterialExpr::Closure(Closure::Slab {
+                normal: Normal::Flat,
+                thickness_px: thickness,
+                tint_r: tr,
+                tint_g: tg,
+                tint_b: tb,
+                absorb,
+            })));
+        }
+        if path_is(&p.path, &["tag_bloom"]) || path_is(&p.path, &["tag_hdr"]) {
+            let what = if path_is(&p.path, &["tag_bloom"]) {
+                "tag_bloom"
+            } else {
+                "tag_hdr"
+            };
+            return Err(syn::Error::new_spanned(
+                &call.func,
+                format!(
+                    "material DSL (Phase 4): `{what}` is a frame-wide global post tag \
+                     (D-M10d) — declare it outside any `backdrop={{...}}` block \
+                     (root/frame scope, settled when Step 5 lands the HDR post host); \
+                     parsed-but-no-op until then"
+                ),
             ));
         }
         if path_is(&p.path, &["Absorption", "beer"]) {
             return Err(syn::Error::new_spanned(
                 &call.func,
-                "material DSL (Phase 1): `Absorption::beer` lowers in Phase 2c \
+                "material DSL (Phase 1): `Absorption::beer` lowers in Phase 5c \
                  (needs `path_length` from displaced reads)",
             ));
         }
         if path_is(&p.path, &["ThinFilm", "interference"]) {
             return Err(syn::Error::new_spanned(
                 &call.func,
-                "material DSL (Phase 1): `ThinFilm::interference` lowers in Phase 3 \
+                "material DSL (Phase 1): `ThinFilm::interference` lowers in Phase 6 \
                  (extended closures)",
             ));
         }
@@ -367,7 +674,7 @@ impl Interp {
                 return Err(syn::Error::new_spanned(
                     &call.func,
                     format!(
-                        "material DSL (Phase 1): `{h}` lowers after Phase 1 (2a normals/Refract, \
+                        "material DSL (Phase 1): `{h}` lowers after Phase 1 (5a normals/Refract, \
                          3 extended closures) — core set is flat + ggx + Color/Intensity/Sky + fresnel"
                     ),
                 ));
@@ -400,8 +707,38 @@ impl Interp {
         ))
     }
 
+    fn named_color_term(&mut self, r: f32, g: f32, b: f32) -> MaterialExpr {
+        let mut slot_for = |v: f32| {
+            let slot = self.arena.alloc();
+            self.filler.push(syn::parse_str::<syn::Expr>(&format!("{v:?}")).unwrap().to_token_stream());
+            Value::Slot { slot }
+        };
+        MaterialExpr::Modulated(
+            Modulator::Color {
+                r: slot_for(r),
+                g: slot_for(g),
+                b: slot_for(b),
+            },
+            // Bare `Color` in term position tints the unit ambient (a
+            // degenerate lobe — the `1.0` roughness is structural
+            // identity, never a user numeric); `*` with a real closure
+            // replaces the inner term (factors attach inward).
+            Box::new(MaterialExpr::Closure(Closure::Ggx {
+                normal: Normal::Flat,
+                roughness: Value::Lit(1.0),
+            })),
+        )
+    }
+
+    /// `Color::RED`-style const path in term position: same slotted
+    /// shape as the call form (D-M10b — no numeric reaches WGSL text),
+    /// so `*` attaches inward identically.
+    fn const_color_term(&mut self, r: f32, g: f32, b: f32) -> MaterialExpr {
+        self.named_color_term(r, g, b)
+    }
+
     /// `a * b` (factors attach: Color/Intensity/Sky onto a term) and
-    /// `a + b` (radiance sum) / `n1 + n2` (normal sum — Phase 2a shape,
+    /// `a + b` (radiance sum) / `n1 + n2` (normal sum — Phase 5a shape,
     /// rejected by the lowerer with its phase).
     fn eval_binary(&mut self, b: &syn::ExprBinary) -> syn::Result<Binding> {
         match &b.op {
@@ -461,8 +798,9 @@ impl Interp {
         }
     }
 
-    /// `.into_surface()` (terminal) and `.frost(r)` (Phase 2a shape,
-    /// rejected loudly). `.with_*` post passes rejected (D-M2).
+    /// `.into_surface()` (terminal) and `.frost(r)` (Phase 5a shape,
+    /// rejected loudly). `.with_*` per-Group post passes rejected as
+    /// DROPPED (D-M10d — use frame-wide `tag_bloom`/`tag_hdr`).
     fn eval_method(&mut self, m: &syn::ExprMethodCall) -> syn::Result<Binding> {
         let name = m.method.to_string();
         match name.as_str() {
@@ -479,20 +817,24 @@ impl Interp {
             "frost" => Err(syn::Error::new_spanned(
                 &m.method,
                 "material DSL (Phase 1): `.frost(r)` chains blur onto `Refract`, \
-                 which lowers in Phase 2a — omit it until then",
+                 which lowers in Phase 5a — omit it until then",
             )),
             _ if name.starts_with("with_") => Err(syn::Error::new_spanned(
                 &m.method,
                 format!(
-                    "material DSL: `.{name}(...)` is a deferred post pass (D-M2 — blocked on \
-                     Step 5/6 RGBA16F post host); v1 surfaces end at `.into_surface()`"
+                    "material DSL (D-M10d): `.{name}(...)` is a per-Group post pass — DROPPED \
+                     (`[0]`), not deferred: post phenomena cannot live per-Group (N overlapping \
+                     BloomGroups must not allocate N pyramids). Declare the frame-wide global \
+                     tag instead (consumed once by the HDR post host when Step 5 lands): \
+                     `tag_bloom(strength, Radius)` / `tag_hdr(exposure)` outside any \
+                     `backdrop={{...}}` block. v1 surfaces end at `.into_surface()`"
                 ),
             )),
             _ => Err(syn::Error::new_spanned(
                 &m.method,
                 format!(
                     "material DSL: unknown method `.{name}` — v1 knows `.into_surface()` \
-                     (terminal) and `.frost` (Phase 2a, on `Refract`)"
+                     (terminal) and `.frost` (Phase 5a, on `Refract`)"
                 ),
             )),
         }
@@ -521,6 +863,24 @@ impl Interp {
     /// Weight position: `fresnel(n, ior)` (or a `let`-bound weight), else
     /// any scalar expression → one uniform slot (literals inline).
     fn eval_weight(&mut self, e: &syn::Expr) -> syn::Result<Weight> {
+        // `geo.*` scalar fields in weight position (`mix(a, b, geo.edge)`):
+        // route through the classifier so a `GeoField` binding returns
+        // its host-field weight. Anything else falls to the numeric slot
+        // below — never silently (a `geo.normal` here errors loudly in
+        // `eval`, a normal is not a weight).
+        if matches!(e, syn::Expr::Field(_)) {
+            match self.eval(e)? {
+                Binding::Weight(w) => return Ok(w),
+                _ => {
+                    return Err(syn::Error::new_spanned(
+                        e,
+                        "material DSL: weight position wants `fresnel(...)`, a scalar \
+                         expression, or a `geo.*` scalar field (`geo.edge`, `geo.thickness`, \
+                         `geo.position`, `geo.curvature`) — normals are not weights",
+                    ));
+                }
+            }
+        }
         // `fresnel(...)` call in weight position.
         if let syn::Expr::Call(call) = e {
             if let syn::Expr::Path(p) = call.func.as_ref() {
@@ -640,17 +1000,23 @@ fn color_name(path: &syn::Path) -> Option<(f32, f32, f32)> {
     if a.ident != "Color" {
         return None;
     }
-    if b.ident == "white" {
+    if b.ident == "white" || b.ident == "WHITE" {
         Some((1.0, 1.0, 1.0))
-    } else if b.ident == "red" {
+    } else if b.ident == "red" || b.ident == "RED" {
         Some((1.0, 0.0, 0.0))
-    } else if b.ident == "green" {
+    } else if b.ident == "green" || b.ident == "GREEN" {
         Some((0.0, 1.0, 0.0))
-    } else if b.ident == "blue" {
+    } else if b.ident == "blue" || b.ident == "BLUE" {
         Some((0.0, 0.0, 1.0))
     } else {
         None
     }
+}
+
+/// `Color::RED`-style associated-const path — the same four colors as
+/// a const path (syn `Path`, no call args).
+fn const_color_name(path: &syn::Path) -> Option<(f32, f32, f32)> {
+    color_name(path)
 }
 
 fn expect_no_args(call: &syn::ExprCall, what: &str) -> syn::Result<()> {
@@ -700,7 +1066,58 @@ pub(crate) fn material_block_value(attr: &syn::Expr) -> Option<syn::Result<Token
     if !is_into_surface(&tail) {
         return None;
     }
-    Some(lower_block(stmts, &tail))
+    Some(lower_block(stmts, &tail, None))}
+
+/// Closure-param entry: `backdrop={ |geo| ... }` — exactly one ident
+/// param. The body unwraps to a block (or single tail expr); the geo
+/// name threads into the interpreter so `geo.*` reads lower to
+/// per-pixel host fields (D-M10a). Non-closure exprs return `None`
+/// (not a material block — normal fall-through).
+pub(crate) fn material_block_value_outer(attr: &syn::Expr) -> Option<syn::Result<TokenStream2>> {
+    if let syn::Expr::Closure(c) = attr {
+        if c.inputs.len() != 1 {
+            return Some(Err(syn::Error::new_spanned(
+                &c.inputs,
+                "material DSL (Phase 2): `backdrop={ |geo| ... }` takes exactly one geometry \
+                 param (`|geo|`); the bare `backdrop={ ... }` form means flat/constant geometry",
+            )));
+        }
+        let syn::Pat::Ident(geo) = &c.inputs[0] else {
+            return Some(Err(syn::Error::new_spanned(
+                &c.inputs,
+                "material DSL (Phase 2): the geometry param binds a plain name (`|geo| ...`)",
+            )));
+        };
+        let geo_name = geo.ident.to_string();
+        match c.body.as_ref() {
+            syn::Expr::Block(b) if b.attrs.is_empty() && b.label.is_none() => {
+                let mut stmts: Vec<&syn::Stmt> = b.block.stmts.iter().collect();
+                let tail = match stmts.pop() {
+                    Some(syn::Stmt::Expr(e, None)) => e.clone(),
+                    Some(syn::Stmt::Expr(e, Some(_))) => e.clone(),
+                    _ => {
+                        return Some(Err(syn::Error::new_spanned(
+                            &c.body,
+                            "material DSL (Phase 2): `|geo| ...` holds `let` bindings + a terminal \
+                             `.into_surface()` expression",
+                        )));
+                    }
+                };
+                if !is_into_surface(&tail) {
+                    return None;
+                }
+                return Some(lower_block(stmts, &tail, Some(geo_name)));
+            }
+            // Single-expression body: `|geo| expr.into_surface()`.
+            body => {
+                if !is_into_surface(body) {
+                    return None;
+                }
+                return Some(lower_block(Vec::new(), body, Some(geo_name)));
+            }
+        }
+    }
+    material_block_value(attr)
 }
 
 fn is_into_surface(e: &syn::Expr) -> bool {
@@ -712,8 +1129,13 @@ fn is_into_surface(e: &syn::Expr) -> bool {
     }
 }
 
-fn lower_block(stmts: Vec<&syn::Stmt>, tail: &syn::Expr) -> syn::Result<TokenStream2> {
+fn lower_block(
+    stmts: Vec<&syn::Stmt>,
+    tail: &syn::Expr,
+    geo: Option<String>,
+) -> syn::Result<TokenStream2> {
     let mut interp = Interp::new();
+    interp.geo_param = geo;
     // Phase 1: `let` bindings only (plus the terminal tail). Control
     // flow inside the block is structural branching — rejected loudly
     // (D-M6: `if` choosing closures cannot exist; value-level `if`

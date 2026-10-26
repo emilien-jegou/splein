@@ -9,15 +9,15 @@
 //
 // Scope — Phase 1 (v1 core subset):
 //   * `Normal::Flat` only (the `(0,0,1)` baseline; every other normal
-//     constructor is Phase 2a and rejected loudly here).
+//     constructor is Phase 5a and rejected loudly here).
 //   * Closures: `Ggx` (+ optional `Sky` env gain); `Refract` rejected
-//     (Phase 2a — needs displaced backdrop reads + frost blur).
-//   * Modulators: `Color`, `Intensity`; `Beer` rejected (Phase 2c —
-//     needs `path_length`), `ThinFilm` rejected (Phase 3).
+//     (Phase 5a — needs displaced backdrop reads + frost blur).
+//   * Modulators: `Color`, `Intensity`; `Beer` rejected (Phase 5c —
+//     needs `path_length`), `ThinFilm` rejected (Phase 6).
 //   * Weights: `Fresnel` (Schlick off `n.z`, view `(0,0,1)`) and
 //     `Scalar`; everything sums/mixes straight-line.
 //   * Extended closures (`Beckmann`, `Anisotropic`, `Conductor`,
-//     `Sheen`, `Burley`, `EmissionGrid`) rejected (Phase 3).
+//     `Sheen`, `Burley`, `EmissionGrid`) rejected (Phase 6).
 //
 // Every rejection is a compile error naming the phase, never a silent
 // mis-lowering (risks §5: the macro must reject the subset loudly).
@@ -52,14 +52,16 @@ fn value_wgsl(v: &Value) -> String {
     }
 }
 
-/// Normal field as a WGSL `vec3<f32>` expression. Phase 1: `Flat` only.
+/// Normal field as a WGSL `vec3<f32>` expression. Phase 1: `Flat`
+/// only; Phase 2 adds `GeoNormal` (the per-pixel host field).
 fn normal_wgsl(n: &Normal) -> SynResult<String> {
     match n {
         Normal::Flat => Ok("vec3<f32>(0.0, 0.0, 1.0)".to_string()),
+        Normal::GeoNormal => Ok("ctx.normal".to_string()),
         other => Err(syn::Error::new(
             proc_macro2::Span::call_site(),
             format!(
-                "material DSL (Phase 1): {other:?} normals lower in Phase 2a — \
+                "material DSL (Phase 1): {other:?} normals lower in Phase 5a — \
                  only `Normal::flat()` is available yet"
             ),
         )),
@@ -67,6 +69,12 @@ fn normal_wgsl(n: &Normal) -> SynResult<String> {
 }
 
 /// Environment gain as a WGSL scalar. `None` = the unit ambient (1.0).
+/// NOTE (D-M10a honesty fix 2026-10-26): `edge` is `1.0 - card alpha`
+/// (0 deep inside the silhouette where coverage is full, 1 outside past
+/// the AA fringe) — the only definition under which the geo probe
+/// (`mix(red, teal, geo.edge)`) reads flat-center / teal-corner as
+/// predicted. `ctx.coverage` here is the identity context's flat 1.0 and
+/// must never be used as an edge signal.
 fn env_gain_wgsl(env: Option<&Env>) -> String {
     match env {
         None => "1.0".to_string(),
@@ -92,15 +100,25 @@ fn closure_wgsl(c: &Closure, env_wgsl: &str) -> SynResult<String> {
         }
         Closure::Refract { .. } => Err(syn::Error::new(
             proc_macro2::Span::call_site(),
-            "material DSL (Phase 1): `Refract` lowers in Phase 2a \
+            "material DSL (Phase 1): `Refract` lowers in Phase 5a \
              (displaced backdrop reads + frost blur) — \
              use `Microfacet::ggx` / `Sky` / `Color` until then",
+        )),
+        Closure::Dispersion { .. } => Err(syn::Error::new(
+            proc_macro2::Span::call_site(),
+            "material DSL (Phase 4): `Dispersion::prism` lowers in Phase 5a \
+             (3-wavelength Refract split); spec parsed, optics pending",
+        )),
+        Closure::Slab { .. } => Err(syn::Error::new(
+            proc_macro2::Span::call_site(),
+            "material DSL (Phase 4): `Slab::thick` lowers in Phase 5c \
+             (refraction + Beer absorption); spec parsed, optics pending",
         )),
         other => Err(syn::Error::new(
             proc_macro2::Span::call_site(),
             format!(
-                "material DSL (Phase 1): {other:?} lowers in Phase 3 \
-                 (extended closures) — core set is ggx + refract/frost/normals (2a/2b)"
+                "material DSL (Phase 1): {other:?} lowers in Phase 6 \
+                 (extended closures) — core set is ggx + refract/frost/normals (5a/5b)"
             ),
         )),
     }
@@ -112,22 +130,22 @@ fn modulator_wgsl(m: &Modulator, inner: &str) -> SynResult<String> {
         Modulator::Color { r, g, b } => {
             let (r, g, b) = (value_wgsl(r), value_wgsl(g), value_wgsl(b));
             Ok(format!(
-                "(vec3<f32>(({r}), ({g}), ({b})) * ({inner})))"
+                "(vec3<f32>(({r}), ({g}), ({b})) * ({inner}))"
             ))
         }
         Modulator::Intensity { lumens } => {
             let k = value_wgsl(lumens);
-            Ok(format!("((({inner})) * ({k}))"))
+            Ok(format!("(({inner}) * ({k}))"))
         }
         Modulator::Beer { .. } => Err(syn::Error::new(
             proc_macro2::Span::call_site(),
-            "material DSL (Phase 1): `Absorption::beer` lowers in Phase 2c \
+            "material DSL (Phase 1): `Absorption::beer` lowers in Phase 5c \
              (needs `path_length` from displaced reads)",
         )),
         Modulator::ThinFilm { .. } => Err(syn::Error::new(
             proc_macro2::Span::call_site(),
             "material DSL (Phase 1): `ThinFilm::interference` lowers in \
-             Phase 3 (extended closures)",
+             Phase 6 (extended closures)",
         )),
     }
 }
@@ -145,6 +163,30 @@ fn weight_wgsl(w: &Weight) -> SynResult<String> {
                 "(fresnel_schlick(({n}).z, ({ior})))"
             ))
         }
+        // Phase 2 geo scalar fields → per-pixel reads from what the
+        // custom pass genuinely receives (its entry seeds an identity
+        // ctx, so coverage/path_length/normal arrive as flat constants —
+        // only `ctx.px` and the card alpha in `ctx.color.a` genuinely
+        // vary per pixel). `edge` reads the card silhouette alpha (the
+        // host's rounded shape, already AA'd by the time the custom
+        // stage transforms the card); the rest map to the matching
+        // `ctx` fields the host will seed once Phase 5a wires real
+        // glass outputs through the custom pass.
+        Weight::GeoField(f) => match f.as_str() {
+            "edge" => Ok("(1.0 - ctx.color.a)".to_string()),
+            "thickness" => Ok("(ctx.path_length)".to_string()),
+            // Probe normalization (Phase 2): raw `length(ctx.px)` is device
+            // px (0–800+) so a bare `mix(a, b, position)` saturates to `b`
+            // everywhere. Wrap to repeating 0..1 bands — still purely the
+            // host px field, now at a visible scale. Phase 5 replaces this
+            // with card-space UVs once the host carries dims.
+            "position" => Ok("(fract(length(ctx.px) / 80.0))".to_string()),
+            "curvature" => Ok("(length(ctx.normal.xy))".to_string()),
+            other => Err(syn::Error::new(
+                proc_macro2::Span::call_site(),
+                format!("material DSL (Phase 2): unknown geo field `{other}`"),
+            )),
+        },
     }
 }
 
@@ -193,14 +235,20 @@ fn ggx_spec(v: vec3<f32>, n: vec3<f32>, roughness: f32) -> vec3<f32> {
 
 /// Lower the tree to the complete custom `apply` module source: the
 /// library prefix (`PRELUDE_WGSL`) + the straight-line `apply` whose
-/// body evaluates the expression and outputs it as opaque surface color
-/// (silhouette coverage from the host's `ctx.coverage`; the backdrop
-/// enters only through `Refract`, which Phase 1 rejects — so Phase 1
-/// surfaces are opaque plaques per the opacity rule, §1.3).
+/// body evaluates the expression and outputs it as surface color.
+///
+/// Alpha comes from the CARD, not the context: the engine entry
+/// scaffold seeded `ctx.color` by sampling the card texture, so
+/// `ctx.color.a` is the host's rounded silhouette (coverage AA + merge
+/// alpha). `ctx.coverage` here is the identity context's — 1.0 across
+/// the whole scissor rect — and using it paints a square plaque that
+/// kills the card's border radius. The backdrop enters only through
+/// `Refract`, which Phase 1 rejects — so Phase 1 surfaces are opaque
+/// plaques (opacity rule, §1.3) shaped exactly like the host's card.
 pub fn lower_to_apply(expr: &MaterialExpr) -> SynResult<String> {
     let radiance = term_wgsl(expr)?;
     Ok(format!(
-        "{PRELUDE_WGSL}\nfn apply(\n    ctx: EffectCtx,\n    backdrop: texture_2d<f32>,\n    sharp: texture_2d<f32>,\n    u: CustomUniforms,\n) -> EffectCtx {{\n    var out = ctx;\n    let radiance: vec3<f32> = {radiance};\n    out.color = vec4<f32>(radiance * ctx.coverage, ctx.coverage);\n    return out;\n}}\n"
+        "{PRELUDE_WGSL}\nfn apply(\n    ctx: EffectCtx,\n    backdrop: texture_2d<f32>,\n    sharp: texture_2d<f32>,\n    u: CustomUniforms,\n) -> EffectCtx {{\n    var out = ctx;\n    let card_a = ctx.color.a;\n    let radiance: vec3<f32> = {radiance};\n    out.color = vec4<f32>(radiance * card_a, card_a);\n    return out;\n}}\n"
     ))
 }
 

@@ -183,23 +183,33 @@ fn effect_list_value(key: &str, attr: &KeyedAttribute) -> Option<TokenStream2> {
 }
 
 /// The final value tokens for an attribute: method-reference sugar for `on:` events
-/// with a bare `sig.method`, the material-block interpreter for `backdrop={...}`
-/// (D-M6: `let`-bindings + `.into_surface()` terminal → static WGSL + filler;
-/// falls through to normal semantics when the shape is not a material block),
-/// bracket-list sugar for the effect-stack props, otherwise the normal
-/// (possibly slotted) value.
+/// with a bare `sig.method`, the material-block interpreter for `backdrop={...}` /
+/// `backdrop_effects={...}` (D-M6: `let`-bindings + `.into_surface()` terminal →
+/// static WGSL + filler; falls through to normal semantics when the shape is not
+/// a material block), bracket-list sugar for the effect-stack props, otherwise
+/// the normal (possibly slotted) value.
 fn attr_value(key: &str, attr: &KeyedAttribute, flow: &FlowTables) -> TokenStream2 {
     if let Some(sugar) = event_method_ref(key, attr) {
         return sugar;
     }
-    if key == "backdrop_effects" {
+    if key == "backdrop_effects" || key == "backdrop" {
         if let Some(expr) = attr_expr(attr) {
-            if let Some(material) = crate::material::material_block_value(&expr) {
+            if let Some(material) = crate::material::material_block_value_outer(&expr) {
                 match material {
                     Ok(tokens) => return tokens,
                     Err(e) => return e.to_compile_error(),
                 }
             }
+        }
+        // Not a material block: `backdrop_effects` keeps normal expression
+        // semantics (raw CustomEffect, stack, dynamic closure...). Bare
+        // `backdrop` has no non-material meaning — route to the same builder
+        // so the Rust error names the alias, never a misroute.
+        if key == "backdrop" {
+            if let Some(list) = effect_list_value("backdrop_effects", attr) {
+                return slot_literal_value(list, flow);
+            }
+            return slot_literal_value(attr_value_tokens(attr), flow);
         }
     }
     if let Some(list) = effect_list_value(key, attr) {

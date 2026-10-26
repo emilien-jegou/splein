@@ -196,3 +196,7 @@ path = "env_reflect/main.rs"
 [[example]]
 name = "material_lab"
 path = "material_lab/main.rs"
+
+[[example]]
+name = "shader_probe"
+path = "shader_probe/main.rs"

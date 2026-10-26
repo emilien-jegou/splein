@@ -230,11 +230,18 @@ impl GroupDef {
         self
     }
 
-    /// Layer effects: transform the layer's own rasterized content
-    /// (CSS `filter`). Never `Glass` — the lens is a backdrop stage.
+    /// Backdrop effects: run on the layer's own rasterized content (CSS
+    /// `filter`). Never `Glass` — the lens is a backdrop stage.
     pub fn layer_effects<P: IntoProp<EffectStack>>(mut self, e: P) -> Self {
         self.layer_effects = Some(e.into_prop());
         self
+    }
+
+    /// Material-DSL alias: `backdrop={...}` in `view!` lowers a material block
+    /// to an `EffectStack` and lands here (same path as `backdrop_effects`).
+    /// Non-material values route through `backdrop_effects` list semantics.
+    pub fn backdrop<P: IntoProp<EffectStack>>(mut self, e: P) -> Self {
+        self.backdrop_effects(e)
     }
 
     /// Light override for this subtree: children inherit it unless they

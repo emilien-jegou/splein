@@ -70,6 +70,10 @@ pub enum Normal {
     Perlin { scale: Value },
     /// Summed perturbation (tangent slopes add, renormalized).
     Sum(Box<Normal>, Box<Normal>),
+    /// Phase 2 `geo.normal`: per-pixel host normal field
+    /// (`ctx.normal`). Tracks geometry; optics on it still gate
+    /// Phase 5a (Refract) / 5b (fresnel weight on geo normal).
+    GeoNormal,
 }
 
 impl Normal {
@@ -107,6 +111,7 @@ impl Normal {
                 a.hash_bits(state);
                 b.hash_bits(state);
             }
+            Normal::GeoNormal => state.write_u8(8),
         }
     }
 }
@@ -129,26 +134,45 @@ pub enum Closure {
     },
     /// Isotropic GGX specular against the environment.
     Ggx { normal: Normal, roughness: Value },
-    /// Beckmann specular (extended set, Phase 3).
+    /// Phase 4 preset (D-M10c): 3-wavelength RGB dispersion split
+    /// around a base IOR — the ex-12 pattern as one node. All params
+    /// uniform-bound (D-M10b). Lowers in Phase 5a (needs Refract).
+    Dispersion {
+        normal: Normal,
+        base_ior: Value,
+        spread_px: Value,
+    },
+    /// Phase 4 preset (D-M10c): refraction + Beer absorption + edge
+    /// darken in one node — the ex-3 pattern. All params
+    /// uniform-bound (D-M10b). Lowers in Phase 5c (needs Refract+Beer).
+    Slab {
+        normal: Normal,
+        thickness_px: Value,
+        tint_r: Value,
+        tint_g: Value,
+        tint_b: Value,
+        absorb: Value,
+    },
+    /// Beckmann specular (extended set, Phase 6).
     Beckmann { normal: Normal, roughness: Value },
-    /// Anisotropic GGX (extended set, Phase 3).
+    /// Anisotropic GGX (extended set, Phase 6).
     Anisotropic {
         normal: Normal,
         roughness_x: Value,
         roughness_y: Value,
     },
-    /// Complex-IOR metallic Fresnel (extended set, Phase 3).
+    /// Complex-IOR metallic Fresnel (extended set, Phase 6).
     Conductor {
         normal: Normal,
         kr: [Value; 3],
         ki: [Value; 3],
         roughness: Value,
     },
-    /// Charlie fiber sheen (extended set, Phase 3).
+    /// Charlie fiber sheen (extended set, Phase 6).
     Sheen { normal: Normal, roughness: Value },
-    /// Burley diffuse (extended set, Phase 3).
+    /// Burley diffuse (extended set, Phase 6).
     Burley { normal: Normal, roughness: Value },
-    /// Emissive grid (extended set, Phase 3; LDR gain until HDR lands).
+    /// Emissive grid (extended set, Phase 6; LDR gain until HDR lands).
     EmissionGrid {
         spacing_px: Value,
         width_px: Value,
@@ -162,7 +186,7 @@ pub enum Modulator {
     Color { r: Value, g: Value, b: Value },
     /// Beer–Lambert `exp(-k · path_length)` absorption.
     Beer { r: Value, g: Value, b: Value, density: Value },
-    /// Thin-film interference weight (extended set, Phase 3).
+    /// Thin-film interference weight (extended set, Phase 6).
     ThinFilm {
         thickness_nm: Value,
         film_ior: Value,
@@ -178,6 +202,10 @@ pub enum Weight {
     Fresnel { normal: Normal, ior: Value },
     /// Scalar weight (runtime-driven for hover).
     Scalar(Value),
+    /// Phase 2 `geo.*` scalar field (`thickness` / `edge` /
+    /// `position` / `curvature`): lowers to the corresponding
+    /// per-pixel host-field read (never a uniform slot).
+    GeoField(String),
 }
 
 /// One material term: closures, modulated terms, sums, mixes.
@@ -275,6 +303,32 @@ impl Closure {
                 normal.hash_bits(state);
                 roughness.hash_bits(state);
             }
+            Closure::Dispersion {
+                normal,
+                base_ior,
+                spread_px,
+            } => {
+                state.write_u8(8);
+                normal.hash_bits(state);
+                base_ior.hash_bits(state);
+                spread_px.hash_bits(state);
+            }
+            Closure::Slab {
+                normal,
+                thickness_px,
+                tint_r,
+                tint_g,
+                tint_b,
+                absorb,
+            } => {
+                state.write_u8(9);
+                normal.hash_bits(state);
+                thickness_px.hash_bits(state);
+                tint_r.hash_bits(state);
+                tint_g.hash_bits(state);
+                tint_b.hash_bits(state);
+                absorb.hash_bits(state);
+            }
             Closure::Beckmann { normal, roughness } => {
                 state.write_u8(2);
                 normal.hash_bits(state);
@@ -353,6 +407,10 @@ impl Weight {
             Weight::Scalar(v) => {
                 state.write_u8(1);
                 v.hash_bits(state);
+            }
+            Weight::GeoField(f) => {
+                state.write_u8(2);
+                state.write(f.as_bytes());
             }
         }
     }

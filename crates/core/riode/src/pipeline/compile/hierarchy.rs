@@ -445,8 +445,14 @@ pub fn compile_node_hierarchy(
                 })
                 && (has_unit || has_custom)
             {
+                // Stamped corners: the glass SDF follows the node's
+                // declared radius (same as the authored path above) —
+                // without this the host card renders square and every
+                // Custom surface on a rounded node loses its silhouette.
+                let mut host = Glass::lens(0.0);
+                host.radius = node_glass_radius;
                 Some(GlassLayer::Single(
-                    Glass::default(),
+                    host,
                     Backdrop::NONE,
                     Spectral::NONE,
                     Glow::NONE,
