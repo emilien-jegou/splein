@@ -1501,6 +1501,25 @@ impl WgpuRenderer {
             for src in sources {
                 self.custom_pipeline_for(&src);
             }
+            // G1 proof, throttled: log the source-keyed hit/build split
+            // ~1/s so the human (or RUST_LOG=debug capture) can verify a
+            // hover repaint moves hits only — same source, new uniform
+            // values, no recompile (D-M5).
+            {
+                static LAST: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+                let now_ms = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis() as u64)
+                    .unwrap_or(0);
+                let prev = LAST.swap(now_ms, std::sync::atomic::Ordering::Relaxed);
+                if now_ms.saturating_sub(prev) > 1000 {
+                    tracing::debug!(
+                        hits = self.custom_cache_hits.get(),
+                        builds = self.custom_cache_builds.get(),
+                        "riode-wgpu custom cache"
+                    );
+                }
+            }
         }
         {
             // Bind groups referenced by an open pass must outlive it, so
