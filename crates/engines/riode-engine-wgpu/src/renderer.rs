@@ -75,6 +75,14 @@ pub struct WgpuRenderer {
     /// composite writes), its single core-blurred copy, and the optics
     /// output. Surface-sized, grown on demand, dropped on resize.
     glass_pool: Vec<GlassTargets>,
+    /// Source-keyed cache of custom (material-DSL) stage pipelines
+    /// (D-M5: keyed on the generated WGSL source alone, a compile-time
+    /// constant — never on uniform values). `None` value = the source
+    /// failed naga validation / pipeline creation once; remembered so a
+    /// malformed surface drops its stage loudly instead of retrying
+    /// every frame. Grown on demand (a structurally new material compiles
+    /// its pipeline on first sight).
+    custom_pipelines: std::collections::HashMap<u64, Option<std::sync::Arc<wgpu::RenderPipeline>>>,
     /// Parent snapshot for blend-mode alpha shadows (one surface-sized
     /// slot, reused across EndLayers): copied from the parent target
     /// after the spill and before the shadow draws, so a shadow
@@ -392,6 +400,7 @@ impl WgpuRenderer {
             blur_ping: None,
             shadow_snap: None,
             glass_pool: Vec::new(),
+            custom_pipelines: std::collections::HashMap::new(),
             stale_root_layers: Vec::new(),
         }
     }
@@ -723,6 +732,183 @@ impl WgpuRenderer {
         });
         pass.set_scissor_rect(sc.0, sc.1, sc.2, sc.3);
         pass.set_pipeline(&self.pipes.glass_pipeline);
+        pass.set_bind_group(0, &bg, &[]);
+        pass.draw(0..6, 0..1);
+    }
+
+    /// Get-or-create the render pipeline for a custom (material-DSL)
+    /// stage's WGSL source, keyed by an FNV-1a hash of the source alone
+    /// (D-M5: the pipeline cache is source-keyed — a compile-time
+    /// constant — never on uniform values, so a hover repaint reuses the
+    /// same pipeline). Composes the complete module exactly like the wire
+    /// does — `EFFECT_ABI_WGSL` + the custom `apply` + the engine entry
+    /// scaffold — validates it with naga (the synchronous twin of
+    /// `riode-shader-glue`'s transpile), and returns `None` (remembered)
+    /// on any failure so a malformed surface drops its stage loudly
+    /// instead of tripping a wgpu uncaptured-error panic.
+    fn custom_pipeline_for(&mut self, source: &str) -> Option<std::sync::Arc<wgpu::RenderPipeline>> {
+        use riode::foundation::effect::shaders::{EFFECT_ABI_WGSL, ENGINE_ENTRY_WGSL};
+        let mut h: u64 = 0xcbf29ce484222325;
+        for b in source.as_bytes() {
+            h ^= *b as u64;
+            h = h.wrapping_mul(0x100000001b3);
+        }
+        if let Some(cached) = self.custom_pipelines.get(&h) {
+            return cached.clone();
+        }
+        let full = format!("{EFFECT_ABI_WGSL}\n{source}\n{ENGINE_ENTRY_WGSL}");
+        let built = Self::build_custom_pipeline(&self.gpu.device, &self.pipes, &full);
+        if let Err(reason) = &built {
+            tracing::warn!("riode-wgpu: custom stage dropped ({reason})");
+        }
+        let entry = built.ok().map(std::sync::Arc::new);
+        self.custom_pipelines.insert(h, entry.clone());
+        entry
+    }
+
+    /// Immutable cache read for the in-walk executor arm: the pre-warm
+    /// above the op loop already inserted every custom source (`Some` =
+    /// ready pipeline, `None` = failed build, warned once), so the walk
+    /// — which holds `&self.batch` — never needs `&mut self` here.
+    fn custom_pipeline_cached(
+        &self,
+        source: &str,
+    ) -> Option<std::sync::Arc<wgpu::RenderPipeline>> {
+        let mut h: u64 = 0xcbf29ce484222325;
+        for b in source.as_bytes() {
+            h ^= *b as u64;
+            h = h.wrapping_mul(0x100000001b3);
+        }
+        self.custom_pipelines.get(&h).cloned().flatten()
+    }
+
+    /// Validate + build one custom-stage pipeline from a complete WGSL
+    /// module (ABI + `apply` + entry). Returns the pipeline or a
+    /// human-readable reason, mirroring the shader-glue's error contract.
+    fn build_custom_pipeline(
+        device: &wgpu::Device,
+        pipes: &Pipelines,
+        full: &str,
+    ) -> Result<wgpu::RenderPipeline, String> {
+        // naga first: a clean, synchronous rejection reason.
+        let module = naga::front::wgsl::parse_str(full).map_err(|e| format!("wgsl parse: {e}"))?;
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::all(),
+        )
+        .validate(&module)
+        .map_err(|e| format!("wgsl validate: {e}"))?;
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("riode-wgpu-custom"),
+            source: wgpu::ShaderSource::Wgsl(full.into()),
+        });
+        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("riode-wgpu-custom-pipe-layout"),
+            bind_group_layouts: &[&pipes.custom_layout],
+            push_constant_ranges: &[],
+        });
+        Ok(device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("riode-wgpu-custom-pipeline"),
+            layout: Some(&layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: "vs_main",
+                compilation_options: Default::default(),
+                buffers: &[],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: "fs_main",
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    // The card / glass-pool targets are Rgba8Unorm
+                    // (`make_glass_targets`), so the custom stage writes
+                    // the same format the merge-under-sheet reads.
+                    format: wgpu::TextureFormat::Rgba8Unorm,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+        }))
+    }
+
+    /// One custom (material-DSL) stage pass: a fullscreen triangle over
+    /// `dst` (scissor-clipped), binding {0 sampler, 1 uniforms, 2 input,
+    /// 3 backdrop, 4 sharp} exactly as the engine entry scaffold declares
+    /// them. The scaffold seeds `ctx.color` from `input` (the card), calls
+    /// the material's `apply`, and the result lands in `dst`.
+    #[allow(clippy::too_many_arguments)]
+    fn run_custom_pass(
+        &self,
+        enc: &mut wgpu::CommandEncoder,
+        pipe: &wgpu::RenderPipeline,
+        input: &wgpu::TextureView,
+        backdrop: &wgpu::TextureView,
+        sharp: &wgpu::TextureView,
+        uniforms: &[f32],
+        dst: &wgpu::TextureView,
+        sc: (u32, u32, u32, u32),
+    ) {
+        // Uniform upload sized to the ABI's fixed `CustomUniforms`
+        // (`array<vec4<f32>, 8>` = 32 f32 = 128 bytes). wgpu enforces the
+        // buffer is at least the struct's min size, so always fill 32.
+        // Engine-side size is otherwise free (D-M7) — a generated sized
+        // struct (Phase 2+) replaces both this cap and the scaffold's
+        // fixed array together.
+        let mut padded = uniforms.to_vec();
+        padded.resize(32, 0.0);
+        let bytes: Vec<u8> = padded.iter().flat_map(|f| f.to_le_bytes()).collect();
+        let ubuf = self.gpu.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("riode-wgpu-custom-params"),
+            contents: &bytes,
+            usage: wgpu::BufferUsages::UNIFORM,
+        });
+        let bg = self.gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("riode-wgpu-custom-bg"),
+            layout: &self.pipes.custom_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::Sampler(&self.pipes.custom_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: ubuf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(input),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(backdrop),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::TextureView(sharp),
+                },
+            ],
+        });
+        let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("riode-wgpu-custom-pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: dst,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            occlusion_query_set: None,
+            timestamp_writes: None,
+        });
+        pass.set_scissor_rect(sc.0, sc.1, sc.2, sc.3);
+        pass.set_pipeline(pipe);
         pass.set_bind_group(0, &bg, &[]);
         pass.draw(0..6, 0..1);
     }
@@ -1247,6 +1433,40 @@ impl WgpuRenderer {
         } else {
             wgpu::LoadOp::Load
         };
+        // Custom (material-DSL) pipeline pre-warm: the op walk below holds
+        // both `&self.batch` and the persistent pass (which borrows
+        // `&self.gpu`) while the cache needs `&mut self`. Collect the
+        // distinct custom sources from the batch and resolve them here —
+        // before the encoder pass opens — so the executor only hits the
+        // immutable cache reader.
+        {
+            use std::collections::HashSet;
+            let mut seen: HashSet<u64> = HashSet::new();
+            let mut sources: Vec<String> = Vec::new();
+            fn fnv(s: &str) -> u64 {
+                let mut h: u64 = 0xcbf29ce484222325;
+                for b in s.as_bytes() {
+                    h ^= *b as u64;
+                    h = h.wrapping_mul(0x100000001b3);
+                }
+                h
+            }
+            for op in self.batch.ops.iter() {
+                if let Op::BeginLayer { backdrop_stages, .. } = op {
+                    for stage in backdrop_stages.iter() {
+                        if let StageGpu::Custom(c) = stage {
+                            let h = fnv(&c.wgsl);
+                            if seen.insert(h) {
+                                sources.push(c.wgsl.clone());
+                            }
+                        }
+                    }
+                }
+            }
+            for src in sources {
+                self.custom_pipeline_for(&src);
+            }
+        }
         {
             // Bind groups referenced by an open pass must outlive it, so
             // the composite materials live in `kept` — declared before the
@@ -1741,10 +1961,54 @@ impl WgpuRenderer {
                                         }
                                     }
                                 }
+                                StageGpu::Custom(c) => {
+                                    // Post-glass material surface: transform
+                                    // the lens card in place (ping when the
+                                    // card already sits in `gt.out` on a
+                                    // last stage — never src == dst in one
+                                    // pass; the finalize below copies a
+                                    // pinged card back). Skipped when no
+                                    // card exists yet (glass produced none)
+                                    // — same guard as the trailing blur.
+                                    // The pipeline was pre-resolved above
+                                    // (pre-warm over the batch); `None`
+                                    // = failed naga validation / build,
+                                    // already warned once — drop the stage.
+                                    if let (Some(cur), Some(pipe)) = (
+                                        card,
+                                        self.custom_pipeline_cached(&c.wgsl),
+                                    )
+                                    {
+                                        if let Some(v) = Self::scissor_rect(
+                                            &Some(open.region),
+                                            sw,
+                                            sh,
+                                        ) {
+                                            let dest = if last
+                                                && cur != CardLoc::GtOut
+                                            {
+                                                CardLoc::GtOut
+                                            } else {
+                                                Self::card_scratch(cur)
+                                            };
+                                            self.run_custom_pass(
+                                                &mut enc,
+                                                &pipe,
+                                                self.card_view(open.slot, cur),
+                                                self.bd_view(open.slot, bd),
+                                                &self.glass_pool[open.slot].snap.1,
+                                                &c.uniforms,
+                                                self.card_view(open.slot, dest),
+                                                v,
+                                            );
+                                            card = Some(dest);
+                                        }
+                                    }
+                                }
                                 // Blend rides the final composite
                                 // (`FilterGpu.blend` / the glass frame
-                                // header); Shadow/ClipRound/GlassGroup/
-                                // custom never reach the executor.
+                                // header); Shadow/ClipRound/GlassGroup
+                                // never reach the executor.
                                 _ => {}
                             }
                         }

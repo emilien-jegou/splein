@@ -192,3 +192,7 @@ path = "ggx/main.rs"
 [[example]]
 name = "env_reflect"
 path = "env_reflect/main.rs"
+
+[[example]]
+name = "material_lab"
+path = "material_lab/main.rs"

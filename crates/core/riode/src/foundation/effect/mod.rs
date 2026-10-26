@@ -1065,3 +1065,66 @@ impl BackdropEffect for Rim {}
 impl BackdropEffect for Fresnel {}
 impl BackdropEffect for Ggx {}
 impl BackdropEffect for EnvReflect {}
+
+/// A program-supplied custom stage as an effect — the material DSL's
+/// lowering target. Phase 0 hand-writes the WGSL (a passthrough surface
+/// for the mechanism demo); Phase 1's `view!` material form emits the
+/// same shape from the closure algebra. Backdrop-side: it reads the
+/// snapshot/backdrop like glass, so it rides `backdrop_effects`.
+///
+/// Identity (D-M5): the `EffectId` folds the WGSL source *and* the
+/// uniform values, so a value change (hover) repaints without a
+/// recompile, while the pipeline cache keys on the source alone.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CustomEffect {
+    pub shader: CustomShader,
+}
+
+impl CustomEffect {
+    pub fn new(
+        wgsl: impl Into<String>,
+        uniforms: Vec<f32>,
+        backdrop: BackdropNeed,
+    ) -> Self {
+        Self {
+            shader: CustomShader {
+                wgsl: wgsl.into(),
+                uniforms,
+                backdrop,
+            },
+        }
+    }
+}
+
+impl Effect for CustomEffect {
+    fn id(&self) -> EffectId {
+        let mut b = vec![0x30];
+        b.extend_from_slice(self.shader.wgsl.as_bytes());
+        for u in &self.shader.uniforms {
+            b.extend_from_slice(&u.to_bits().to_le_bytes());
+        }
+        hash_id(&b)
+    }
+
+    fn needs_backdrop(&self) -> bool {
+        !matches!(self.shader.backdrop, BackdropNeed::None)
+    }
+
+    fn pad(&self, _scale: f32) -> f32 {
+        // Conservative refraction reach (D-M8). Phase 0's passthrough
+        // displaces nothing; a real surface reports its own reach here
+        // so the snapshot region covers displaced samples. 0 until the
+        // DSL's IR wires one through.
+        0.0
+    }
+
+    fn shader(&self) -> EffectShader {
+        EffectShader::Custom(self.shader.clone())
+    }
+
+    fn clone_box(&self) -> Box<dyn Effect> {
+        Box::new(self.clone())
+    }
+}
+
+impl BackdropEffect for CustomEffect {}

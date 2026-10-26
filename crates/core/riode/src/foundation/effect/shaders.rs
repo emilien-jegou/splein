@@ -112,3 +112,50 @@ pub const BLEND_COMPOSITE_COMBINED_WGSL: &str = concat!(
     "\n",
     include_str!("shaders/composite_blend.wgsl"),
 );
+
+/// Engine-side entry scaffold for custom (material-DSL) stages — the
+/// twin of the plugin glue's `GLUE_ENTRY` (`plugins/riode-shader-glue/
+/// src/lib.rs`). Both compose the *same* complete module the wire
+/// carries: `EFFECT_ABI_WGSL` + the custom `apply` + this entry. The
+/// glue's runs under naga→GLSL on the compositor plugin; this one
+/// compiles directly on wgpu. **Keep the two in step** (D-M7):
+///
+/// Same by contract — binding numbering (0 `effect_sampler` from the
+/// ABI, 1 uniforms, 2 input/card, 3 backdrop, 4 sharp), the
+/// identity-`ctx` prelude, sampling the input into `ctx.color`, the
+/// `apply(ctx, backdrop, sharp, u)` call, returning `out_ctx.color`.
+///
+/// Deliberate divergences — (1) this entry carries its own `vs_main`
+/// (the plugin's GlassOptics supplies the vertex stage; wgpu needs one
+/// in-module), and (2) every sample uses `textureSampleLevel(_, 0.0)`
+/// rather than `textureSample`: `apply` may contain early returns, which
+/// put `textureSample` in non-uniform control flow that naga rejects
+/// (`glass/core.wgsl` decision 4).
+pub const ENGINE_ENTRY_WGSL: &str = r#"
+@group(0) @binding(1) var<uniform> engine_u: CustomUniforms;
+@group(0) @binding(2) var engine_input: texture_2d<f32>;
+@group(0) @binding(3) var engine_backdrop: texture_2d<f32>;
+@group(0) @binding(4) var engine_sharp: texture_2d<f32>;
+
+@vertex
+fn vs_main(@builtin(vertex_index) ix: u32) -> @builtin(position) vec4<f32> {
+    var p = vec2<f32>(-1.0, 1.0);
+    switch ix {
+        case 1u { p = vec2<f32>(-1.0, -1.0); }
+        case 2u, 4u { p = vec2<f32>(1.0, -1.0); }
+        case 5u { p = vec2<f32>(1.0, 1.0); }
+        default {}
+    }
+    return vec4<f32>(p, 0.0, 1.0);
+}
+
+@fragment
+fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
+    let dims = vec2<f32>(textureDimensions(engine_input));
+    let uv = clamp(pos.xy / dims, vec2<f32>(0.0), vec2<f32>(1.0));
+    var ctx = effect_ctx_identity(pos.xy);
+    ctx.color = textureSampleLevel(engine_input, effect_sampler, uv, 0.0);
+    let out_ctx = apply(ctx, engine_backdrop, engine_sharp, engine_u);
+    return out_ctx.color;
+}
+"#;

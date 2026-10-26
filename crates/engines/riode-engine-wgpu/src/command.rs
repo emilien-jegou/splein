@@ -271,6 +271,12 @@ pub enum StageGpu {
     /// `0.0` = `Normal`). Applied at the final composite, or
     /// materialized into scratch when later stages follow.
     Blend { mode: f32 },
+    /// Material-DSL surface: a program-supplied `apply` module (the
+    /// engine twin of the plugin's `runStage`). Runs post-glass on the
+    /// card, reading {card, backdrop, sharp} and writing a shaded card.
+    /// Carries the source + packed uniforms + backdrop need; the
+    /// pipeline is looked up (source-keyed) and cached on the renderer.
+    Custom(riode::foundation::effect::CustomShader),
 }
 
 /// Emission context: batched verts + ordered ops.
@@ -1227,6 +1233,13 @@ impl SceneSink for WgpuSink<'_> {
                     // pass's dispatch list, in author order.
                     EffectShader::Builtin(s) if !s.glass_stage_ids().is_empty() => {
                         stage_ids.extend_from_slice(s.glass_stage_ids());
+                    }
+                    // Material-DSL surface: a post-glass custom stage.
+                    // It rides the walk after the (auto-stamped or
+                    // authored) glass host, which the loop above already
+                    // pushed as `StageGpu::Glass`.
+                    EffectShader::Custom(c) => {
+                        backdrop_stages.push(StageGpu::Custom(c));
                     }
                     other => {
                         static WARNED_BD: std::sync::atomic::AtomicBool =

@@ -426,15 +426,24 @@ pub fn compile_node_hierarchy(
             // Units without a lens: stamp a default material so the
             // fold has one Glass item to ride — the snapshot, the pack
             // and the islands all key off it. Group members never
-            // self-render (their units stay inert).
+            // self-render (their units stay inert). A Custom-bearing
+            // stack (a material-DSL surface) likewise gets the neutral
+            // geometry host (D-M4): the surface's custom stage shades
+            // the card the host produces, so the host must exist and
+            // run first.
+            let has_unit = stack.0.iter().any(|e| {
+                matches!(e.shader(), EffectShader::Builtin(s) if !s.glass_stage_ids().is_empty())
+            });
+            let has_custom = stack
+                .0
+                .iter()
+                .any(|e| matches!(e.shader(), EffectShader::Custom(_)));
             let layer_glass = if layer_glass.is_none()
                 && !(enclosing.is_some() && !is_group_root)
                 && !stack.0.iter().any(|e| {
                     matches!(e.shader(), EffectShader::Builtin(BuiltinStage::Glass(_)))
                 })
-                && stack.0.iter().any(|e| {
-                    matches!(e.shader(), EffectShader::Builtin(s) if !s.glass_stage_ids().is_empty())
-                })
+                && (has_unit || has_custom)
             {
                 Some(GlassLayer::Single(
                     Glass::default(),
@@ -468,6 +477,13 @@ pub fn compile_node_hierarchy(
                     // Group roots carry the marker, not a lens: the
                     // merged group takes the marker's position.
                     stack.0[mpos] = fx.into_effect();
+                } else if has_custom {
+                    // Auto-stamped neutral host for a custom-only stack:
+                    // the custom stage is a real pass that must run AFTER
+                    // the host produces the card, so insert at the front
+                    // (a unit-item stack instead folds its units INTO the
+                    // glass pass, so append-order there is inert).
+                    stack.0.insert(0, fx.into_effect());
                 } else {
                     stack.push(fx);
                 }

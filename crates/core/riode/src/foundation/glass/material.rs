@@ -246,6 +246,27 @@ impl Glass {
         )
     }
 
+    /// Neutral geometry host for a material card (D-M4): silhouette,
+    /// coverage AA, card blend and the merge-under-sheet composite, with
+    /// every shading knob off — flat lens (`strength` scales a zero base
+    /// bend), neutral backdrop/spectral/glow/refraction. The host
+    /// contributes *no shading of its own*: the surface's custom stage
+    /// (the material DSL's generated `apply`) does all of it. Auto-stamped
+    /// in front of a Custom-bearing stack that has no authored glass, so
+    /// "glass stays ONE effect and ONE pass" (Phase I) holds and the
+    /// missing non-glass backdrop-filter composite stays untouched.
+    pub fn geometry() -> crate::foundation::effect::GlassEffect {
+        use crate::foundation::effect::GlassEffect;
+        use super::{backdrop::Backdrop, glow::Glow, refraction::Refraction, spectral::Spectral};
+        GlassEffect::single(
+            Self::lens(0.0),
+            Backdrop::NONE,
+            Spectral::NONE,
+            Glow::NONE,
+            Refraction::NONE,
+        )
+    }
+
     /// A copy that reacts to touch when `enabled` (stretch, glow, bounce).
     pub const fn interactive(mut self, enabled: bool) -> Self {
         self.interactive = Some(enabled);

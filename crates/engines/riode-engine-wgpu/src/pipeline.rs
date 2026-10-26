@@ -393,6 +393,13 @@ pub struct Pipelines {
     pub glass_layout: wgpu::BindGroupLayout,
     pub glass_pipeline: wgpu::RenderPipeline,
     pub glass_sampler: wgpu::Sampler,
+    /// Shared bind-group layout + sampler for custom (material-DSL)
+    /// stages. Every custom stage uses the same binding numbering (the
+    /// engine entry scaffold fixes it: 0 sampler, 1 uniforms, 2 input,
+    /// 3 backdrop, 4 sharp), so one layout serves them all; the
+    /// *pipeline* is per-source and cached on the renderer.
+    pub custom_layout: wgpu::BindGroupLayout,
+    pub custom_sampler: wgpu::Sampler,
 }
 
 fn ortho_bind_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
@@ -993,6 +1000,70 @@ pub fn create_pipelines(
         ..Default::default()
     });
 
+    // Custom (material-DSL) stage layout: bindings fixed by the engine
+    // entry scaffold (`ENGINE_ENTRY_WGSL`) — 0 sampler (effect_sampler),
+    // 1 uniforms, 2 input/card, 3 backdrop, 4 sharp. One layout for every
+    // custom stage; the pipeline itself is per-source (renderer cache).
+    let custom_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("riode-wgpu-custom-layout"),
+        entries: &[
+            wgpu::BindGroupLayoutEntry {
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                binding: 0,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                binding: 1,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                binding: 2,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                binding: 3,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                binding: 4,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+        ],
+    });
+    let custom_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+        label: Some("riode-wgpu-custom-sampler"),
+        mag_filter: wgpu::FilterMode::Linear,
+        min_filter: wgpu::FilterMode::Linear,
+        address_mode_u: wgpu::AddressMode::ClampToEdge,
+        address_mode_v: wgpu::AddressMode::ClampToEdge,
+        ..Default::default()
+    });
+
     Pipelines {
         rect_pipeline,
         rect_replace_pipeline,
@@ -1014,5 +1085,7 @@ pub fn create_pipelines(
         glass_layout,
         glass_pipeline,
         glass_sampler,
+        custom_layout,
+        custom_sampler,
     }
 }
