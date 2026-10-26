@@ -183,11 +183,24 @@ fn effect_list_value(key: &str, attr: &KeyedAttribute) -> Option<TokenStream2> {
 }
 
 /// The final value tokens for an attribute: method-reference sugar for `on:` events
-/// with a bare `sig.method`, bracket-list sugar for the effect-stack props,
-/// otherwise the normal (possibly slotted) value.
+/// with a bare `sig.method`, the material-block interpreter for `backdrop={...}`
+/// (D-M6: `let`-bindings + `.into_surface()` terminal → static WGSL + filler;
+/// falls through to normal semantics when the shape is not a material block),
+/// bracket-list sugar for the effect-stack props, otherwise the normal
+/// (possibly slotted) value.
 fn attr_value(key: &str, attr: &KeyedAttribute, flow: &FlowTables) -> TokenStream2 {
     if let Some(sugar) = event_method_ref(key, attr) {
         return sugar;
+    }
+    if key == "backdrop_effects" {
+        if let Some(expr) = attr_expr(attr) {
+            if let Some(material) = crate::material::material_block_value(&expr) {
+                match material {
+                    Ok(tokens) => return tokens,
+                    Err(e) => return e.to_compile_error(),
+                }
+            }
+        }
     }
     if let Some(list) = effect_list_value(key, attr) {
         return slot_literal_value(list, flow);

@@ -26,7 +26,7 @@ use riode::prelude::*;
 /// Window chrome shared by the release driver (`main.rs`) and the hot
 /// entry (`hot.rs`): declared once here, referenced by both.
 pub const HOT_TITLE: &str = "Material lab (Phase 0)";
-pub const HOT_WIDTH: u32 = 1100;
+pub const HOT_WIDTH: u32 = 1480;
 pub const HOT_HEIGHT: u32 = 520;
 pub const HOT_BG: u32 = 0x2A3F55;
 
@@ -97,6 +97,40 @@ fn surface(wgsl: &'static str, uniforms: Vec<f32>) -> EffectStack {
     ])
 }
 
+/// Hover-reactive DSL card (G1): the glossy coat's environment gain is a
+/// value-level `if` on hover state — one uniform slot. Hovering rebuilds
+/// the component body (new `EffectStack` with new uniform *values*), but
+/// the generated WGSL source is byte-identical, so the pipeline cache
+/// hits and no pipeline rebuilds (D-M5/D-M6). The human checks: hover
+/// brightens the sheen, release dims it, with no flicker/recompile hitch.
+#[component]
+fn HoverCard(label: &'static str, hovered: Signal<bool>) -> impl IntoElement {
+    let hovered_for_enter = hovered.clone();
+    let hovered_for_leave = hovered.clone();
+    view! {
+        <Group direction="vertical" gap={8.0} alignment="center">
+            <Text size={13.0} weight={600u16} color={LABEL_COLOR}>{label}</Text>
+            <Group
+                width={280.0}
+                height={220.0}
+                radius={24.0}
+                backdrop_effects={
+                    let gloss = if hovered.get() { 0.9 } else { 0.25 };
+                    let n = Normal::flat();
+                    let coat = Microfacet::ggx(n, 0.15) * Sky::gain(gloss);
+                    (Color::rgb(0.55, 0.6, 0.7) * coat).into_surface()
+                }
+                alignment="center"
+                distribution="center"
+                on:pointer-enter={{ move |_| hovered_for_enter.set(true) }}
+                on:pointer-leave={{ move |_| hovered_for_leave.set(false) }}
+            >
+                <Text size={48.0} weight={700u16} color={Color::hex(INK_COLOR)}>{"Aa"}</Text>
+            </Group>
+        </Group>
+    }
+}
+
 /// Backdrop food: a saturated gradient field so refraction/host edges
 /// would show. Y-invariant stripes keep rows comparable.
 fn stripes() -> Vec<Element> {
@@ -119,6 +153,7 @@ fn stripes() -> Vec<Element> {
 
 #[component]
 pub fn Page() -> impl IntoElement {
+    let hovered = use_signal(false);
     view! {
         <Group
             direction="vertical"
@@ -142,6 +177,19 @@ pub fn Page() -> impl IntoElement {
                     <Card
                         label="TINT (red lift)"
                         backdrop_effects={surface(TINT_WGSL, vec![0.15])}
+                    />
+                    <Card
+                        label="DSL (plaque)"
+                        backdrop_effects={
+                            let n = Normal::flat();
+                            let lobe = Microfacet::ggx(n, 0.35);
+                            let tinted = Color::rgb(1.0, 0.25, 0.2) * lobe;
+                            (tinted * Sky::gain(1.0)).into_surface()
+                        }
+                    />
+                    <HoverCard
+                        label="DSL (hover sheen)"
+                        hovered={hovered}
                     />
                 </Group>
             </Group>
