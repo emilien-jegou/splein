@@ -109,6 +109,19 @@ pub struct Glass {
     /// y down, z out); normalized in the setter. `None` = the shader's
     /// default key light.
     pub ggx_light_dir: Option<[f32; 3]>,
+    /// EnvReflect mirror gain (`env_reflect.wgsl`, stage id 16;
+    /// `None`/zero = the stage no-ops).
+    pub env_gain: Option<f32>,
+    /// EnvReflect sky strength (the flat-face colour scale;
+    /// `None`/zero = shader default grey).
+    pub env_sky: Option<f32>,
+    /// EnvReflect mirror travel cap in logical px (`None`/zero =
+    /// shader default 160).
+    pub env_reach: Option<f32>,
+    /// EnvReflect sky horizon lift (`None`/zero = shader default 0.6).
+    pub env_horizon: Option<f32>,
+    /// EnvReflect sky zenith gain (`None`/zero = shader default 1.2).
+    pub env_zenith: Option<f32>,
     // --- Reference-geometry knobs ------------------------------------
     // Every one of these used to ride a fitted bank behind a variant
     // flag; now each is spelled explicitly (or left neutral) and
@@ -170,6 +183,11 @@ impl Glass {
             ggx_roughness: None,
             ggx_gain: None,
             ggx_light_dir: None,
+            env_gain: None,
+            env_sky: None,
+            env_reach: None,
+            env_horizon: None,
+            env_zenith: None,
             lens_decay: None,
             lens_size_ref: None,
             lens_edge: None,
@@ -299,6 +317,23 @@ impl Glass {
     /// Fresnel exponent (absolute; shader default 5).
     pub const fn fresnel_power(mut self, p: f32) -> Self { self.fresnel_power = Some(p.max(0.0)); self }
 
+    /// Environment reflection (`env_reflect.wgsl`): `env_reflect(gain)`
+    /// blends the backdrop mirror + sky by Fresnel; off (no-op) until
+    /// called.
+    pub const fn env_reflect(mut self, gain: f32) -> Self { self.env_gain = Some(gain.max(0.0)); self }
+
+    /// EnvReflect sky strength (absolute; shader default grey).
+    pub const fn env_sky(mut self, v: f32) -> Self { self.env_sky = Some(v.max(0.0)); self }
+
+    /// EnvReflect mirror travel cap in logical px (absolute; 0 disables).
+    pub const fn env_reach(mut self, v: f32) -> Self { self.env_reach = Some(v.max(0.0)); self }
+
+    /// EnvReflect sky horizon lift (absolute).
+    pub const fn env_horizon(mut self, v: f32) -> Self { self.env_horizon = Some(v.max(0.0)); self }
+
+    /// EnvReflect sky zenith gain (absolute).
+    pub const fn env_zenith(mut self, v: f32) -> Self { self.env_zenith = Some(v.max(0.0)); self }
+
     /// GGX specular glint (`ggx.wgsl`): `ggx(gain)` lights the bevel
     /// band with a microfacet lobe; off (no-op) until called.
     pub const fn ggx(mut self, gain: f32) -> Self { self.ggx_gain = Some(gain.max(0.0)); self }
@@ -398,6 +433,21 @@ impl Glass {
         }
         if let Some(x) = self.ggx_light_dir {
             v.ggx_light = x;
+        }
+        if let Some(x) = self.env_gain {
+            v.env_gain = x.max(0.0);
+        }
+        if let Some(x) = self.env_sky {
+            v.env_sky = x.max(0.0);
+        }
+        if let Some(x) = self.env_reach {
+            v.env_reach = x.max(0.0);
+        }
+        if let Some(x) = self.env_horizon {
+            v.env_horizon = x.max(0.0);
+        }
+        if let Some(x) = self.env_zenith {
+            v.env_zenith = x.max(0.0);
         }
         if let Some(x) = self.lens_edge_decay {
             v.lens_edge_decay = x.max(0.0);

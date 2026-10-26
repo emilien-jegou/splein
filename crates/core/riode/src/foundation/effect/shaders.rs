@@ -89,6 +89,9 @@ pub const GLASS_COMBINED_WGSL: &str = concat!(
     // the bevel band.
     include_str!("shaders/glass/ggx.wgsl"),
     "\n",
+    // Tier D — EnvReflect (A10): backdrop mirror + sky, Fresnel-weighted.
+    include_str!("shaders/glass/env_reflect.wgsl"),
+    "\n",
     // Tier D — Press (08.7): press lift + touch Gaussian.
     include_str!("shaders/glass/press.wgsl"),
     "\n",

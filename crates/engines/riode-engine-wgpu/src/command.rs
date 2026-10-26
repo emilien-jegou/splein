@@ -1406,6 +1406,11 @@ impl SceneSink for WgpuSink<'_> {
                 shape.ggx_roughness = g.ggx_roughness;
                 shape.ggx_gain = g.ggx_gain;
                 shape.ggx_light_dir = g.ggx_light_dir;
+                shape.env_gain = g.env_gain;
+                shape.env_sky = g.env_sky;
+                shape.env_reach = g.env_reach;
+                shape.env_horizon = g.env_horizon;
+                shape.env_zenith = g.env_zenith;
                 let frame = GlassFrameUniforms {
                     shapes: std::slice::from_ref(&shape),
                     device_pixel_ratio: sc,
@@ -1542,6 +1547,11 @@ impl SceneSink for WgpuSink<'_> {
                     shape.ggx_roughness = m.glass.ggx_roughness;
                     shape.ggx_gain = m.glass.ggx_gain;
                     shape.ggx_light_dir = m.glass.ggx_light_dir;
+                    shape.env_gain = m.glass.env_gain;
+                    shape.env_sky = m.glass.env_sky;
+                    shape.env_reach = m.glass.env_reach;
+                    shape.env_horizon = m.glass.env_horizon;
+                    shape.env_zenith = m.glass.env_zenith;
                     shapes.push(shape);
                 }
                 // Union merge (Phase 5.3): same-`union_id` members draw as

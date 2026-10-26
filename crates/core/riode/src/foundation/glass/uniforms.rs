@@ -60,17 +60,22 @@ pub const K_GLOW_VEC4S: usize = 14;
 pub const K_GLASS_WIRE_FLOATS: usize = K_GLOW_AT + 4 * K_GLOW_VEC4S;
 
 /// Stage list (wgpu-only, appended after the glow tail): count in the
-/// first float, then up to 15 author-ordered glass-stage ids (`fs_main`'s
+/// first float, then up to 16 author-ordered glass-stage ids (`fs_main`'s
 /// dispatch), pad to the vec4 boundary. Count 0 = the canonical chain.
-pub const K_STAGES_FLOATS: usize = 16;
+pub const K_STAGES_FLOATS: usize = 20;
 
 /// GGX knobs (wgpu-only, appended after the stage list): roughness,
 /// gain, light direction xyz — 2 vec4s, 5 used. Not in the v5 wire.
 pub const K_GGX_FLOATS: usize = 8;
 
+/// EnvReflect knobs (wgpu-only, appended after the GGX tail): gain, sky
+/// strength, mirror travel cap, sky horizon lift, sky zenith gain — 2
+/// vec4s, 5 used. Not in the v5 wire.
+pub const K_ENV_FLOATS: usize = 8;
+
 /// Number of user floats after `uSize`: the packed buffer length in `f32`.
 pub const K_GLASS_UNIFORM_FLOATS: usize =
-    K_GLASS_WIRE_FLOATS + K_STAGES_FLOATS + K_GGX_FLOATS;
+    K_GLASS_WIRE_FLOATS + K_STAGES_FLOATS + K_GGX_FLOATS + K_ENV_FLOATS;
 
 /// Largest usable `postBlurShare` (the composed blur keeps `√0.1` of σ).
 pub const K_MAX_POST_BLUR_SHARE: f32 = 0.9;
@@ -183,6 +188,14 @@ pub struct GlassShapeUniform {
     pub ggx_roughness: Option<f32>,
     pub ggx_gain: Option<f32>,
     pub ggx_light_dir: Option<[f32; 3]>,
+    /// EnvReflect knobs (`env_reflect.wgsl`, stage 16): mirror gain,
+    /// sky strength, travel cap, horizon lift, zenith gain. `None` =
+    /// shader defaults (gain 0 = no-op).
+    pub env_gain: Option<f32>,
+    pub env_sky: Option<f32>,
+    pub env_reach: Option<f32>,
+    pub env_horizon: Option<f32>,
+    pub env_zenith: Option<f32>,
 }
 
 impl GlassShapeUniform {
@@ -246,6 +259,11 @@ impl GlassShapeUniform {
             ggx_roughness: None,
             ggx_gain: None,
             ggx_light_dir: None,
+            env_gain: None,
+            env_sky: None,
+            env_reach: None,
+            env_horizon: None,
+            env_zenith: None,
         }
     }
     /// Packed constants with this shape's explicit knobs applied.
@@ -343,6 +361,11 @@ impl GlassShapeUniform {
         if let Some(x) = self.ggx_roughness { v.ggx_roughness = x.clamp(0.001, 1.0); }
         if let Some(x) = self.ggx_gain { v.ggx_gain = x.max(0.0); }
         if let Some(x) = self.ggx_light_dir { v.ggx_light = x; }
+        if let Some(x) = self.env_gain { v.env_gain = x.max(0.0); }
+        if let Some(x) = self.env_sky { v.env_sky = x.max(0.0); }
+        if let Some(x) = self.env_reach { v.env_reach = x.max(0.0); }
+        if let Some(x) = self.env_horizon { v.env_horizon = x.max(0.0); }
+        if let Some(x) = self.env_zenith { v.env_zenith = x.max(0.0); }
         v
     }
 }
@@ -544,6 +567,11 @@ pub fn merge_unions(shapes: &[GlassShapeUniform]) -> Vec<GlassShapeUniform> {
                     ggx_roughness: prev.ggx_roughness.or(s.ggx_roughness),
                     ggx_gain: prev.ggx_gain.or(s.ggx_gain),
                     ggx_light_dir: prev.ggx_light_dir.or(s.ggx_light_dir),
+                    env_gain: prev.env_gain.or(s.env_gain),
+                    env_sky: prev.env_sky.or(s.env_sky),
+                    env_reach: prev.env_reach.or(s.env_reach),
+                    env_horizon: prev.env_horizon.or(s.env_horizon),
+                    env_zenith: prev.env_zenith.or(s.env_zenith),
                     glow_strength: prev.glow_strength.or(s.glow_strength),
                     press_lift: prev.press_lift.or(s.press_lift),
                     dim: prev.dim.or(s.dim),
@@ -812,7 +840,7 @@ pub fn pack_glass_uniforms(u: &GlassFrameUniforms<'_>) -> Vec<f32> {
     // stops at `K_GLASS_WIRE_FLOATS`): count, then the author-ordered
     // glass-stage ids in stack order (`fs_main` dispatch). Count 0 is
     // the canonical chain, byte-identical to a stack with no units.
-    debug_assert!(u.stages.len() <= 15, "at most 15 glass-stage ids");
+    debug_assert!(u.stages.len() <= 16, "at most 16 glass-stage ids");
     let d = K_GLASS_WIRE_FLOATS;
     f[d] = u.stages.len() as f32;
     for (i, id) in u.stages.iter().enumerate() {
@@ -830,6 +858,19 @@ pub fn pack_glass_uniforms(u: &GlassFrameUniforms<'_>) -> Vec<f32> {
         f[d + 2] = v.ggx_light[0];
         f[d + 3] = v.ggx_light[1];
         f[d + 4] = v.ggx_light[2];
+    }
+    // EnvReflect knobs (wgpu-only, appended after the GGX tail): x gain,
+    // y sky strength, z mirror travel cap, w sky horizon lift, next
+    // vec4's x = sky zenith gain. Same single-bank discipline; gain-0
+    // keeps the stage a no-op.
+    let d = K_GLASS_WIRE_FLOATS + K_STAGES_FLOATS + K_GGX_FLOATS;
+    if let Some(first) = shapes.first() {
+        let v = first.effective();
+        f[d] = v.env_gain;
+        f[d + 1] = v.env_sky;
+        f[d + 2] = v.env_reach;
+        f[d + 3] = v.env_horizon;
+        f[d + 4] = v.env_zenith;
     }
     f
 }
@@ -1327,8 +1368,8 @@ mod override_tests {
         assert_eq!(packed[d + 2], 5.0);
         assert_eq!(packed[d + 3], 8.0);
         assert_eq!(packed[d + 4], 0.0, "rest of the first vec4 pads to zero");
-        // Wire frozen at the glow tail: the stage + GGX tails must not
-        // ride it (both wgpu-only, appended after the frozen v5 prefix).
+        // Wire frozen at the glow tail: the stage + GGX + env tails must
+        // not ride it (all wgpu-only, appended after the frozen v5 prefix).
         assert_eq!(
             K_GLASS_WIRE_FLOATS,
             K_GLOW_AT + 4 * K_GLOW_VEC4S,
@@ -1336,8 +1377,8 @@ mod override_tests {
         );
         assert_eq!(
             K_GLASS_UNIFORM_FLOATS,
-            K_GLASS_WIRE_FLOATS + K_STAGES_FLOATS + K_GGX_FLOATS,
-            "uniform stream is wire prefix + stage tail + GGX tail"
+            K_GLASS_WIRE_FLOATS + K_STAGES_FLOATS + K_GGX_FLOATS + K_ENV_FLOATS,
+            "uniform stream is wire prefix + stage tail + GGX tail + env tail"
         );
         assert_eq!(
             GLASS_WIRE_PACKED_FLOATS,
@@ -1401,7 +1442,7 @@ mod override_tests {
         // The wire's last float is the glow tail's final slot, not a count.
         assert_eq!(
             floats.len(),
-            K_GLASS_UNIFORM_FLOATS - K_STAGES_FLOATS - K_GGX_FLOATS
+            K_GLASS_UNIFORM_FLOATS - K_STAGES_FLOATS - K_GGX_FLOATS - K_ENV_FLOATS
         );
         // The floats before the stage tail belong to the glow-tail region;
         // with glow inactive it packs zeros (inactive lanes keep zeros).
@@ -1430,6 +1471,7 @@ mod override_tests {
         assert_eq!(BuiltinStage::Press.glass_stage_ids(), &[13]);
         assert_eq!(BuiltinStage::Fresnel.glass_stage_ids(), &[14]);
         assert_eq!(BuiltinStage::Ggx.glass_stage_ids(), &[15]);
+        assert_eq!(BuiltinStage::EnvReflect.glass_stage_ids(), &[16]);
         assert!(BuiltinStage::Blend { mode: crate::foundation::BlendMode::Normal }
             .glass_stage_ids()
             .is_empty());

@@ -129,6 +129,24 @@ pub struct GlassBank {
     /// y down, z out of the screen); normalized in the stage. Zero
     /// length = the shader's default key light.
     pub ggx_light: [f32; 3],
+    /// EnvReflect mirror gain (`env_reflect.wgsl`, stage 16). 0 = off
+    /// (the stage no-ops) — the conservative default that keeps every
+    /// preset unchanged. Rides the appended wgpu-only env tail, not the
+    /// frozen v5 wire.
+    pub env_gain: f32,
+    /// EnvReflect sky strength (the flat-face lift scale; shader
+    /// default 0.6-ish grey when zero — pass an explicit sky to author
+    /// it). Rides the env tail.
+    pub env_sky: f32,
+    /// EnvReflect mirror travel cap in device px (0 = the shader's
+    /// reference 160). Rides the env tail.
+    pub env_reach: f32,
+    /// EnvReflect sky horizon lift (the `+0.6` floor of the reference's
+    /// `0.6 + 1.2·R.z`; 0 = shader default). Rides the env tail.
+    pub env_horizon: f32,
+    /// EnvReflect sky zenith gain (the `1.2` slope of the reference's
+    /// `0.6 + 1.2·R.z`; 0 = shader default). Rides the env tail.
+    pub env_zenith: f32,
     /// Depth inside the outline where the edge lens ends (displacement 0).
     pub lens_band: f32,
     /// Edge displacement as a multiple of `lensBand`; negative samples
@@ -217,6 +235,11 @@ impl GlassBank {
         ggx_roughness: 0.0,
         ggx_gain: 0.0,
         ggx_light: [0.0; 3],
+        env_gain: 0.0,
+        env_sky: 0.0,
+        env_reach: 0.0,
+        env_horizon: 0.0,
+        env_zenith: 0.0,
         lens_band: 0.0,
         lens_strength: 0.0,
         lens_decay: 0.0,

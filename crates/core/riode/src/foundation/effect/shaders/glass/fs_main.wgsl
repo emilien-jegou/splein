@@ -17,7 +17,8 @@
 // keeps the full ambient chroma), then Tier D lighting (`Glow`, `Rim`,
 // `Fresnel`), then
 // `cardBlend`. Tier E composites outside the loop: the card blend runs
-// on the finished colour.
+// on the finished colour. (Tier D lighting: `Glow`, `Rim`, `Fresnel`,
+// `GGX`, `EnvReflect` — see the canonical branch.)
 //
 // Explicit fold: a stack that authored unit items packs its stage list
 // into `u_stages` (count > 0) and this orchestrator runs exactly those
@@ -27,8 +28,8 @@
 // branch below, byte-identical to the pre-fold shader.
 
 // Stage id at 0-based index `i` of the explicit list packed in
-// `u_stages` (count in [0].x, then ids across the four vec4s — ids
-// 1..15, so the list carries up to 15 author-ordered stages).
+// `u_stages` (count in [0].x, then ids across the five vec4s — ids
+// 1..16, so the list carries up to 16 author-ordered stages).
 fn stageIdAt(i: i32) -> i32 {
     let k = i + 1;
     if (k <= 3) {
@@ -51,8 +52,12 @@ fn stageIdAt(i: i32) -> i32 {
         return i32(u.u_stages[3].y);
     } else if (k == 14) {
         return i32(u.u_stages[3].z);
+    } else if (k == 15) {
+        return i32(u.u_stages[3].w);
+    } else if (k == 16) {
+        return i32(u.u_stages[4].x);
     }
-    return i32(u.u_stages[3].w);
+    return i32(u.u_stages[4].y);
 }
 
 @fragment
@@ -103,6 +108,7 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
         g = stageRim(g);
         g = stageFresnel(g);
         g = stageGGX(g);
+        g = stageEnvReflect(g);
         g = stagePress(g);
     } else {
         // Explicit fold: the author's stage list, in author order.
@@ -123,6 +129,7 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
                 case 13 { g = stagePress(g); }
                 case 14 { g = stageFresnel(g); }
                 case 15 { g = stageGGX(g); }
+                case 16 { g = stageEnvReflect(g); }
                 default {}
             }
         }

@@ -188,3 +188,7 @@ path = "fresnel/main.rs"
 [[example]]
 name = "ggx"
 path = "ggx/main.rs"
+
+[[example]]
+name = "env_reflect"
+path = "env_reflect/main.rs"

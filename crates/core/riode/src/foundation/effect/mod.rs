@@ -67,6 +67,7 @@ pub enum BuiltinStage {
     Press,
     Fresnel,
     Ggx,
+    EnvReflect,
     LightSpill,
     CardBlend { mode_id: u32 },
     /// Group-root marker: merges descendant members' glass into one
@@ -97,6 +98,7 @@ impl BuiltinStage {
             BuiltinStage::Press => &[13],
             BuiltinStage::Fresnel => &[14],
             BuiltinStage::Ggx => &[15],
+            BuiltinStage::EnvReflect => &[16],
             BuiltinStage::FillDimTint => &[6, 7, 9],
             _ => &[],
         }
@@ -1007,6 +1009,33 @@ impl Effect for Ggx {
     }
 }
 
+/// Environment reflection (`stageEnvReflect`) — the backdrop mirror on
+/// the steep bevel plus the sky lift on the flat face, blended by
+/// Fresnel off `n3` (the blend darkens the transmitted image where the
+/// mirror takes over — what separates this from every additive fake).
+/// Knobs ride the appended env tail (`env_reflect` + `env_sky` on
+/// `Glass`); the material carries them, the item is the stack position.
+#[derive(Clone, Debug, PartialEq)]
+pub struct EnvReflect();
+
+impl Effect for EnvReflect {
+    fn id(&self) -> EffectId {
+        debug_id(0x2D, self)
+    }
+    fn needs_backdrop(&self) -> bool {
+        false
+    }
+    fn pad(&self, _scale: f32) -> f32 {
+        0.0
+    }
+    fn shader(&self) -> EffectShader {
+        EffectShader::Builtin(BuiltinStage::EnvReflect)
+    }
+    fn clone_box(&self) -> Box<dyn Effect> {
+        Box::new(self.clone())
+    }
+}
+
 // Vocabulary impls: what may be authored in `layer_effects=[...]` (the
 // sheet) versus `backdrop_effects=[...]` (the sampled backdrop + lens).
 // `Glass` is backdrop-only: it refracts the backdrop, so it has no
@@ -1035,3 +1064,4 @@ impl BackdropEffect for GlowEffect {}
 impl BackdropEffect for Rim {}
 impl BackdropEffect for Fresnel {}
 impl BackdropEffect for Ggx {}
+impl BackdropEffect for EnvReflect {}
