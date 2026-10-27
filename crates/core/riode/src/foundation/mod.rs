@@ -92,9 +92,11 @@ pub use light::*;
 pub use literal::*;
 pub use material::{
     Absorb, Absorption, Bump, Closure, ComplexIor, Conductor, Curvature, Density, Diffuse,
-    Dispersion, Emission, Env, Geo, GeoField, GeoFn, Ior, Intensity, Lens, MaterialExpr, Microfacet,
-    Modulator, Normal, Offset, RadiusPx, Roughness, Scale, Sheen, Sky, Slab, Spacing, Surface,
-    Thickness, ThinFilm, Transmission, Value, Weight, Width, fresnel, mix, Gain, Spread,
+    Dispersion, Emission, EmissionBuilder, Env, Field, Fresnel, Gain, Geo, GeoField, GeoFn,
+    Interface, InterfaceBuilder, Ior, Intensity, Lens, Light, Lights, MaterialExpr, Microfacet, Modulator,
+    Normal, Offset, RadiusPx, Roughness, Scale, Sheen, Sky, Slab, Spacing, Specular,
+    SpecularBuilder, SpecularDist, Surface, Thickness, ThinFilm, Transmit, TransmitBuilder,
+    Transmission, Value, Weight, Width, fresnel, mix, Spread,
 };
 pub use positioning::*;
 pub use presence::*;

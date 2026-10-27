@@ -74,6 +74,14 @@ name = "liquid_glass"
 path = "liquid_glass/main.rs"
 
 [[example]]
+name = "liquid_glass_lab"
+path = "liquid_glass_lab/main.rs"
+
+[[example]]
+name = "liquid_glass_new"
+path = "liquid_glass_new/main.rs"
+
+[[example]]
 name = "moving"
 path = "moving/main.rs"
 

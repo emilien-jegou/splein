@@ -131,6 +131,11 @@ pub enum Op {
     /// it also breaks run merging by variant.
     BeginLayer {
         region: ResolvedRect,
+        /// UNPADDED device-space card rect (origin + size, no blur or
+        /// glass pad). `run_custom_pass` appends it as uniform slot 7
+        /// (`u.data[7]`) so card-local `geo.*` sticks to cards while
+        /// scrolling (Phase 5a swim fix).
+        card_rect: ResolvedRect,
         params: u32,
         glass: Option<u32>,
         stages: Vec<StageGpu>,
@@ -1711,6 +1716,7 @@ impl SceneSink for WgpuSink<'_> {
         }
         self.batch.ops.push(Op::BeginLayer {
             region,
+            card_rect: ResolvedRect::new(rect_dev.0, rect_dev.1, rect_dev.2, rect_dev.3),
             params,
             glass,
             stages,

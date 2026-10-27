@@ -48,7 +48,33 @@ struct EffectCtx {
     path_length: f32,
     /// Clip coverage 0..1 (anti-aliased edge alpha from `ClipRound`).
     coverage: f32,
+    /// Card origin in device px (top-left of the layer region being
+    /// shaded). Phase 5a: seeds `geo.uv()` / `geo.local_px()` /
+    /// `geo.edge_dist()` so patterns stick to cards while scrolling
+    /// (retires the G1b device-space swim defect). The wgpu post-glass
+    /// scaffold fills these from the layer `open.region`; the plugin
+    /// fills from its island box; unwired producers leave (0,0,0,0)
+    /// and card-local fields degrade to device space.
+    card_rect: vec4<f32>,
 };
+
+/// Card-local helpers shared by every custom module. `ctx.card_rect`
+/// packs (origin.x, origin.y, width, height) in device px — see the
+/// `card_rect` field above.
+fn ctx_local_px(ctx: EffectCtx) -> vec2<f32> {
+    return ctx.px - ctx.card_rect.xy;
+}
+fn ctx_uv(ctx: EffectCtx) -> vec2<f32> {
+    let size = max(ctx.card_rect.zw, vec2<f32>(1.0));
+    return ctx_local_px(ctx) / size;
+}
+fn ctx_edge_dist(ctx: EffectCtx) -> f32 {
+    return ctx_edge_dist_at(ctx_local_px(ctx), ctx.card_rect);
+}
+fn ctx_edge_dist_at(lp: vec2<f32>, rect: vec4<f32>) -> f32 {
+    let size = max(rect.zw, vec2<f32>(1.0));
+    return min(min(lp.x, lp.y), min(size.x - lp.x, size.y - lp.y));
+}
 
 /// Identity context: transparent, infinitely far from any clip.
 fn effect_ctx_identity(px: vec2<f32>) -> EffectCtx {
@@ -59,6 +85,7 @@ fn effect_ctx_identity(px: vec2<f32>) -> EffectCtx {
     ctx.normal = vec3<f32>(0.0, 0.0, 1.0);
     ctx.path_length = 0.0;
     ctx.coverage = 1.0;
+    ctx.card_rect = vec4<f32>(0.0);
     return ctx;
 }
 

@@ -19,12 +19,14 @@ pub use crate::dsl::{
 };
 pub use crate::foundation::{
     Absorb, Absorption, Alignment, Anchor, BlendMode, Bump, Closure, Color, ComplexIor, Conductor,
-    Curvature, Density, Diffuse, Direction, Dispersion, Distribution, Edges, Emission, Env,
-    FalloffCurve, Fill, Filter, FilterOp, Gain, Gap, Geo, GeoField, GeoFn, IntoEffect, IntoStack, Ior,
-    Intensity, LayoutPresence, Lens, LightEnvironment, Margin, MaterialExpr, Microfacet, Modulator,
-    Normal, Offset, Padding, Radius, RadiusPx, RenderDriver, Roughness, Scale, Shadow, ShadowOffset,
-    ShadowShape, Sheen, Size, Sky, Slab, Spacing, Stroke, StrokeAlign, Surface, ThenExt, Thickness,
-    ThinFilm, Transform, Transmission, Value, Weight, Width, fresnel, mix,
+    Curvature, Density, Diffuse, Direction, Dispersion, Distribution, Edges, Emission,
+    EmissionBuilder, Env, FalloffCurve, Field, Fill, Filter, FilterOp, Fresnel, Gain, Gap, Geo,
+    GeoField, GeoFn, IntoEffect, IntoStack, Interface, InterfaceBuilder, Ior, Intensity,
+    LayoutPresence, Lens, Light, LightEnvironment, Lights, Margin, MaterialExpr, Microfacet, Modulator, Normal,
+    Offset, Padding, Radius, RadiusPx, RenderDriver, Roughness, Scale, Shadow, ShadowOffset,
+    ShadowShape, Sheen, Size, Sky, Slab, Spacing, Specular, SpecularBuilder, SpecularDist, Stroke,
+    StrokeAlign, Surface, ThenExt, Thickness, ThinFilm, Transform, Transmit, TransmitBuilder,
+    Transmission, Value, Weight, Width, fresnel, mix,
 };
 pub use crate::hot_reload::{
     component_abi_fingerprint, host_sentinel_address, remote_abi_fingerprint, toolchain_id,

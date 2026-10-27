@@ -154,6 +154,12 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
     let dims = vec2<f32>(textureDimensions(engine_input));
     let uv = clamp(pos.xy / dims, vec2<f32>(0.0), vec2<f32>(1.0));
     var ctx = effect_ctx_identity(pos.xy);
+    // Host fill (Phase 5a): the DSL leaves slot 7 (u.data[7]) empty —
+    // `run_custom_pass` appends the unpadded card rect (x, y, w, h) in
+    // device px every pass, so card-local `geo.*` sticks to cards while
+    // scrolling. Unwired producers leave (0,0,0,0) and degrade to device
+    // space, exactly as before.
+    ctx.card_rect = engine_u.data[7];
     ctx.color = textureSampleLevel(engine_input, effect_sampler, uv, 0.0);
     let out_ctx = apply(ctx, engine_backdrop, engine_sharp, engine_u);
     return out_ctx.color;

@@ -267,6 +267,9 @@ fn make_glass_targets(
 struct OpenLayer {
     slot: usize,
     region: ResolvedRect,
+    /// UNPADDED device-space card rect (Phase 5a swim fix): passed to
+    /// `run_custom_pass`, which appends it as uniform slot 7.
+    card_rect: ResolvedRect,
     params: u32,
     glass: Option<u32>,
     stages: Vec<StageGpu>,
@@ -885,6 +888,7 @@ impl WgpuRenderer {
         backdrop: &wgpu::TextureView,
         sharp: &wgpu::TextureView,
         uniforms: &[f32],
+        card_rect: &ResolvedRect,
         dst: &wgpu::TextureView,
         sc: (u32, u32, u32, u32),
     ) {
@@ -894,8 +898,22 @@ impl WgpuRenderer {
         // Engine-side size is otherwise free (D-M7) — a generated sized
         // struct (Phase 2+) replaces both this cap and the scaffold's
         // fixed array together.
+        //
+        // Phase 5a host fill: the DSL leaves slot 7 (f32 28..32) empty
+        // (see `card_rect_ref` / `MAX_USER_UNIFORMS`); the engine appends
+        // the UNPADDED card rect (x, y, w, h, device px) here so
+        // card-local `geo.*` sticks to cards while scrolling (swim fix).
+        // Debug-assert: DSL vectors longer than 28 mean the lowering
+        // missed its own budget check (D-M10b).
+        debug_assert!(
+            uniforms.len() <= 28,
+            "custom uniforms exceed 28 user slots: {}",
+            uniforms.len()
+        );
         let mut padded = uniforms.to_vec();
-        padded.resize(32, 0.0);
+        padded.resize(28, 0.0);
+        padded.extend_from_slice(&[card_rect.x, card_rect.y, card_rect.width, card_rect.height]);
+        debug_assert_eq!(padded.len(), 32);
         let bytes: Vec<u8> = padded.iter().flat_map(|f| f.to_le_bytes()).collect();
         let ubuf = self.gpu.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("riode-wgpu-custom-params"),
@@ -1353,12 +1371,14 @@ impl WgpuRenderer {
                             glass,
                             stages,
                             backdrop_stages,
+                            card_rect,
                         } => Op::BeginLayer {
                             region,
                             params,
                             glass,
                             stages,
                             backdrop_stages,
+                            card_rect,
                         },
                         Op::EndLayer {
                             start,
@@ -1558,6 +1578,7 @@ impl WgpuRenderer {
                         glass,
                         stages,
                         backdrop_stages,
+                        card_rect,
                     } => {
                         // End the parent's pass first: wgpu borrows the
                         // encoder and its attachment view into the pass.
@@ -1673,6 +1694,7 @@ impl WgpuRenderer {
                         stack.push(OpenLayer {
                             slot,
                             region: *region,
+                            card_rect: *card_rect,
                             params: *params,
                             glass: *glass,
                             stages: stages.clone(),
@@ -2052,6 +2074,7 @@ impl WgpuRenderer {
                                                 self.bd_view(open.slot, bd),
                                                 &self.glass_pool[open.slot].snap.1,
                                                 &c.uniforms,
+                                                &open.card_rect,
                                                 self.card_view(open.slot, dest),
                                                 v,
                                             );

@@ -905,9 +905,24 @@ std::vector<UP<IPassElement>> CGlassBlurElement::draw() {
         g_sampleFB->getTexture()->bind();
         // Exactly 128 bytes (std140 array<vec4,8>): shorter latched
         // streams zero-pad, longer ones cannot exist (helper caps).
+        // Phase 5a host fill (mirrors wgpu `run_custom_pass`): the DSL
+        // leaves slot 7 (f32 28..32) empty (see `card_rect_ref` /
+        // `MAX_USER_UNIFORMS`); overwrite it with the card rect
+        // (x, y, w, h, FB px y-down) so card-local `geo.*` sticks to
+        // cards while scrolling (swim fix). Scope = the union-box walk
+        // (`ux0, uy0, sw, sh` below): this lambda runs fullscreen draws
+        // (composited masked later), not per-rect passes, so per-rect
+        // fill would be overwritten per stage anyway — the union box is
+        // the finest granularity this walk can carry. A multi-card
+        // island therefore shares one box until the executor gains a
+        // per-rect stage loop (same caveat as the sample-box uniforms).
         std::fill(uData, uData + 32, 0.0f);
-        const size_t n = std::min<size_t>(st.uniforms.size(), 32);
+        const size_t n = std::min<size_t>(st.uniforms.size(), 28);
         std::copy_n(st.uniforms.begin(), n, uData);
+        uData[28] = static_cast<float>(ux0);
+        uData[29] = static_cast<float>(uy0);
+        uData[30] = static_cast<float>(sw);
+        uData[31] = static_cast<float>(sh);
         glBindBuffer(GL_UNIFORM_BUFFER, g_fxUbo);
         glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(uData), uData);
         glBindBufferBase(GL_UNIFORM_BUFFER, 0, g_fxUbo);
