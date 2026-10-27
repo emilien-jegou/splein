@@ -184,11 +184,14 @@ fn effect_list_value(key: &str, attr: &KeyedAttribute) -> Option<TokenStream2> {
 }
 
 /// The final value tokens for an attribute: method-reference sugar for `on:` events
-/// with a bare `sig.method`, the material-block interpreter for `material={...}`
-/// (D-M6: `let`-bindings + `.into_surface()` terminal →
-/// static WGSL + filler; falls through to normal semantics when the shape is not
-/// a material block), bracket-list sugar for the effect-stack props, otherwise
-/// the normal (possibly slotted) value.
+/// with a bare `sig.method`, bracket-list sugar for the effect-stack props,
+/// otherwise the normal (possibly slotted) value.
+///
+/// `material=` is an opaque Rust expression — real code, evaluated at
+/// component time: `material={...}` blocks build `MaterialExpr` trees and
+/// lower in `.into_surface()`; `|geo|` closures take `Geo::surface()`;
+/// `move ||` closures re-run as `Prop::Dynamic`. No macro inspection —
+/// imports, user nodes, control flow all behave like normal Rust.
 /// (`backdrop_effects` / `backdrop` are removed — use `material=`; the old
 /// names are a loud compile error naming the replacement.)
 fn attr_value(key: &str, attr: &KeyedAttribute, flow: &FlowTables) -> TokenStream2 {
@@ -196,20 +199,22 @@ fn attr_value(key: &str, attr: &KeyedAttribute, flow: &FlowTables) -> TokenStrea
         return sugar;
     }
     if key == "material" {
-        if let Some(expr) = attr_expr(attr) {
-            if let Some(material) = crate::material::material_block_value_outer(&expr) {
-                match material {
-                    Ok(tokens) => return tokens,
-                    Err(e) => return e.to_compile_error(),
-                }
-            }
-        }
-        // Not a material block: `material` keeps normal expression
-        // semantics (raw CustomEffect, stack, dynamic closure...).
-        // Bracket-list sugar applies to the array form (`material=[...]`,
-        // both bare and braced) before falling through.
+        // Opaque passthrough: `material={...}` block values lower in real
+        // Rust (`.into_surface()` at component evaluation). Bracket-list
+        // sugar applies to the array transport form first. `|geo|` closure
+        // literals wrap in `GeoFn` (coherence: a bare `Fn(Geo)` closure
+        // cannot impl `IntoProp` beside the blanket `Fn() -> T`).
         if let Some(list) = effect_list_value("material", attr) {
             return slot_literal_value(list, flow);
+        }
+        if let Some(expr) = attr_expr(attr) {
+            if matches!(expr, syn::Expr::Closure(_)) {
+                let inner = attr_value_tokens(attr);
+                return slot_literal_value(
+                    quote! { ::riode::foundation::GeoFn(#inner) },
+                    flow,
+                );
+            }
         }
         return slot_literal_value(attr_value_tokens(attr), flow);
     }

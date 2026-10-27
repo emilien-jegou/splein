@@ -63,6 +63,7 @@ pub mod glass;
 pub mod key;
 pub mod light;
 pub mod literal;
+pub mod material;
 pub mod positioning;
 pub mod presence;
 pub mod radius;
@@ -89,6 +90,12 @@ pub use glass::*;
 pub use key::*;
 pub use light::*;
 pub use literal::*;
+pub use material::{
+    Absorb, Absorption, Bump, Closure, ComplexIor, Conductor, Curvature, Density, Diffuse,
+    Dispersion, Emission, Env, Geo, GeoField, GeoFn, Ior, Intensity, Lens, MaterialExpr, Microfacet,
+    Modulator, Normal, Offset, RadiusPx, Roughness, Scale, Sheen, Sky, Slab, Spacing, Surface,
+    Thickness, ThinFilm, Transmission, Value, Weight, Width, fresnel, mix, Gain, Spread,
+};
 pub use positioning::*;
 pub use presence::*;
 pub use radius::*;

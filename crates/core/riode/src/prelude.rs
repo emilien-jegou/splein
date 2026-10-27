@@ -18,9 +18,13 @@ pub use crate::dsl::{
     VirtualScrollView, VirtualScrollViewProps,
 };
 pub use crate::foundation::{
-    Alignment, Anchor, BlendMode, Color, Direction, Distribution, Edges, FalloffCurve, Fill, Filter,
-    FilterOp, Gap, IntoEffect, IntoStack, LayoutPresence, LightEnvironment, Margin, Padding, Radius,
-    RenderDriver, Shadow, ShadowOffset, ShadowShape, Size, Stroke, StrokeAlign, ThenExt, Transform,
+    Absorb, Absorption, Alignment, Anchor, BlendMode, Bump, Closure, Color, ComplexIor, Conductor,
+    Curvature, Density, Diffuse, Direction, Dispersion, Distribution, Edges, Emission, Env,
+    FalloffCurve, Fill, Filter, FilterOp, Gain, Gap, Geo, GeoField, GeoFn, IntoEffect, IntoStack, Ior,
+    Intensity, LayoutPresence, Lens, LightEnvironment, Margin, MaterialExpr, Microfacet, Modulator,
+    Normal, Offset, Padding, Radius, RadiusPx, RenderDriver, Roughness, Scale, Shadow, ShadowOffset,
+    ShadowShape, Sheen, Size, Sky, Slab, Spacing, Stroke, StrokeAlign, Surface, ThenExt, Thickness,
+    ThinFilm, Transform, Transmission, Value, Weight, Width, fresnel, mix,
 };
 pub use crate::hot_reload::{
     component_abi_fingerprint, host_sentinel_address, remote_abi_fingerprint, toolchain_id,
