@@ -2,7 +2,7 @@
 // time (D-M6) into the `material_ir` tree, then lower it to a WGSL `apply`
 // module and emit the runtime construction tokens.
 //
-// This is the single lowering path (D-M6 section 2): `backdrop={...}`
+// This is the single lowering path (D-M6 section 2): `material={...}`
 // blocks whose shape the interpreter recognizes never reach runtime Rust
 // evaluation — they become (1) a `&'static str` WGSL source, (2) emitted
 // uniform-filler code in arena order. Anything the interpreter does not
@@ -52,6 +52,15 @@ enum Binding {
     Normal(Normal),
     EnvGain(Value),
     Term(MaterialExpr),
+    /// Whole-surface warp stage: the frequency/amplitude values (uniform
+    /// slots, D-M10b) plus the compile-time pad literal (D-M8 pad fact).
+    /// Kept separate from `Term(MaterialExpr)` so the pad cannot be
+    /// dropped: `eval_term` reattaches it at the terminal.
+    WarpTerm {
+        frequency: Value,
+        amplitude: Value,
+        pad: f32,
+    },
     Weight(Weight),
     /// Plain value binding: remembered tokens; uses allocate slots.
     /// (Slots allocate on first use, so emission order == fill order
@@ -59,7 +68,7 @@ enum Binding {
     Value(TokenStream2),
 }
 
-/// Interpreter state for one `backdrop={...}` block.
+/// Interpreter state for one `material={...}` block.
 struct Interp {
     /// `Some(name)` when the block is the `|geo|` closure-param form:
     /// `geo.*` reads lower to per-pixel host fields, never slots.
@@ -184,6 +193,9 @@ impl Interp {
     /// the known wrappers peel (inner expr classifies recursively);
     /// unknown calls are NOT silently values — a loud error so a typo
     /// cannot become a slot.
+    /// `Amplitude::px(a)` peels here too — the warp node reads both
+    /// wrappers directly (Phase 4.5), so `Warp::sine` arg shapes stay
+    /// visible to the `WarpExpr` classifier below.
     fn peel_wrapper(&mut self, e: &syn::Expr) -> syn::Result<Option<Value>> {
         let syn::Expr::Call(call) = e else {
             return Ok(None);
@@ -200,6 +212,7 @@ impl Interp {
                 | "Curvature::Convex"
                 | "Curvature::Concave"
                 | "Frequency::per_pixel"
+                | "Amplitude::px"
                 | "Scale::factor"
                 | "Density::factor"
                 | "Thickness::nm"
@@ -459,7 +472,7 @@ impl Interp {
                 span,
                 "material DSL (Phase 2): one geometry source per block — bare geometry \
                  constructors (`Normal::flat()`) cannot mix with `geo.*` reads; pick the \
-                 bare `backdrop={ ... }` form (flat/constant) or `backdrop={ |geo| ... }`",
+                 bare `material={ ... }` form (flat/constant) or `material={ |geo| ... }`",
             ));
         }
         self.saw_bare_geo = true;
@@ -486,7 +499,7 @@ impl Interp {
             return Err(syn::Error::new_spanned(
                 member,
                 "material DSL (Phase 2): `geo.*` reads need the closure-param form \
-                 `backdrop={ |geo| ... }` — the bare block means flat/constant geometry",
+                 `material={ |geo| ... }` — the bare block means flat/constant geometry",
             ));
         }
         if self.saw_bare_geo {
@@ -593,8 +606,32 @@ impl Interp {
                 w,
             )));
         }
-        // Phase-gated shapes: reject loudly with the gate phase (never
-        // a silent mis-lowering).
+        // Phase 4.5 warp node (literal fast path): `Warp::sine(
+        // Frequency::per_pixel(<lit>), Amplitude::px(<lit>))` bakes both
+        // params as `Value::Lit` — the warp module inlines them into WGSL
+        // (`warp_body_wgsl`), no uniform slots, no filler. The `pad_literal`
+        // fact doubles as the baked amplitude (one literal, two uses —
+        // value and reach can never drift). Non-literals are a loud error:
+        // a runtime amplitude would move displaced reads outside the
+        // snapshot region the compositor already captured (D-M8), and a
+        // whole-stage closure cannot vary per frame inside an `Option<_>`
+        // prop without the host's `Prop::Dynamic` form (which the component
+        // boundary does not have).
+        if path_is(&p.path, &["Warp", "sine"]) {
+            let args = expect_args(
+                call,
+                "Warp::sine(Frequency::per_pixel(f), Amplitude::px(a))",
+                2,
+            )?;
+            let frequency = Self::warp_lit_param(args[0])?;
+            let amplitude = Self::warp_lit_param(args[1])?;
+            let pad = Self::pad_literal(args[1])?;
+            return Ok(Binding::WarpTerm {
+                frequency,
+                amplitude,
+                pad,
+            });
+        }
         if path_is(&p.path, &["Refract", "new"]) {
             return Err(syn::Error::new_spanned(
                 &call.func,
@@ -647,7 +684,7 @@ impl Interp {
                 &call.func,
                 format!(
                     "material DSL (Phase 4): `{what}` is a frame-wide global post tag \
-                     (D-M10d) — declare it outside any `backdrop={{...}}` block \
+                     (D-M10d) — declare it outside any `material={{...}}` block \
                      (root/frame scope, settled when Step 5 lands the HDR post host); \
                      parsed-but-no-op until then"
                 ),
@@ -827,7 +864,7 @@ impl Interp {
                      BloomGroups must not allocate N pyramids). Declare the frame-wide global \
                      tag instead (consumed once by the HDR post host when Step 5 lands): \
                      `tag_bloom(strength, Radius)` / `tag_hdr(exposure)` outside any \
-                     `backdrop={{...}}` block. v1 surfaces end at `.into_surface()`"
+                     `material={{...}}` block. v1 surfaces end at `.into_surface()`"
                 ),
             )),
             _ => Err(syn::Error::new_spanned(
@@ -853,6 +890,14 @@ impl Interp {
     fn eval_term(&mut self, e: &syn::Expr) -> syn::Result<MaterialExpr> {
         match self.eval(e)? {
             Binding::Term(t) => Ok(t),
+            Binding::WarpTerm {
+                frequency,
+                amplitude,
+                ..
+            } => Ok(MaterialExpr::Closure(Closure::Warp {
+                frequency,
+                amplitude,
+            })),
             _ => Err(syn::Error::new_spanned(
                 e,
                 "material DSL: expected a material term here (a closure, `Color * ...`, `a + b`, `mix(...)`)",
@@ -938,6 +983,104 @@ impl Interp {
             }
         }
         self.numeric(e)
+    }
+
+    /// The D-M8 pad fact for a warp amplitude position: the compile-time
+    /// literal inside `Amplitude::px(<lit>)`, or a bare float/int literal
+    /// (the unwrapped form). Anything else (runtime expr, signal read,
+    /// `let`-bound path) is a loud error — a runtime pad would size the
+    /// snapshot region AFTER the compositor already captured it.
+    ///
+    /// Literal warp param (Phase 4.5 fast path): peel the unit wrapper
+    /// (`Frequency::per_pixel(<lit>)` / `Amplitude::px(<lit>)`) or a bare
+    /// float/int literal into a `Value::Lit` the WGSL bakes inline. This
+    /// is the deliberate exception to D-M10b (uniform-bound numerics):
+    /// the warp displacement IS the surface shape for this demo row, and
+    /// the component boundary (`Option<EffectStack>`, `impl Into<_>`) has
+    /// no `Prop::Dynamic` form — a slotted warp would emit `move || …`
+    /// and fail the setter bound. Non-literals are a loud error here
+    /// (same D-M8 rule as `pad_literal`): re-express the variation with
+    /// `.then(...)` chains or a signal-driven parent.
+    fn warp_lit_param(e: &syn::Expr) -> syn::Result<Value> {
+        // `Frequency::per_pixel(<lit>)` / `Amplitude::px(<lit>)` wrapper.
+        if let syn::Expr::Call(call) = e {
+            if let Some(fp) = func_path(call) {
+                if fp == "Amplitude::px" || fp == "Frequency::per_pixel" {
+                    if call.args.len() != 1 {
+                        return Err(syn::Error::new_spanned(
+                            &call.func,
+                            format!("material DSL: `{fp}` takes exactly one argument"),
+                        ));
+                    }
+                    return Self::warp_lit_param(&call.args[0]);
+                }
+            }
+        }
+        // Bare literal.
+        if let syn::Expr::Lit(syn::ExprLit { lit, .. }) = e {
+            match lit {
+                syn::Lit::Float(f) => {
+                    let v: f32 = f.base10_parse().map_err(|_| {
+                        syn::Error::new_spanned(e, "material DSL: bad float literal")
+                    })?;
+                    return Ok(Value::Lit(v));
+                }
+                syn::Lit::Int(i) => {
+                    let v: f32 = i.base10_parse().map_err(|_| {
+                        syn::Error::new_spanned(e, "material DSL: bad int literal")
+                    })?;
+                    return Ok(Value::Lit(v));
+                }
+                _ => {}
+            }
+        }
+        Err(syn::Error::new_spanned(
+            e,
+            "material DSL (Phase 4.5): warp params must be literals \
+             (`Frequency::per_pixel(<lit>)`, `Amplitude::px(<lit>)`) — the warp \
+             module bakes them into WGSL and sizes the snapshot from the same \
+             literal (D-M8), so a runtime expression here would move displaced \
+             reads outside the captured region; re-express the variation with \
+             `.then(...)` chains or a signal-driven parent",
+        ))
+    }
+    fn pad_literal(e: &syn::Expr) -> syn::Result<f32> {
+        // `Amplitude::px(<lit>)` wrapper form.
+        if let syn::Expr::Call(call) = e {
+            if let Some(fp) = func_path(call) {
+                if fp == "Amplitude::px" {
+                    if call.args.len() != 1 {
+                        return Err(syn::Error::new_spanned(
+                            &call.func,
+                            "material DSL: `Amplitude::px(a)` takes exactly one argument",
+                        ));
+                    }
+                    return Self::pad_literal(&call.args[0]);
+                }
+            }
+        }
+        // Bare literal form.
+        if let syn::Expr::Lit(syn::ExprLit { lit, .. }) = e {
+            match lit {
+                syn::Lit::Float(f) => {
+                    return f.base10_parse::<f32>().map_err(|_| {
+                        syn::Error::new_spanned(e, "material DSL: bad float literal")
+                    });
+                }
+                syn::Lit::Int(i) => {
+                    return i.base10_parse::<f32>().map_err(|_| {
+                        syn::Error::new_spanned(e, "material DSL: bad int literal")
+                    });
+                }
+                _ => {}
+            }
+        }
+        Err(syn::Error::new_spanned(
+            e,
+            "material DSL (Phase 4.5): warp amplitude must be an `Amplitude::px(<literal>)` \
+             so `Effect::pad` can size the snapshot region at compile time (D-M8); \
+             a runtime expression here would move displaced reads outside the captured region",
+        ))
     }
 }
 
@@ -1039,7 +1182,7 @@ fn expect_args<'a>(call: &'a syn::ExprCall, what: &str, n: usize) -> syn::Result
     Ok(call.args.iter().collect())
 }
 
-/// Try to interpret a `backdrop={...}` attribute value as a material
+/// Try to interpret a `material={...}` attribute value as a material
 /// block. Returns `None` when the shape is not a material block (no
 /// `.into_surface()` terminal) so the caller falls through to normal
 /// expression semantics. Returns `Some(Err)` for loud rejections
@@ -1048,7 +1191,6 @@ pub(crate) fn material_block_value(attr: &syn::Expr) -> Option<syn::Result<Token
     // The block form: one or more `let` bindings ending in a terminal
     // expression (`....into_surface()`). Anything else (single plain
     // expression, array sugar, chains without the terminal) is not a
-    // material block — fall through.
     let (stmts, tail) = match attr {
         syn::Expr::Block(b) if b.attrs.is_empty() && b.label.is_none() => {
             let mut stmts: Vec<&syn::Stmt> = b.block.stmts.iter().collect();
@@ -1068,18 +1210,32 @@ pub(crate) fn material_block_value(attr: &syn::Expr) -> Option<syn::Result<Token
     }
     Some(lower_block(stmts, &tail, None))}
 
-/// Closure-param entry: `backdrop={ |geo| ... }` — exactly one ident
+/// Closure-param entry: `material={ |geo| ... }` — exactly one ident
 /// param. The body unwraps to a block (or single tail expr); the geo
 /// name threads into the interpreter so `geo.*` reads lower to
 /// per-pixel host fields (D-M10a). Non-closure exprs return `None`
 /// (not a material block — normal fall-through).
 pub(crate) fn material_block_value_outer(attr: &syn::Expr) -> Option<syn::Result<TokenStream2>> {
-    if let syn::Expr::Closure(c) = attr {
+    // Bare terminal call without a block: `material={Warp::sine(...).into_surface()}`
+    // arrives UNbraced (rstml parses the braces as the attr delimiter, so
+    // `attr_expr` unwraps the single tail out of its block). Same path as
+    // the block form with zero `let`s. (The `|geo|` closure form below
+    // keeps its own block handling — warp is flat/constant by nature.)
+    if is_into_surface(attr) {
+        return Some(lower_block(Vec::new(), attr, None));
+    }    if let syn::Expr::Closure(c) = attr {
+        // Zero-param closures (`move || stack`) are prebuilt dynamic values,
+        // not the `|geo|` geometry form: fall through to normal expression
+        // semantics instead of rejecting them (the interpreter only owns
+        // the one-param `|geo| ...` shape).
+        if c.inputs.is_empty() {
+            return None;
+        }
         if c.inputs.len() != 1 {
             return Some(Err(syn::Error::new_spanned(
                 &c.inputs,
-                "material DSL (Phase 2): `backdrop={ |geo| ... }` takes exactly one geometry \
-                 param (`|geo|`); the bare `backdrop={ ... }` form means flat/constant geometry",
+                "material DSL (Phase 2): `material={ |geo| ... }` takes exactly one geometry \
+                 param (`|geo|`); the bare `material={ ... }` form means flat/constant geometry",
             )));
         }
         let syn::Pat::Ident(geo) = &c.inputs[0] else {
@@ -1189,8 +1345,82 @@ fn lower_block(
             }
         }
     }
+    // Warp pad via the binding (not the IR): `eval_term` flattens
+    // `WarpTerm` into the IR but the pad fact lives on the binding, so
+    // re-resolve it here. A `let`-bound warp (`let w = Warp::sine(...);
+    // w.into_surface()`) resolves through the bindings map; an inline
+    // `Warp::sine(...).into_surface()` tail re-classifies directly.
+    fn warp_pad_of(interp: &Interp, tail: &syn::Expr) -> Option<f32> {
+    fn pad_literal(e: &syn::Expr) -> syn::Result<f32> { Interp::pad_literal(e) }
+        // Strip the `.into_surface()` terminal to the receiver.
+        let mut e = tail;
+        loop {
+            match e {
+                syn::Expr::MethodCall(m) if m.method == "into_surface" => {
+                    e = &m.receiver;
+                }
+                syn::Expr::Paren(p) => e = &p.expr,
+                syn::Expr::Group(g) => e = &g.expr,
+                _ => break,
+            }
+        }
+        // `let`-bound path: look up the remembered binding.
+        if let syn::Expr::Path(p) = e {
+            if p.qself.is_none() && p.path.segments.len() == 1 {
+                let name = p.path.segments[0].ident.to_string();
+                if let Some(Binding::WarpTerm { pad, .. }) = interp.bindings.get(&name) {
+                    return Some(*pad);
+                }
+            }
+        }
+        // Inline tail: it classified to a warp IR node — recover the pad
+        // from the amplitude position (same `pad_literal` rule, including
+        // the loud error for runtime amplitudes).
+        if let syn::Expr::Call(call) = e {
+            if let Some(fp) = func_path(call) {
+                if fp == "Warp::sine" && call.args.len() == 2 {
+                    return pad_literal(&call.args[1]).ok();
+                }
+            }
+        }
+        None
+    }
+
     let term = interp.eval_term(tail)?;
     let lowered = crate::material_lower::lower_to_apply(&term)?;
+    // Phase 4.5 surface facts: per-stage backdrop need + snapshot reach
+    // (D-M8). Warp displaces sharp reads (`ReadSharp`, pad = amplitude);
+    // every other v1 surface is an opaque plaque on the host card
+    // (`None`, pad 0 — the backdrop enters only through `Refract`, which
+    // Phase 1 rejects). The warp module bakes the literal amplitude and
+    // frequency into WGSL (`Value::Lit` fast path in `warp_body_wgsl`):
+    // the value, the pad fact, and the snapshot region all come from the
+    // same compile-time literal, so they cannot drift. Per-frame variation
+    // for warp comes from layering `.then(...)` chains and signal-driven
+    // parents — never from per-slot filler the island subtree reads.
+    let (need, pad_tokens) = match &term {
+        MaterialExpr::Closure(crate::material_ir::Closure::Warp { .. }) => {
+            match warp_pad_of(&interp, tail) {
+                Some(pad) => (
+                    quote! { ::riode::foundation::BackdropNeed::ReadSharp },
+                    quote! { .with_pad(#pad) },
+                ),
+                None => {
+                    return Err(syn::Error::new(
+                        proc_macro2::Span::call_site(),
+                        "material DSL (Phase 4.5): warp amplitude must be an `Amplitude::px(<literal>)` \
+                         so `Effect::pad` can size the snapshot region at compile time (D-M8); \
+                         a runtime expression here would move displaced reads outside the \
+                         captured region. Bind the amplitude as a literal.",
+                    ));
+                }
+            }
+        }
+        _ => (
+            quote! { ::riode::foundation::BackdropNeed::None },
+            quote! {},
+        ),
+    };
     let slots = interp.arena.len() as usize;
     let filler = interp.filler;
     if filler.len() != slots {
@@ -1207,14 +1437,32 @@ fn lower_block(
     // Static vs Dynamic (the reactivity rule, §1.3): a block whose every
     // numeric is a literal bakes fully into source — emit the `EffectStack`
     // value directly (`IntoProp<EffectStack> for EffectStack` → static prop,
-    // evaluated once). A block with uniform slots may vary per frame (hover
-    // `if`, signal reads) — emit a `move || …` closure instead
-    // (`IntoProp<EffectStack> for F: Fn() -> T` → `Prop::Dynamic`). The
-    // scheduler evaluates that closure under the paint subscriber, so each
-    // signal the filler reads subscribes; a hover write re-runs only the
-    // filler (new uniform *values*, byte-identical WGSL source → pipeline
-    // cache hit per D-M5). Emitting the stack directly here would read the
-    // signal once at mount and freeze hover forever.
+    // evaluated once). A block with uniform slots varies per frame (hover
+    // `if`, signal reads, plain `.get()` calls — ALL of these live behind
+    // uniform slots by D-M10b) — emit a `move || …` closure instead
+    // (`IntoProp<EffectStack> for F: Fn() -> T` → `Prop::Dynamic` on the
+    // host `GroupDef::material` path). The scheduler evaluates that closure
+    // under the paint subscriber, so each signal the filler reads
+    // subscribes; a hover write re-runs only the filler (new uniform
+    // *values*, byte-identical WGSL source → pipeline cache hit per D-M5).
+    // Emitting the stack directly here would read the signal once at mount
+    // and freeze hover forever.
+    //
+    // Component boundary (`Option<EffectStack>` setter, `impl Into<_>`):
+    // a `move || …` closure is NOT an `EffectStack` — the component prop
+    // has no `Prop::Dynamic` form, so the dynamic branch cannot cross it.
+    // A component that wants material reactivity takes `Prop<EffectStack>`
+    // instead; the block author opts in by reading a signal inside
+    // `material={...}` on a `Prop`-typed prop. The macro does NOT guess
+    // the prop type — a dynamic block on a static prop is a loud error
+    // naming the fix (this is the same honesty rule as every other
+    // phase-gated rejection: never silently freeze hover).
+    //
+    // The literal-warp row (`material={Warp::sine(...).into_surface()}`
+    // with literal params) lands in the static branch (slots == 0 → the
+    // WARP_WGSL twin bakes with the literal amplitude — value and pad
+    // come from the one literal, so they cannot drift) and crosses the
+    // component boundary as a plain value.
     if slots == 0 {
         return Ok(quote! {
             {
@@ -1224,8 +1472,8 @@ fn lower_block(
                         ::riode::foundation::CustomEffect::new(
                             #lowered,
                             ::std::vec![#(#filler as f32),*],
-                            ::riode::foundation::BackdropNeed::None,
-                        )
+                            #need,
+                        ) #pad_tokens
                     )
                 ])
             }
@@ -1239,8 +1487,8 @@ fn lower_block(
                     ::riode::foundation::CustomEffect::new(
                         #lowered,
                         ::std::vec![#(#filler as f32),*],
-                        ::riode::foundation::BackdropNeed::None,
-                    )
+                        #need,
+                    ) #pad_tokens
                 )
             ])
         }
@@ -1270,6 +1518,9 @@ fn is_material_shape(e: &syn::Expr) -> bool {
                 "Normal::flat"
                     | "Sky::gain"
                     | "Microfacet::ggx"
+                    | "Warp::sine"
+                    | "Frequency::per_pixel"
+                    | "Amplitude::px"
                     | "Color::rgb"
                     | "Color::white"
                     | "Color::red"

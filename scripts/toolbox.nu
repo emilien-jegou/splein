@@ -84,7 +84,7 @@ def "main watch" [] {
 def "main example" [
   name: string@spleen-complete-examples = "demo1",
   engine: string@spleen-complete-engines = "",
-  --overlay  # Transparent layer-shell overlay (desktop_glass, prism_only, wire_grain).
+  --overlay  # Transparent layer-shell overlay (desktop_glass, prism_only, wire_grain, compositor_warp).
 ] {
   cd (spleen--root)
   if $overlay {

@@ -198,7 +198,7 @@ pub fn Page() -> impl IntoElement {
                 direction="horizontal"
                 width={bar_w}
                 height={BAR_H}
-                backdrop_effects={GlassPreset::clear().style().into_effects()}
+                material={GlassPreset::clear().style().into_effects()}
                 radius={RADIUS}
                 gap={GAP}
                 padding={format!("{PAD_V} {PAD_H}")}

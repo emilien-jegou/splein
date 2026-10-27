@@ -127,8 +127,8 @@ impl Effect for Grain {
 impl BackdropEffect for Grain {}
 
 #[component]
-fn IslandCard(label: &'static str, backdrop_effects: Option<EffectStack>) -> impl IntoElement {
-    let backdrop_effects = backdrop_effects.unwrap_or_default();
+fn IslandCard(label: &'static str, material: Option<EffectStack>) -> impl IntoElement {
+    let material = material.unwrap_or_default();
     view! {
         <Group direction="vertical" gap={16.0} alignment="center">
             <Text size={13.0} weight={600u16} color={LABEL_COLOR}>{label}</Text>
@@ -136,7 +136,7 @@ fn IslandCard(label: &'static str, backdrop_effects: Option<EffectStack>) -> imp
                 width={280.0}
                 height={200.0}
                 radius={24.0}
-                backdrop_effects={backdrop_effects}
+                material={material}
                 alignment="center"
                 distribution="center"
             >
@@ -157,9 +157,9 @@ pub fn Page() -> impl IntoElement {
             distribution="center"
             gap={56.0}
         >
-            <IslandCard label="GRAIN → GLASS" backdrop_effects=[Grain::new(0.5), glass()] />
-            <IslandCard label="GLASS → GRAIN" backdrop_effects=[glass(), Grain::new(0.5)] />
-            <IslandCard label="GLASS ONLY" backdrop_effects=[glass()] />
+            <IslandCard label="GRAIN → GLASS" material=[Grain::new(0.5), glass()] />
+            <IslandCard label="GLASS → GRAIN" material=[glass(), Grain::new(0.5)] />
+            <IslandCard label="GLASS ONLY" material=[glass()] />
         </Group>
     }
 }

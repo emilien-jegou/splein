@@ -89,8 +89,8 @@ fn lens_card(gain: f32, roughness: f32, light_x: f32) -> GlassEffect {
 }
 
 #[component]
-fn Card(label: &'static str, backdrop_effects: Option<EffectStack>) -> impl IntoElement {
-    let backdrop_effects = backdrop_effects.unwrap_or_default();
+fn Card(label: &'static str, material: Option<EffectStack>) -> impl IntoElement {
+    let material = material.unwrap_or_default();
     view! {
         <Group direction="vertical" gap={8.0} alignment="center">
             <Text size={13.0} weight={600u16} color={LABEL_COLOR}>{label}</Text>
@@ -98,7 +98,7 @@ fn Card(label: &'static str, backdrop_effects: Option<EffectStack>) -> impl Into
                 width={220.0}
                 height={160.0}
                 radius={24.0}
-                backdrop_effects={backdrop_effects}
+                material={material}
                 alignment="center"
                 distribution="center"
             >
@@ -148,41 +148,41 @@ pub fn Page() -> impl IntoElement {
                 <Group direction="horizontal" gap={48.0} alignment="center">
                     <Card
                         label="GGX OFF"
-                        backdrop_effects=[lens_card(0.0, 0.6, 0.0), Refract(), Frost(), Ggx()]
+                        material=[lens_card(0.0, 0.6, 0.0), Refract(), Frost(), Ggx()]
                     />
                     <Card
                         label="GGX ON"
-                        backdrop_effects=[lens_card(GAIN, 0.6, 0.0), Refract(), Frost(), Ggx()]
+                        material=[lens_card(GAIN, 0.6, 0.0), Refract(), Frost(), Ggx()]
                     />
                 </Group>
                 <Group direction="horizontal" gap={48.0} alignment="center">
                     <Card
                         label="ROUGHNESS 0.2"
-                        backdrop_effects=[lens_card(GAIN, 0.2, 0.0), Refract(), Frost(), Ggx()]
+                        material=[lens_card(GAIN, 0.2, 0.0), Refract(), Frost(), Ggx()]
                     />
                     <Card
                         label="ROUGHNESS 0.6"
-                        backdrop_effects=[lens_card(GAIN, 0.6, 0.0), Refract(), Frost(), Ggx()]
+                        material=[lens_card(GAIN, 0.6, 0.0), Refract(), Frost(), Ggx()]
                     />
                 </Group>
                 <Group direction="horizontal" gap={48.0} alignment="center">
                     <Card
                         label="LIGHT TOP-LEFT"
-                        backdrop_effects=[lens_card(GAIN, 0.6, -0.85), Refract(), Frost(), Ggx()]
+                        material=[lens_card(GAIN, 0.6, -0.85), Refract(), Frost(), Ggx()]
                     />
                     <Card
                         label="LIGHT TOP-RIGHT"
-                        backdrop_effects=[lens_card(GAIN, 0.6, 0.85), Refract(), Frost(), Ggx()]
+                        material=[lens_card(GAIN, 0.6, 0.85), Refract(), Frost(), Ggx()]
                     />
                 </Group>
                 <Group direction="horizontal" gap={48.0} alignment="center">
                     <Card
                         label="NO REFRACT"
-                        backdrop_effects=[lens_card(GAIN, 0.6, 0.0), Frost(), Ggx()]
+                        material=[lens_card(GAIN, 0.6, 0.0), Frost(), Ggx()]
                     />
                     <Card
                         label="WITH REFRACT"
-                        backdrop_effects=[lens_card(GAIN, 0.6, 0.0), Refract(), Frost(), Ggx()]
+                        material=[lens_card(GAIN, 0.6, 0.0), Refract(), Frost(), Ggx()]
                     />
                 </Group>
             </Group>

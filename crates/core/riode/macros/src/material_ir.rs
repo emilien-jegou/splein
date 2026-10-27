@@ -125,6 +125,13 @@ pub struct Env {
 /// A closure: one light-transport term evaluated per pixel.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Closure {
+    /// Phase 4.5 warp node: sine-displaced read of the SHARP capture
+    /// (`ReadSharp` — the raw snapshot, no pre-blur so the displacement
+    /// stays crisp). Both params are uniform-bound (D-M10b): values ride
+    /// slots, zero recompile on hover. Lowers to its own `apply` body
+    /// (not a radiance term): the warp module samples `sharp` at the
+    /// shifted position and preserves the host silhouette alpha.
+    Warp { frequency: Value, amplitude: Value },
     /// The only construct that reads the backdrop: refraction through
     /// `normal` at IOR, sampled with blur sigma (`0` = sharp snapshot).
     Refract {
@@ -292,6 +299,11 @@ impl MaterialExpr {
 impl Closure {
     fn hash_bits<H: Hasher>(&self, state: &mut H) {
         match self {
+            Closure::Warp { frequency, amplitude } => {
+                state.write_u8(10);
+                frequency.hash_bits(state);
+                amplitude.hash_bits(state);
+            }
             Closure::Refract { normal, ior, frost } => {
                 state.write_u8(0);
                 normal.hash_bits(state);

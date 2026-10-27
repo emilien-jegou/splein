@@ -96,7 +96,7 @@ fn Row(label: &'static str, blend: BlendMode) -> impl IntoElement {
                     height={72.0}
                     radius={16.0}
                     fill={ACCENT}
-                    backdrop_effects={blend_stack(blend)}
+                    material={blend_stack(blend)}
                     z_index={2}
                     alignment="center"
                     distribution="center"
@@ -139,7 +139,7 @@ fn GlassRow(label: &'static str, blend: BlendMode) -> impl IntoElement {
                     width={220.0}
                     height={88.0}
                     radius={24.0}
-                    backdrop_effects={glass_blend_stack(style, blend)}
+                    material={glass_blend_stack(style, blend)}
                     z_index={2}
                     alignment="center"
                     distribution="center"

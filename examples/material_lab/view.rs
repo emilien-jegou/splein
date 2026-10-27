@@ -277,7 +277,7 @@ fn ui(p: Params, rt: Rc<RefCell<ReactiveRuntime>>) -> Element {
             </Group>
             </ScrollView>
             // Preview stage: one big editable card wearing the DSL
-            // surface INLINE in the `backdrop_effects` attribute — the
+            // surface INLINE in the `material` attribute — the
             // macro only intercepts material blocks there. Each slider
             // read is a plain numeric (value-level) filling one uniform
             // slot; drags refill values with byte-identical WGSL source
@@ -295,7 +295,7 @@ fn ui(p: Params, rt: Rc<RefCell<ReactiveRuntime>>) -> Element {
                         width={420.0}
                         height={330.0}
                         radius={24.0}
-                        backdrop_effects={
+                        material={
                             let rough = p.roughness.get();
                             let tr = p.tint_r.get();
                             let tg = p.tint_g.get();

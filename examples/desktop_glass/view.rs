@@ -58,7 +58,7 @@ pub fn Page() -> impl IntoElement {
                 width={280.0}
                 height={200.0}
                 radius={24.0}
-                backdrop_effects={GlassPreset::regular().style().into_effects()}
+                material={GlassPreset::regular().style().into_effects()}
                 alignment="center"
                 distribution="center"
             >
@@ -69,7 +69,7 @@ pub fn Page() -> impl IntoElement {
                 width={280.0}
                 height={200.0}
                 radius={28.0}
-                backdrop_effects={GlassPreset::clear().style().into_effects()}
+                material={GlassPreset::clear().style().into_effects()}
                 alignment="center"
                 distribution="center"
             >
@@ -80,7 +80,7 @@ pub fn Page() -> impl IntoElement {
                 width={280.0}
                 height={200.0}
                 radius="max"
-                backdrop_effects={GlassPreset::regular().style().into_effects()}
+                material={GlassPreset::regular().style().into_effects()}
                 alignment="center"
                 distribution="center"
             >
@@ -106,7 +106,7 @@ pub fn Page() -> impl IntoElement {
                 width={280.0}
                 height={200.0}
                 radius={28.0}
-                backdrop_effects={GlassPreset::clear_bare().style().into_effects()}
+                material={GlassPreset::clear_bare().style().into_effects()}
                 alignment="center"
                 distribution="center"
             >

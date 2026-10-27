@@ -91,8 +91,8 @@ fn lens_card(gain: f32, sky: f32) -> GlassEffect {
 }
 
 #[component]
-fn Card(label: &'static str, backdrop_effects: Option<EffectStack>) -> impl IntoElement {
-    let backdrop_effects = backdrop_effects.unwrap_or_default();
+fn Card(label: &'static str, material: Option<EffectStack>) -> impl IntoElement {
+    let material = material.unwrap_or_default();
     view! {
         <Group direction="vertical" gap={8.0} alignment="center">
             <Text size={13.0} weight={600u16} color={LABEL_COLOR}>{label}</Text>
@@ -100,7 +100,7 @@ fn Card(label: &'static str, backdrop_effects: Option<EffectStack>) -> impl Into
                 width={220.0}
                 height={160.0}
                 radius={24.0}
-                backdrop_effects={backdrop_effects}
+                material={material}
                 alignment="center"
                 distribution="center"
             >
@@ -147,41 +147,41 @@ pub fn Page() -> impl IntoElement {
                 <Group direction="horizontal" gap={48.0} alignment="center">
                     <Card
                         label="ENV OFF"
-                        backdrop_effects=[lens_card(0.0, 0.0), Refract(), Frost()]
+                        material=[lens_card(0.0, 0.0), Refract(), Frost()]
                     />
                     <Card
                         label="ENV ON"
-                        backdrop_effects=[lens_card(GAIN, SKY), Refract(), Frost(), EnvReflect()]
+                        material=[lens_card(GAIN, SKY), Refract(), Frost(), EnvReflect()]
                     />
                 </Group>
                 <Group direction="horizontal" gap={48.0} alignment="center">
                     <Card
                         label="MIRROR CRISP"
-                        backdrop_effects=[lens_card(GAIN, SKY), Refract(), EnvReflect()]
+                        material=[lens_card(GAIN, SKY), Refract(), EnvReflect()]
                     />
                     <Card
                         label="MIRROR SOFT"
-                        backdrop_effects=[lens_card(GAIN, SKY), Refract(), Frost(), EnvReflect()]
+                        material=[lens_card(GAIN, SKY), Refract(), Frost(), EnvReflect()]
                     />
                 </Group>
                 <Group direction="horizontal" gap={48.0} alignment="center">
                     <Card
                         label="NO REFRACT"
-                        backdrop_effects=[lens_card(GAIN, SKY), Frost(), EnvReflect()]
+                        material=[lens_card(GAIN, SKY), Frost(), EnvReflect()]
                     />
                     <Card
                         label="WITH REFRACT"
-                        backdrop_effects=[lens_card(GAIN, SKY), Refract(), Frost(), EnvReflect()]
+                        material=[lens_card(GAIN, SKY), Refract(), Frost(), EnvReflect()]
                     />
                 </Group>
                 <Group direction="horizontal" gap={48.0} alignment="center">
                     <Card
                         label="SKY 0.3"
-                        backdrop_effects=[lens_card(GAIN, 0.3), Refract(), Frost(), EnvReflect()]
+                        material=[lens_card(GAIN, 0.3), Refract(), Frost(), EnvReflect()]
                     />
                     <Card
                         label="SKY 1.5"
-                        backdrop_effects=[lens_card(GAIN, 1.5), Refract(), Frost(), EnvReflect()]
+                        material=[lens_card(GAIN, 1.5), Refract(), Frost(), EnvReflect()]
                     />
                 </Group>
             </Group>

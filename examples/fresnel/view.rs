@@ -73,8 +73,8 @@ fn lens_card(gain: f32, f0: f32, power: f32) -> GlassEffect {
 }
 
 #[component]
-fn Card(label: &'static str, backdrop_effects: Option<EffectStack>) -> impl IntoElement {
-    let backdrop_effects = backdrop_effects.unwrap_or_default();
+fn Card(label: &'static str, material: Option<EffectStack>) -> impl IntoElement {
+    let material = material.unwrap_or_default();
     view! {
         <Group direction="vertical" gap={8.0} alignment="center">
             <Text size={13.0} weight={600u16} color={LABEL_COLOR}>{label}</Text>
@@ -82,7 +82,7 @@ fn Card(label: &'static str, backdrop_effects: Option<EffectStack>) -> impl Into
                 width={220.0}
                 height={160.0}
                 radius={24.0}
-                backdrop_effects={backdrop_effects}
+                material={material}
                 alignment="center"
                 distribution="center"
             >
@@ -132,41 +132,41 @@ pub fn Page() -> impl IntoElement {
                 <Group direction="horizontal" gap={48.0} alignment="center">
                     <Card
                         label="FRESNEL OFF"
-                        backdrop_effects=[lens_card(0.0, 0.0, 0.0), Refract(), Frost(), Rim(), Fresnel()]
+                        material=[lens_card(0.0, 0.0, 0.0), Refract(), Frost(), Rim(), Fresnel()]
                     />
                     <Card
                         label="FRESNEL ON"
-                        backdrop_effects=[lens_card(2.0, 0.0, 0.0), Refract(), Frost(), Rim(), Fresnel()]
+                        material=[lens_card(2.0, 0.0, 0.0), Refract(), Frost(), Rim(), Fresnel()]
                     />
                 </Group>
                 <Group direction="horizontal" gap={48.0} alignment="center">
                     <Card
                         label="GAIN 1.0"
-                        backdrop_effects=[lens_card(1.0, 0.0, 0.0), Refract(), Frost(), Rim(), Fresnel()]
+                        material=[lens_card(1.0, 0.0, 0.0), Refract(), Frost(), Rim(), Fresnel()]
                     />
                     <Card
                         label="GAIN 4.0"
-                        backdrop_effects=[lens_card(4.0, 0.0, 0.0), Refract(), Frost(), Rim(), Fresnel()]
+                        material=[lens_card(4.0, 0.0, 0.0), Refract(), Frost(), Rim(), Fresnel()]
                     />
                 </Group>
                 <Group direction="horizontal" gap={48.0} alignment="center">
                     <Card
                         label="NO REFRACT"
-                        backdrop_effects=[lens_card(2.0, 0.0, 0.0), Frost(), Rim(), Fresnel()]
+                        material=[lens_card(2.0, 0.0, 0.0), Frost(), Rim(), Fresnel()]
                     />
                     <Card
                         label="WITH REFRACT"
-                        backdrop_effects=[lens_card(2.0, 0.0, 0.0), Refract(), Frost(), Rim(), Fresnel()]
+                        material=[lens_card(2.0, 0.0, 0.0), Refract(), Frost(), Rim(), Fresnel()]
                     />
                 </Group>
                 <Group direction="horizontal" gap={48.0} alignment="center">
                     <Card
                         label="POWER 1.5"
-                        backdrop_effects=[lens_card(1.0, 0.0, 1.5), Refract(), Frost(), Rim(), Fresnel()]
+                        material=[lens_card(1.0, 0.0, 1.5), Refract(), Frost(), Rim(), Fresnel()]
                     />
                     <Card
                         label="F0 0.6"
-                        backdrop_effects=[lens_card(1.0, 0.6, 0.0), Refract(), Frost(), Rim(), Fresnel()]
+                        material=[lens_card(1.0, 0.6, 0.0), Refract(), Frost(), Rim(), Fresnel()]
                     />
                 </Group>
             </Group>

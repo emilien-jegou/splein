@@ -4,7 +4,7 @@
 // if the custom stage runs, the card paints solid red with rounded
 // corners; if the stage is skipped (pipeline fail, no card, wrong
 // engine) the card is transparent/missing. Run with wgpu — tiny-skia
-// ignores `backdrop_effects` by design.
+// ignores `material` by design.
 
 use riode::foundation::{BackdropNeed, CustomEffect};
 use riode::prelude::*;
@@ -60,7 +60,7 @@ pub fn Page() -> impl IntoElement {
                 width={400.0}
                 height={300.0}
                 radius={24.0}
-                backdrop_effects=[CustomEffect::new(SOLID_RED, Vec::new(), BackdropNeed::None)]
+                material=[CustomEffect::new(SOLID_RED, Vec::new(), BackdropNeed::None)]
                 alignment="center"
                 distribution="center"
             >
@@ -77,7 +77,7 @@ pub fn Page() -> impl IntoElement {
                     width={400.0}
                     height={300.0}
                     radius={24.0}
-                    backdrop={let c = Color::RED * Intensity::factor(30.0); (c).into_surface()}
+                    material={let c = Color::RED * Intensity::factor(30.0); (c).into_surface()}
                     alignment="center"
                     distribution="center"
                 >
@@ -98,7 +98,7 @@ pub fn Page() -> impl IntoElement {
                     width={400.0}
                     height={300.0}
                     radius={24.0}
-                    backdrop={|geo| { mix(Color::RED * Intensity::factor(30.0), Color::rgb(0.0, 0.5, 0.5) * Intensity::factor(30.0), geo.position).into_surface() }}
+                    material={|geo| { mix(Color::RED * Intensity::factor(30.0), Color::rgb(0.0, 0.5, 0.5) * Intensity::factor(30.0), geo.position).into_surface() }}
                     // NOTE: double braces — the XML attr layer strips the
                     // outer brace pair, so the closure needs its own block
                     // braces to hold statements (single-expr form needs
@@ -133,7 +133,7 @@ pub fn Page() -> impl IntoElement {
                             cursor.set((info.position.x / 900.0).clamp(0.05, 2.0));
                         }
                     }}
-                    backdrop={
+                    material={
                         let c = Color::RED * Intensity::factor(30.0);
                         let lobe = Microfacet::ggx(Normal::flat(), 1.0);
                         (c * lobe * Sky::gain(cursor.get())).into_surface()

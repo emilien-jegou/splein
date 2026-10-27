@@ -87,6 +87,13 @@ fn env_gain_wgsl(env: Option<&Env>) -> String {
 /// enclosing term (`Lit` node or unit ambient).
 fn closure_wgsl(c: &Closure, env_wgsl: &str) -> SynResult<String> {
     match c {
+        Closure::Warp { .. } => Err(syn::Error::new(
+            proc_macro2::Span::call_site(),
+            "material DSL (Phase 4.5): `Warp::sine(...)` is a whole-surface \
+             stage — it cannot nest inside `*`, `+`, `mix(...)`, or `Sky::gain(...)`; \
+             author the warp body alone and order it against the lens at runtime \
+             (`material={Warp::sine(...).into_surface()}` + `.then(...)`)",
+        )),
         Closure::Ggx { normal, roughness } => {
             let n = normal_wgsl(normal)?;
             let a = value_wgsl(roughness);
@@ -233,6 +240,21 @@ fn ggx_spec(v: vec3<f32>, n: vec3<f32>, roughness: f32) -> vec3<f32> {
 }
 "#;
 
+/// The warp `apply` body: a whole-stage module (not a radiance
+/// term). Samples `sharp` once at the sine-shifted position, clamps the
+/// read to its own alpha (premult convention — the AB compositor assumes
+/// no channel exceeds alpha), multiplies by the host card alpha (the
+/// silhouette survives the trip), and returns. `amp`/`freq` are the WGSL
+/// expressions for the amplitude/frequency values (literals or uniform
+/// refs — either way value-level, D-M10b).
+fn warp_body_wgsl(amplitude: &Value, frequency: &Value) -> String {
+    let amp = value_wgsl(amplitude);
+    let freq = value_wgsl(frequency);
+    format!(
+        "var out = ctx;\n    let dims = vec2<f32>(textureDimensions(sharp));\n    let uv = ctx.px / dims;\n    let shift = sin(ctx.px.y * ({freq})) * ({amp}) / dims.x;\n    let sample = textureSampleLevel(sharp, effect_sampler, vec2<f32>(uv.x + shift, uv.y), 0.0);\n    let card_a = ctx.color.a;\n    out.color = vec4<f32>(min(sample.rgb, vec3<f32>(sample.a)) * card_a, card_a);\n    return out;"
+    )
+}
+
 /// Lower the tree to the complete custom `apply` module source: the
 /// library prefix (`PRELUDE_WGSL`) + the straight-line `apply` whose
 /// body evaluates the expression and outputs it as surface color.
@@ -242,10 +264,19 @@ fn ggx_spec(v: vec3<f32>, n: vec3<f32>, roughness: f32) -> vec3<f32> {
 /// `ctx.color.a` is the host's rounded silhouette (coverage AA + merge
 /// alpha). `ctx.coverage` here is the identity context's — 1.0 across
 /// the whole scissor rect — and using it paints a square plaque that
-/// kills the card's border radius. The backdrop enters only through
-/// `Refract`, which Phase 1 rejects — so Phase 1 surfaces are opaque
-/// plaques (opacity rule, §1.3) shaped exactly like the host's card.
+/// kills the card's border radius.
+///
+/// Phase 4.5 warp bodies lower differently: `MaterialExpr::Closure(Warp)`
+/// at the top level emits the displacing stage body above (sharp read,
+/// `ReadSharp`, pad = amplitude) instead of the opaque plaque below.
+/// Warp nested under `*`/`+`/`mix` is rejected loudly in `term_wgsl`.
 pub fn lower_to_apply(expr: &MaterialExpr) -> SynResult<String> {
+    if let MaterialExpr::Closure(Closure::Warp { frequency, amplitude }) = expr {
+        let body = warp_body_wgsl(amplitude, frequency);
+        return Ok(format!(
+            "fn apply(\n    ctx: EffectCtx,\n    backdrop: texture_2d<f32>,\n    sharp: texture_2d<f32>,\n    u: CustomUniforms,\n) -> EffectCtx {{\n    {body}\n}}\n"
+        ));
+    }
     let radiance = term_wgsl(expr)?;
     Ok(format!(
         "{PRELUDE_WGSL}\nfn apply(\n    ctx: EffectCtx,\n    backdrop: texture_2d<f32>,\n    sharp: texture_2d<f32>,\n    u: CustomUniforms,\n) -> EffectCtx {{\n    var out = ctx;\n    let card_a = ctx.color.a;\n    let radiance: vec3<f32> = {radiance};\n    out.color = vec4<f32>(radiance * card_a, card_a);\n    return out;\n}}\n"

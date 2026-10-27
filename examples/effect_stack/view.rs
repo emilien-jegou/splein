@@ -1,6 +1,6 @@
 // Single responsibility: effect-order composition demo on the two
 // effect stacks — `layer_effects` (the sheet, CSS `filter`) and
-// `backdrop_effects` (sampled backdrop + lens, CSS
+// `material` (sampled backdrop + lens, CSS
 // `backdrop-filter`). Order within each list is execution order
 // (bottom → top). `=[...]` bracket syntax throughout.
 // NOTE: run with the wgpu engine (`-- wgpu` / `example effect_stack
@@ -70,10 +70,10 @@ fn glass_regular() -> GlassEffect {
 fn Card(
     label: &'static str,
     layer_effects: Option<EffectStack>,
-    backdrop_effects: Option<EffectStack>,
+    material: Option<EffectStack>,
 ) -> impl IntoElement {
     let layer_effects = layer_effects.unwrap_or_default();
-    let backdrop_effects = backdrop_effects.unwrap_or_default();
+    let material = material.unwrap_or_default();
     view! {
         <Group direction="vertical" gap={16.0} alignment="center">
             <Text size={13.0} weight={600u16} color={LABEL_COLOR}>{label}</Text>
@@ -82,7 +82,7 @@ fn Card(
                 height={160.0}
                 radius={24.0}
                 layer_effects={layer_effects}
-                backdrop_effects={backdrop_effects}
+                material={material}
                 alignment="center"
                 distribution="center"
             >
@@ -147,28 +147,28 @@ pub fn Page() -> impl IntoElement {
             {backdrop_blobs()}
             <Group direction="vertical" gap={36.0} alignment="center" distribution="center" z_index={2}>
                 <Group direction="horizontal" gap={48.0} alignment="center">
-                    <Card label="SAT → GLASS" layer_effects=[Saturate::new(0.0)] backdrop_effects=[glass()] />
-                    <Card label="GLASS → SAT" layer_effects=[Saturate::new(0.0)] backdrop_effects=[glass(), Saturate::new(0.0)] />
+                    <Card label="SAT → GLASS" layer_effects=[Saturate::new(0.0)] material=[glass()] />
+                    <Card label="GLASS → SAT" layer_effects=[Saturate::new(0.0)] material=[glass(), Saturate::new(0.0)] />
                 </Group>
                 <Group direction="horizontal" gap={48.0} alignment="center">
-                    <Card label="BLUR → GLASS" layer_effects=[Blur::new(6.0)] backdrop_effects=[glass()] />
-                    <Card label="GLASS → BLUR" layer_effects=[Blur::new(6.0)] backdrop_effects=[glass(), Blur::new(6.0)] />
+                    <Card label="BLUR → GLASS" layer_effects=[Blur::new(6.0)] material=[glass()] />
+                    <Card label="GLASS → BLUR" layer_effects=[Blur::new(6.0)] material=[glass(), Blur::new(6.0)] />
                 </Group>
                 <Group direction="horizontal" gap={48.0} alignment="center">
-                    <Card label="LAYER SAT" layer_effects=[Saturate::new(0.0)] backdrop_effects=[glass()] />
-                    <Card label="BACKDROP GLASS+SAT" backdrop_effects=[glass(), Saturate::new(0.0)] />
+                    <Card label="LAYER SAT" layer_effects=[Saturate::new(0.0)] material=[glass()] />
+                    <Card label="BACKDROP GLASS+SAT" material=[glass(), Saturate::new(0.0)] />
                 </Group>
                 <Group direction="horizontal" gap={48.0} alignment="center">
-                    <Card label="FULL (regular)" backdrop_effects=[glass_regular()] />
-                    <Card label="OPTICS ONLY" backdrop_effects=[glass_regular(), Refract(), Frost(), Disperse()] />
+                    <Card label="FULL (regular)" material=[glass_regular()] />
+                    <Card label="OPTICS ONLY" material=[glass_regular(), Refract(), Frost(), Disperse()] />
                 </Group>
                 <Group direction="horizontal" gap={48.0} alignment="center">
-                    <Card label="OPTICS + GRADE" backdrop_effects=[glass_regular(), Refract(), Frost(), Disperse(), Saturation(), Tone(), Wash(), Dim(), Tint(), Ambient()] />
-                    <Card label="OPTICS + GRADE + RIM" backdrop_effects=[glass_regular(), Refract(), Frost(), Disperse(), Saturation(), Tone(), Wash(), Dim(), Tint(), Ambient(), Rim()] />
+                    <Card label="OPTICS + GRADE" material=[glass_regular(), Refract(), Frost(), Disperse(), Saturation(), Tone(), Wash(), Dim(), Tint(), Ambient()] />
+                    <Card label="OPTICS + GRADE + RIM" material=[glass_regular(), Refract(), Frost(), Disperse(), Saturation(), Tone(), Wash(), Dim(), Tint(), Ambient(), Rim()] />
                 </Group>
                 <Group direction="horizontal" gap={48.0} alignment="center">
-                    <Card label="GRADE BEFORE OPTICS" backdrop_effects=[glass_regular(), Saturation(), Tone(), Wash(), Dim(), Tint(), Ambient(), Refract(), Frost(), Disperse()] />
-                    <Card label="OPTICS + GRADE (control)" backdrop_effects=[glass_regular(), Refract(), Frost(), Disperse(), Saturation(), Tone(), Wash(), Dim(), Tint(), Ambient()] />
+                    <Card label="GRADE BEFORE OPTICS" material=[glass_regular(), Saturation(), Tone(), Wash(), Dim(), Tint(), Ambient(), Refract(), Frost(), Disperse()] />
+                    <Card label="OPTICS + GRADE (control)" material=[glass_regular(), Refract(), Frost(), Disperse(), Saturation(), Tone(), Wash(), Dim(), Tint(), Ambient()] />
                 </Group>
             </Group>
         </Group>

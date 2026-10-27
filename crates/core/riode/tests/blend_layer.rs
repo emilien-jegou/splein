@@ -44,7 +44,7 @@ fn static_blend_group_wraps_subtree_in_begin_layer_with_mode() {
                 .width(50.0)
                 .height(50.0)
                 .fill(Color::RED)
-                .backdrop_effects(blend_stack(BlendMode::Multiply))]),
+                .material(blend_stack(BlendMode::Multiply))]),
     );
     engine.frame();
 
@@ -85,7 +85,7 @@ fn static_soft_light_reaches_wire() {
                 .width(50.0)
                 .height(50.0)
                 .fill(Color::RED)
-                .backdrop_effects(blend_stack(BlendMode::SoftLight))]),
+                .material(blend_stack(BlendMode::SoftLight))]),
     );
     engine.frame();
 
@@ -109,7 +109,7 @@ fn dynamic_blend_change_reemits_layer_with_new_mode() {
                 .width(50.0)
                 .height(50.0)
                 .fill(Color::RED)
-                .backdrop_effects(computed(move || blend_stack(m.get())))]),
+                .material(computed(move || blend_stack(m.get())))]),
     );
     engine.frame();
     assert!(

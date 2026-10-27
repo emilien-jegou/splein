@@ -34,6 +34,10 @@ name = "wire_grain"
 path = "wire_grain/main.rs"
 
 [[example]]
+name = "compositor_warp"
+path = "compositor_warp/main.rs"
+
+[[example]]
 name = "border_lab"
 path = "border_lab/main.rs"
 

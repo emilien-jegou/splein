@@ -99,7 +99,7 @@ pub fn Page() -> impl IntoElement {
                             width={240.0}
                             height={72.0}
                             radius="max"
-                            backdrop_effects={GlassPreset::regular().style().into_effects()}
+                            material={GlassPreset::regular().style().into_effects()}
                             alignment="center"
                             distribution="center"
                         >
@@ -113,7 +113,7 @@ pub fn Page() -> impl IntoElement {
                             width={150.0}
                             height={150.0}
                             radius={32.0}
-                            backdrop_effects={GlassPreset::regular().style_tinted(Color::hex_alpha(0x3B82F6, 0.35)).into_effects()}
+                            material={GlassPreset::regular().style_tinted(Color::hex_alpha(0x3B82F6, 0.35)).into_effects()}
                             alignment="center"
                             distribution="center"
                         >
@@ -128,7 +128,7 @@ pub fn Page() -> impl IntoElement {
                                 width={56.0}
                                 height={56.0}
                                 radius={16.0}
-                                backdrop_effects={GlassPreset::regular().style().into_effects()}
+                                material={GlassPreset::regular().style().into_effects()}
                             />
                         </ShapeCaption>
                         <ShapeCaption caption="small · clear">
@@ -136,7 +136,7 @@ pub fn Page() -> impl IntoElement {
                                 width={56.0}
                                 height={56.0}
                                 radius={16.0}
-                                backdrop_effects={GlassPreset::clear().style().into_effects()}
+                                material={GlassPreset::clear().style().into_effects()}
                             />
                         </ShapeCaption>
                         <ShapeCaption caption="small · dark">
@@ -144,7 +144,7 @@ pub fn Page() -> impl IntoElement {
                                 width={56.0}
                                 height={56.0}
                                 radius={16.0}
-                                backdrop_effects={GlassPreset::regular_dark().style().into_effects()}
+                                material={GlassPreset::regular_dark().style().into_effects()}
                             />
                         </ShapeCaption>
                         <ShapeCaption caption="small · tinted">
@@ -152,7 +152,7 @@ pub fn Page() -> impl IntoElement {
                                 width={56.0}
                                 height={56.0}
                                 radius={16.0}
-                                backdrop_effects={GlassPreset::regular().style_tinted(Color::hex_alpha(0xE5484D, 0.35)).into_effects()}
+                                material={GlassPreset::regular().style_tinted(Color::hex_alpha(0xE5484D, 0.35)).into_effects()}
                             />
                         </ShapeCaption>
                     </Group>
@@ -228,7 +228,7 @@ fn GlassCard(label: &'static str, preset: GlassPreset, tint: Option<Color>, spec
                 width={220.0}
                 height={160.0}
                 radius={24.0}
-                backdrop_effects={style.into_effects()}
+                material={style.into_effects()}
                 shadow={preset.shadow.clone()}
                 alignment="center"
                 distribution="center"

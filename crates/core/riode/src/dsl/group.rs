@@ -222,10 +222,14 @@ impl GroupDef {
         self
     }
 
-    /// Backdrop effects: transform the sampled background before the
-    /// layer composites (CSS `backdrop-filter` + the glass lens). The
-    /// sheet composites over the result.
-    pub fn backdrop_effects<P: IntoProp<EffectStack>>(mut self, e: P) -> Self {
+    /// Material: the ordered stack of surface + lens stages over the
+    /// sampled background (CSS `backdrop-filter`, plus the glass lens). The
+    /// snapshot is read-only input — these stages transform a copy the
+    /// glass optics and blend then sample; the layer's sheet composites
+    /// over the result. Vocabulary: `Blur`/`Saturate`/`ColorMatrix`
+    /// and `Glass` (backdrop-only — it refracts the backdrop).
+    /// `view!` key: `material=` (block, bracket list, or stack expr).
+    pub fn material<P: IntoProp<EffectStack>>(mut self, e: P) -> Self {
         self.backdrop_effects = Some(e.into_prop());
         self
     }
@@ -237,9 +241,20 @@ impl GroupDef {
         self
     }
 
-    /// Material-DSL alias: `backdrop={...}` in `view!` lowers a material block
-    /// to an `EffectStack` and lands here (same path as `backdrop_effects`).
-    /// Non-material values route through `backdrop_effects` list semantics.
+    /// Removed: `backdrop_effects` is now `material=` (same `EffectStack`
+    /// semantics; `view!` routes `material={...}` blocks through the
+    /// material interpreter). Loud error, never a silent misroute.
+    #[deprecated(note = "renamed: use `material(...)` (`view!` key `material=`)")]
+    #[allow(deprecated)]
+    pub fn backdrop_effects<P: IntoProp<EffectStack>>(mut self, e: P) -> Self {
+        self.backdrop_effects = Some(e.into_prop());
+        self
+    }
+
+    /// Removed: `backdrop` is now `material=` (same `EffectStack`
+    /// semantics). Loud error, never a silent misroute.
+    #[deprecated(note = "renamed: use `material(...)` (`view!` key `material=`)")]
+    #[allow(deprecated)]
     pub fn backdrop<P: IntoProp<EffectStack>>(mut self, e: P) -> Self {
         self.backdrop_effects(e)
     }

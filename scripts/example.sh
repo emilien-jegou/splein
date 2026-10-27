@@ -85,15 +85,15 @@ hot_build_for_set() {
 # Overlay mode: the transparent layer-shell host (not a winit window), so the
 # compositor + riode-glass plugin effects are visible while tuning.
 # Only examples whose view is overlay-shaped make sense here
-# (desktop_glass, prism_only, wire_grain); anything else exits loud
+# (desktop_glass, prism_only, wire_grain, compositor_warp); anything else exits loud
 # instead of booting a mis-sized overlay. Standalone overlay apps (dock)
 # run via `scripts/overlay.sh` instead — their UI lives next to the app,
 # not under `examples/`.
 if [ -n "$OVERLAY" ]; then
     case "$NAME" in
-        desktop_glass|prism_only|wire_grain) HOST_BIN="desktop-glass"; HOST_SET="desktop-glass" ;;
+        desktop_glass|prism_only|wire_grain|compositor_warp) HOST_BIN="desktop-glass"; HOST_SET="desktop-glass" ;;
         *)
-            echo "example.sh: --overlay supports desktop_glass, prism_only, wire_grain (got '$NAME')." >&2
+            echo "example.sh: --overlay supports desktop_glass, prism_only, wire_grain, compositor_warp (got '$NAME')." >&2
             exit 2 ;;
     esac
     if [ -n "$ENGINE" ]; then

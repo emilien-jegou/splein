@@ -151,17 +151,18 @@ fn event_method_ref(key: &str, attr: &KeyedAttribute) -> Option<TokenStream2> {
 }
 
 /// `layer_effects=[Blur::new(6.0), Saturate::new(0.0)]` / /
-/// `backdrop_effects=[…, Glass::clear()]` bracket syntax: an array
+/// `material=[…, Glass::clear()]` bracket syntax: an array
 /// literal of heterogeneous effect items becomes one `EffectStack`,
 /// each element boxed through its side's vocabulary trait (bare `[...]`
 /// and braced `{[...]}` forms both reach this as `Expr::Array`). Empty
 /// `[]` → empty stack. The vocabulary is type-enforced:
 /// `layer_effects=[Glass::clear()]` fails (`Glass` is backdrop-only);
 /// any other key keeps normal expression semantics.
+/// (`backdrop_effects` / `backdrop` are removed: use `material=`.)
 fn effect_list_value(key: &str, attr: &KeyedAttribute) -> Option<TokenStream2> {
     let method = match key {
         "layer_effects" => quote! { ::riode::foundation::LayerEffect::into_layer_effect },
-        "backdrop_effects" => {
+        "material" => {
             quote! { ::riode::foundation::BackdropEffect::into_backdrop_effect }
         }
         _ => return None,
@@ -183,16 +184,18 @@ fn effect_list_value(key: &str, attr: &KeyedAttribute) -> Option<TokenStream2> {
 }
 
 /// The final value tokens for an attribute: method-reference sugar for `on:` events
-/// with a bare `sig.method`, the material-block interpreter for `backdrop={...}` /
-/// `backdrop_effects={...}` (D-M6: `let`-bindings + `.into_surface()` terminal →
+/// with a bare `sig.method`, the material-block interpreter for `material={...}`
+/// (D-M6: `let`-bindings + `.into_surface()` terminal →
 /// static WGSL + filler; falls through to normal semantics when the shape is not
 /// a material block), bracket-list sugar for the effect-stack props, otherwise
 /// the normal (possibly slotted) value.
+/// (`backdrop_effects` / `backdrop` are removed — use `material=`; the old
+/// names are a loud compile error naming the replacement.)
 fn attr_value(key: &str, attr: &KeyedAttribute, flow: &FlowTables) -> TokenStream2 {
     if let Some(sugar) = event_method_ref(key, attr) {
         return sugar;
     }
-    if key == "backdrop_effects" || key == "backdrop" {
+    if key == "material" {
         if let Some(expr) = attr_expr(attr) {
             if let Some(material) = crate::material::material_block_value_outer(&expr) {
                 match material {
@@ -201,16 +204,22 @@ fn attr_value(key: &str, attr: &KeyedAttribute, flow: &FlowTables) -> TokenStrea
                 }
             }
         }
-        // Not a material block: `backdrop_effects` keeps normal expression
-        // semantics (raw CustomEffect, stack, dynamic closure...). Bare
-        // `backdrop` has no non-material meaning — route to the same builder
-        // so the Rust error names the alias, never a misroute.
-        if key == "backdrop" {
-            if let Some(list) = effect_list_value("backdrop_effects", attr) {
-                return slot_literal_value(list, flow);
-            }
-            return slot_literal_value(attr_value_tokens(attr), flow);
+        // Not a material block: `material` keeps normal expression
+        // semantics (raw CustomEffect, stack, dynamic closure...).
+        // Bracket-list sugar applies to the array form (`material=[...]`,
+        // both bare and braced) before falling through.
+        if let Some(list) = effect_list_value("material", attr) {
+            return slot_literal_value(list, flow);
         }
+        return slot_literal_value(attr_value_tokens(attr), flow);
+    }
+    if key == "backdrop_effects" || key == "backdrop" {
+        return syn::Error::new_spanned(
+            attr_value_tokens(attr),
+            "view!: `backdrop_effects` / `backdrop` are removed — use `material=` \
+             (`material={...}` block, `material=[...]` list, or any `EffectStack` expr)",
+        )
+        .to_compile_error();
     }
     if let Some(list) = effect_list_value(key, attr) {
         return slot_literal_value(list, flow);

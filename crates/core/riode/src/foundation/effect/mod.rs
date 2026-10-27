@@ -245,6 +245,16 @@ impl From<Vec<Box<dyn Effect>>> for EffectStack {
     }
 }
 
+/// A single effect becomes a singleton stack: `material={Warp::sine(...)}`
+/// without the `.into_surface()` terminal, and `material={my_effect}` after a
+/// `let`-bound stage, arrive here through the `Option<EffectStack>` setter's
+/// `Into` bound — no boxing at the call site.
+impl<T: Effect + 'static> From<T> for EffectStack {
+    fn from(effect: T) -> Self {
+        Self(vec![effect.into_effect()])
+    }
+}
+
 impl EffectStack {
     pub fn new() -> Self {
         Self(Vec::new())
@@ -1066,6 +1076,122 @@ impl BackdropEffect for Fresnel {}
 impl BackdropEffect for Ggx {}
 impl BackdropEffect for EnvReflect {}
 
+/// Unit-tagged warp frequency: cycles per device px. The DSL peels
+/// `Frequency::per_pixel(f)` — the tag keeps raw `f32` out of warp
+/// constructors so call sites spell their units.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Frequency(pub f32);
+
+impl Frequency {
+    pub const fn per_pixel(f: f32) -> Self {
+        Self(f)
+    }
+}
+
+/// Unit-tagged warp amplitude: displacement in device px. The DSL peels
+/// `Amplitude::px(a)` — same unit discipline as `Frequency`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Amplitude(pub f32);
+
+impl Amplitude {
+    pub const fn px(a: f32) -> Self {
+        Self(a)
+    }
+}
+
+/// Sinusoidal horizontal warp of the SHARP capture (Phase 4.5): displaces
+/// the backdrop read by a sine of device-px `y`, amplitude riding
+/// `u.data[0].x` (device px). Reads `sharp` (raw capture — no pre-blur so
+/// the displacement stays crisp), writes premultiplied color clamped to
+/// the card alpha so the card stays blend-legal.
+///
+/// Stack position is the order: before the `Glass` stage it bends the
+/// capture the lens then frosts/refracts (`WARP → GLASS`); after it the
+/// ripple sits flat over the finished card (`GLASS → WARP`). Same module,
+/// same uniforms — only position differs.
+///
+/// The module BYTE-IDENTICALLY matches the proven `compositor_warp` warp
+/// (the only warp ever observed working on the plugin path): `sin` of
+/// `ctx.px.y * freq`, scaled by `amp / dims.x`, `textureSampleLevel` of
+/// `sharp`, `freq` and `amp` as `u.data[0].y` / `u.data[0].x`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Warp {
+    pub frequency: f32,
+    pub amplitude: f32,
+}
+
+impl Warp {
+    /// `Warp::sine(Frequency::per_pixel(f), Amplitude::px(a))` — the
+    /// canonical constructor the material DSL lowers (and the demo spells).
+    pub const fn sine(frequency: Frequency, amplitude: Amplitude) -> Self {
+        Self {
+            frequency: frequency.0,
+            amplitude: amplitude.0,
+        }
+    }
+
+    /// The warp module: sine displacement of the sharp capture. Amplitude
+    /// and frequency ride `u.data[0].x` / `u.data[0].y` (device px and
+    /// cycles/px — value-level reactive, D-M5 two-keys: same source,
+    /// refilled values, pipeline cache hits).
+    pub const WARP_WGSL: &'static str = r#"
+fn apply(
+    ctx: EffectCtx,
+    backdrop: texture_2d<f32>,
+    sharp: texture_2d<f32>,
+    u: CustomUniforms,
+) -> EffectCtx {
+    var out = ctx;
+    let amp = u.data[0].x;
+    let freq = u.data[0].y;
+    let dims = vec2<f32>(textureDimensions(sharp));
+    let uv = ctx.px / dims;
+    let shift = sin(ctx.px.y * freq) * amp / dims.x;
+    let sample = textureSampleLevel(sharp, effect_sampler, vec2<f32>(uv.x + shift, uv.y), 0.0);
+    out.color = vec4<f32>(
+        min(sample.rgb, vec3<f32>(sample.a)),
+        sample.a,
+    );
+    return out;
+}
+"#;
+}
+
+impl Effect for Warp {
+    fn id(&self) -> EffectId {
+        // Stable across processes (hot reload, stack equality): constant
+        // tag ^ frequency bits ^ amplitude bits.
+        EffectId(
+            0x5741_5250_5F76_310
+                ^ u64::from(self.frequency.to_bits())
+                ^ u64::from(self.amplitude.to_bits()),
+        )
+    }
+
+    fn needs_backdrop(&self) -> bool {
+        // Engine-side: pulls the sharp parent snapshot into the card walk.
+        true
+    }
+
+    fn pad(&self, _scale: f32) -> f32 {
+        // The warp reaches `amplitude` px past the card edge; the snapshot
+        // region must cover the displaced samples (D-M8).
+        self.amplitude.max(0.0)
+    }
+
+    fn shader(&self) -> EffectShader {
+        EffectShader::Custom(CustomShader {
+            wgsl: Self::WARP_WGSL.to_string(),
+            uniforms: vec![self.amplitude, self.frequency],
+            backdrop: BackdropNeed::ReadSharp,
+        })
+    }
+
+    fn clone_box(&self) -> Box<dyn Effect> {
+        Box::new(self.clone())
+    }
+}
+
 /// A program-supplied custom stage as an effect — the material DSL's
 /// lowering target. Phase 0 hand-writes the WGSL (a passthrough surface
 /// for the mechanism demo); Phase 1's `view!` material form emits the
@@ -1078,6 +1204,13 @@ impl BackdropEffect for EnvReflect {}
 #[derive(Clone, Debug, PartialEq)]
 pub struct CustomEffect {
     pub shader: CustomShader,
+    /// Snapshot reach override (D-M8): `None` = the stage displaces
+    /// nothing (Phase 0 passthrough). `Some(px)` = displaced reads reach
+    /// `px` device px past the card edge. The DSL warp blocks set this to
+    /// the literal amplitude; the `Warp` foundation stage reports its own
+    /// amplitude directly. Consumed only by `Effect::pad` (island/scissor
+    /// sizing) — never by the shader.
+    pub pad_override: Option<f32>,
 }
 
 impl CustomEffect {
@@ -1092,7 +1225,18 @@ impl CustomEffect {
                 uniforms,
                 backdrop,
             },
+            pad_override: None,
         }
+    }
+
+    /// Override the snapshot reach (D-M8) for surfaces that displace
+    /// samples: the DSL warp blocks emit this with the literal amplitude
+    /// (a static structural fact — the same number that bakes into the
+    /// module's default fill). `Effect::pad` then reports it so the
+    /// island/scissor region covers the displaced reads.
+    pub fn with_pad(mut self, pad: f32) -> Self {
+        self.pad_override = Some(pad.max(0.0));
+        self
     }
 }
 
@@ -1111,11 +1255,10 @@ impl Effect for CustomEffect {
     }
 
     fn pad(&self, _scale: f32) -> f32 {
-        // Conservative refraction reach (D-M8). Phase 0's passthrough
-        // displaces nothing; a real surface reports its own reach here
-        // so the snapshot region covers displaced samples. 0 until the
-        // DSL's IR wires one through.
-        0.0
+        // Displacing surfaces (DSL warp blocks) report the literal
+        // amplitude via `with_pad` so the snapshot region covers the
+        // displaced samples (D-M8). Non-displacing surfaces report 0.
+        self.pad_override.unwrap_or(0.0)
     }
 
     fn shader(&self) -> EffectShader {
@@ -1128,3 +1271,4 @@ impl Effect for CustomEffect {
 }
 
 impl BackdropEffect for CustomEffect {}
+impl BackdropEffect for Warp {}
