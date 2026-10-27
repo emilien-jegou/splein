@@ -98,7 +98,7 @@ pub fn Page() -> impl IntoElement {
                     width={400.0}
                     height={300.0}
                     radius={24.0}
-                    material={|geo| { mix(Color::RED * Intensity::factor(30.0), Color::rgb(0.0, 0.5, 0.5) * Intensity::factor(30.0), geo.position).into_surface() }}
+                    material={|geo| { mix(Color::RED * Intensity::factor(30.0), Color::rgb(0.0, 0.5, 0.5) * Intensity::factor(30.0), geo.position()).into_surface() }}
                     // NOTE: double braces — the XML attr layer strips the
                     // outer brace pair, so the closure needs its own block
                     // braces to hold statements (single-expr form needs

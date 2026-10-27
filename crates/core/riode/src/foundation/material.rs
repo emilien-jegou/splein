@@ -607,6 +607,37 @@ impl Surface {
 // Operators: `*` + `mix`
 // ---------------------------------------------------------------------------
 
+/// `Color * Intensity` — bare-factor product in either order: both wrap
+/// the degenerate ambient and merge via `attach_color` (factors commute).
+/// Real Rust needs both impls: the macro used to normalize the order away.
+impl std::ops::Mul<Intensity> for crate::foundation::Color {
+    type Output = MaterialExpr;
+    fn mul(self, rhs: Intensity) -> MaterialExpr {
+        let tinted = MaterialExpr::Modulated(
+            Modulator::Color {
+                r: Value::Dyn(self.r),
+                g: Value::Dyn(self.g),
+                b: Value::Dyn(self.b),
+            },
+            Box::new(degenerate_ambient()),
+        );
+        let scaled = MaterialExpr::Modulated(
+            Modulator::Intensity {
+                lumens: Value::Dyn(rhs.0),
+            },
+            Box::new(degenerate_ambient()),
+        );
+        attach_color(tinted, scaled)
+    }
+}
+
+impl std::ops::Mul<crate::foundation::Color> for Intensity {
+    type Output = MaterialExpr;
+    fn mul(self, rhs: crate::foundation::Color) -> MaterialExpr {
+        rhs * self
+    }
+}
+
 /// `Color * closure` — tint a term. A bare `Color` in term position
 /// carries the degenerate ambient; `attach_color` replaces the inner
 /// lobe so the color lands on the real term.
@@ -663,6 +694,15 @@ impl std::ops::Mul<f32> for MaterialExpr {
             },
             Box::new(self),
         )
+    }
+}
+
+/// `term * term` — radiance sum (same as `+`; the macro normalized both
+/// orders to `Sum`, real Rust spells it twice).
+impl std::ops::Mul<MaterialExpr> for MaterialExpr {
+    type Output = MaterialExpr;
+    fn mul(self, rhs: MaterialExpr) -> MaterialExpr {
+        attach_color(self, rhs)
     }
 }
 
@@ -927,7 +967,10 @@ use crate::reactive::Prop as _MaterialProp;
 
 impl crate::foundation::IntoEffect for Surface {
     fn into_effect(self) -> Box<dyn crate::foundation::Effect> {
-        Box::new(self.into_effect())
+        // Inherent `Surface::into_effect` (the `CustomEffect` builder
+        // above) — NOT this trait method (that would recurse forever and
+        // blow the stack on every surface → empty card, floating text).
+        Box::new(Surface::into_effect(self))
     }
 }
 
