@@ -136,6 +136,11 @@ pub enum Op {
         /// (`u.data[7]`) so card-local `geo.*` sticks to cards while
         /// scrolling (Phase 5a swim fix).
         card_rect: ResolvedRect,
+        /// Resolved device-px corner radii (tl, tr, br, bl), W3C-clamped
+        /// to half the shorter side. `run_custom_pass` appends them as
+        /// uniform slot 8 (`u.data[8]`) so the rounded-rect SDF follows
+        /// the card's actual silhouette. Zero = sharp card (unwired).
+        card_radii: [f32; 4],
         params: u32,
         glass: Option<u32>,
         stages: Vec<StageGpu>,
@@ -1308,6 +1313,23 @@ impl SceneSink for WgpuSink<'_> {
         // Exact device rect of the layer box (for the glass SDF) —
         // taken before the pad expands the AABB below.
         let rect_dev = (x0, y0, (x1 - x0).max(0.0), (y1 - y0).max(0.0));
+        // Resolved device-px corner radii (tl, tr, br, bl): resolve in
+        // layout px against the layout rect, scale to device px, clamp
+        // to half the shorter device side (same W3C rule the glass
+        // optics path applies below). Seeded as slot 8 next to the
+        // card rect — the material's rounded-rect SDF reads them.
+        let sc = self.batch.scale();
+        let rc = layer.radius.resolve_corners(layer.rect.width, layer.rect.height);
+        let card_radii = {
+            let raw = [
+                rc.top_left * sc,
+                rc.top_right * sc,
+                rc.bottom_right * sc,
+                rc.bottom_left * sc,
+            ];
+            let cap = rect_dev.2.min(rect_dev.3) * 0.5;
+            raw.map(|r| r.max(0.0).min(cap))
+        };
         // Gaussian support: 3σ past the content AABB so blur tails stay
         // complete, in device px (σ scales with the root matrix; the
         // tiny-skia engine renders unscaled, so its σ is already
@@ -1717,6 +1739,7 @@ impl SceneSink for WgpuSink<'_> {
         self.batch.ops.push(Op::BeginLayer {
             region,
             card_rect: ResolvedRect::new(rect_dev.0, rect_dev.1, rect_dev.2, rect_dev.3),
+            card_radii,
             params,
             glass,
             stages,

@@ -109,6 +109,9 @@ pub struct PlacedShadow<'a> {
 #[derive(Clone, Debug)]
 pub struct PlacedLayer<'a> {
     pub rect: ResolvedRect,
+    /// The node's authored corner radius (local px) — threaded to the
+    /// engine so material stages seed the card's corner radii (slot 8).
+    pub radius: Radius,
     /// Layer effects (the sheet's transform), borrowed from the command.
     pub layer_effects: Option<&'a EffectStack>,
     /// Backdrop effects, borrowed from the command.
@@ -243,12 +246,14 @@ pub fn lower_chunk(
             SceneCommand::PopClip => sink.pop_clip(),
             SceneCommand::BeginLayer {
                 rect,
+                radius,
                 layer_effects,
                 backdrop_effects,
                 shadow_pad,
                 ..
             } => sink.begin_layer(&PlacedLayer {
                 rect: *rect,
+                radius: *radius,
                 layer_effects: layer_effects.as_ref(),
                 backdrop_effects: backdrop_effects.as_ref(),
                 transform: stack.transform(),

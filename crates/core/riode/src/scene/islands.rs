@@ -206,6 +206,7 @@ mod tests {
             SceneCommand::BeginLayer {
                 id: LayerId(1),
                 rect,
+                radius: Radius::ZERO,
                 layer_effects: None,
                 backdrop_effects: Some(EffectStack::from(vec![GlassEffect::single(
                     Glass::lens(1.0),
@@ -227,6 +228,7 @@ mod tests {
             SceneCommand::BeginLayer {
                 id: LayerId(2),
                 rect,
+                radius: Radius::ZERO,
                 layer_effects: Some(EffectStack::from(vec![Blur::new(8.0).into_effect()])),
                 backdrop_effects: None,
                 shadow_pad: 0.0,
@@ -245,6 +247,7 @@ mod tests {
                 SceneCommand::BeginLayer {
                     id: LayerId(0),
                     rect: ResolvedRect::new(0.0, 0.0, 100.0, 100.0),
+                    radius: Radius::ZERO,
                     layer_effects: None,
                     backdrop_effects: None,
                     shadow_pad: 0.0,
@@ -287,6 +290,7 @@ mod tests {
                 SceneCommand::BeginLayer {
                     id: LayerId(1),
                     rect: ResolvedRect::new(0.0, 0.0, 200.0, 100.0),
+                    radius: Radius::ZERO,
                     layer_effects: None,
                     backdrop_effects: Some(EffectStack::from(vec![GlassEffect::single(
                         Glass::lens(1.0),

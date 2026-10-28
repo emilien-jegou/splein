@@ -39,6 +39,11 @@ pub enum SceneCommand {
     BeginLayer {
         id: LayerId,
         rect: ResolvedRect,
+        /// The node's authored corner radius (local px) — the shape the
+        /// card clips with. Backdrop stages lower it into the custom
+        /// uniform stream (slot 8, device-px resolved corners) so the
+        /// material's edge fields follow the rounded silhouette.
+        radius: Radius,
         /// Layer effects (bottom → top): the sheet's own transform
         /// (CSS `filter`). `Some` (or backdrop effects / shadow pad)
         /// opens an effect layer; `None` everywhere is a plain isolation
@@ -138,6 +143,7 @@ pub fn hash_commands(commands: &[SceneCommand]) -> u64 {
             SceneCommand::BeginLayer {
                 id,
                 rect,
+                radius,
                 layer_effects,
                 backdrop_effects,
                 shadow_pad,
@@ -145,6 +151,7 @@ pub fn hash_commands(commands: &[SceneCommand]) -> u64 {
                 8u8.hash(&mut h);
                 id.0.hash(&mut h);
                 rect_bits(rect).hash(&mut h);
+                radius_bits(radius).hash(&mut h);
                 shadow_pad.to_bits().hash(&mut h);
                 match backdrop_effects {
                     None => 0u8.hash(&mut h),

@@ -90,10 +90,13 @@ pub fn upload_glass_frame(item: &RiodeItemV1, words: &[u32]) {
 }
 
 /// Uniform stream per stage, in f32s. The wire always carries the
-/// full fixed 8-vec4 block the ABI's `CustomUniforms` declares (shorter
+/// full fixed 9-vec4 block the ABI's `CustomUniforms` declares (shorter
 /// streams are zero-padded); longer ones cannot be represented and the
 /// client skips the stage with a warning before the helper drops it.
-const EFFECT_UNIFORMS_MAX: usize = 32;
+/// DSL user slots are f32 0..28; the executor appends the card rect
+/// (slot 7) and resolved corner radii (slot 8) per pass, so unwired
+/// plugin producers degrade to sharp corners exactly as before.
+const EFFECT_UNIFORMS_MAX: usize = 36;
 
 /// Upload one island's ordered effect stack (its `backdrop_effects`):
 /// clears every previously-latched stage, sends one `set_effect` per

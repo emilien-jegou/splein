@@ -136,6 +136,7 @@ fn content_hash_distinguishes_blend_modes() {
         chunk.push(SceneCommand::BeginLayer {
             id: LayerId(1),
             rect: ResolvedRect::new(0.0, 0.0, 50.0, 50.0),
+            radius: Radius::ZERO,
             layer_effects: None,
             backdrop_effects: Some(blend_stack(mode)),
             shadow_pad: 0.0,

@@ -69,11 +69,31 @@ fn ctx_uv(ctx: EffectCtx) -> vec2<f32> {
     return ctx_local_px(ctx) / size;
 }
 fn ctx_edge_dist(ctx: EffectCtx) -> f32 {
-    return ctx_edge_dist_at(ctx_local_px(ctx), ctx.card_rect);
+    // Sharp-rect proxy (documented): module-scope helpers cannot read the
+    // uniform block, so the radius-aware field (`ctx_edge_dist_at`) is
+    // called inline by the lowerings with the slot-8 corner radii. This
+    // one is the Beer-travel/path bulk estimate only.
+    return ctx_edge_dist_at(ctx_local_px(ctx), ctx.card_rect, vec4<f32>(0.0));
 }
-fn ctx_edge_dist_at(lp: vec2<f32>, rect: vec4<f32>) -> f32 {
+
+/// Rounded-rect signed distance, inside-positive: the card's actual
+/// silhouette. `rc` = corner radii in device px (top-left, top-right,
+/// bottom-right, bottom-left — slot 8, host-W3C-resolved and clamped);
+/// zero radii degenerate to the plain rect distance exactly as the old
+/// helper computed it.
+fn ctx_edge_dist_at(lp: vec2<f32>, rect: vec4<f32>, rc: vec4<f32>) -> f32 {
     let size = max(rect.zw, vec2<f32>(1.0));
-    return min(min(lp.x, lp.y), min(size.x - lp.x, size.y - lp.y));
+    let center = size * 0.5;
+    let rel = lp - center;
+    // Per-quadrant radius (rc = tl, tr, br, bl): the point's quadrant
+    // selects its own corner.
+    let r = max(
+        select(select(rc.y, rc.x, rel.x <= 0.0), select(rc.z, rc.w, rel.x <= 0.0), rel.y > 0.0),
+        0.0,
+    );
+    let q = abs(rel) - (center - vec2<f32>(r));
+    let d = length(max(q, vec2<f32>(0.0))) + min(max(q.x, q.y), 0.0) - r;
+    return -d;
 }
 
 /// Identity context: transparent, infinitely far from any clip.
@@ -90,10 +110,16 @@ fn effect_ctx_identity(px: vec2<f32>) -> EffectCtx {
 }
 
 /// Uniform block for custom stages: whole vec4s, padded by the client
-/// to the fixed 8-vec4 stream the wire carries (32 f32s). Reads index
+/// to the fixed 9-vec4 stream the wire carries (36 f32s). Reads index
 /// `u.data[i]`; use `u.data` lengths the uniforms actually fill.
+///
+/// Host-reserved tail (Phase 5a + corner-radius follow): the DSL leaves
+/// `data[7]` (card rect) and `data[8]` (corner radii) empty — the
+/// executor appends them per pass. Unwired producers leave zeros:
+/// `data[8]` zero means a sharp card and every consumer degenerates to
+/// the pre-radius look, exactly as before.
 struct CustomUniforms {
-    data: array<vec4<f32>, 8>,
+    data: array<vec4<f32>, 9>,
 };
 
 /// Shared sampler for custom effects (textureSample goes through this;

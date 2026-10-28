@@ -25,6 +25,13 @@ use crate::foundation::{BackdropNeed, CustomEffect, EffectStack};
 pub enum Value {
     Lit(f32),
     Dyn(f32),
+    /// A per-pixel geometry field read shader-side (the `|geo|`
+    /// vocabulary) instead of a uniform slot: `Geo::radius()` lowers
+    /// here, so a numeric built from the card's resolved corner radius
+    /// never occupies a uniform and never bakes WGSL — editing the
+    /// box's `radius` prop edits the shader value through the uniform
+    /// refill, with zero recompile.
+    GeoField(GeoField),
 }
 
 impl From<f32> for Value {
@@ -506,6 +513,14 @@ pub enum GeoField {
     PointerUvY,
     VelocityX,
     VelocityY,
+    /// The card's resolved corner radius (device px): the box shape
+    /// follows the shader. Reads the host-seeded slot-8 corner radii
+    /// and reduces to one scalar (the largest corner — equal corners
+    /// for uniform/pill boxes), so `Lens::beveled(.., geo.radius())`
+    /// bands the dome to the card's actual corner size. Edits to the
+    /// box's `radius` prop reach the shader as a uniform refill — the
+    /// value is a `Value::GeoField`, never a literal slot.
+    Radius,
 }
 
 /// Geometry handle: `|geo| geo.edge` builds a `Weight::GeoField`.
@@ -545,6 +560,15 @@ impl Geo {
     /// Card-local distance to the nearest edge in px.
     pub fn edge_dist(self) -> Weight {
         Weight::GeoField(GeoField::EdgeDist)
+    }
+    /// The card's resolved corner radius in device px, as a shader-side
+    /// value (`Value::GeoField`): the box shape feeds the material, so
+    /// `Lens::beveled(gain, geo.radius())` bands the bevel dome to the
+    /// card's corner size and editing the box's `radius` prop edits the
+    /// shader value (uniform refill, zero recompile). Scalar = the
+    /// largest corner; uniform / pill boxes resolve equal corners.
+    pub fn radius(self) -> Value {
+        Value::GeoField(GeoField::Radius)
     }
     /// Card-local pointer position in px (feeds `Lights::point` lamps).
     pub fn pointer_px(self) -> (Weight, Weight) {
@@ -1356,11 +1380,12 @@ impl crate::foundation::Warp {
 // Lowering (runtime — moved out of the macro)
 // ---------------------------------------------------------------------------
 
-/// User uniform budget: DSL `Value::Dyn` slots 0..28. Slots 28..32
-/// (the last `CustomUniforms` vec4, `u.data[7]`) are host-reserved —
-/// `run_custom_pass` appends the card rect `(x, y, w, h)` there, and the
-/// entry scaffolds seed `ctx.card_rect` from it. If user lowering ever
-/// reaches slot 28 the shape genuinely needs a bigger ABI — panic loudly
+/// User uniform budget: DSL `Value::Dyn` slots 0..28. Slots 28..36
+/// (the last two custom-uniform vec4s, `u.data[7]`/`u.data[8]`) are
+/// host-reserved — `run_custom_pass` appends the card rect `(x, y, w, h)`
+/// and the resolved corner radii `(tl, tr, br, bl)` there, and the entry
+/// scaffolds seed `ctx.card_rect` from the rect. If user lowering ever
+/// passes 28 slots the shape genuinely needs a bigger ABI — panic loudly
 /// (D-M10b: no silent truncation), don't spill into the host vec4.
 const MAX_USER_UNIFORMS: usize = 28;
 
@@ -1373,6 +1398,15 @@ fn card_rect_ref() -> &'static str {
     "u.data[7]"
 }
 
+/// WGSL read of the host-seeded corner radii (slot 8 = f32 slots
+/// 32..36): `(top-left, top-right, bottom-right, bottom-left)` in
+/// device px, W3C-resolved and clamped to half the shorter side by the
+/// executor. Zero-filled by unwired producers — the sharp-rect
+/// baseline.
+fn card_radius_ref() -> &'static str {
+    "u.data[8]"
+}
+
 struct LowerCx {
     uniforms: Vec<f32>,
 }
@@ -1381,17 +1415,32 @@ impl LowerCx {
     fn value(&mut self, v: &Value) -> String {
         match v {
             Value::Lit(f) => format!("{f:?}"),
+            Value::GeoField(field) => self.geo_field_value(*field),
             Value::Dyn(f) => {
                 assert!(
                     self.uniforms.len() < MAX_USER_UNIFORMS,
                     "material DSL: expression needs {} user uniforms (cap is {MAX_USER_UNIFORMS}); \
-                     slots 28..32 are host-reserved for card_rect — simplify the expression or grow the ABI",
+                     slots 28..36 are host-reserved for card_rect + corner radii — simplify the expression or grow the ABI",
                     self.uniforms.len() + 1,
                 );
                 let slot = self.uniforms.len() as u32;
                 self.uniforms.push(*f);
                 uniform_ref(slot)
             }
+        }
+    }
+
+    /// Per-pixel geometry fields read shader-side (never a uniform
+    /// slot): [`Geo::radius`] feeds bevel bands and any numeric slot.
+    fn geo_field_value(&mut self, field: GeoField) -> String {
+        match field {
+            GeoField::Radius => {
+                "(max(max(u.data[8].x, u.data[8].y), max(u.data[8].z, u.data[8].w)))".to_string()
+            }
+            other => panic!(
+                "material DSL: value-level geo field {other:?} has no scalar lowering \
+                 (geo.radius() is the only one); read it as a `Weight` instead"
+            ),
         }
     }
 
@@ -1424,10 +1473,10 @@ impl LowerCx {
             Normal::Card { gain } => {
                 let s = self.value(gain);
                 let px = "ctx_local_px(ctx)";
-                let hx1 = format!("(ctx_edge_dist_at((({px}) + vec2<f32>(1.0, 0.0)), ({})))", card_rect_ref());
-                let hx0 = format!("(ctx_edge_dist_at((({px}) - vec2<f32>(1.0, 0.0)), ({})))", card_rect_ref());
-                let hy1 = format!("(ctx_edge_dist_at((({px}) + vec2<f32>(0.0, 1.0)), ({})))", card_rect_ref());
-                let hy0 = format!("(ctx_edge_dist_at((({px}) - vec2<f32>(0.0, 1.0)), ({})))", card_rect_ref());
+                let hx1 = format!("(ctx_edge_dist_at((({px}) + vec2<f32>(1.0, 0.0)), ({}), ({})))", card_rect_ref(), card_radius_ref());
+                let hx0 = format!("(ctx_edge_dist_at((({px}) - vec2<f32>(1.0, 0.0)), ({}), ({})))", card_rect_ref(), card_radius_ref());
+                let hy1 = format!("(ctx_edge_dist_at((({px}) + vec2<f32>(0.0, 1.0)), ({}), ({})))", card_rect_ref(), card_radius_ref());
+                let hy0 = format!("(ctx_edge_dist_at((({px}) - vec2<f32>(0.0, 1.0)), ({}), ({})))", card_rect_ref(), card_radius_ref());
                 format!(
                     "(normalize(vec3<f32>((-(({hx1}) - ({hx0})) * 0.5 * ({s})), (-(({hy1}) - ({hy0})) * 0.5 * ({s})), 1.0)))"
                 )
@@ -1448,10 +1497,10 @@ impl LowerCx {
                 let prof = |e: &str| {
                     format!("(0.5 - 0.5 * cos(3.14159265 * clamp(({e}) / max(({r}), 1.0), 0.0, 1.0)))")
                 };
-                let ex1 = format!("(ctx_edge_dist_at((({px}) + vec2<f32>(1.0, 0.0)), ({card})))");
-                let ex0 = format!("(ctx_edge_dist_at((({px}) - vec2<f32>(1.0, 0.0)), ({card})))");
-                let ey1 = format!("(ctx_edge_dist_at((({px}) + vec2<f32>(0.0, 1.0)), ({card})))");
-                let ey0 = format!("(ctx_edge_dist_at((({px}) - vec2<f32>(0.0, 1.0)), ({card})))");
+                let ex1 = format!("(ctx_edge_dist_at((({px}) + vec2<f32>(1.0, 0.0)), ({card}), ({})))", card_radius_ref());
+                let ex0 = format!("(ctx_edge_dist_at((({px}) - vec2<f32>(1.0, 0.0)), ({card}), ({})))", card_radius_ref());
+                let ey1 = format!("(ctx_edge_dist_at((({px}) + vec2<f32>(0.0, 1.0)), ({card}), ({})))", card_radius_ref());
+                let ey0 = format!("(ctx_edge_dist_at((({px}) - vec2<f32>(0.0, 1.0)), ({card}), ({})))", card_radius_ref());
                 let (hx1, hx0, hy1, hy0) = (prof(&ex1), prof(&ex0), prof(&ey1), prof(&ey0));
                 format!(
                     "(normalize(vec3<f32>((-(({hx1}) - ({hx0})) * 0.5 * ({s})), (-(({hy1}) - ({hy0})) * 0.5 * ({s})), 1.0)))"
@@ -1466,10 +1515,10 @@ impl LowerCx {
                 let prof = |e: &str| {
                     format!("(sin(3.14159265 * clamp(({e}) / max(({r}), 1.0), 0.0, 1.0)))")
                 };
-                let ex1 = format!("(ctx_edge_dist_at((({px}) + vec2<f32>(1.0, 0.0)), ({card})))");
-                let ex0 = format!("(ctx_edge_dist_at((({px}) - vec2<f32>(1.0, 0.0)), ({card})))");
-                let ey1 = format!("(ctx_edge_dist_at((({px}) + vec2<f32>(0.0, 1.0)), ({card})))");
-                let ey0 = format!("(ctx_edge_dist_at((({px}) - vec2<f32>(0.0, 1.0)), ({card})))");
+                let ex1 = format!("(ctx_edge_dist_at((({px}) + vec2<f32>(1.0, 0.0)), ({card}), ({})))", card_radius_ref());
+                let ex0 = format!("(ctx_edge_dist_at((({px}) - vec2<f32>(1.0, 0.0)), ({card}), ({})))", card_radius_ref());
+                let ey1 = format!("(ctx_edge_dist_at((({px}) + vec2<f32>(0.0, 1.0)), ({card}), ({})))", card_radius_ref());
+                let ey0 = format!("(ctx_edge_dist_at((({px}) - vec2<f32>(0.0, 1.0)), ({card}), ({})))", card_radius_ref());
                 let (hx1, hx0, hy1, hy0) = (prof(&ex1), prof(&ex0), prof(&ey1), prof(&ey0));
                 format!("(normalize(vec3<f32>((-(({hx1}) - ({hx0})) * 0.5), (-(({hy1}) - ({hy0})) * 0.5), 1.0)))")
             }
@@ -1745,7 +1794,14 @@ impl LowerCx {
                 GeoField::UvY => "(ctx_uv(ctx).y)".to_string(),
                 GeoField::LocalPx => "(ctx_local_px(ctx).x)".to_string(),
                 GeoField::LocalPxY => "(ctx_local_px(ctx).y)".to_string(),
-                GeoField::EdgeDist => "(ctx_edge_dist(ctx))".to_string(),
+                // Rounded-rect SDF over the host-seeded card rect +
+                // corner radii (slots 7/8): the edge field follows the
+                // card's actual silhouette, corners included.
+                GeoField::EdgeDist => format!(
+                    "(ctx_edge_dist_at(ctx_local_px(ctx), ({card}), ({radius})))",
+                    card = card_rect_ref(),
+                    radius = card_radius_ref(),
+                ),
                 GeoField::PointerPxX => {
                     panic!("material DSL (Phase 9e): `geo.pointer_px()` needs the per-frame host uniform tail + invalidation contract — new ABI surface")
                 }
@@ -1766,6 +1822,11 @@ impl LowerCx {
                 }
                 GeoField::Position => "(fract(length(ctx.px) / 80.0))".to_string(),
                 GeoField::Curvature => "(length(ctx.normal.xy))".to_string(),
+                // Value-level field read in a `Weight` slot: `geo.radius()`
+                // is publically a `Value`, so this arm is only reachable
+                // by hand-built `Weight::GeoField(Radius)` — lower it
+                // through the same scalar read rather than crashing.
+                GeoField::Radius => self.geo_field_value(GeoField::Radius),
             },
         }
     }
@@ -1809,10 +1870,18 @@ impl LowerCx {
                 let (s, w) = (self.value(spacing_px), self.value(width_px));
                 format!("(field_grid_mask(({at}), ({s}), ({w})))")
             }
-            // Analytic card-local edge distance (px to nearest edge) —
-            // the same `ctx_edge_dist` helper `geo.edge_dist()` reads.
+            // Analytic card-local edge distance (px to the nearest edge)
+            // over the rounded-rect SDF: the corner radii ride the
+            // host-seeded slot 8, so the field follows the card's actual
+            // silhouette (`geo.edge_dist()` lowers through the same
+            // three-tap helper).
             Field::DistanceToEdge => {
-                format!("(ctx_edge_dist_at({at}, ({card})))", card = card_rect_ref())
+                format!(
+                    "(ctx_edge_dist_at({at}, ({card}), ({radius})))",
+                    at = at,
+                    card = card_rect_ref(),
+                    radius = card_radius_ref(),
+                )
             }
         }
     }
@@ -1839,12 +1908,17 @@ impl LowerCx {
             MaterialExpr::Closure(Closure::Transmit { frost, .. } | Closure::Interface { frost, .. }) => match frost {
                 Value::Dyn(f) => *f,
                 Value::Lit(f) => *f,
+                // Per-pixel field (e.g. `geo.radius()` as frost): no
+                // static sigma — report 0 so pad falls back to the
+                // displacement bound; the shader still reads the field.
+                Value::GeoField(_) => 0.0,
             },
             MaterialExpr::Closure(_) => 0.0,
             MaterialExpr::Lit(c, _) => match c {
                 Closure::Transmit { frost, .. } | Closure::Interface { frost, .. } => match frost {
                     Value::Dyn(f) => *f,
                     Value::Lit(f) => *f,
+                    Value::GeoField(_) => 0.0,
                 },
                 _ => 0.0,
             },
@@ -1852,6 +1926,7 @@ impl LowerCx {
                 Closure::Transmit { frost, .. } | Closure::Interface { frost, .. } => match frost {
                     Value::Dyn(f) => *f,
                     Value::Lit(f) => *f,
+                    Value::GeoField(_) => 0.0,
                 },
                 _ => 0.0,
             },
@@ -1869,12 +1944,16 @@ impl LowerCx {
             MaterialExpr::Closure(Closure::Transmit { dispersion, .. } | Closure::Interface { dispersion, .. }) => match dispersion {
                 Value::Dyn(f) => *f,
                 Value::Lit(f) => *f,
+                // Per-pixel field (e.g. `geo.radius()` as spread): no
+                // static spread — same contract as `max_frost` above.
+                Value::GeoField(_) => 0.0,
             },
             MaterialExpr::Closure(_) => 0.0,
             MaterialExpr::Lit(c, _) => match c {
                 Closure::Transmit { dispersion, .. } | Closure::Interface { dispersion, .. } => match dispersion {
                     Value::Dyn(f) => *f,
                     Value::Lit(f) => *f,
+                    Value::GeoField(_) => 0.0,
                 },
                 _ => 0.0,
             },
@@ -1882,6 +1961,7 @@ impl LowerCx {
                 Closure::Transmit { dispersion, .. } | Closure::Interface { dispersion, .. } => match dispersion {
                     Value::Dyn(f) => *f,
                     Value::Lit(f) => *f,
+                    Value::GeoField(_) => 0.0,
                 },
                 _ => 0.0,
             },
@@ -2004,7 +2084,11 @@ fn ggx_spec_light(v: vec3<f32>, n: vec3<f32>, roughness: f32, f0: vec3<f32>, l: 
 fn transmit_path_len(ctx: EffectCtx) -> f32 {
     // Host path_length when a glass producer published it; the card-local
     // edge-distance proxy otherwise (standalone custom stages have no
-    // Refract stage to write the depth field).
+    // Refract stage to write the depth field). Sharp-rect proxy on
+    // purpose: Beer travel is a bulk estimate, not a rim field — the
+    // corner-radius-aware field lives in `ctx_edge_dist_at`, which the
+    // normal/edge lowerings call inline (module-scope helpers cannot
+    // read the uniform block).
     return max(ctx.path_length, ctx_edge_dist(ctx));
 }
 

@@ -162,6 +162,7 @@ pub fn enter_node_frame(
         chunk.push(SceneCommand::BeginLayer {
             id: layer_id,
             rect: layer.rect,
+            radius: node.style.appearance.radius,
             layer_effects: layer.layer_effects.clone(),
             backdrop_effects: layer.backdrop_effects.clone(),
             shadow_pad: node_alpha_shadow_pad(node),

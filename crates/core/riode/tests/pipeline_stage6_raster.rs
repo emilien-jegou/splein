@@ -44,6 +44,7 @@ fn test_6_4_layer_wraps_subtree_in_clip_isolation() {
     chunk.push(SceneCommand::BeginLayer {
         id: LayerId(7),
         rect: ResolvedRect::new(0.0, 0.0, 50.0, 50.0),
+        radius: Radius::ZERO,
         layer_effects: None,
         backdrop_effects: None,
         shadow_pad: 0.0,

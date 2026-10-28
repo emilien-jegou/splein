@@ -270,6 +270,10 @@ struct OpenLayer {
     /// UNPADDED device-space card rect (Phase 5a swim fix): passed to
     /// `run_custom_pass`, which appends it as uniform slot 7.
     card_rect: ResolvedRect,
+    /// Resolved device-px corner radii (tl, tr, br, bl): passed to
+    /// `run_custom_pass`, which appends them as uniform slot 8 so the
+    /// rounded-rect SDF follows the card's silhouette.
+    card_radii: [f32; 4],
     params: u32,
     glass: Option<u32>,
     stages: Vec<StageGpu>,
@@ -889,20 +893,23 @@ impl WgpuRenderer {
         sharp: &wgpu::TextureView,
         uniforms: &[f32],
         card_rect: &ResolvedRect,
+        card_radii: &[f32; 4],
         dst: &wgpu::TextureView,
         sc: (u32, u32, u32, u32),
     ) {
         // Uniform upload sized to the ABI's fixed `CustomUniforms`
-        // (`array<vec4<f32>, 8>` = 32 f32 = 128 bytes). wgpu enforces the
-        // buffer is at least the struct's min size, so always fill 32.
+        // (`array<vec4<f32>, 9>` = 36 f32 = 144 bytes). wgpu enforces the
+        // buffer is at least the struct's min size, so always fill 36.
         // Engine-side size is otherwise free (D-M7) — a generated sized
         // struct (Phase 2+) replaces both this cap and the scaffold's
         // fixed array together.
         //
-        // Phase 5a host fill: the DSL leaves slot 7 (f32 28..32) empty
-        // (see `card_rect_ref` / `MAX_USER_UNIFORMS`); the engine appends
-        // the UNPADDED card rect (x, y, w, h, device px) here so
-        // card-local `geo.*` sticks to cards while scrolling (swim fix).
+        // Phase 5a + corner-radius host fill: the DSL leaves slots 7..8
+        // (f32 28..36) empty (see `card_rect_ref` / `MAX_USER_UNIFORMS`);
+        // the engine appends the UNPADDED card rect (x, y, w, h, device
+        // px) and the resolved device-px corner radii (tl, tr, br, bl)
+        // here so card-local `geo.*` sticks to cards while scrolling
+        // (swim fix) and the edge fields follow the rounded silhouette.
         // Debug-assert: DSL vectors longer than 28 mean the lowering
         // missed its own budget check (D-M10b).
         debug_assert!(
@@ -913,7 +920,8 @@ impl WgpuRenderer {
         let mut padded = uniforms.to_vec();
         padded.resize(28, 0.0);
         padded.extend_from_slice(&[card_rect.x, card_rect.y, card_rect.width, card_rect.height]);
-        debug_assert_eq!(padded.len(), 32);
+        padded.extend_from_slice(card_radii);
+        debug_assert_eq!(padded.len(), 36);
         let bytes: Vec<u8> = padded.iter().flat_map(|f| f.to_le_bytes()).collect();
         let ubuf = self.gpu.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("riode-wgpu-custom-params"),
@@ -1372,6 +1380,7 @@ impl WgpuRenderer {
                             stages,
                             backdrop_stages,
                             card_rect,
+                            card_radii,
                         } => Op::BeginLayer {
                             region,
                             params,
@@ -1379,6 +1388,7 @@ impl WgpuRenderer {
                             stages,
                             backdrop_stages,
                             card_rect,
+                            card_radii,
                         },
                         Op::EndLayer {
                             start,
@@ -1579,6 +1589,7 @@ impl WgpuRenderer {
                         stages,
                         backdrop_stages,
                         card_rect,
+                        card_radii,
                     } => {
                         // End the parent's pass first: wgpu borrows the
                         // encoder and its attachment view into the pass.
@@ -1695,6 +1706,7 @@ impl WgpuRenderer {
                             slot,
                             region: *region,
                             card_rect: *card_rect,
+                            card_radii: *card_radii,
                             params: *params,
                             glass: *glass,
                             stages: stages.clone(),
@@ -2075,6 +2087,7 @@ impl WgpuRenderer {
                                                 &self.glass_pool[open.slot].snap.1,
                                                 &c.uniforms,
                                                 &open.card_rect,
+                                                &open.card_radii,
                                                 self.card_view(open.slot, dest),
                                                 v,
                                             );
