@@ -32,6 +32,7 @@ members = [
 default-members = [
   "apps/splein",
   # TODO: Instead of two packages riode should re-export local macros
+  "crates/core/riode-shader",
   "crates/core/riode",
   "crates/core/riode/macros",
   "crates/engines/riode-engine-tiny-skia",

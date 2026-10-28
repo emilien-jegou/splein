@@ -56,8 +56,8 @@ pub mod content;
 pub mod edges;
 pub mod effect;
 pub mod falloff;
-pub mod filter;
 pub mod fill;
+pub mod filter;
 pub mod geometry;
 pub mod glass;
 pub mod key;
@@ -83,21 +83,14 @@ pub use content::*;
 pub use edges::*;
 pub use effect::*;
 pub use falloff::*;
-pub use filter::*;
 pub use fill::*;
+pub use filter::*;
 pub use geometry::*;
 pub use glass::*;
 pub use key::*;
 pub use light::*;
 pub use literal::*;
-pub use material::{
-    Absorb, Absorption, Bump, Closure, ComplexIor, Conductor, Curvature, Density, Diffuse,
-    Dispersion, Emission, EmissionBuilder, Env, Field, Fresnel, Gain, Geo, GeoField, GeoFn,
-    Interface, InterfaceBuilder, Ior, Intensity, Lens, Light, Lights, MaterialExpr, Microfacet, Modulator,
-    Normal, Offset, RadiusPx, Roughness, Scale, Sheen, Sky, Slab, Spacing, Specular,
-    SpecularBuilder, SpecularDist, Surface, Thickness, ThinFilm, Transmit, TransmitBuilder,
-    Transmission, Value, Weight, Width, fresnel, mix, Spread,
-};
+pub use material::*;
 pub use positioning::*;
 pub use presence::*;
 pub use radius::*;

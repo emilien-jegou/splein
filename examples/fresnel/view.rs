@@ -23,7 +23,7 @@
 //     the difference vanished — gate round 2).
 // Frozen inspection via F8 / `.` / `s` comes from the shared harness.
 
-use riode::foundation::{ColorStop, EffectStack, Frost, Fresnel, GlassEffect, LinearGradient, Point, Refract, Rim};
+use riode::foundation::{ColorStop, EffectStack, Frost, EffectFresnel, GlassEffect, LinearGradient, Point, Refract, Rim};
 use riode::internal::group;
 use riode::prelude::*;
 
@@ -132,41 +132,41 @@ pub fn Page() -> impl IntoElement {
                 <Group direction="horizontal" gap={48.0} alignment="center">
                     <Card
                         label="FRESNEL OFF"
-                        material=[lens_card(0.0, 0.0, 0.0), Refract(), Frost(), Rim(), Fresnel()]
+                        material=[lens_card(0.0, 0.0, 0.0), Refract(), Frost(), Rim(), EffectFresnel()]
                     />
                     <Card
                         label="FRESNEL ON"
-                        material=[lens_card(2.0, 0.0, 0.0), Refract(), Frost(), Rim(), Fresnel()]
+                        material=[lens_card(2.0, 0.0, 0.0), Refract(), Frost(), Rim(), EffectFresnel()]
                     />
                 </Group>
                 <Group direction="horizontal" gap={48.0} alignment="center">
                     <Card
                         label="GAIN 1.0"
-                        material=[lens_card(1.0, 0.0, 0.0), Refract(), Frost(), Rim(), Fresnel()]
+                        material=[lens_card(1.0, 0.0, 0.0), Refract(), Frost(), Rim(), EffectFresnel()]
                     />
                     <Card
                         label="GAIN 4.0"
-                        material=[lens_card(4.0, 0.0, 0.0), Refract(), Frost(), Rim(), Fresnel()]
+                        material=[lens_card(4.0, 0.0, 0.0), Refract(), Frost(), Rim(), EffectFresnel()]
                     />
                 </Group>
                 <Group direction="horizontal" gap={48.0} alignment="center">
                     <Card
                         label="NO REFRACT"
-                        material=[lens_card(2.0, 0.0, 0.0), Frost(), Rim(), Fresnel()]
+                        material=[lens_card(2.0, 0.0, 0.0), Frost(), Rim(), EffectFresnel()]
                     />
                     <Card
                         label="WITH REFRACT"
-                        material=[lens_card(2.0, 0.0, 0.0), Refract(), Frost(), Rim(), Fresnel()]
+                        material=[lens_card(2.0, 0.0, 0.0), Refract(), Frost(), Rim(), EffectFresnel()]
                     />
                 </Group>
                 <Group direction="horizontal" gap={48.0} alignment="center">
                     <Card
                         label="POWER 1.5"
-                        material=[lens_card(1.0, 0.0, 1.5), Refract(), Frost(), Rim(), Fresnel()]
+                        material=[lens_card(1.0, 0.0, 1.5), Refract(), Frost(), Rim(), EffectFresnel()]
                     />
                     <Card
                         label="F0 0.6"
-                        material=[lens_card(1.0, 0.6, 0.0), Refract(), Frost(), Rim(), Fresnel()]
+                        material=[lens_card(1.0, 0.6, 0.0), Refract(), Frost(), Rim(), EffectFresnel()]
                     />
                 </Group>
             </Group>

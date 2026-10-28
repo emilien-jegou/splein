@@ -974,9 +974,9 @@ impl Effect for Rim {
 /// (`fresnel` on `Glass`); the material carries them, the item is the
 /// stack position.
 #[derive(Clone, Debug, PartialEq)]
-pub struct Fresnel();
+pub struct EffectFresnel();
 
-impl Effect for Fresnel {
+impl Effect for EffectFresnel {
     fn id(&self) -> EffectId {
         debug_id(0x2B, self)
     }
@@ -1072,7 +1072,7 @@ impl BackdropEffect for Tint {}
 impl BackdropEffect for Ambient {}
 impl BackdropEffect for GlowEffect {}
 impl BackdropEffect for Rim {}
-impl BackdropEffect for Fresnel {}
+impl BackdropEffect for EffectFresnel {}
 impl BackdropEffect for Ggx {}
 impl BackdropEffect for EnvReflect {}
 
