@@ -1,5 +1,5 @@
 [package]
-name = "riode_shader"
+name = "riode-shader"
 version = "2.0.0-beta.0"
 authors = ["RayMarch <RayMarch@users.noreply.github.com>"]
 edition = "2024"
@@ -21,13 +21,12 @@ debug_print = []
 
 [dependencies]
 thiserror = "1.0.47"
-riode_shader_derive = { path = "./derive/" }
+riode-shader-derive = { path = "./derive/" }
 
 [dev-dependencies]
 static_assertions = "1.1.0"
 pretty_assertions = "1.4.1"
 glam = "0.29.0"
 bytemuck = { version = "1.19", features = ["derive"] }
-wgpu = "25.0.2"
 pollster = "0.4"
 futures = "0.3.31"

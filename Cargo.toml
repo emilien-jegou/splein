@@ -5,6 +5,7 @@ members = [
   "apps/dock",
   "apps/desktop-glass",
   "crates/core/riode",
+  "crates/core/riode-shader",
   "crates/ui/riode-anodeui",
   "crates/core/riode/benches/bench_suite",
   "crates/core/riode/macros",

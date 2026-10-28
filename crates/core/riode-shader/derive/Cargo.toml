@@ -1,5 +1,5 @@
 [package]
-name = "riode_shader_derive"
+name = "riode-shader-derive"
 version = "2.0.0-beta.0"
 authors = ["RayMarch <RayMarch@users.noreply.github.com>"]
 edition = "2024"

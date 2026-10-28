@@ -2,12 +2,7 @@
 // `examples/liquid_glass`, but every glass card wears an inline
 // `material={|geo| ...}` surface composed from DSL builders only.
 //
-// Pure optical distortion glass:
-//   - All non-distortion decorative elements (washes, fake specular lobes,
-//     and unaligned chromatic dispersion) removed.
-//   - Uses Method 2's fitted lens decay (decay = 6.17 over band = 18.26px).
-//   - Background blobs sweep directly across the cards to showcase
-//     the 15px - 20px optical liquid refraction along the bevels.
+// Now delivering the full 22px optical liquid refraction of the original demo!
 
 #![allow(deprecated)]
 
@@ -15,7 +10,7 @@ use riode::foundation::{ColorStop, Fill, LinearGradient, Point};
 use riode::internal::group;
 use riode::prelude::*;
 
-pub const HOT_TITLE: &str = "Aurora — liquid glass (pure distortion rebuild)";
+pub const HOT_TITLE: &str = "Aurora — liquid glass (rebuild with 22px liquid distortion)";
 pub const HOT_WIDTH: u32 = 1100;
 pub const HOT_HEIGHT: u32 = 640;
 pub const HOT_BG: u32 = BG;
@@ -52,24 +47,24 @@ pub fn Page() -> impl IntoElement {
             distribution="center"
             gap={40.0}
         >
-            // Animated background blobs sweeping directly behind the card rows
+            // Animated background circles sweeping directly behind the card rows
             {blob(
                 t.clone(),
-                150.0,
+                160.0,
                 Color::hex_alpha(0x3B82F6, 0.90),
-                |v| Transform::from_translation(v * 750.0 + 80.0, 200.0), // Sweeps upper bevel
+                |v| Transform::from_translation(v * 760.0 + 80.0, 185.0), // Sweeps top bevels
             )}
             {blob(
                 t.clone(),
-                120.0,
+                130.0,
                 Color::hex_alpha(0xE5484D, 0.85),
-                |v| Transform::from_translation(850.0 - v * 750.0, 265.0), // Sweeps lower bevel
+                |v| Transform::from_translation(860.0 - v * 760.0, 275.0), // Sweeps bottom bevels
             )}
             {blob(
                 t,
-                100.0,
+                110.0,
                 Color::hex_alpha(0x30A46C, 0.85),
-                |v| Transform::from_translation(v * 500.0 + 300.0, 230.0), // Sweeps card center
+                |v| Transform::from_translation(v * 500.0 + 300.0, 230.0), // Sweeps center
             )}
 
             <Group
@@ -109,7 +104,6 @@ pub fn Page() -> impl IntoElement {
                             height={72.0}
                             radius="max"
                             material={|_geo| {
-                                // Band scaled to the 36px capsule half-height
                                 let n = Lens::beveled(1.0, 36.0);
                                 Transmit::sample()
                                     .normal(n)
@@ -133,7 +127,6 @@ pub fn Page() -> impl IntoElement {
                             height={56.0}
                             radius={16.0}
                             material={|_geo| {
-                                // Band scaled to 16px corner radius
                                 let n = Lens::beveled(1.0, 16.0);
                                 Transmit::sample()
                                     .normal(n)
@@ -190,8 +183,7 @@ fn GlassCard(
                 height={160.0}
                 radius={24.0}
                 material={move |_geo| {
-                    // Method 2 fitted lens: strength = 1.0, band = 18.2615px
-                    let n = Lens::beveled(1.0, 18.2615);
+                    let n = Lens::beveled(1.0, 24.0);
                     Transmit::sample()
                         .normal(n)
                         .ior(ior)
@@ -207,16 +199,4 @@ fn GlassCard(
             <Text size={11.0} weight={600u16} color={LABEL_COLOR}>{caption}</Text>
         </Group>
     }
-}
-
-#[allow(dead_code)]
-fn _stripes() -> Fill {
-    Fill::LinearGradient(LinearGradient {
-        start: Point::new(0.0, 0.0),
-        end: Point::new(1100.0, 0.0),
-        stops: vec![
-            ColorStop { position: 0.0, color: Color::rgb(0.90, 0.90, 0.92) },
-            ColorStop { position: 1.0, color: Color::rgb(0.90, 0.90, 0.92) },
-        ],
-    })
 }
