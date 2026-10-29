@@ -1379,26 +1379,26 @@ impl SceneSink for WgpuSink<'_> {
                 let v = g.effective(&b);
                 // SDF rect: the device AABB before the pad expanded it.
                 let rect = ResolvedRect::new(rect_dev.0, rect_dev.1, rect_dev.2, rect_dev.3);
-                // One radius per shape (the reference's uniform carries a
-                // single value): per-corner riode radii collapse to the
-                // smallest, capped at half the shorter side — the same rule
-                // `merge_unions` keeps. A pill (`Radius::Max`) resolves equal
-                // corners, so it is unaffected.
+                // Per-corner radii (tl, tr, br, bl, device px): W3C
+                // resolution of the declared corners, scaled to the layer
+                // box and capped at half the shorter side — the same cap
+                // the scalar collapse kept. A pill (`Radius::Max`)
+                // resolves equal corners, so it is unaffected.
                 let c = g.radius.resolve_corners(layer.rect.width, layer.rect.height);
-                let radius = c
-                    .top_left
-                    .min(c.top_right)
-                    .min(c.bottom_right)
-                    .min(c.bottom_left)
-                    * sc;
-                let radius = radius.min(rect.width.min(rect.height) / 2.0);
+                let corners = std::array::from_fn(|i| {
+                    let r = [c.top_left, c.top_right, c.bottom_right, c.bottom_left][i] * sc;
+                    r.min(rect.width.min(rect.height) / 2.0)
+                });
+                // The scalar the spill seed carries: what the wire's
+                // `uInfo.x` used to collapse to.
+                let radius = corners[0].min(corners[1]).min(corners[2]).min(corners[3]);
                 // Core blur the engine pre-applies to the snapshot, composed
                 // from the shape's half shorter side (logical px in and out);
                 // the shader spends `uBlur` only on what this one misses.
                 let half_min = rect.width.min(rect.height) / 2.0 / sc;
                 let sigma = composed_blur_sigma(v, half_min);
                 let aspect = composed_blur_aspect(v, rect.width / sc, rect.height / sc);
-                let mut shape = GlassShapeUniform::new(rect, radius, g.hidden);
+                let mut shape = GlassShapeUniform::new(rect, corners, g.hidden);
                 shape.tint = b.tint;
                 shape.corner_exponent = g.corner_exponent;
                 shape.blur_sigma = sigma;
@@ -1528,8 +1528,14 @@ impl SceneSink for WgpuSink<'_> {
                 for m in &group.members {
                     let rect = dev_box(m.rect);
                     let v = m.glass.effective(&m.backdrop);
-                    let radius = (m.radius() * m.radius_scale * sc)
-                        .min(rect.width.min(rect.height) / 2.0);
+                    // Per-corner radii × the press scale, capped at half
+                    // the shape (`GlassMember::corners` keeps the same
+                    // per-corner rule the wire path packs).
+                    let corners = m.corners();
+                    let radius = std::array::from_fn(|i| {
+                        (corners[i] * m.radius_scale * sc)
+                            .min(rect.width.min(rect.height) / 2.0)
+                    });
                     let half_min = rect.width.min(rect.height) / 2.0 / sc;
                     let sigma = composed_blur_sigma(v, half_min);
                     let aspect = composed_blur_aspect(v, rect.width / sc, rect.height / sc);
@@ -1659,7 +1665,7 @@ impl SceneSink for WgpuSink<'_> {
                     ux0 = ux0.min(s.rect.x);
                     uy1 = uy1.max(s.rect.y + s.rect.height);
                     ux1 = ux1.max(s.rect.x + s.rect.width);
-                    ur = ur.min(s.radius);
+                    ur = ur.min(s.radius[0].min(s.radius[1]).min(s.radius[2]).min(s.radius[3]));
                 }
                 let spill = spill_len(&group.refraction, sc).and_then(|len| {
                     (ux0.is_finite() && ux1 > ux0).then(|| {

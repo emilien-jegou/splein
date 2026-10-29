@@ -2,8 +2,8 @@
 
 use crate::foundation::{
     Backdrop, BuiltinStage, EffectShader, Glass, GlassEffect, GlassGroup, GlassLayer,
-    GlassMember, IntoEffect, GlassPressGeometry, Glow, Point, Refraction, ResolvedRect,
-    Spectral, Transform, GLASS_STANDARD,
+    GlassMember, IntoEffect, GlassPressGeometry, Glow, Point, Radius, Refraction,
+    ResolvedRect, Spectral, Transform, GLASS_STANDARD,
 };
 use crate::pipeline::compile::emit::{
     emit_node_content, enter_node_frame, exit_node_frame, node_alpha_shadow_pad, NodeLayer,
@@ -125,8 +125,15 @@ fn collect_glass_members(arena: &mut TreeArena, group_id: NodeId) -> (Vec<GlassM
                     radius_scale: 1.0,
                 };
                 if rscale != 1.0 {
-                    member.glass.radius =
-                        crate::foundation::Radius::Scalar(member.radius() * rscale);
+                    // The smaller-axis scale rides per corner (the
+                    // declared corner set survives skew):
+                    let c = member.corners();
+                    member.glass.radius = Radius::Corners {
+                        top_left: c[0] * rscale,
+                        top_right: c[1] * rscale,
+                        bottom_right: c[2] * rscale,
+                        bottom_left: c[3] * rscale,
+                    };
                 }
                 out.push(member);
                 // Press deforms the member's own shape (the content
@@ -155,9 +162,9 @@ fn collect_glass_members(arena: &mut TreeArena, group_id: NodeId) -> (Vec<GlassM
     // `glass_id`, then overwrite each tracked member's rect + stamped
     // radius with the track's current glide position. Untracked members
     // keep their declared corners verbatim.
-    let targets: Vec<(Option<u64>, ResolvedRect, f32)> = out
+    let targets: Vec<(Option<u64>, ResolvedRect, [f32; 4])> = out
         .iter()
-        .map(|m| (m.glass.glass_id, m.rect, m.radius()))
+        .map(|m| (m.glass.glass_id, m.rect, m.corners()))
         .collect();
     let motion = &GLASS_STANDARD.motion;
     let current = arena
@@ -170,7 +177,12 @@ fn collect_glass_members(arena: &mut TreeArena, group_id: NodeId) -> (Vec<GlassM
     {
         if id.is_some() {
             member.rect = *rect;
-            member.glass.radius = crate::foundation::Radius::Scalar(*radius);
+            member.glass.radius = crate::foundation::Radius::Corners {
+                top_left: radius[0],
+                top_right: radius[1],
+                bottom_right: radius[2],
+                bottom_left: radius[3],
+            };
         }
     }
     // Press deforms the morphed rect (morph first, press on top — the

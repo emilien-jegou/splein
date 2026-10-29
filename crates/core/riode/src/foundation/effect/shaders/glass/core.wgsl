@@ -142,6 +142,11 @@ struct GlassU {
     // [0].y sky strength, [0].z the mirror travel cap in px, [0].w the
     // sky horizon lift, [1].x the sky zenith gain.
     u_env: array<vec4<f32>, 2>,
+    // Per-corner radii (wgpu-only, appended after the env tail): one
+    // vec4 per shape, tl / tr / br / bl in device px. At equal corners
+    // the vec4 is the `u_info` scalar four times, so uniform cards
+    // render exactly as before.
+    u_corner: array<vec4<f32>, 24>,
 };
 
 @group(0) @binding(0)

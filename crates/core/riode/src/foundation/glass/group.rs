@@ -39,10 +39,20 @@ pub struct GlassMember {
 }
 
 impl GlassMember {
+    /// The member's corner radii in logical px (tl, tr, br, bl): what
+    /// the shader's `uCorner[N]` vec4 carries after the callers × the
+    /// press radius scale and cap at half the shorter side. At equal
+    /// declared corners this is the radius `radius` used to collapse.
+    pub fn corners(&self) -> [f32; 4] {
+        self.glass.shape_corners(self.rect.width, self.rect.height)
+    }
+
     /// The member's corner radius in logical px (the single radius the
-    /// shader's `uInfo[N].x` carries).
+    /// shader's `uInfo[N].x` carries — the smallest corner the graphic
+    /// collapses to, what the compositor wire still encodes).
     pub fn radius(&self) -> f32 {
-        self.glass.shape_radius(self.rect.width, self.rect.height)
+        let c = self.corners();
+        c[0].min(c[1]).min(c[2]).min(c[3])
     }
 }
 
@@ -172,40 +182,52 @@ impl GlassLayer {
     }
 }
 
-/// One quantum-advanced morph track: a member's current rect + radius
-/// gliding toward its layout target on the morph spring
+/// One quantum-advanced morph track: a member's current rect +
+/// corner radii gliding toward their layout target on the morph spring
 /// (`morphResponse`/`morphDamping` → SwiftUI stiffness/damping, mass 1).
+/// Corner radii live as 4-component tracks (tl, tr, br, bl — same order
+/// as [`Radius::corners`] / the shader's `uCorner`), so a pill ⇄
+/// asymmetric transition glides per corner at frame rate: geometry may
+/// retarget from a signal every frame, so nothing about the corner set
+/// may be baked.
 #[derive(Clone, Debug)]
 pub struct MorphTrack {
     x: SpringState,
     y: SpringState,
     w: SpringState,
     h: SpringState,
-    r: SpringState,
+    r: [SpringState; 4],
 }
 
 impl MorphTrack {
     /// Starts a track settled at `to` (first appearance never animates —
     /// the reference only morphs after the group's first frame).
-    pub fn settled(rect: ResolvedRect, radius: f32, response: f32, damping: f32) -> Self {
+    pub fn settled(
+        rect: ResolvedRect,
+        radius: [f32; 4],
+        response: f32,
+        damping: f32,
+    ) -> Self {
         let s = swiftui_spring(response, damping);
         Self {
             x: SpringState::new(s, rect.x, rect.x),
             y: SpringState::new(s, rect.y, rect.y),
             w: SpringState::new(s, rect.width, rect.width),
             h: SpringState::new(s, rect.height, rect.height),
-            r: SpringState::new(s, radius, radius),
+            r: std::array::from_fn(|i| SpringState::new(s, radius[i], radius[i])),
         }
     }
 
     /// Retargets in place, preserving position and velocity so an
     /// interrupted glide continues smoothly.
-    pub fn retarget(&mut self, rect: ResolvedRect, radius: f32) {
+    pub fn retarget(&mut self, rect: ResolvedRect, radius: [f32; 4]) {
         self.x.retarget(rect.x);
         self.y.retarget(rect.y);
         self.w.retarget(rect.width);
         self.h.retarget(rect.height);
-        self.r.retarget(radius);
+        for (r, target) in self.r.iter_mut().zip(radius) {
+            r.retarget(target);
+        }
     }
 
     /// Advances one fixed quantum (the animation clock's step — the same
@@ -216,7 +238,9 @@ impl MorphTrack {
         self.y.advance(FIXED_STEP_SECS);
         self.w.advance(FIXED_STEP_SECS);
         self.h.advance(FIXED_STEP_SECS);
-        self.r.advance(FIXED_STEP_SECS);
+        for r in &mut self.r {
+            r.advance(FIXED_STEP_SECS);
+        }
     }
 
     pub fn is_settled(&self) -> bool {
@@ -224,14 +248,14 @@ impl MorphTrack {
             && self.y.is_settled()
             && self.w.is_settled()
             && self.h.is_settled()
-            && self.r.is_settled()
+            && self.r.iter().all(SpringState::is_settled)
     }
 
-    /// Current rect + radius for this frame's uniform pack.
-    pub fn current(&self) -> (ResolvedRect, f32) {
+    /// Current rect + corner radii for this frame's uniform pack.
+    pub fn current(&self) -> (ResolvedRect, [f32; 4]) {
         (
             ResolvedRect::new(self.x.position, self.y.position, self.w.position, self.h.position),
-            self.r.position,
+            std::array::from_fn(|i| self.r[i].position),
         )
     }
 
@@ -265,14 +289,14 @@ impl GlassMorphState {
     /// Matches this frame's `glass_id` members against retained tracks:
     /// new ids settle at their target, changed targets retarget in
     /// place, vanished ids drop (no ghosts in v1). Returns the member
-    /// rect/radius to emit — the track's current glide position when it
-    /// has one, the layout target otherwise.
+    /// rect/corner radii to emit — the track's current glide position
+    /// when it has one, the layout target otherwise.
     pub fn resolve(
         &mut self,
-        members: &[(Option<u64>, ResolvedRect, f32)],
+        members: &[(Option<u64>, ResolvedRect, [f32; 4])],
         response: f32,
         damping: f32,
-    ) -> Vec<(ResolvedRect, f32)> {
+    ) -> Vec<(ResolvedRect, [f32; 4])> {
         let mut seen = Vec::with_capacity(members.len());
         let mut out = Vec::with_capacity(members.len());
         for (id, target, radius) in members {

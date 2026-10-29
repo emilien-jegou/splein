@@ -73,9 +73,15 @@ pub const K_GGX_FLOATS: usize = 8;
 /// vec4s, 5 used. Not in the v5 wire.
 pub const K_ENV_FLOATS: usize = 8;
 
+/// Per-shape corner radii (wgpu-only, appended after the env tail): 24
+/// vec4s, tl / tr / br / bl device px (`shape.wgsl`'s `u_corner`). The
+/// smallest corner is the scalar the v5 wire already carries in
+/// `uInfo[N].x` — at equal corners the vec4 is the scalar four times.
+pub const K_CORNERS_FLOATS: usize = 4 * K_MAX_PASS_SHAPES;
+
 /// Number of user floats after `uSize`: the packed buffer length in `f32`.
 pub const K_GLASS_UNIFORM_FLOATS: usize =
-    K_GLASS_WIRE_FLOATS + K_STAGES_FLOATS + K_GGX_FLOATS + K_ENV_FLOATS;
+    K_GLASS_WIRE_FLOATS + K_STAGES_FLOATS + K_GGX_FLOATS + K_ENV_FLOATS + K_CORNERS_FLOATS;
 
 /// Largest usable `postBlurShare` (the composed blur keeps `√0.1` of σ).
 pub const K_MAX_POST_BLUR_SHARE: f32 = 0.9;
@@ -92,9 +98,10 @@ pub const K_MAX_POST_BLUR_SHARE: f32 = 0.9;
 pub struct GlassShapeUniform {
     /// Shape rect in device px (`uRects[N]`).
     pub rect: ResolvedRect,
-    /// Corner radius in device px (`uInfo[N].x`). Follows the smaller axis
-    /// scale of any applied press deformation.
-    pub radius: f32,
+    /// Corner radii in device px, tl / tr / br / bl (`uCorner[N]`, the
+    /// wgpu-only tail). Each capped at half the shorter side; the
+    /// smallest is what goes into the wire's `uInfo[N].x` scalar.
+    pub radius: [f32; 4],
     /// Draw-nothing marker (`Glass::identity()`); dropped by the packer.
     pub hidden: bool,
     /// Material tint (`uTints[N]`: rgb, `tintStrength · a`). `None` packs
@@ -201,7 +208,7 @@ pub struct GlassShapeUniform {
 impl GlassShapeUniform {
     /// A plain, undeformed shape: full opacity, no tint, no clip, no
     /// press light, no extra blur. `rect`/`radius` in device px.
-    pub const fn new(rect: ResolvedRect, radius: f32, hidden: bool) -> Self {
+    pub const fn new(rect: ResolvedRect, radius: [f32; 4], hidden: bool) -> Self {
         Self {
             rect,
             radius,
@@ -480,7 +487,7 @@ pub fn extra_blur_of(
 }
 
 /// Whether the packer draws this shape (mirrors `_drawable`): not
-/// hidden, finite and positive rect, finite radius.
+/// hidden, finite and positive rect, finite radii.
 pub fn drawable(s: &GlassShapeUniform) -> bool {
     !s.hidden
         && s.rect.x.is_finite()
@@ -489,7 +496,14 @@ pub fn drawable(s: &GlassShapeUniform) -> bool {
         && s.rect.height.is_finite()
         && s.rect.width > 0.0
         && s.rect.height > 0.0
-        && s.radius.is_finite()
+        && s.radius.iter().all(|r| r.is_finite())
+}
+
+/// The scalar the v5 wire's `uInfo[N].x` carries for a vec4-carrying
+/// shape: the smallest corner (the wire has no per-corner slots; the
+/// compositor keeps flattening asymmetric corners the old way).
+pub fn wire_radius(s: &GlassShapeUniform) -> f32 {
+    s.radius[0].min(s.radius[1]).min(s.radius[2]).min(s.radius[3])
 }
 
 /// Merges shapes that share a non-null `union_id` into their bounding rect,
@@ -515,10 +529,13 @@ pub fn merge_unions(shapes: &[GlassShapeUniform]) -> Vec<GlassShapeUniform> {
             Some((id, idx)) => {
                 let prev = out[idx];
                 let rect = union_rect(prev.rect, s.rect);
-                let radius = prev
-                    .radius
-                    .min(s.radius)
-                    .min(rect.width.min(rect.height) / 2.0);
+                // Per-corner radii (the union's silhouette is the larger
+                // shape's corners where the rects coincide): min per
+                // corner, capped by the merged shape's half shorter side.
+                let cap = rect.width.min(rect.height) / 2.0;
+                let radius = std::array::from_fn(|i| {
+                    prev.radius[i].min(s.radius[i]).min(cap).max(0.0)
+                });
                 let merged = GlassShapeUniform {
                     rect,
                     radius,
@@ -625,6 +642,10 @@ fn union_rect(a: ResolvedRect, b: ResolvedRect) -> ResolvedRect {
 /// | 544–639 | uClip[N]  | clip x0, y0, x1, y1 px |
 /// | 640–735 | uBlur[N]  | extra sigma x px, extra sigma y px, taps, 0 |
 /// | 736–791 | uGlow/uOuter | 6 lobes (centre, σ, amp, 0) + 6 colours + geom + outer rule |
+/// | 792–823 | uStages   | count, stage ids (wgpu-only, past the wire) |
+/// | 824–831 | uGgx      | roughness, gain, light dir |
+/// | 832–839 | uEnv      | env mirror knobs |
+/// | 840–935 | uCorner[N]| per-shape corner radii tl, tr, br, bl px |
 ///
 /// The glow tail (floats up to `K_GLASS_WIRE_FLOATS`) rides the
 /// compositor wire too since wire v5 (the `riode-glass` plugin's GLSL
@@ -678,7 +699,9 @@ pub fn pack_glass_uniforms(u: &GlassFrameUniforms<'_>) -> Vec<f32> {
             1.0
         };
         let dst = K_INFO_AT + i * 4;
-        f[dst] = s.radius;
+        // v5 wire scalar: the smallest corner (byte-identical to the
+        // pre-vec4 pack, which collapsed at emission).
+        f[dst] = wire_radius(s);
         // Single bank: no variant flag. The slot ships 0 (layout kept
         // stable for the compositor wire).
         f[dst + 1] = 0.0;
@@ -872,6 +895,13 @@ pub fn pack_glass_uniforms(u: &GlassFrameUniforms<'_>) -> Vec<f32> {
         f[d + 3] = v.env_horizon;
         f[d + 4] = v.env_zenith;
     }
+    // Corner radii (wgpu-only, appended after the env tail): one vec4 per
+    // shape (tl, tr, br, bl device px) for `shape.wgsl`'s per-corner SDF.
+    // Shapes past the drawn count keep zeros (the shader loops to count).
+    let d = K_GLASS_WIRE_FLOATS + K_STAGES_FLOATS + K_GGX_FLOATS + K_ENV_FLOATS;
+    for (i, s) in shapes.iter().enumerate() {
+        f[d + i * 4..d + i * 4 + 4].copy_from_slice(&s.radius);
+    }
     f
 }
 
@@ -1001,7 +1031,9 @@ fn pack_a_to_l(f: &mut [f32], base: usize, v: GlassBank, dpr: f32) {
 /// were engine-internal material iterations no helper ever consumed.
 /// v4 was the 736-float prefix (no glow tail). v5 is the stream through
 /// the glow tail (frozen at `GLASS_WIRE_PACKED_FLOATS`) — the only
-/// layout the current helper decodes.
+/// layout the current helper decodes. Per-corner radii deliberately do
+/// NOT ride the wire: they are a wgpu-only tail after it, so the v5
+/// stream stays byte-stable and the plugin needs no new version.
 pub const GLASS_WIRE_PACKED_VERSION: u32 = 5;
 /// Floats in one packed wire frame: the stream through the glow tail
 /// (frozen — see `K_GLASS_WIRE_FLOATS`); the stage list after it is
@@ -1082,8 +1114,11 @@ pub fn pack_glass_wire(rect: ResolvedRect, layer: &GlassLayer, scale: f32) -> Ve
         let rw = (m.rect.width * scale).max(0.0);
         let rh = (m.rect.height * scale).max(0.0);
         let shape_rect = ResolvedRect::new(m.rect.x * scale, m.rect.y * scale, rw, rh);
-        let radius = (m.radius() * m.radius_scale * scale).min(rw.min(rh) / 2.0);
         let half_min = rw.min(rh) / 2.0 / scale;
+        // Per-corner radii in device px: the declared corners (already
+        // W3C-resolved), × the press scale, capped at half the shape.
+        let corners = m.glass.shape_corners(rw / scale, rh / scale);
+        let radius = std::array::from_fn(|i| (corners[i] * m.radius_scale * scale).min(half_min * scale));
         let sigma = composed_blur_sigma(v, half_min);
         let aspect = composed_blur_aspect(v, rw / scale, rh / scale);
         let mut shape = GlassShapeUniform::new(shape_rect, radius, m.glass.hidden);
@@ -1214,7 +1249,11 @@ mod override_tests {
     use crate::foundation::{Backdrop, Glass};
 
     fn shape_with(g: Glass, b: Backdrop) -> GlassShapeUniform {
-        let mut s = GlassShapeUniform::new(ResolvedRect::new(0.0, 0.0, 200.0, 200.0), 28.0, g.hidden);
+        let mut s = GlassShapeUniform::new(
+            ResolvedRect::new(0.0, 0.0, 200.0, 200.0),
+            [28.0; 4],
+            g.hidden,
+        );
         s.strength = g.strength;
         s.lens_strength = g.lens_strength;
         s.band = g.band;
@@ -1233,7 +1272,7 @@ mod override_tests {
         use crate::foundation::{Glow, Refraction, Spectral, GLASS_STANDARD};
         let shape = GlassShapeUniform::new(
             ResolvedRect::new(0.0, 0.0, 200.0, 150.0),
-            24.0,
+            [24.0; 4],
             false,
         );
         let frame = GlassFrameUniforms {
@@ -1340,7 +1379,7 @@ mod override_tests {
         use crate::foundation::{Glow, Refraction, Spectral, GLASS_STANDARD};
         let shape = GlassShapeUniform::new(
             ResolvedRect::new(0.0, 0.0, 200.0, 150.0),
-            24.0,
+            [24.0; 4],
             false,
         );
         let frame = GlassFrameUniforms {
@@ -1377,8 +1416,12 @@ mod override_tests {
         );
         assert_eq!(
             K_GLASS_UNIFORM_FLOATS,
-            K_GLASS_WIRE_FLOATS + K_STAGES_FLOATS + K_GGX_FLOATS + K_ENV_FLOATS,
-            "uniform stream is wire prefix + stage tail + GGX tail + env tail"
+            K_GLASS_WIRE_FLOATS
+                + K_STAGES_FLOATS
+                + K_GGX_FLOATS
+                + K_ENV_FLOATS
+                + K_CORNERS_FLOATS,
+            "uniform stream is wire prefix + stage tail + GGX tail + env tail + corners tail"
         );
         assert_eq!(
             GLASS_WIRE_PACKED_FLOATS,
@@ -1393,7 +1436,7 @@ mod override_tests {
         use crate::foundation::{Glow, Refraction, Spectral, GLASS_STANDARD};
         let shape = GlassShapeUniform::new(
             ResolvedRect::new(0.0, 0.0, 200.0, 150.0),
-            24.0,
+            [24.0; 4],
             false,
         );
         let frame = GlassFrameUniforms {

@@ -16,12 +16,29 @@
 // continuous-corner zone, the smooth union and the proximity-blended
 // attributes are one geometry computation and stay in one place.
 
-fn sdSuperellipseBox(p: vec2<f32>, halfSize: vec2<f32>, r0: f32, n0: f32) -> f32 {
-    let r = min(r0, min(halfSize.x, halfSize.y));
-    let q = abs(p) - halfSize + r;
+// Per-quadrant superellipse box: `r` carries tl / tr / br / bl
+// (device px). The quadrant is picked from the sign of `p` — the
+// offset from the rect centre — so exactly one radius shapes each
+// corner and straight edges stay exact (the picked radius cancels on
+// the axis the SDF is evaluated against). Uniform cards take the
+// fast scalar path (identical math to the old single-radius SDF).
+fn sdSuperellipseBox4(p: vec2<f32>, halfSize: vec2<f32>, r: vec4<f32>, n0: f32) -> f32 {
+    let rr = min(r, vec4<f32>(min(halfSize.x, halfSize.y)));
+    // Branchless quadrant pick: +x = right, +y = bottom (device px
+    // run y-down; tl = (-x,-y), tr = (+x,-y), br = (+x,+y), bl =
+    // (-x,+y)). `select` on a bool is a mix — no dynamic branch.
+    var rq = rr.x;
+    rq = select(rq, rr.y, p.x > 0.0);
+    rq = select(rq, rr.z, p.x > 0.0 && p.y > 0.0);
+    rq = select(rq, rr.w, p.x <= 0.0 && p.y > 0.0);
+    let q = abs(p) - halfSize + rq;
     let m = max(q, vec2<f32>(0.0));
     let corner = pow(pow(m.x, n0) + pow(m.y, n0), 1.0 / n0);
-    return corner + min(max(q.x, q.y), 0.0) - r;
+    return corner + min(max(q.x, q.y), 0.0) - rq;
+}
+
+fn sdSuperellipseBox(p: vec2<f32>, halfSize: vec2<f32>, r0: f32, n0: f32) -> f32 {
+    return sdSuperellipseBox4(p, halfSize, vec4<f32>(r0), n0);
 }
 
 // The uniform arrays are indexed only inside the constant-bounded loops.
@@ -33,12 +50,23 @@ fn sdSuperellipseBox(p: vec2<f32>, halfSize: vec2<f32>, r0: f32, n0: f32) -> f32
 // degree point, so it becomes the circle (n = 2) when the zone clamps to
 // r (pills). A per-shape exponent (info.z > 0: capsules, circles) keeps
 // the plain arc.
-fn shapeOf(p: vec2<f32>, rc: vec4<f32>, info: vec4<f32>, rs: f32, zf: f32) -> f32 {
+fn shapeOf(p: vec2<f32>, rc: vec4<f32>, info: vec4<f32>, si: i32, rs: f32, zf: f32) -> f32 {
     let hs = rc.zw * 0.5;
     let hm = min(hs.x, hs.y);
-    var r = min(info.x * rs, hm);
+    // Per-corner radii (device px) x the normal radius scale. The
+    // scalar the packer keeps in `info.x` is the smallest corner, so
+    // uniform cards take this same path with a flat vec4 — byte-same SDF.
+    let rv = min(u.u_corner[si] * rs, vec4<f32>(hm));
     var n = select(u.u_global2.y, info.z, info.z > 0.0);
-    if (info.z <= 0.0 && zf > 1.0 && r > 0.0) {
+    // Continuous-corner zone on genuinely uniform cards only: the zone
+    // widens the exponent under the assumption that one radius shapes
+    // every corner. Asymmetric cards keep the plain arc (n = 2) — the
+    // per-quadrant SDF above already lands each corner on its own radius.
+    let rmin = min(min(rv.x, rv.y), min(rv.z, rv.w));
+    let rmax = max(max(rv.x, rv.y), max(rv.z, rv.w));
+    let uniform = rmax - rmin <= max(rmax * 1e-3, 1e-3);
+    var r = rmin;
+    if (info.z <= 0.0 && zf > 1.0 && r > 0.0 && uniform) {
         let zone = min(zf * r, hm);
         if (zone > r) {
             n = -1.0 / log2(clamp(1.0 - 0.29289322 * r / zone, 0.5, 0.9999));
@@ -46,8 +74,15 @@ fn shapeOf(p: vec2<f32>, rc: vec4<f32>, info: vec4<f32>, rs: f32, zf: f32) -> f3
         } else {
             n = 2.0;
         }
+        return sdSuperellipseBox(p - (rc.xy + hs), hs, r, n);
     }
-    return sdSuperellipseBox(p - (rc.xy + hs), hs, r, n);
+    if (info.z > 0.0) {
+        // Capsule/circle exponent path: one arc radius for the whole
+        // shape — the scalar the packer keeps (smallest corner) is the
+        // pill radius itself on these shapes.
+        return sdSuperellipseBox(p - (rc.xy + hs), hs, rmin, n);
+    }
+    return sdSuperellipseBox4(p - (rc.xy + hs), hs, rv, 2.0);
 }
 
 fn smin(a: f32, b: f32, k: f32) -> f32 {
@@ -79,7 +114,7 @@ fn lensField(p: vec2<f32>) -> f32 {
             g = ex.x;
         }
         let rs = u.u_var[5].w;
-        dg = smin(dg, shapeOf(p, u.u_rects[i], info, rs, 1.0), ex.y);
+        dg = smin(dg, shapeOf(p, u.u_rects[i], info, i, rs, 1.0), ex.y);
     }
     return min(d, dg);
 }
@@ -101,7 +136,7 @@ fn lensBlend(p: vec2<f32>, grp: f32) -> f32 {
         }
         let info = u.u_info[i];
         let rs = u.u_var[5].w;
-        let di = shapeOf(p, u.u_rects[i], info, rs, 1.0);
+        let di = shapeOf(p, u.u_rects[i], info, i, rs, 1.0);
         if (ex.y > 0.0) {
             hmax = max(hmax, max(ex.y - abs(d - di), 0.0) / ex.y);
         }
@@ -139,7 +174,7 @@ fn glassSilhouette(px: vec2<f32>, count: i32) -> GlassCtx {
             dg = 1e6;
             grp = ex.x;
         }
-        let di = shapeOf(px, u.u_rects[i], u.u_info[i], 1.0, u.u_global2.w);
+        let di = shapeOf(px, u.u_rects[i], u.u_info[i], i, 1.0, u.u_global2.w);
         dg = smin(dg, di, ex.y);
         if (di < dOwn) {
             dOwn = di;
@@ -174,7 +209,7 @@ fn glassSilhouette(px: vec2<f32>, count: i32) -> GlassCtx {
             continue;
         }
         let info = u.u_info[i];
-        let di = shapeOf(px, u.u_rects[i], info, 1.0, u.u_global2.w);
+        let di = shapeOf(px, u.u_rects[i], info, i, 1.0, u.u_global2.w);
         let e = max(di, 0.0);
         if (e < dmin) {
             let s = exp(-(dmin - e) / wk);

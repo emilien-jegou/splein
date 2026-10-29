@@ -291,7 +291,8 @@ impl ColorMatrixGpu {
 }
 
 /// Packed vec4 count of one glass frame: `K_GLASS_UNIFORM_FLOATS / 4`
-/// (736 v4 prefix floats + the wgpu-only glow tail) — see
+/// (736-float wire prefix + the wgpu-only glow / stages / GGX / env /
+/// corners tail) — see
 /// `riode::foundation::glass::K_GLASS_UNIFORM_FLOATS`.
 pub const GLASS_VEC4S: usize = K_GLASS_UNIFORM_FLOATS / 4;
 

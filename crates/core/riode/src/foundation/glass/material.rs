@@ -500,17 +500,33 @@ impl Glass {
         v
     }
 
-    /// The single radius the shader's `uInfo[N].x` carries for a
-    /// `width × height` shape: the smallest resolved corner, capped at
-    /// half the shorter side — the same rule `merge_unions` keeps. A
-    /// pill (`Radius::Max`) resolves equal corners, so it is unaffected.
-    pub fn shape_radius(&self, width: f32, height: f32) -> f32 {
+    /// The per-corner radii the shader's `uCorner[N]` vec4 carries for a
+    /// `width × height` shape (tl, tr, br, bl, in the shape's own px):
+    /// W3C resolution of the declared corners, each capped at half the
+    /// shorter side — the same cap the scalar collapse (`shape_radius`)
+    /// always applied, now per corner, so asymmetric declared corners
+    /// up to half the side are exact and a pill (`Radius::Max`) still
+    /// resolves equal corners.
+    pub fn shape_corners(&self, width: f32, height: f32) -> [f32; 4] {
+        let cap = width.min(height) / 2.0;
         let c = self.radius.resolve_corners(width, height);
-        c.top_left
-            .min(c.top_right)
-            .min(c.bottom_right)
-            .min(c.bottom_left)
-            .min(width.min(height) / 2.0)
+        [
+            c.top_left.min(cap),
+            c.top_right.min(cap),
+            c.bottom_right.min(cap),
+            c.bottom_left.min(cap),
+        ]
+    }
+
+    /// The single radius the shader's `uInfo[N].x` carries for a
+    /// `width × height` shape: the smallest per-corner radius
+    /// ([`Self::shape_corners`]), capped at half the shorter side. Used
+    /// by the compositor wire (`uInfo` stays a scalar) and where a lone
+    /// radius is the only thing a consumer understands. At equal corners
+    /// (presets, pills) it is exactly the declared radius.
+    pub fn shape_radius(&self, width: f32, height: f32) -> f32 {
+        let c = self.shape_corners(width, height);
+        c[0].min(c[1]).min(c[2]).min(c[3])
     }
 
     /// Layout-px margin the glass output can reach past the element rect.
