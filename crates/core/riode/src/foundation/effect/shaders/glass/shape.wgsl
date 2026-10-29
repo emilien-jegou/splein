@@ -197,6 +197,7 @@ fn glassSilhouette(px: vec2<f32>, count: i32) -> GlassCtx {
     g.fillScale = 0.0;  // per-shape fillOpacity factor (fill size scaling)
     g.light = 0.0;  // per-shape press light (the pressed lift)
     g.tint = vec4<f32>(0.0);
+    g.density = 0.0;  // per-shape Beer-Lambert dye strength (u_info.y), 0 = flat tint
     g.rcB = vec4<f32>(0.0);  // attribute-blended rect, for the ambient colour
     g.xb = vec4<f32>(0.0);  // extra frost (uBlur)
     let wk = g.ownK * 0.5 + 1.0;
@@ -218,6 +219,7 @@ fn glassSilhouette(px: vec2<f32>, count: i32) -> GlassCtx {
             g.fillScale *= s;
             g.light *= s;
             g.tint *= s;
+            g.density *= s;
             g.rcB *= s;
             g.xb *= s;
             dmin = e;
@@ -228,6 +230,7 @@ fn glassSilhouette(px: vec2<f32>, count: i32) -> GlassCtx {
         g.fillScale += w * info.w;
         g.light += w * u.u_extra[i].w;
         g.tint += w * u.u_tints[i];
+        g.density += w * info.y;
         g.rcB += w * u.u_rects[i];
         g.xb += w * u.u_blur[i];
     }
@@ -235,6 +238,7 @@ fn glassSilhouette(px: vec2<f32>, count: i32) -> GlassCtx {
     g.fillScale /= wsum;
     g.light /= wsum;
     g.tint /= wsum;
+    g.density /= wsum;
     g.rcB /= wsum;
     g.xb /= wsum;
     g.sw = 0.0;

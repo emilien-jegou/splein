@@ -55,6 +55,10 @@ pub struct Backdrop {
     /// Colour blended over the glass body (alpha is the tint strength,
     /// scaled by `tint_strength` at pack time). `None` = no tint.
     pub tint: Option<Color>,
+    /// Beer–Lambert dye density per device px (`Absorb`, stage id 9).
+    /// `None` = 0 (the flat `mix` path — knob-off pixel-identical).
+    /// Scales with `tint`'s strength: `density=0` ≡ `stageTint`.
+    pub absorb_density: Option<f32>,
     /// How strongly the tint colours the glass (`tintStrength`).
     pub tint_strength: Option<f32>,
     /// Post-tone multiply (`dim`, ~0.005: sub-visible calibration).
@@ -88,6 +92,7 @@ impl Backdrop {
         tone_curve: None,
         wash: None,
         tint: None,
+        absorb_density: None,
         tint_strength: None,
         dim: None,
         ambient_mix: None,
@@ -146,10 +151,21 @@ impl Backdrop {
         self
     }
 
-    /// Colour blended over the glass body. Alpha is the tint strength
+    /// Colour blended into the glass body. Alpha is the tint strength
     /// (further scaled by [`Self::tint_strength`]).
     pub const fn tint(mut self, color: Color) -> Self {
         self.tint = Some(color);
+        self
+    }
+
+    /// Beer–Lambert dye density per device px (stage id 9). The path
+    /// length the law keys off is the bevel-band Slab profile
+    /// `stageRefract` publishes in its tail (`path_length = v * band`:
+    /// 0 at the card centre, peaking in the bevel); without Refract the
+    /// stage falls back to the flat mix. `0` (or absent) is exactly the
+    /// old flat tint — knob-off pixel-identical.
+    pub const fn absorb_density(mut self, v: f32) -> Self {
+        self.absorb_density = Some(v.max(0.0));
         self
     }
 
@@ -302,6 +318,7 @@ impl Backdrop {
             self.ambient_reach,
             self.fill_size_ref,
             self.fill_size_drop,
+            self.absorb_density,
         ] {
             match opt {
                 None => out(0),

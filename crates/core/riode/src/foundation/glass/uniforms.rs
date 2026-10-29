@@ -107,6 +107,9 @@ pub struct GlassShapeUniform {
     /// Material tint (`uTints[N]`: rgb, `tintStrength · a`). `None` packs
     /// zeroes.
     pub tint: Option<Color>,
+    /// Beer–Lambert dye density per device px (`uInfo[N].y`). `None`
+    /// packs 0 = the flat `mix` path (knob-off pixel-identical).
+    pub absorb_density: Option<f32>,
     /// Shapes sharing a `unionId` merge into their bounding rect before the
     /// pack (not sent to the shader).
     pub union_id: Option<u64>,
@@ -214,6 +217,7 @@ impl GlassShapeUniform {
             radius,
             hidden,
             tint: None,
+            absorb_density: None,
             union_id: None,
             corner_exponent: None,
             group: 0,
@@ -541,6 +545,7 @@ pub fn merge_unions(shapes: &[GlassShapeUniform]) -> Vec<GlassShapeUniform> {
                     radius,
                     hidden: prev.hidden,
                     tint: prev.tint,
+                    absorb_density: prev.absorb_density.or(s.absorb_density),
                     union_id: Some(id),
                     corner_exponent: prev.corner_exponent,
                     group: prev.group,
@@ -702,9 +707,11 @@ pub fn pack_glass_uniforms(u: &GlassFrameUniforms<'_>) -> Vec<f32> {
         // v5 wire scalar: the smallest corner (byte-identical to the
         // pre-vec4 pack, which collapsed at emission).
         f[dst] = wire_radius(s);
-        // Single bank: no variant flag. The slot ships 0 (layout kept
-        // stable for the compositor wire).
-        f[dst + 1] = 0.0;
+        // Absorb dye density per device px (Beer-Lambert, stage 9):
+        // 0 = the flat tint-mix path (knob-off pixel-identical). The v5
+        // compositor wire freezes this + the whole stream at its tail; a
+        // zero density ships the old 0 the plugin always saw.
+        f[dst + 1] = s.absorb_density.map(|d| d.max(0.0)).unwrap_or(0.0);
         // 0: the global exponent and continuous-corner zone (uGlobal2.yw).
         f[dst + 2] = s.corner_exponent.unwrap_or(0.0);
         f[dst + 3] = fill_scale;
@@ -1123,6 +1130,7 @@ pub fn pack_glass_wire(rect: ResolvedRect, layer: &GlassLayer, scale: f32) -> Ve
         let aspect = composed_blur_aspect(v, rw / scale, rh / scale);
         let mut shape = GlassShapeUniform::new(shape_rect, radius, m.glass.hidden);
         shape.tint = m.backdrop.tint;
+        shape.absorb_density = m.backdrop.absorb_density;
         shape.corner_exponent = m.glass.corner_exponent;
         shape.union_id = m.glass.union_id;
         shape.group = 0;
@@ -1259,6 +1267,7 @@ mod override_tests {
         s.band = g.band;
         s.rim = g.rim;
         s.tint = b.tint;
+        s.absorb_density = b.absorb_density;
         s.frost_sigma = b.blur;
         s.wash = b.wash;
         s.saturation = b.saturation;

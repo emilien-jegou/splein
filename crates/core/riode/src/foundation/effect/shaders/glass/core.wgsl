@@ -81,9 +81,9 @@ struct GlassU {
     // touch x, y, glow, glowRadius px.
     u_touch: vec4<f32>,
     u_rects: array<vec4<f32>, 24>,
-    // radius px, reserved (always 0 — the second bank is a packing
-    // duplicate, never selected), cornerExponent (0 = global),
-    // fill scale.
+    // radius px, absorb density (Beer-Lambert dye strength per device
+    // px; 0 = flat tint mix, the knob-off path), cornerExponent
+    // (0 = global), fill scale.
     u_info: array<vec4<f32>, 24>,
     // rgb, tint strength.
     u_tints: array<vec4<f32>, 24>,
@@ -223,6 +223,10 @@ struct GlassCtx {
     /// run — that is the `Absorb`/`Slab` flat-mix degeneration. Mirrors
     /// `EffectCtx.path_length`.
     path_length: f32,
+    /// Per-shape Beer–Lambert dye density (`u_info.y`, proximity-blended
+    /// like `tint`). 0 (the default) takes the flat `mix` path — the
+    /// knob-off degeneration (`path_length == 0` also falls back).
+    density: f32,
     gradLen: f32,
     lensAmt: f32,
     dLens: f32,

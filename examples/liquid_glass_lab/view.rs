@@ -1,11 +1,14 @@
-// Single responsibility: Step 1 gate instrument — per-corner radii through
-// the lens SDF + morph track (plan-better-glass-setup.md, Step 1).
+// Single responsibility: Step 2 gate instrument — Slab path length +
+// Beer–Lambert Absorb through the in-place Tint upgrade (stage id 9,
+// plan-better-glass-setup.md, Step 2). Keeps the Step 1 gates (B1/B2)
+// and adds the Step 2 absorb rows (C1/C2).
 //
-// Two rows only: B1 (static asymmetric corners) and B2 (width-driven
-// dynamic gate). A cursor-following saturated disc paints BEHIND the cards
-// so the lens has chroma to refract wherever the human parks it — the
-// white/grey stripe field alone hides the lens. Static: F8 freeze + `s`
-// capture, zoom to compare. Human judges; no test asserts.
+// Rows: B1 (static asymmetric corners), B2 (width-driven dynamic gate),
+// C1 (LEFT flat tint vs RIGHT matched Absorb), C2 (capsule absorb).
+// A cursor-following saturated disc paints BEHIND the cards so the lens
+// has chroma to refract wherever the human parks it — the white/grey
+// stripe field alone hides the lens. Static: F8 freeze + `s` capture,
+// zoom to compare. Human judges; no test asserts.
 //
 // Per AGENTS.md the predictions below are for the human to check, not
 // claims.
@@ -23,9 +26,9 @@ use riode_anodeui::GlassPreset;
 
 /// Window chrome shared by the release driver (`main.rs`) and the hot
 /// entry (`hot.rs`): declared once here, referenced by both — never mirrored.
-pub const HOT_TITLE: &str = "Liquid glass lab — Step 1 gates";
+pub const HOT_TITLE: &str = "Liquid glass lab — Step 2 gates";
 pub const HOT_WIDTH: u32 = 1120;
-pub const HOT_HEIGHT: u32 = 640;
+pub const HOT_HEIGHT: u32 = 900;
 pub const HOT_BG: u32 = 0xD8D8DA;
 
 const INK: u32 = 0x1C2333;
@@ -219,6 +222,80 @@ fn B2MorphRow() -> impl IntoElement {
     }
 }
 
+/// Step 2 (plan-better-glass-setup.md): Slab + Absorb. LEFT is today's
+/// flat tint, RIGHT is `Absorb` (Beer–Lambert) matched at card centre —
+/// same hue, same strength, density on. The dye must concentrate where
+/// the slab is thick (bevel band), not wash uniformly.
+const ABSORB_TINT: u32 = 0x1E6FD9;
+const ABSORB_ALPHA: f32 = 0.35;
+const ABSORB_DENSITY: f32 = 0.02;
+
+#[component]
+fn C1AbsorbRow() -> impl IntoElement {
+    view! {
+        <Group direction="vertical" gap={10.0} alignment="center">
+            <Group direction="horizontal" gap={24.0} alignment="center">
+                <Group direction="vertical" gap={8.0} alignment="center">
+                    <Group
+                        width={CARD_W}
+                        height={CARD_H}
+                        radius={24.0}
+                        material={GlassPreset::regular().style_tinted(Color::hex_alpha(ABSORB_TINT, ABSORB_ALPHA)).into_effects()}
+                        alignment="center"
+                        distribution="center"
+                    >
+                        <Text size={15.0} weight={700u16} color={Color::hex(INK)}>{"C1 FLAT"}</Text>
+                    </Group>
+                    <Text size={11.0} weight={600u16} color={Color::hex(SUB)}>{"C1 · flat tint, no density"}</Text>
+                </Group>
+                <Group direction="vertical" gap={8.0} alignment="center">
+                    <Group
+                        width={CARD_W}
+                        height={CARD_H}
+                        radius={24.0}
+                        material={{
+                            let mut s = GlassPreset::regular().style_tinted(Color::hex_alpha(ABSORB_TINT, ABSORB_ALPHA));
+                            s.backdrop = s.backdrop.absorb_density(ABSORB_DENSITY);
+                            s.into_effects()
+                        }}
+                        alignment="center"
+                        distribution="center"
+                    >
+                        <Text size={15.0} weight={700u16} color={Color::hex(INK)}>{"C1 ABSORB"}</Text>
+                    </Group>
+                    <Text size={11.0} weight={600u16} color={Color::hex(SUB)}>{"C1 · Beer–Lambert, density on"}</Text>
+                </Group>
+            </Group>
+            <Text size={11.0} weight={600u16} color={Color::hex(SUB)}>{"C1 · dye peaks in the bevel, centre stays clear glass (blur + wash, no dye)"}</Text>
+        </Group>
+    }
+}
+
+/// C2: capsule absorb — the slab is deepest along the long bevel, so
+/// the dye gradient must follow the capsule's long axis.
+#[component]
+fn C2CapsuleRow() -> impl IntoElement {
+    view! {
+        <Group direction="vertical" gap={10.0} alignment="center">
+            <Group
+                width={CARD_W + 110.0}
+                height={72.0}
+                radius="max"
+                material={{
+                    let mut s = GlassPreset::regular().style_tinted(Color::hex_alpha(ABSORB_TINT, ABSORB_ALPHA));
+                    s.backdrop = s.backdrop.absorb_density(ABSORB_DENSITY);
+                    s.into_effects()
+                }}
+                alignment="center"
+                distribution="center"
+            >
+                <Text size={15.0} weight={700u16} color={Color::hex(INK)}>{"C2 CAPSULE ABSORB"}</Text>
+            </Group>
+            <Text size={11.0} weight={600u16} color={Color::hex(SUB)}>{"C2 · dye follows the long bevel"}</Text>
+        </Group>
+    }
+}
+
 #[component]
 pub fn Page() -> impl IntoElement {
     // Cursor probe state: window-space pointer position, updated on every
@@ -251,10 +328,12 @@ pub fn Page() -> impl IntoElement {
                 alignment="center"
                 distribution="center"
             >
-                <Text size={22.0} weight={800u16} color={Color::hex(INK)}>{"LIQUID GLASS LAB · STEP 1"}</Text>
+                <Text size={22.0} weight={800u16} color={Color::hex(INK)}>{"LIQUID GLASS LAB · STEP 2"}</Text>
                 <Text size={12.0} color={Color::hex(SUB)}>{"freeze F8 · step . · capture s · human verdict per AGENTS.md"}</Text>
                 <B1AsymmetricRow />
                 <B2MorphRow />
+                <C1AbsorbRow />
+                <C2CapsuleRow />
             </Group>
         </Group>
     }

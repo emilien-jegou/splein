@@ -1400,6 +1400,7 @@ impl SceneSink for WgpuSink<'_> {
                 let aspect = composed_blur_aspect(v, rect.width / sc, rect.height / sc);
                 let mut shape = GlassShapeUniform::new(rect, corners, g.hidden);
                 shape.tint = b.tint;
+                shape.absorb_density = b.absorb_density;
                 shape.corner_exponent = g.corner_exponent;
                 shape.blur_sigma = sigma;
                 shape.blur_aspect = aspect;
@@ -1541,6 +1542,7 @@ impl SceneSink for WgpuSink<'_> {
                     let aspect = composed_blur_aspect(v, rect.width / sc, rect.height / sc);
                     let mut shape = GlassShapeUniform::new(rect, radius, m.glass.hidden);
                     shape.tint = m.backdrop.tint;
+                    shape.absorb_density = m.backdrop.absorb_density;
                     shape.corner_exponent = m.glass.corner_exponent;
                     shape.union_id = m.glass.union_id;
                     shape.group = 0;

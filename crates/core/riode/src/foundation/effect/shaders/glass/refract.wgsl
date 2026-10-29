@@ -1,11 +1,12 @@
 // Tier B2 — Refract (08.5): the displacement half only.
 //
 // Taxonomy: L3 refraction (bending). L6 (slab thickness / volume) is
-// only *approximated* here: the lens `band` + `lens_decay` profile is
-// what stands in for an optical path. `path_length` is now published
-// (the half-space model in the header), so `Absorb` (08.5 B5,
-// Beer-Lambert) and `Slab` can be written as separate stage files —
-// their knobs are the remaining work.
+// published here: the Slab station folds into this tail — `path_length
+// = v * band`, the bevel-band profile in device px (0 at the card
+// centre, peaking where the lens bends light). `path_length` is the
+// measured SDF field (never a constant), so `Absorb` (08.5 B5,
+// Beer-Lambert) keys off true thickness — its knobs are the remaining
+// work.
 //
 // Reads: `normal`, `depth`, `gradLen`, `halfMin`, `count`, `ownK`,
 // `ownGrp`; `u_var[0]` (lens decay, band, strength), `u_var[2].w`
@@ -24,10 +25,11 @@
 //     (the height rises inward). Normalized as
 //     `normalize(vec3(-grad_xy, 1.0))`, matching `liquid-glass`'s
 //     analytic normals (`glass.frag:301-302`).
-//   * `path_length` — the optical travel through the glass. Our model is
-//     a half-space (depth grows inward without bound) whose visible
-//     compression is the displaced read; the refracted travel distance
-//     is therefore the inside depth. Absent Refract publishes 0, which
+//   * `path_length` — the optical travel through the glass. Slab (Step
+//     2) folds into Refract's tail: `v * band`, the bevel-band profile
+//     in device px (0 at the card centre, peaking where the glass bends
+//     light, 0 past the band) — true thickness from the measured SDF
+//     field, never a constant. Absent Refract publishes 0, which
 //     is exactly the `Absorb`/`Slab` flat-mix degeneration (tint.wgsl)
 //     and needs no knob.
 
@@ -89,6 +91,14 @@ fn stageRefract(g: GlassCtx) -> GlassCtx {
     // side), which is why the ON card looked identical to OFF and the
     // light steer read inverted.
     o.n3 = normalize(vec3<f32>(o.normal * (o.dLens * 3.0), 1.0));
-    o.path_length = max(o.depth, 0.0);
+    // Slab (Step 2): the optical travel is the bevel-band profile, not
+    // the inside depth — `v` is the normalized lens falloff (1 at the
+    // rim, 0 past `band`), so `v * band` is a true thickness in device
+    // px: 0 at the card centre, peaking in the bevel band where the
+    // glass actually bends light, 0 past the band. That is the Slab
+    // station folded into Refract's tail (no new dispatch id, no wire
+    // change): Absorb keys its Beer–Lambert column off this, and at
+    // centre (`v = 0`) the dye branch meets the flat mix exactly.
+    o.path_length = v * band;
     return o;
 }
