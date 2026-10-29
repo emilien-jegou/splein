@@ -14,7 +14,6 @@ fn main() {
         view::HOT_WIDTH,
         view::HOT_HEIGHT,
         view::HOT_BG,
-        true,
         view::Page,
     );
 }

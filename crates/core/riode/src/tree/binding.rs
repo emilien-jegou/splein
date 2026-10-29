@@ -1,8 +1,6 @@
 // Single responsibility: Dynamic property evaluation closures on a layout node.
 
-use crate::foundation::{
-    EffectStack, Fill, LayoutPresence, Shadow, Size, Transform,
-};
+use crate::foundation::{LayoutPresence, Material, Size, Transform};
 use std::rc::Rc;
 
 /// Inner storage for dynamic property evaluators.
@@ -10,15 +8,11 @@ use std::rc::Rc;
 pub struct DynamicBindings {
     pub width: Option<Rc<dyn Fn() -> Size>>,
     pub height: Option<Rc<dyn Fn() -> Size>>,
-    pub fill: Option<Rc<dyn Fn() -> Option<Fill>>>,
-    pub opacity: Option<Rc<dyn Fn() -> f32>>,
     pub text: Option<Rc<dyn Fn() -> String>>,
     pub transform: Option<Rc<dyn Fn() -> Transform>>,
-    pub shadow: Option<Rc<dyn Fn() -> Option<Shadow>>>,
-    /// Backdrop-effect evaluator, when the node declares a dynamic one.
-    pub backdrop_effects: Option<Rc<dyn Fn() -> Option<EffectStack>>>,
-    /// Layer-effect evaluator, when the node declares a dynamic one.
-    pub layer_effects: Option<Rc<dyn Fn() -> Option<EffectStack>>>,
+    /// Material evaluator, when the node declares a dynamic one. The only
+    /// visual slot left on a node.
+    pub material: Option<Rc<dyn Fn() -> Option<Material>>>,
     pub presence: Option<Rc<dyn Fn() -> LayoutPresence>>,
     /// Stacking order evaluator, when the node declares a dynamic one.
     pub z_index: Option<Rc<dyn Fn() -> i32>>,
@@ -112,13 +106,9 @@ impl DynamicBindings {
     pub fn is_empty(&self) -> bool {
         self.width.is_none()
             && self.height.is_none()
-            && self.fill.is_none()
-            && self.opacity.is_none()
             && self.text.is_none()
             && self.transform.is_none()
-            && self.shadow.is_none()
-            && self.backdrop_effects.is_none()
-            && self.layer_effects.is_none()
+            && self.material.is_none()
             && self.presence.is_none()
             && self.z_index.is_none()
             && self.pose.as_ref().is_none_or(|p| !p.is_bound())
@@ -301,57 +291,23 @@ impl NodeBindings {
         }
     }
 
-    /// Re-evaluates bound fill, opacity, shadow, and effects, returning
-    /// true if any changed.
-    pub fn update_paint(
-        &self,
-        fill: &mut Option<Fill>,
-        opacity: &mut f32,
-        shadow: &mut Option<Shadow>,
-        backdrop_effects: &mut Option<EffectStack>,
-        layer_effects: &mut Option<EffectStack>,
-    ) -> bool {
+    /// Re-evaluates the bound material, returning true if it changed.
+    ///
+    /// The one visual reactive channel left: paint invalidation is now
+    /// literally "did the material change?".
+    pub fn update_material(&self, material: &mut Option<Material>) -> bool {
         let b = match &self.inner {
             Some(b) => b,
             None => return false,
         };
-        let mut changed = false;
-        if let Some(f) = &b.fill {
-            let fresh = f();
-            if *fill != fresh {
-                *fill = fresh;
-                changed = true;
-            }
-        }
-        if let Some(o) = &b.opacity {
-            let fresh = o();
-            if *opacity != fresh {
-                *opacity = fresh;
-                changed = true;
-            }
-        }
-        if let Some(s) = &b.shadow {
-            let fresh = s();
-            if *shadow != fresh {
-                *shadow = fresh;
-                changed = true;
-            }
-        }
-        if let Some(e) = &b.backdrop_effects {
+        if let Some(e) = &b.material {
             let fresh = e();
-            if *backdrop_effects != fresh {
-                *backdrop_effects = fresh;
-                changed = true;
+            if *material != fresh {
+                *material = fresh;
+                return true;
             }
         }
-        if let Some(e) = &b.layer_effects {
-            let fresh = e();
-            if *layer_effects != fresh {
-                *layer_effects = fresh;
-                changed = true;
-            }
-        }
-        changed
+        false
     }
 
     /// Re-evaluates bound text content, returning true if changed.

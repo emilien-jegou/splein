@@ -2,24 +2,25 @@
 // items plus the sink core lowers chunks into.
 //
 // This is the backend boundary: core owns the stack walk, clip accumulation,
-// opacity folding, and placement policy; engines implement pixel methods and
-// never match on `SceneCommand`, never walk framing state, never decide
-// placement. A backend that cannot rasterize a primitive simply doesn't
-// override its method: the default is a no-op that logs once, so new core
-// primitives can never break or crash an engine.
+// and placement policy; engines implement pixel methods and never match on
+// `SceneCommand`, never walk framing state, never decide placement. A backend
+// that cannot rasterize a primitive simply doesn't override its method: the
+// default is a no-op that logs once, so new core primitives can never break
+// or crash an engine.
 //
 // Items are chunk-local: the consumer applies the chunk base
 // (`translate(abs_origin) * placement`, see [`chunk_base`]) plus its own
 // root device transform (tile offset, device scale) as one matrix around
 // them. Transform-only motion keeps reusing lowered content because the base
 // stays out of the items.
+//
+// `DrawRect`/`DrawShadow` and the folded opacity are gone: a node's paint is
+// its material layer, so the sink's primitives are text, image, svg and the
+// layer open/close pair.
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-use crate::foundation::{
-    Appearance, Color, EffectStack, LightEnvironment, Point, Radius, ResolvedRect, Shadow,
-    Transform,
-};
+use crate::foundation::{Color, Material, Point, ResolvedRect, Transform};
 use crate::scene::chunk::SceneChunk;
 use crate::scene::command::SceneCommand;
 use crate::scene::image::ImageSource;
@@ -39,21 +40,12 @@ pub enum TextRaster {
 }
 
 /// A clip in chunk-local space with the absolute transform active when it
-/// was pushed. The engine builds its native mask from both.
+/// was pushed. The engine builds its native mask from both. Clips are
+/// square — `radius` was purged.
 #[derive(Clone, Debug)]
 pub struct PlacedClip {
     pub rect: ResolvedRect,
-    pub radius: Radius,
     pub transform: Transform,
-}
-
-/// A filled/stroked rectangle, fully placed.
-#[derive(Clone, Debug)]
-pub struct PlacedRect<'a> {
-    pub rect: ResolvedRect,
-    pub appearance: &'a Appearance,
-    pub transform: Transform,
-    pub opacity: f32,
 }
 
 /// A shaped text run, fully placed. `origin` is absolute in chunk-local
@@ -64,7 +56,6 @@ pub struct PlacedText<'a> {
     pub origin: Point,
     pub layout: &'a Arc<TextLayout>,
     pub color: Color,
-    pub opacity: f32,
     pub transform: Transform,
     pub raster: TextRaster,
 }
@@ -74,7 +65,6 @@ pub struct PlacedText<'a> {
 pub struct PlacedImage<'a> {
     pub rect: ResolvedRect,
     pub image: &'a ImageSource,
-    pub opacity: f32,
     pub transform: Transform,
 }
 
@@ -83,41 +73,20 @@ pub struct PlacedImage<'a> {
 pub struct PlacedSvg<'a> {
     pub rect: ResolvedRect,
     pub graphic: &'a VectorGraphic,
-    pub opacity: f32,
     pub transform: Transform,
 }
 
-/// A drop shadow, fully placed.
-#[derive(Clone, Debug)]
-pub struct PlacedShadow<'a> {
-    pub rect: ResolvedRect,
-    pub radius: Radius,
-    pub shadow: &'a Shadow,
-    pub light: &'a LightEnvironment,
-    pub opacity: f32,
-    pub transform: Transform,
-}
-
-/// An isolated layer with an optional element filter, fully placed.
+/// An isolated layer carrying an optional material chain, fully placed.
 ///
-/// `None` filter is a plain isolation layer (the pre-filter behavior:
-/// engines default it to a clip). `Some` means the engine must render
-/// the layer's content to an offscreen, apply the filter, then composite.
-/// `shadow_pad > 0` demands an offscreen even without a filter: the
-/// layer's alpha is the silhouette of an alpha drop shadow, padded so the
-/// offset + blur reach fits around the content.
+/// `Some(material)` means the engine renders the layer's content to an
+/// offscreen, runs the material pass into it, and composites the result
+/// under the content. `None` is a plain isolation layer.
 #[derive(Clone, Debug)]
 pub struct PlacedLayer<'a> {
     pub rect: ResolvedRect,
-    /// The node's authored corner radius (local px) — threaded to the
-    /// engine so material stages seed the card's corner radii (slot 8).
-    pub radius: Radius,
-    /// Layer effects (the sheet's transform), borrowed from the command.
-    pub layer_effects: Option<&'a EffectStack>,
-    /// Backdrop effects, borrowed from the command.
-    pub backdrop_effects: Option<&'a EffectStack>,
+    /// The material chain, borrowed from the command.
+    pub material: Option<&'a Material>,
     pub transform: Transform,
-    pub shadow_pad: f32,
 }
 
 fn warn_ignored(what: &'static str, flag: &AtomicBool, counter: &AtomicU64) {
@@ -132,27 +101,21 @@ fn warn_ignored(what: &'static str, flag: &AtomicBool, counter: &AtomicU64) {
 /// primitive — visible degradation, not a crash.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct SinkDiagnostics {
-    pub ignored_rect: u64,
     pub ignored_text: u64,
     pub ignored_image: u64,
     pub ignored_svg: u64,
-    pub ignored_shadow: u64,
 }
 
-static IGNORED_RECT: AtomicU64 = AtomicU64::new(0);
 static IGNORED_TEXT: AtomicU64 = AtomicU64::new(0);
 static IGNORED_IMAGE: AtomicU64 = AtomicU64::new(0);
 static IGNORED_SVG: AtomicU64 = AtomicU64::new(0);
-static IGNORED_SHADOW: AtomicU64 = AtomicU64::new(0);
 
 /// Snapshot of the cumulative ignored-primitive counters.
 pub fn sink_ignored_counts() -> SinkDiagnostics {
     SinkDiagnostics {
-        ignored_rect: IGNORED_RECT.load(Ordering::Relaxed),
         ignored_text: IGNORED_TEXT.load(Ordering::Relaxed),
         ignored_image: IGNORED_IMAGE.load(Ordering::Relaxed),
         ignored_svg: IGNORED_SVG.load(Ordering::Relaxed),
-        ignored_shadow: IGNORED_SHADOW.load(Ordering::Relaxed),
     }
 }
 
@@ -165,11 +128,6 @@ pub trait SceneSink {
     fn push_clip(&mut self, _clip: &PlacedClip) {}
     /// Pops the most recent clip mask.
     fn pop_clip(&mut self) {}
-    /// Paints a placed rectangle.
-    fn rect(&mut self, _r: &PlacedRect) {
-        static WARNED: AtomicBool = AtomicBool::new(false);
-        warn_ignored("rect", &WARNED, &IGNORED_RECT);
-    }
     /// Paints a placed text run.
     fn text(&mut self, _t: &PlacedText) {
         static WARNED: AtomicBool = AtomicBool::new(false);
@@ -185,20 +143,12 @@ pub trait SceneSink {
         static WARNED: AtomicBool = AtomicBool::new(false);
         warn_ignored("svg", &WARNED, &IGNORED_SVG);
     }
-    /// Paints a placed shadow.
-    fn shadow(&mut self, _s: &PlacedShadow) {
-        static WARNED: AtomicBool = AtomicBool::new(false);
-        warn_ignored("shadow", &WARNED, &IGNORED_SHADOW);
-    }
-    /// Opens an isolated layer. The default treats it as a plain clip
-    /// (the pre-filter behavior), so engines that don't implement filter
-    /// layers degrade to today's semantics instead of dropping content.
-    /// Engines that DO implement filters override this to start an
-    /// offscreen when `filter` is `Some`.
+    /// Opens an isolated layer. The default treats it as a plain clip, so
+    /// engines that don't implement layers degrade to clip semantics
+    /// instead of dropping content.
     fn begin_layer(&mut self, layer: &PlacedLayer) {
         self.push_clip(&PlacedClip {
             rect: layer.rect,
-            radius: Radius::ZERO,
             transform: layer.transform,
         });
     }
@@ -220,14 +170,14 @@ pub fn chunk_base(chunk: &SceneChunk) -> Transform {
 /// in the codebase. `base` is the chunk base (`translate(abs_origin) *
 /// placement`, see [`chunk_base`]); it is the walk's root frame, so absolute
 /// transforms — including the text raster verdict — account for placement
-/// scale. Opacity is folded per item, transforms are absolute in chunk-local
-/// space, text carries its settle rounding and raster path.
+/// scale. Transforms are absolute in chunk-local space, text carries its
+/// settle rounding and raster path.
 pub fn lower_chunk(
     commands: &[SceneCommand],
     base: &Transform,
     sink: &mut impl SceneSink,
 ) {
-    let mut stack = SceneStack::new(Transform::IDENTITY, 1.0);
+    let mut stack = SceneStack::new(Transform::IDENTITY);
     stack.push_transform(base);
     let checkpoint = stack.checkpoint();
     for cmd in commands {
@@ -236,36 +186,19 @@ pub fn lower_chunk(
             SceneCommand::PopTransform => stack.pop_transform(),
             SceneCommand::PushOffset(p) => stack.push_offset(*p),
             SceneCommand::PopOffset => stack.pop_transform(),
-            SceneCommand::PushOpacity(o) => stack.push_opacity(*o),
-            SceneCommand::PopOpacity => stack.pop_opacity(),
-            SceneCommand::PushClip { rect, radius } => sink.push_clip(&PlacedClip {
+            SceneCommand::PushClip { rect } => sink.push_clip(&PlacedClip {
                 rect: *rect,
-                radius: *radius,
                 transform: stack.transform(),
             }),
             SceneCommand::PopClip => sink.pop_clip(),
-            SceneCommand::BeginLayer {
-                rect,
-                radius,
-                layer_effects,
-                backdrop_effects,
-                shadow_pad,
-                ..
-            } => sink.begin_layer(&PlacedLayer {
-                rect: *rect,
-                radius: *radius,
-                layer_effects: layer_effects.as_ref(),
-                backdrop_effects: backdrop_effects.as_ref(),
-                transform: stack.transform(),
-                shadow_pad: *shadow_pad,
-            }),
+            SceneCommand::BeginLayer { rect, material, .. } => {
+                sink.begin_layer(&PlacedLayer {
+                    rect: *rect,
+                    material: material.as_ref(),
+                    transform: stack.transform(),
+                })
+            }
             SceneCommand::EndLayer { .. } => sink.end_layer(),
-            SceneCommand::DrawRect { rect, appearance } => sink.rect(&PlacedRect {
-                rect: *rect,
-                appearance,
-                transform: stack.transform(),
-                opacity: stack.opacity(),
-            }),
             SceneCommand::DrawText {
                 origin,
                 layout,
@@ -276,7 +209,6 @@ pub fn lower_chunk(
                     origin: *origin,
                     layout,
                     color: *color,
-                    opacity: stack.opacity(),
                     transform: t,
                     raster: if crate::scene::has_scale_or_skew(&t) {
                         TextRaster::Transformed
@@ -288,26 +220,11 @@ pub fn lower_chunk(
             SceneCommand::DrawImage { rect, image } => sink.image(&PlacedImage {
                 rect: *rect,
                 image,
-                opacity: stack.opacity(),
                 transform: stack.transform(),
             }),
             SceneCommand::DrawSvg { rect, graphic } => sink.svg(&PlacedSvg {
                 rect: *rect,
                 graphic,
-                opacity: stack.opacity(),
-                transform: stack.transform(),
-            }),
-            SceneCommand::DrawShadow {
-                rect,
-                radius,
-                shadow,
-                light,
-            } => sink.shadow(&PlacedShadow {
-                rect: *rect,
-                radius: *radius,
-                shadow,
-                light,
-                opacity: stack.opacity(),
                 transform: stack.transform(),
             }),
         }

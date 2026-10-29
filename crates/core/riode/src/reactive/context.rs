@@ -289,7 +289,6 @@ fn apply_ops<T: 'static>(mut boxed: Box<dyn Any>, ops: &[CtxOp]) -> T {
 
 // Lexical provider chain for the reconcile descent in progress: entries
 // pushed as provided-carrying nodes reconcile their children, popped after.
-// Stateless across frames (nothing retained); shadowing by innermost-first
 // scan. Covers mount, where retained links don't exist yet.
 thread_local! {
     static DESCENT: RefCell<Vec<(CtxId, ProviderValue)>> = const { RefCell::new(Vec::new()) };

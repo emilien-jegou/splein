@@ -16,8 +16,6 @@
 // loader keeps superseded images mapped (see `riode::hot_reload::dylib`).
 
 pub use riode::*;
-pub use riode_anodeui as anodeui;
-pub use riode_tiny_skia as tiny_skia;
 pub use riode_engine_wgpu as wgpu;
 
 include!("host.rs");

@@ -37,20 +37,18 @@ impl StackingContext {
 
 /// The clips a node imposes on its descendants, in absolute screen space.
 ///
-/// Mirrors `enter_node_frame` exactly, including its single-clip rule: while a render box is
-/// animating the reveal is square, and the declared radius applies only once it settles. A
-/// descendant chunk therefore has to push whatever its parent pushed, or it paints outside a
-/// shrinking parent.
+/// Mirrors `enter_node_frame` exactly: a clipping node bounds its content with
+/// its render box, square. A descendant chunk therefore has to push whatever
+/// its parent pushed, or it paints outside a shrinking parent.
 fn clips_imposed_by(
     node: &crate::tree::LayoutNode,
     abs_origin: Point,
 ) -> crate::scene::chunk::InheritedClips {
     let mut clips = crate::scene::chunk::InheritedClips::new();
-    if let Some(radius) = crate::pipeline::compile::emit::node_clip_radius(node) {
+    if node.style.clip {
         let painted = node.resolved_rect;
         clips.push(InheritedClip {
             rect: ResolvedRect::new(abs_origin.x, abs_origin.y, painted.width, painted.height),
-            radius,
         });
     }
     clips

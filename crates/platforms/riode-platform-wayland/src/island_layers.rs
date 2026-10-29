@@ -7,14 +7,11 @@
 // (`BackgroundEffect.cpp`, `CBackgroundEffect::setResource`). Top-level
 // layer surfaces get full views, so regions land. Each island is
 // therefore its own `Layer::Overlay` surface, positioned with
-// TOP|LEFT anchor + margins, carrying the island's pixels and its blur
 // region. Paint order = creation order.
 //
 // The parent fullscreen surface stays as a robust fallback underneath.
 
 use crate::{
-    bind_manager, effect_for_surface, upload_blur_region, item_for_surface, upload_effect_stages,
-    upload_glass_frame, upload_item_shape,
 };
 use crate::island_pool::blit_rgba_to_bgra;
 use crate::item_hints::{RiodeItemManagerV1, RiodeItemV1};
@@ -191,14 +188,12 @@ impl IslandLayerPool {
             }
             // The island surface IS the effect area: region covers it all.
             if let Some(effect) = &pooled.effect {
-                upload_blur_region(
                     qh,
                     compositor.wl_compositor(),
                     effect,
                     &[ResolvedRect::new(0.0, 0.0, w as f32, h as f32)],
                 );
             }
-            // Hints: packed glass frame + rounded-rect shape,
             // island-local. The island rect is main-surface coords but
             // this surface sits at the island origin, so the pack is
             // rebased to (0,0): rect + layer members both shift by
@@ -207,14 +202,11 @@ impl IslandLayerPool {
             // already surface-local, so no shift needed there).
             if let Some(item) = &pooled.item {
                 let radii = shape_radii(island, w as f32, h as f32);
-                let words = island.glass.as_ref().map(|g| {
-                    riode_shared::foundation::pack_glass_wire(
                         ResolvedRect::new(0.0, 0.0, w as f32, h as f32),
                         &g.shifted(-(x as f32), -(y as f32)),
                         output_scale,
                     )
                 });
-                upload_glass_frame(item, words.as_deref().unwrap_or(&[]));
                 upload_effect_stages(item, island.effects.as_ref());
                 upload_item_shape(item, 0.0, 0.0, w as f64, h as f64, radii);
             }
@@ -229,7 +221,6 @@ impl Default for IslandLayerPool {
     }
 }
 
-/// Corner radii for the item-hint shape, from the island's glass material
 /// (emit-stamped with the node's declared corners): `Radius::Max` becomes
 /// a stadium (half the short edge), matching the engine's SDF.
 fn shape_radii(island: &Island, w: f32, h: f32) -> [f64; 4] {
@@ -262,7 +253,6 @@ where
 {
     match bind_manager(globals, qh) {
         Ok(m) => {
-            tracing::info!("ext-background-effect-v1 available: islands get blur regions");
             Some(m)
         }
         Err(e) => {

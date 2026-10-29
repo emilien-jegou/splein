@@ -29,3 +29,32 @@ impl TextWrap {
         matches!(self, TextWrap::NoWrap)
     }
 }
+
+
+use std::str::FromStr;
+
+fn parse_text_wrap(s: &str) -> Option<TextWrap> {
+    match s.trim().to_lowercase().as_str() {
+        "wrap" | "normal" | "prewrap" => Some(TextWrap::Wrap),
+        "nowrap" | "no" | "none" => Some(TextWrap::NoWrap),
+        "balance" => Some(TextWrap::Balance),
+        _ => None,
+    }
+}
+
+impl FromStr for TextWrap {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, String> {
+        parse_text_wrap(s).ok_or_else(|| "bad text_wrap".to_string())
+    }
+}
+impl From<&str> for TextWrap {
+    fn from(s: &str) -> Self {
+        parse_text_wrap(s).unwrap_or(TextWrap::Wrap)
+    }
+}
+impl From<String> for TextWrap {
+    fn from(s: String) -> Self {
+        Self::from(s.as_str())
+    }
+}

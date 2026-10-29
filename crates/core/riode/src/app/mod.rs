@@ -13,14 +13,11 @@
 //! #[component]
 //! fn Page() -> impl IntoElement {
 //!     let open = use_signal(false);
-//!     group().width(800.0).height(600.0).fill(Color::WHITE).children([
-//!         group()
-//!             .width(200.0)
-//!             .height(60.0)
-//!             .fill(Color::hex(0x2563EB))
-//!             .on_click(move |_| open.set(!open.get()))
-//!             .children([text(open.map(|o| if o { "Open" } else { "Closed" }))]),
-//!     ])
+//!     group()
+//!         .width(800.0)
+//!         .height(600.0)
+//!         .material(Fill::solid(Color::WHITE))
+//!         .children([text(open.map(|o| if o { "Open" } else { "Closed" }))])
 //! }
 //!
 //! fn main() {
@@ -29,71 +26,30 @@
 //!         .size(800, 600)
 //!         .font("Inter", include_bytes!("inter-var.ttf"))
 //!         .background(Color::WHITE)
-//!         .backend(RenderBackend::TinySkia)
-//!         .backend_factory(riode_tiny_skia::create_backend)
+//!         .backend_factory(riode_engine_wgpu::create_backend)
 //!         .run(Page);
 //! }
 //! ```
 //!
-//! # Choosing a backend
+//! # Rasterizer
 //!
-//! The engine itself rasterizes nothing — a factory from a backend crate does that:
-//!
-//! | [`RenderBackend`] | Factory | When |
-//! |---|---|---|
-//! | `TinySkia` (default) | `riode_tiny_skia::create_backend` | CPU rasterization; the sane default and what the test harness uses |
-//! | `Wgpu` | `riode_engine_wgpu::create_backend` | GPU rasterization via wgpu |
-//!
-//! Forgetting `.backend_factory(..)` panics with a message naming the missing factory —
-//! that panic is intentional (a window with no painter is a programming error, not a
-//! runtime condition).
+//! The engine itself rasterizes nothing — the factory handed to
+//! `.backend_factory(..)` does that. Only `riode_engine_wgpu::create_backend`
+//! exists; forgetting it panics with a message naming the missing factory (a
+//! window with no painter is a programming error, not a runtime condition).
 //!
 //! # Custom per-frame work
 //!
 //! Implement [`AppExtension`] and pass it with [`AppConfig::extension`] to run code every
 //! frame (physics drivers, telemetry, custom painters via [`OverlayPainter`]). See
 //! `examples/moving.rs` (a DVD-screensaver physics driver) and `examples/showcase.rs`.
-//!
-//! # Debugging a live app
-//!
-//! [`VisualDebugger`] (the `debug_*` modules) draws layout boxes, scene chunks, and a
-//! performance HUD over your UI. The human-operated debug keys are `F8` (freeze the
-//! clock), `.` (advance one 1/120 s quantum while frozen), `[`/`]` (slow motion),
-//! and `s` (write presented pixels to `$RIODE_CAPTURE_DIR`).
-//!
-//! # Headless use
-//!
-//! Tests and benchmarks skip this module entirely: [`crate::runtime::Engine::headless`]
-//! plus `riode_tiny_skia::HeadlessRaster` (or the `Harness` in
-//! `riode_tiny_skia::testing`) drive the engine without a window. If you find yourself
-//! reaching for `App` in a test, reach for `Harness` instead.
 
-pub mod debug;
-pub mod debug_bus;
-pub mod debug_draw;
-pub mod debug_font;
-pub mod debug_hud;
-pub mod debug_layout;
-pub mod debug_overlay;
-pub mod debug_panel;
-pub mod debug_scene;
-pub mod debug_toggle;
 pub mod extension;
-#[cfg(feature = "desktop")]
-pub mod multibackend;
 pub mod painter;
 pub mod runner;
-#[cfg(feature = "desktop")]
-pub mod switcher;
 pub mod telemetry;
 
-pub use debug::{InspectorMode, VisualDebugger};
-pub use debug_bus::{DebugBus, DebugCommand, NodeBrief, Snapshot};
 pub use extension::{AppExtension, OverlayCaps};
-#[cfg(feature = "desktop")]
-pub use multibackend::{
-    backend_display_name, BackendSlot, BackendStats, MultiBackend, BACKEND_ORDER,
-};
 pub use painter::OverlayPainter;
 pub use runner::FpsLimit;
 
@@ -114,7 +70,6 @@ use crate::hot_reload::SharedFactory;
 use crate::reactive::ReactiveRuntime;
 #[cfg(feature = "desktop")]
 use crate::reactive::Cx;
-use crate::render::RenderBackend;
 use crate::runtime::Engine;
 #[cfg(feature = "desktop")]
 use runner::{run_event_loop, Backend, BackendFactory};
@@ -128,7 +83,6 @@ pub struct AppConfig {
     visible: bool,
     fonts: Vec<Vec<u8>>,
     background: Color,
-    backend: RenderBackend,
     #[cfg(feature = "desktop")]
     backend_factory: Option<BackendFactory>,
     extensions: Vec<Box<dyn AppExtension>>,
@@ -150,7 +104,6 @@ impl App {
             visible: true,
             fonts: Vec::new(),
             background: Color::WHITE,
-            backend: RenderBackend::default(),
             #[cfg(feature = "desktop")]
             backend_factory: None,
             extensions: Vec::new(),
@@ -190,15 +143,10 @@ impl AppConfig {
         self.background = color.into();
         self
     }
-    pub fn backend(mut self, backend: RenderBackend) -> Self {
-        self.backend = backend;
-        self
-    }
-    /// Supplies the constructor for the selected backend.
+    /// Supplies the constructor for the rasterizer.
     ///
-    /// The engine crate implements no rasterizer, so the factory comes from a backend
-    /// crate: `riode_tiny_skia::create_backend` or `riode_engine_wgpu::create_backend`.
-    /// Desktop-only.
+    /// The engine crate implements no rasterizer, so the factory comes from the backend
+    /// crate: `riode_engine_wgpu::create_backend`. Desktop-only.
     #[cfg(feature = "desktop")]
     pub fn backend_factory(mut self, factory: BackendFactory) -> Self {
         self.backend_factory = Some(factory);
@@ -286,24 +234,12 @@ impl AppConfig {
             let _ = proxy.send_event(());
         });
 
-        let backend: Box<dyn Backend> = match self.backend {
-            RenderBackend::Wgpu => {
-                let factory = self.backend_factory.expect(
-                    "no GPU backend factory: pass `riode_engine_wgpu::create_backend` via \
-                     `AppConfig::backend_factory`",
-                );
-                factory(Arc::clone(&window), pw, ph, engine.text_context())
-                    .unwrap_or_else(|e| panic!("riode_engine_wgpu::create_backend backend init failed: {e:?}"))
-            }
-            RenderBackend::TinySkia => {
-                let factory = self.backend_factory.expect(
-                    "no CPU backend factory: pass `riode_tiny_skia::create_backend` \
-                     via `AppConfig::backend_factory`",
-                );
-                factory(window.clone(), pw, ph, engine.text_context())
-                    .expect("CPU backend init failed")
-            }
-        };
+        let factory = self.backend_factory.expect(
+            "no rasterizer factory: pass `riode_engine_wgpu::create_backend` via \
+             `AppConfig::backend_factory`",
+        );
+        let backend: Box<dyn Backend> = factory(Arc::clone(&window), pw, ph, engine.text_context())
+            .unwrap_or_else(|e| panic!("backend init failed: {e:?}"));
 
         run_event_loop(
             event_loop,

@@ -56,9 +56,6 @@ enum Command {
         /// Host library (default: next to this launcher binary).
         #[arg(long)]
         host: Option<PathBuf>,
-        /// Raster engine: tiny-skia (default), wgpu.
-        #[arg(long)]
-        engine: Option<String>,
     },
     /// Headless check: mount, click, swap entry points, and rebuild a UI image inside
     /// the shared runtime — no window. Exits non-zero with diagnostics on failure.
@@ -78,8 +75,7 @@ enum Command {
     },
 }
 
-type HostRunFn =
-    unsafe extern "Rust" fn(*const c_char, *const c_char, *const c_char, *const c_char);
+type HostRunFn = unsafe extern "Rust" fn(*const c_char, *const c_char, *const c_char);
 
 /// Headless self-test driver: forwards resolved UI entry points as opaque pointers.
 /// The host owns execution (it alone may call into component code); this side only
@@ -120,7 +116,6 @@ fn main() -> ExitCode {
             root,
             shared,
             host,
-            engine,
         } => {
             let shared = match resolve_image(shared, "libriode_shared.so") {
                 Ok(path) => path,
@@ -139,7 +134,6 @@ fn main() -> ExitCode {
                 &package,
                 example.as_deref().unwrap_or(""),
                 &root,
-                engine.as_deref(),
             )
         }
         Command::Selftest {
@@ -207,7 +201,6 @@ fn run_host(
     package: &str,
     example: &str,
     root: &std::path::Path,
-    engine: Option<&str>,
 ) -> ExitCode {
     if preload_shared(shared).is_err() {
         return ExitCode::FAILURE;
@@ -228,14 +221,8 @@ fn run_host(
     let package = CString::new(package).unwrap_or_default();
     let example = CString::new(example).unwrap_or_default();
     let root = CString::new(root.to_string_lossy().as_ref()).unwrap_or_default();
-    let engine = CString::new(engine.unwrap_or("")).unwrap_or_default();
     unsafe {
-        run(
-            package.as_ptr(),
-            example.as_ptr(),
-            root.as_ptr(),
-            engine.as_ptr(),
-        )
+        run(package.as_ptr(), example.as_ptr(), root.as_ptr())
     };
     // The event loop only returns on exit: leak the image (see above) so teardown
     // cannot trip over dlclose ordering either.

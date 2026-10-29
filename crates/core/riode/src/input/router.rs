@@ -261,7 +261,6 @@ impl PointerRouter {
                         }
                     }
                     self.press_chain = press_chain;
-                    glass_press_begin(arena, &self.press_chain, event.position);
                     // A drag only exists for content that can be dragged. If nobody
                     // in the pressed chain handles drags, this press stays a press no
                     // matter how far it moves, and release still clicks as long as it
@@ -763,11 +762,9 @@ fn absorbs(arena: &TreeArena, id: NodeId) -> bool {
         || arena
             .get(id)
             .style
-            .appearance
-            .backdrop_effects
+            .material
             .as_ref()
-            .and_then(|s| s.glass_single())
-            .is_some_and(|(g, _, _, _, _)| g.is_interactive())
+            .is_some_and(|m| m.interactive)
 }
 
 /// Whether a node has handlers to fire (vs. absorbing silently as Opaque space).
@@ -813,32 +810,4 @@ pub fn is_press(event: &PointerEvent) -> bool {
     event.phase == PointerPhase::Down
 }
 
-/// Starts a glass press on the first interactive-glass node of the press
-/// chain (innermost first), or ends the active press when none qualifies.
-/// Group markers never take the press themselves (their material is
-/// ignored by the layer decision): the press falls through to the inner
-/// interactive member. A press into the void ends the gesture rather than
-/// retargeting it.
-fn glass_press_begin(arena: &mut TreeArena, chain: &[NodeId], pos: Point) {
-    if let Some(&id) = chain.iter().find(|id| {
-        let node = arena.get(**id);
-        let is_group = node
-            .style
-            .appearance
-            .backdrop_effects
-            .as_ref()
-            .is_some_and(|s| s.glass_group_spacing().is_some());
-        let interactive = node
-            .style
-            .appearance
-            .backdrop_effects
-            .as_ref()
-            .and_then(|s| s.glass_single())
-            .is_some_and(|(g, _, _, _, _)| g.is_interactive());
-        !is_group && interactive
-    }) {
-        arena.press_begin(id, pos);
-    } else {
-        arena.press_end();
-    }
-}
+

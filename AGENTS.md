@@ -90,6 +90,17 @@ Orientation for a fresh session (paths from repo root):
   demo (smaller travel, extra size row, frozen driver) so the next
   observation discriminates — don't debate the last screenshot.
 
+### Aggressive Refactoring & Zero-Deprecation Rule
+
+- **Always remove, never deprecate.** Do not build dual-path bridges,
+  side-by-side shims, or temporary coexistence layers.
+- **Zero baggage tolerance:** When replacing a subsystem (`backdrop_effects`,
+  legacy renderer passes, monolithic `Glass`), delete the old code immediately.
+- **Target isolation:** The **only** examples required to build and run
+  during glass refactoring are `examples/liquid_glass` and
+  `examples/liquid_glass_lab`. All other examples may remain broken until
+  explicitly addressed. Do not waste cycles maintaining them.
+
 ## Examples
 
 - **Run:** `nu scripts/toolbox.nu example <name>` (e.g. `nu scripts/toolbox.nu example text_smooth`).

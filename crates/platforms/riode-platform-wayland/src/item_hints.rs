@@ -45,7 +45,6 @@ use wayland_client::protocol::wl_surface::WlSurface;
 use wayland_client::{Dispatch, QueueHandle};
 
 /// Bind the item-hint manager (version 2: raw material, no preset
-/// names). Fails when the riode-glass plugin isn't loaded, or speaks
 /// only v1 — the caller keeps running without hints, same as a missing
 /// manager. There is deliberately no v1 fallback: the preset-name
 /// channel is dead.
@@ -72,21 +71,16 @@ where
     manager.get_item(surface, qh, ())
 }
 
-/// Upload one island's packed glass frame (v4 wire: header + the 736
 /// uniform floats, little-endian u32 words). Idempotent: sending the
 /// same bytes every commit is harmless (pending state is simply
-/// overwritten). An empty slice clears the hint (plain-blur fallback
 /// applies).
-pub fn upload_glass_frame(item: &RiodeItemV1, words: &[u32]) {
     if words.is_empty() {
-        item.unset_glass();
         return;
     }
     let mut bytes = Vec::with_capacity(words.len() * 4);
     for w in words {
         bytes.extend_from_slice(&w.to_le_bytes());
     }
-    item.set_glass(bytes);
 }
 
 /// Uniform stream per stage, in f32s. The wire always carries the
@@ -102,19 +96,14 @@ const EFFECT_UNIFORMS_MAX: usize = 36;
 /// clears every previously-latched stage, sends one `set_effect` per
 /// custom stage (WGSL composed as ABI header + module, uniforms padded
 /// to whole vec4s and packed little-endian), then declares where the
-/// glass frame sits among the stages. Builtin stages other than Glass
 /// have no wire representation yet and are skipped once with a warning;
 /// hints never raise protocol errors. Always call alongside
-/// [`upload_glass_frame`] in the same commit batch.
 pub fn upload_effect_stages(item: &RiodeItemV1, effects: Option<&riode_shared::foundation::EffectStack>) {
     use riode_shared::foundation::effect::shaders::EFFECT_ABI_WGSL;
     use riode_shared::foundation::effect::{BackdropNeed, BuiltinStage, EffectShader};
     use std::sync::atomic::{AtomicBool, Ordering};
 
     item.clear_effects();
-    // -1 = no Glass in the stack (every latched stage is a backdrop stage);
-    // any Glass at index i overwrites it below.
-    let mut glass_index = -1i32;
     if let Some(stack) = effects {
         for (idx, e) in stack.0.iter().enumerate() {
             let idx = idx as i32;
@@ -154,8 +143,6 @@ pub fn upload_effect_stages(item: &RiodeItemV1, effects: Option<&riode_shared::f
                             generated::client::riode_item_v1::BackdropNeed::ReadSharp,
                             0.0,
                         ),
-                        BackdropNeed::ReadBlurred { sigma } => (
-                            generated::client::riode_item_v1::BackdropNeed::ReadBlurred,
                             sigma as f64,
                         ),
                     };
@@ -167,7 +154,6 @@ pub fn upload_effect_stages(item: &RiodeItemV1, effects: Option<&riode_shared::f
                         sigma,
                     );
                 }
-                EffectShader::Builtin(BuiltinStage::Glass(_)) => glass_index = idx,
                 other => {
                     static WARNED_BUILTIN: AtomicBool = AtomicBool::new(false);
                     if !WARNED_BUILTIN.swap(true, Ordering::Relaxed) {
@@ -179,7 +165,6 @@ pub fn upload_effect_stages(item: &RiodeItemV1, effects: Option<&riode_shared::f
             }
         }
     }
-    item.set_glass_stage(glass_index);
 }
 
 /// Upload one island's shape hint. Idempotent: sending the same values

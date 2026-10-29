@@ -2,10 +2,9 @@
 
 use bytemuck::{Pod, Zeroable};
 use riode::foundation::effect::shaders::{
-    BLEND_COMPOSITE_COMBINED_WGSL as BLEND_COMPOSITE_WGSL, BLUR_WGSL,
-    COMPOSITE_WGSL as COMPOSITE_SRC, GLASS_COMBINED_WGSL as GLASS_WGSL,
+    BLEND_COMPOSITE_COMBINED_WGSL as BLEND_COMPOSITE_WGSL,
+    COMPOSITE_WGSL as COMPOSITE_SRC,
 };
-use riode::foundation::glass::K_GLASS_UNIFORM_FLOATS;
 
 /// CPU-transformed rect vertex: screen-space pixels + straight-alpha color.
 #[repr(C)]
@@ -144,67 +143,6 @@ impl RRectVertex {
     }
 }
 
-/// Shadow quad: device-space spread+offset box + corner radii + color
-/// with layer alpha pre-baked (intensity * color.a * layer.opacity *
-/// node opacity) + sigma in `params.x` + inset flag in `params.y` +
-/// the un-offset un-spread original box in `obox` (interior mask for
-/// inset shadows; zeroed for drop shadows, which never read it).
-///
-/// One vertex run per shadow *layer* (multi-layer shadows emit several
-/// runs) — keeps the attribute count low and the CPU order (extent
-/// descending, tighter over softer) identical to the other engines.
-#[repr(C)]
-#[derive(Copy, Clone, Pod, Zeroable)]
-pub struct ShadowVertex {
-    pub pos: [f32; 2],
-    pub fbox: [f32; 4],
-    pub radii: [f32; 4],
-    pub color: [f32; 4],
-    pub params: [f32; 4],
-    pub obox: [f32; 4],
-}
-
-impl ShadowVertex {
-    pub fn layout() -> wgpu::VertexBufferLayout<'static> {
-        wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<Self>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &[
-                wgpu::VertexAttribute {
-                    offset: 0,
-                    shader_location: 0,
-                    format: wgpu::VertexFormat::Float32x2,
-                },
-                wgpu::VertexAttribute {
-                    offset: 8,
-                    shader_location: 1,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-                wgpu::VertexAttribute {
-                    offset: 24,
-                    shader_location: 2,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-                wgpu::VertexAttribute {
-                    offset: 40,
-                    shader_location: 3,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-                wgpu::VertexAttribute {
-                    offset: 56,
-                    shader_location: 4,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-                wgpu::VertexAttribute {
-                    offset: 72,
-                    shader_location: 5,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-            ],
-        }
-    }
-}
-
 /// Textured image quad: device-space corners + full-texture UV + tint
 /// (straight-alpha, premultiplied in the shader) + current opacity in
 /// `color.a`. Full-quad UVs let the hardware pick the mip level from
@@ -243,24 +181,10 @@ impl ImageVertex {
     }
 }
 
-/// Per-pass separable-blur params (16-byte uniform): Gaussian sigma in
-/// device texels plus the unit direction of this pass (one axis at a
-/// time; H then V composes the 2D Gaussian). `pad` rounds the struct to
-/// a full vec4.
-#[repr(C)]
-#[derive(Copy, Clone, Pod, Zeroable)]
-pub struct BlurGpu {
-    pub sigma: f32,
-    pub dir_x: f32,
-    pub dir_y: f32,
-    pub pad: f32,
-}
-
 /// Row-major 4×5 CSS color matrix packed as the shader's five vec4 rows:
 /// four coefficient rows (stride 16) + the offset column. A plain f32
 /// array would violate the uniform address space's 16-byte stride rule.
 /// `tex_off` shifts the source texel lookup away from the fragment
-/// position: the alpha-shadow composite draws its quad at the shadow's
 /// offset while still sampling the un-shifted layer texels (zero for
 /// every normal content composite).
 #[repr(C)]
@@ -277,7 +201,6 @@ pub struct ColorMatrixGpu {
 impl ColorMatrixGpu {
     /// Packs `[r0 m0..m3 | r1 | r2 | r3]` (row-major, offset last in
     /// each row) into vec4 rows. `tex_off` starts at zero (identity
-    /// sampling); alpha-shadow materials patch it after packing.
     pub fn pack(m: &[f32; 20]) -> Self {
         Self {
             r0: [m[0], m[1], m[2], m[3]],
@@ -290,60 +213,24 @@ impl ColorMatrixGpu {
     }
 }
 
-/// Packed vec4 count of one glass frame: `K_GLASS_UNIFORM_FLOATS / 4`
-/// (736-float wire prefix + the wgpu-only glow / stages / GGX / env /
-/// corners tail) — see
-/// `riode::foundation::glass::K_GLASS_UNIFORM_FLOATS`.
-pub const GLASS_VEC4S: usize = K_GLASS_UNIFORM_FLOATS / 4;
 
-/// One liquid-glass layer's frame uniforms: an engine-owned header
-/// (core pre-blur sigmas, target size) followed by the floats
-/// `pack_glass_uniforms` produces, laid out as `GLASS_VEC4S` `vec4`s.
+
 ///
-/// Byte-for-byte the WGSL `GlassU` struct in `shaders/glass/core.wgsl`:
-/// the header is 32 bytes, then `data[0]` carries user float 0
-/// (`uGlobal`), `data[4]` carries `uRects[0]` (user float 16), and so on.
-/// Uniform address space needs 16-byte array stride, hence `vec4`s
-/// rather than a flat `f32` array.
+
+/// Generic 256 B material pass uniform block
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct GlassFrameGpu {
-    /// Engine-owned: composed core blur σx, σy (device px), 0, then the
-    /// card blend wire id (`BlendMode::as_uniform_id`; glass + blend —
-    /// the shader's `u.engine.w`). Drives the EndLayer pre-blur passes
-    /// (σx/σy); only `.w` is read by the shader.
-    pub core: [f32; 4],
-    /// Engine-owned: backdrop target size in px (`uSize`), 0, 0. Filled by
-    /// the renderer at draw time — emission does not know it.
-    pub size: [f32; 4],
-    /// Packed frame uniforms, 4 floats per `vec4`.
-    pub data: [[f32; 4]; GLASS_VEC4S],
+pub struct MaterialUniformsGpu {
+    pub block: [f32; 64],
 }
 
-impl GlassFrameGpu {
-    /// Builds a frame from the core-blur sigmas (device px) and the
-    /// `pack_glass_uniforms` output. `size` is left zero for the renderer.
-    ///
-    /// # Panics
-    /// If `packed` is not exactly `GLASS_VEC4S * 4` floats — a packer
-    /// layout change that did not reach `GLASS_VEC4S`.
-    pub fn from_pack(core: [f32; 4], packed: &[f32]) -> Self {
-        assert_eq!(
-            packed.len(),
-            GLASS_VEC4S * 4,
-            "glass pack length must match GLASS_VEC4S"
-        );
-        let mut data = [[0.0f32; 4]; GLASS_VEC4S];
-        for (i, chunk) in packed.chunks_exact(4).enumerate() {
-            data[i].copy_from_slice(chunk);
-        }
-        Self {
-            core,
-            size: [0.0; 4],
-            data,
-        }
-    }
+#[derive(Clone)]
+pub struct MaterialPassGpu {
+    pub shader: &'static str,
+    pub uniforms: MaterialUniformsGpu,
 }
+
+
 
 pub struct Pipelines {
     pub rect_pipeline: wgpu::RenderPipeline,
@@ -351,7 +238,6 @@ pub struct Pipelines {
     /// damage-base quads replace stale pixels instead of blending over.
     pub rect_replace_pipeline: wgpu::RenderPipeline,
     pub rrect_pipeline: wgpu::RenderPipeline,
-    pub shadow_pipeline: wgpu::RenderPipeline,
     pub ortho_layout: wgpu::BindGroupLayout,
     pub blit_layout: wgpu::BindGroupLayout,
     pub blit_pipeline: wgpu::RenderPipeline,
@@ -362,14 +248,10 @@ pub struct Pipelines {
     pub image_pipeline: wgpu::RenderPipeline,
     /// Shared material layout for the element-filter passes: source
     /// texture (textureLoad, no sampler — blit precedent) + a params
-    /// uniform. Group 0 of the blur pipeline, group 1 of the composite
     /// (which puts ortho in group 0, like every scene pipeline).
     pub filter_layout: wgpu::BindGroupLayout,
-    /// Separable Gaussian blur pass over a filter-layer offscreen:
     /// fullscreen triangle, nine `textureLoad` taps, blend disabled
     /// (each target is cleared by its load op).
-    pub blur_pipeline: wgpu::RenderPipeline,
-    /// Composites a (possibly blurred) filter-layer offscreen onto its
     /// parent: samples 1:1 by position, unpremultiplies, applies the
     /// 4×5 matrix, re-premultiplies. Premultiplied blending — scene
     /// targets accumulate premultiplied by construction (alpha blending
@@ -384,16 +266,6 @@ pub struct Pipelines {
     /// route here; `Normal` keeps `composite_pipeline` untouched.
     pub blend_layout: wgpu::BindGroupLayout,
     pub blend_composite_pipeline: wgpu::RenderPipeline,
-    /// Liquid-glass optics pass: the core-blurred backdrop sampled
-    /// bilinearly through the reference's SDF lens (superellipse SDF,
-    /// lens field, tone LUT — see `shaders/glass/`, one file per effect
-    /// in `GLASS_COMBINED_WGSL`, a line-for-line port of
-    /// `adaptive_liquid_glass/shaders/liquid_glass.frag`). Group
-    /// 0: backdrop, linear sampler, `GlassFrameGpu` uniform. Blend
-    /// disabled — like the blur it writes into a cleared offscreen.
-    pub glass_layout: wgpu::BindGroupLayout,
-    pub glass_pipeline: wgpu::RenderPipeline,
-    pub glass_sampler: wgpu::Sampler,
     /// Shared bind-group layout + sampler for custom (material-DSL)
     /// stages. Every custom stage uses the same binding numbering (the
     /// engine entry scaffold fixes it: 0 sampler, 1 uniforms, 2 input,
@@ -531,42 +403,6 @@ pub fn create_pipelines(
         },
         fragment: Some(wgpu::FragmentState {
             module: &rrect_shader,
-            entry_point: "fs_main",
-            compilation_options: Default::default(),
-            targets: &[Some(wgpu::ColorTargetState {
-                format: target_format,
-                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                write_mask: wgpu::ColorWrites::ALL,
-            })],
-        }),
-        primitive: wgpu::PrimitiveState::default(),
-        depth_stencil: None,
-        multisample: wgpu::MultisampleState::default(),
-        multiview: None,
-    });
-
-    // Shadow pipeline: SDF box blurred by a 4-tap Gaussian integral
-    // along the distance axis (same target, straight alpha).
-    let shadow_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("riode-wgpu-shadow"),
-        source: wgpu::ShaderSource::Wgsl(include_str!("shaders/shadow.wgsl").into()),
-    });
-    let shadow_pipe_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: Some("riode-wgpu-shadow-pipe-layout"),
-        bind_group_layouts: &[&ortho_layout],
-        push_constant_ranges: &[],
-    });
-    let shadow_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("riode-wgpu-shadow-pipeline"),
-        layout: Some(&shadow_pipe_layout),
-        vertex: wgpu::VertexState {
-            module: &shadow_shader,
-            entry_point: "vs_main",
-            compilation_options: Default::default(),
-            buffers: &[ShadowVertex::layout()],
-        },
-        fragment: Some(wgpu::FragmentState {
-            module: &shadow_shader,
             entry_point: "fs_main",
             compilation_options: Default::default(),
             targets: &[Some(wgpu::ColorTargetState {
@@ -736,12 +572,8 @@ pub fn create_pipelines(
         multiview: None,
     });
 
-    // Element-filter layer passes: separable blur + composite onto the
-    // parent target (both render into the Rgba8Unorm scene targets).
-    let blur_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("riode-wgpu-blur"),
-        source: wgpu::ShaderSource::Wgsl(BLUR_WGSL.into()),
-    });
+    // Composite: layer source over the parent target (both render into
+    // the Rgba8Unorm scene targets).
     let composite_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("riode-wgpu-composite"),
         source: wgpu::ShaderSource::Wgsl(COMPOSITE_SRC.into()),
@@ -770,35 +602,6 @@ pub fn create_pipelines(
                 count: None,
             },
         ],
-    });
-    let blur_pipe_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: Some("riode-wgpu-blur-pipe-layout"),
-        bind_group_layouts: &[&filter_layout],
-        push_constant_ranges: &[],
-    });
-    let blur_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("riode-wgpu-blur-pipeline"),
-        layout: Some(&blur_pipe_layout),
-        vertex: wgpu::VertexState {
-            module: &blur_shader,
-            entry_point: "vs_main",
-            compilation_options: Default::default(),
-            buffers: &[],
-        },
-        fragment: Some(wgpu::FragmentState {
-            module: &blur_shader,
-            entry_point: "fs_main",
-            compilation_options: Default::default(),
-            targets: &[Some(wgpu::ColorTargetState {
-                format: target_format,
-                blend: None,
-                write_mask: wgpu::ColorWrites::ALL,
-            })],
-        }),
-        primitive: wgpu::PrimitiveState::default(),
-        depth_stencil: None,
-        multisample: wgpu::MultisampleState::default(),
-        multiview: None,
     });
     let composite_pipe_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("riode-wgpu-composite-pipe-layout"),
@@ -833,7 +636,6 @@ pub fn create_pipelines(
     // Backdrop-blend layer composite: the library + dispatcher prepended
     // to an extended copy of the composite fragment (two textures: the
     // layer source and the BeginLayer parent snapshot). Its own bind
-    // group layout — `filter_layout` stays two-entry so blur and every
     // existing composite caller are untouched. Blend disabled: the
     // shader writes premultiplied `co`/`αo`, backdrop contribution
     // included (see `composite_blend.wgsl`).
@@ -907,100 +709,6 @@ pub fn create_pipelines(
             multiview: None,
         });
 
-    // Liquid-glass optics pass: the core-blurred backdrop + a linear
-    // sampler + the frame uniform (`GlassFrameGpu`: engine header,
-    // `uSize`, then the reference's 736-float stream) + the sharp
-    // parent snapshot (the card-blend backdrop — binding 0 may be the
-    // pre-blur); fullscreen triangle into a cleared surface-sized
-    // offscreen (blend disabled, like the blur). One texture only for
-    // the lens — the wide tail / post-lens / extra frost are shader
-    // taps on it. The blend-mode library and the per-effect glass
-    // modules are concatenated by `GLASS_COMBINED_WGSL` (WGSL has no
-    // include mechanism; order is free — module-scope declarations are
-    // hoisted).
-    let glass_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("riode-wgpu-glass"),
-        source: wgpu::ShaderSource::Wgsl(GLASS_WGSL.into()),
-    });
-    let glass_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        label: Some("riode-wgpu-glass-layout"),
-        entries: &[
-            wgpu::BindGroupLayoutEntry {
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                binding: 0,
-                ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    view_dimension: wgpu::TextureViewDimension::D2,
-                    multisampled: false,
-                },
-                count: None,
-            },
-            wgpu::BindGroupLayoutEntry {
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                binding: 1,
-                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                count: None,
-            },
-            wgpu::BindGroupLayoutEntry {
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                binding: 2,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            },
-            wgpu::BindGroupLayoutEntry {
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                binding: 3,
-                ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    view_dimension: wgpu::TextureViewDimension::D2,
-                    multisampled: false,
-                },
-                count: None,
-            },
-        ],
-    });
-    let glass_pipe_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: Some("riode-wgpu-glass-pipe-layout"),
-        bind_group_layouts: &[&glass_layout],
-        push_constant_ranges: &[],
-    });
-    let glass_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("riode-wgpu-glass-pipeline"),
-        layout: Some(&glass_pipe_layout),
-        vertex: wgpu::VertexState {
-            module: &glass_shader,
-            entry_point: "vs_main",
-            compilation_options: Default::default(),
-            buffers: &[],
-        },
-        fragment: Some(wgpu::FragmentState {
-            module: &glass_shader,
-            entry_point: "fs_main",
-            compilation_options: Default::default(),
-            targets: &[Some(wgpu::ColorTargetState {
-                format: target_format,
-                blend: None,
-                write_mask: wgpu::ColorWrites::ALL,
-            })],
-        }),
-        primitive: wgpu::PrimitiveState::default(),
-        depth_stencil: None,
-        multisample: wgpu::MultisampleState::default(),
-        multiview: None,
-    });
-    let glass_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-        label: Some("riode-wgpu-glass-sampler"),
-        mag_filter: wgpu::FilterMode::Linear,
-        min_filter: wgpu::FilterMode::Linear,
-        address_mode_u: wgpu::AddressMode::ClampToEdge,
-        address_mode_v: wgpu::AddressMode::ClampToEdge,
-        ..Default::default()
-    });
-
     // Custom (material-DSL) stage layout: bindings fixed by the engine
     // entry scaffold (`ENGINE_ENTRY_WGSL`) — 0 sampler (effect_sampler),
     // 1 uniforms, 2 input/card, 3 backdrop, 4 sharp. One layout for every
@@ -1069,7 +777,6 @@ pub fn create_pipelines(
         rect_pipeline,
         rect_replace_pipeline,
         rrect_pipeline,
-        shadow_pipeline,
         ortho_layout,
         blit_layout,
         blit_pipeline,
@@ -1079,13 +786,9 @@ pub fn create_pipelines(
         glyph_sampler_nearest,
         image_pipeline,
         filter_layout,
-        blur_pipeline,
         composite_pipeline,
         blend_layout,
         blend_composite_pipeline,
-        glass_layout,
-        glass_pipeline,
-        glass_sampler,
         custom_layout,
         custom_sampler,
     }

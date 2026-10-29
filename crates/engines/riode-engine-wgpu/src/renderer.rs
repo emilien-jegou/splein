@@ -1,7 +1,6 @@
 // Single responsibility: Main render loop with batched rect + glyph scene pass + blit.
 
 use riode::foundation::{Color, DamageRegion, ResolvedRect};
-use riode::foundation::glass::light_spill_replay;
 use riode::render::BackendError;
 use riode::scene::scene::Scene;
 use riode::text::TextContext;
@@ -9,12 +8,12 @@ use std::sync::Arc;
 use wgpu::util::DeviceExt;
 
 use crate::cache::{chunk_key, ChunkCache};
-use crate::command::{Batch, FilterGpu, Op, StageGpu};
+use crate::command::{Batch, FilterGpu, Op};
 use crate::context::WgpuContext;
 use crate::image::ImageCache;
 use crate::pipeline::{
-    create_pipelines, BlurGpu, ColorMatrixGpu, GlassFrameGpu, GlyphVertex, ImageVertex, Pipelines,
-    RRectVertex, RectVertex, ShadowVertex,
+    create_pipelines, ColorMatrixGpu, GlyphVertex, ImageVertex, Pipelines, RectVertex,
+    RRectVertex,
 };
 use crate::svg::SvgCache;
 use crate::text::GlyphAtlas;
@@ -46,8 +45,6 @@ pub struct WgpuRenderer {
     glyph_cap: u64,
     rrect_buf: wgpu::Buffer,
     rrect_cap: u64,
-    shadow_buf: wgpu::Buffer,
-    shadow_cap: u64,
     image_buf: wgpu::Buffer,
     image_cap: u64,
     images: ImageCache,
@@ -63,18 +60,11 @@ pub struct WgpuRenderer {
     /// Filter-layer offscreen pool, one slot per open nesting depth.
     /// Surface-sized (same format/coords as the persistent target), so
     /// scene pipelines, scissors and verts work unchanged inside a layer;
-    /// texture-bound so EndLayer can sample them as blur/composite sources.
     /// Grown on demand, dropped on resize (sizes stale).
     layer_pool: Vec<(wgpu::Texture, wgpu::TextureView)>,
-    /// The two ping-pong targets of the separable blur (H then V). Two
-    /// suffice at any nesting depth: an EndLayer runs its blur passes to
     /// completion before the enclosing layer continues.
-    blur_ping: Option<((wgpu::Texture, wgpu::TextureView), (wgpu::Texture, wgpu::TextureView))>,
-    /// Liquid-glass backdrop pool, one slot per open glass layer (slot =
     /// layer depth): the parent snapshot taken at EndLayer (before any
-    /// composite writes), its single core-blurred copy, and the optics
     /// output. Surface-sized, grown on demand, dropped on resize.
-    glass_pool: Vec<GlassTargets>,
     /// Source-keyed cache of custom (material-DSL) stage pipelines
     /// (D-M5: keyed on the generated WGSL source alone, a compile-time
     /// constant — never on uniform values). `None` value = the source
@@ -90,18 +80,14 @@ pub struct WgpuRenderer {
     /// because the walk reader holds `&self`.
     custom_cache_hits: std::cell::Cell<u64>,
     custom_cache_builds: std::cell::Cell<u64>,
-    /// Parent snapshot for blend-mode alpha shadows (one surface-sized
     /// slot, reused across EndLayers): copied from the parent target
-    /// after the spill and before the shadow draws, so a shadow
     /// multiplies against the finished beneath — the same isolation
     /// the layer blend path gets at BeginLayer, but lazy (the stash is
     /// only known once the layer's content has emitted). Dropped on
     /// resize.
-    shadow_snap: Option<(wgpu::Texture, wgpu::TextureView)>,
     /// Device-px regions of the PREVIOUS frame's root offscreen layers.
     /// A partial-damage frame Loads the persistent target, preserving
     /// the last frame's layer composite wherever damage didn't cover;
-    /// a glass layer's BeginLayer snapshot would then capture its own
     /// previous output and the optics would re-apply to it every frame
     /// (progressive white-out). The damage-base repaints these regions
     /// to the base color at the start of the next frame so the snapshot
@@ -145,9 +131,8 @@ fn make_vert_buf(device: &wgpu::Device, label: &str, bytes: u64) -> wgpu::Buffer
 
 /// One filter-layer offscreen slot: surface-sized Rgba8Unorm, same
 /// format/coords as the persistent target so scene passes, scissors and
-/// verts work unchanged inside the layer; texture-bound so the layer can
-/// be sampled as a blur/composite source. COPY_SRC lets a nested glass
-/// layer snapshot this layer as its backdrop. (Unlike `make_persistent`
+/// verts work unchanged inside the layer; texture-bound so a nested
+/// layer can snapshot this layer as its backdrop. (Unlike `make_persistent`
 /// it needs no readback — nothing maps it.)
 fn make_filter_target(
     device: &wgpu::Device,
@@ -175,113 +160,16 @@ fn make_filter_target(
     (texture, view)
 }
 
-/// Parent snapshot for blend-mode alpha shadows (see `shadow_snap`):
-/// copy destination + sampled backdrop — never a render attachment.
-fn make_shadow_snap(
-    device: &wgpu::Device,
-    w: u32,
-    h: u32,
-) -> (wgpu::Texture, wgpu::TextureView) {
-    let texture = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("riode-wgpu-shadow-snap"),
-        size: wgpu::Extent3d {
-            width: w.max(1),
-            height: h.max(1),
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rgba8Unorm,
-        usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
-        view_formats: &[],
-    });
-    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-    (texture, view)
-}
-
-/// One liquid-glass backdrop slot (surface-sized): the parent snapshot
-/// taken at BeginLayer (after the parent pass ends, before this layer's
-/// children draw), the single core-blurred copy the optics pass samples
-/// (one blur at the composed sigma — wide tail, post-lens blur and
-/// per-shape extra frost are shader taps on it, design decision 3), and
-/// the optics output (composite source, and shadow silhouette for
-/// non-glass paths). The snapshot needs COPY_DST (filled by
-/// `copy_texture_to_texture`); a/out need RENDER_ATTACHMENT
-/// (blur/optics writes) and TEXTURE_BINDING (glass reads / composite
-/// samples).
-struct GlassTargets {
-    snap: (wgpu::Texture, wgpu::TextureView),
-    a: (wgpu::Texture, wgpu::TextureView),
-    out: (wgpu::Texture, wgpu::TextureView),
-}
-
-fn make_glass_targets(
-    device: &wgpu::Device,
-    w: u32,
-    h: u32,
-    depth: usize,
-) -> GlassTargets {
-    fn make(
-        device: &wgpu::Device,
-        w: u32,
-        h: u32,
-        label: String,
-        usage: wgpu::TextureUsages,
-    ) -> (wgpu::Texture, wgpu::TextureView) {
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some(&label),
-            size: wgpu::Extent3d {
-                width: w.max(1),
-                height: h.max(1),
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8Unorm,
-            usage,
-            view_formats: &[],
-        });
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        (texture, view)
-    }
-    let rw = wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING;
-    GlassTargets {
-        snap: make(
-            device,
-            w,
-            h,
-            format!("riode-wgpu-glass-snap-{depth}"),
-            wgpu::TextureUsages::COPY_DST | rw,
-        ),
-        a: make(device, w, h, format!("riode-wgpu-glass-a-{depth}"), rw),
-        out: make(device, w, h, format!("riode-wgpu-glass-out-{depth}"), rw),
-    }
-}
-
-/// One open filter layer at draw time: its pool slot plus the
-/// emission-time region and filter-params index (`filter_params` is
-/// frame-local; layer chunks never replay from cache), the optional
-/// glass-params index, and the ordered effect stages to execute.
+/// One open filter layer at draw time.
 struct OpenLayer {
     slot: usize,
     region: ResolvedRect,
-    /// UNPADDED device-space card rect (Phase 5a swim fix): passed to
-    /// `run_custom_pass`, which appends it as uniform slot 7.
     card_rect: ResolvedRect,
-    /// Resolved device-px corner radii (tl, tr, br, bl): passed to
-    /// `run_custom_pass`, which appends them as uniform slot 8 so the
-    /// rounded-rect SDF follows the card's silhouette.
-    card_radii: [f32; 4],
     params: u32,
-    glass: Option<u32>,
-    stages: Vec<StageGpu>,
-    backdrop_stages: Vec<StageGpu>,
+    material: Option<u32>,
 }
 
 /// Where the executor's current layer image lives: the layer offscreen
-/// or one scratch target of the blur ping-pong pair.
 #[derive(Clone, Copy, PartialEq)]
 enum CurLoc {
     Layer,
@@ -290,19 +178,15 @@ enum CurLoc {
 }
 
 /// Where the backdrop walk's current image lives: the raw parent
-/// snapshot, one scratch target, or the glass pre-blur input (the
-/// walk's final destination — the pre-blur and blend stages read the
 /// effected backdrop from there).
 #[derive(Clone, Copy, PartialEq)]
 enum BdLoc {
     Snap,
     Ping0,
     Ping1,
-    GlassA,
 }
 
 /// Where the lens card's image lives during trailing backdrop
-/// transforms: the glass out texture or one scratch ping.
 #[derive(Clone, Copy, PartialEq)]
 enum CardLoc {
     GtOut,
@@ -370,12 +254,6 @@ impl WgpuRenderer {
             "riode-wgpu-rrects",
             rrect_cap * std::mem::size_of::<RRectVertex>() as u64,
         );
-        let shadow_cap = 512u64;
-        let shadow_buf = make_vert_buf(
-            &gpu.device,
-            "riode-wgpu-shadows",
-            shadow_cap * std::mem::size_of::<ShadowVertex>() as u64,
-        );
         let image_cap = 512u64;
         let image_buf = make_vert_buf(
             &gpu.device,
@@ -400,8 +278,6 @@ impl WgpuRenderer {
             glyph_cap,
             rrect_buf,
             rrect_cap,
-            shadow_buf,
-            shadow_cap,
             image_buf,
             image_cap,
             images,
@@ -411,9 +287,6 @@ impl WgpuRenderer {
             clear_next: true,
             readback: None,
             layer_pool: Vec::new(),
-            blur_ping: None,
-            shadow_snap: None,
-            glass_pool: Vec::new(),
             custom_pipelines: std::collections::HashMap::new(),
             custom_cache_hits: std::cell::Cell::new(0),
             custom_cache_builds: std::cell::Cell::new(0),
@@ -457,9 +330,6 @@ impl WgpuRenderer {
             // Filter-layer targets are surface-sized: stale sizes are
             // unusable, and the next frame recreates slots on demand.
             self.layer_pool.clear();
-            self.blur_ping = None;
-            self.glass_pool.clear();
-            self.shadow_snap = None;
             self.stale_root_layers.clear();
         }
     }
@@ -510,22 +380,6 @@ impl WgpuRenderer {
             cap * std::mem::size_of::<RRectVertex>() as u64,
         );
         self.rrect_cap = cap;
-    }
-
-    fn ensure_shadow_cap(&mut self, need: u64) {
-        if need <= self.shadow_cap {
-            return;
-        }
-        let mut cap = self.shadow_cap.max(1);
-        while cap < need {
-            cap *= 2;
-        }
-        self.shadow_buf = make_vert_buf(
-            &self.gpu.device,
-            "riode-wgpu-shadows",
-            cap * std::mem::size_of::<ShadowVertex>() as u64,
-        );
-        self.shadow_cap = cap;
     }
 
     fn ensure_image_cap(&mut self, need: u64) {
@@ -614,126 +468,56 @@ impl WgpuRenderer {
         }
     }
 
-    /// One separable-blur pass over a filter-layer source: fullscreen
-    /// triangle, nine textureLoad taps along `dir`, replace blend into
-    /// `dst` (cleared by its load op), scissored to `sc` — which the
-    /// caller already resolved (a region that misses the surface is
-    /// skipped entirely, CPU-side).
-    fn run_blur_pass(
-        &self,
-        enc: &mut wgpu::CommandEncoder,
-        src: &wgpu::TextureView,
-        dst: &wgpu::TextureView,
-        sigma: f32,
-        dir: (f32, f32),
-        sc: (u32, u32, u32, u32),
-    ) {
-        // Params + bind group live only for this encoder pass: wgpu
-        // refcounts the underlying resources into the bind group, and
-        // drop order (pass, then bg, then buffer — declaration order
-        // below) keeps every reference valid.
-        let ubuf = self.gpu.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("riode-wgpu-blur-params"),
-            contents: bytemuck::bytes_of(&BlurGpu {
-                sigma,
-                dir_x: dir.0,
-                dir_y: dir.1,
-                pad: 0.0,
-            }),
-            usage: wgpu::BufferUsages::UNIFORM,
-        });
-        let bg = self
-            .gpu
-            .device
-            .create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("riode-wgpu-blur-bg"),
-                layout: &self.pipes.filter_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(src),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: ubuf.as_entire_binding(),
-                    },
-                ],
-            });
-        let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("riode-wgpu-blur-pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: dst,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: None,
-            occlusion_query_set: None,
-            timestamp_writes: None,
-        });
-        pass.set_scissor_rect(sc.0, sc.1, sc.2, sc.3);
-        pass.set_pipeline(&self.pipes.blur_pipeline);
-        pass.set_bind_group(0, &bg, &[]);
-        pass.draw(0..6, 0..1);
-    }
-
-    /// One liquid-glass optics pass: fullscreen triangle over the
-    /// core-blurred backdrop, into `dst` (cleared by its load op),
-    /// scissored to the layer region. `sharp` is the raw parent
-    /// snapshot — binding 3, the card-blend backdrop (`backdrop` may be
-    /// the core pre-blur). Params + bind group live only for this
-    /// encoder pass (refcount pattern of `run_blur_pass`).
-    fn run_glass_pass(
+    fn run_material_pass(
         &self,
         enc: &mut wgpu::CommandEncoder,
         backdrop: &wgpu::TextureView,
         sharp: &wgpu::TextureView,
-        mut gp: GlassFrameGpu,
+        shader_src: &str,
+        block: &[f32; 64],
         dst: &wgpu::TextureView,
         sc: (u32, u32, u32, u32),
     ) {
-        // Engine-owned header: the shader's `uSize` is the backdrop target
-        // size, known only here (emission packs without it).
-        gp.size = [
-            self.gpu.config.width as f32,
-            self.gpu.config.height as f32,
-            0.0,
-            0.0,
-        ];
+        let Some(pipe) = self.custom_pipeline_cached(shader_src) else {
+            tracing::warn!("riode-wgpu: material pipeline not found in cache");
+            return;
+        };
+
         let ubuf = self.gpu.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("riode-wgpu-glass-params"),
-            contents: bytemuck::bytes_of(&gp),
+            label: Some("riode-wgpu-material-uniforms"),
+            contents: bytemuck::cast_slice(block),
             usage: wgpu::BufferUsages::UNIFORM,
         });
-        let bg = self
-            .gpu
-            .device
-            .create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("riode-wgpu-glass-bg"),
-                layout: &self.pipes.glass_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(backdrop),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&self.pipes.glass_sampler),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: ubuf.as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 3,
-                        resource: wgpu::BindingResource::TextureView(sharp),
-                    },
-                ],
-            });
+
+        let bg = self.gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("riode-wgpu-material-bg"),
+            layout: &self.pipes.custom_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::Sampler(&self.pipes.custom_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: ubuf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(backdrop),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(backdrop),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::TextureView(sharp),
+                },
+            ],
+        });
+
         let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("riode-wgpu-glass-pass"),
+            label: Some("riode-wgpu-material-pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: dst,
                 resolve_target: None,
@@ -747,7 +531,7 @@ impl WgpuRenderer {
             timestamp_writes: None,
         });
         pass.set_scissor_rect(sc.0, sc.1, sc.2, sc.3);
-        pass.set_pipeline(&self.pipes.glass_pipeline);
+        pass.set_pipeline(&pipe);
         pass.set_bind_group(0, &bg, &[]);
         pass.draw(0..6, 0..1);
     }
@@ -863,8 +647,6 @@ impl WgpuRenderer {
                 entry_point: "fs_main",
                 compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState {
-                    // The card / glass-pool targets are Rgba8Unorm
-                    // (`make_glass_targets`), so the custom stage writes
                     // the same format the merge-under-sheet reads.
                     format: wgpu::TextureFormat::Rgba8Unorm,
                     blend: None,
@@ -878,101 +660,6 @@ impl WgpuRenderer {
         }))
     }
 
-    /// One custom (material-DSL) stage pass: a fullscreen triangle over
-    /// `dst` (scissor-clipped), binding {0 sampler, 1 uniforms, 2 input,
-    /// 3 backdrop, 4 sharp} exactly as the engine entry scaffold declares
-    /// them. The scaffold seeds `ctx.color` from `input` (the card), calls
-    /// the material's `apply`, and the result lands in `dst`.
-    #[allow(clippy::too_many_arguments)]
-    fn run_custom_pass(
-        &self,
-        enc: &mut wgpu::CommandEncoder,
-        pipe: &wgpu::RenderPipeline,
-        input: &wgpu::TextureView,
-        backdrop: &wgpu::TextureView,
-        sharp: &wgpu::TextureView,
-        uniforms: &[f32],
-        card_rect: &ResolvedRect,
-        card_radii: &[f32; 4],
-        dst: &wgpu::TextureView,
-        sc: (u32, u32, u32, u32),
-    ) {
-        // Uniform upload sized to the ABI's fixed `CustomUniforms`
-        // (`array<vec4<f32>, 9>` = 36 f32 = 144 bytes). wgpu enforces the
-        // buffer is at least the struct's min size, so always fill 36.
-        // Engine-side size is otherwise free (D-M7) — a generated sized
-        // struct (Phase 2+) replaces both this cap and the scaffold's
-        // fixed array together.
-        //
-        // Phase 5a + corner-radius host fill: the DSL leaves slots 7..8
-        // (f32 28..36) empty (see `card_rect_ref` / `MAX_USER_UNIFORMS`);
-        // the engine appends the UNPADDED card rect (x, y, w, h, device
-        // px) and the resolved device-px corner radii (tl, tr, br, bl)
-        // here so card-local `geo.*` sticks to cards while scrolling
-        // (swim fix) and the edge fields follow the rounded silhouette.
-        // Debug-assert: DSL vectors longer than 28 mean the lowering
-        // missed its own budget check (D-M10b).
-        debug_assert!(
-            uniforms.len() <= 28,
-            "custom uniforms exceed 28 user slots: {}",
-            uniforms.len()
-        );
-        let mut padded = uniforms.to_vec();
-        padded.resize(28, 0.0);
-        padded.extend_from_slice(&[card_rect.x, card_rect.y, card_rect.width, card_rect.height]);
-        padded.extend_from_slice(card_radii);
-        debug_assert_eq!(padded.len(), 36);
-        let bytes: Vec<u8> = padded.iter().flat_map(|f| f.to_le_bytes()).collect();
-        let ubuf = self.gpu.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("riode-wgpu-custom-params"),
-            contents: &bytes,
-            usage: wgpu::BufferUsages::UNIFORM,
-        });
-        let bg = self.gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("riode-wgpu-custom-bg"),
-            layout: &self.pipes.custom_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::Sampler(&self.pipes.custom_sampler),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: ubuf.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::TextureView(input),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: wgpu::BindingResource::TextureView(backdrop),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: wgpu::BindingResource::TextureView(sharp),
-                },
-            ],
-        });
-        let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("riode-wgpu-custom-pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: dst,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: None,
-            occlusion_query_set: None,
-            timestamp_writes: None,
-        });
-        pass.set_scissor_rect(sc.0, sc.1, sc.2, sc.3);
-        pass.set_pipeline(pipe);
-        pass.set_bind_group(0, &bg, &[]);
-        pass.draw(0..6, 0..1);
-    }
 
     /// One composite draw of a layer-sized quad (`verts` in `rect_verts`,
     /// position-derived sampling) through `matrix` into `dst`.
@@ -980,7 +667,6 @@ impl WgpuRenderer {
     /// `clear = true` starts from transparent (intermediate stage
     /// targets); src-over onto transparent is identity, so the plain
     /// composite pipeline doubles as the stage applicator. `clear =
-    /// false` layers over `dst`'s current pixels (glass-merge second
     /// draw). The material is pushed into `kept` and must outlive the
     /// returned-then-dropped pass — the caller keeps `kept` alive.
     #[allow(clippy::too_many_arguments)]
@@ -1042,56 +728,6 @@ impl WgpuRenderer {
         pass.draw(verts, 0..1);
     }
 
-    /// One blend-composite draw (`blend_layout`: source + parent snapshot
-    /// + mode in `tex_off.z`) into `dst`, cleared or layered like
-    /// [`Self::run_composite_quad`]. Used for mid-stack `Blend` stages
-    /// (materialize) and the pending-blend final composite.
-    #[allow(clippy::too_many_arguments)]
-
-    /// Texture view for a [`BdLoc`]: the raw parent snapshot, one
-    /// scratch target, or the glass pre-blur input (also the walk's
-    /// final destination).
-    fn bd_view(&self, slot: usize, loc: BdLoc) -> &wgpu::TextureView {
-        match loc {
-            BdLoc::Snap => &self.glass_pool[slot].snap.1,
-            BdLoc::Ping0 => &self.blur_ping.as_ref().expect("ping pair allocated").0 .1,
-            BdLoc::Ping1 => &self.blur_ping.as_ref().expect("ping pair allocated").1 .1,
-            BdLoc::GlassA => &self.glass_pool[slot].a.1,
-        }
-    }
-
-    /// Scratch destination for one backdrop stage: the other ping when
-    /// the source is a ping, `Ping0` from the snapshot, and the pre-blur
-    /// input for the final stage.
-    fn bd_dest(cur: BdLoc, last: bool) -> BdLoc {
-        if last {
-            return BdLoc::GlassA;
-        }
-        match cur {
-            BdLoc::Snap | BdLoc::Ping1 => BdLoc::Ping0,
-            BdLoc::Ping0 | BdLoc::GlassA => BdLoc::Ping1,
-        }
-    }
-
-    /// Texture view for a [`CardLoc`]: the glass out texture or one
-    /// scratch ping.
-    fn card_view(&self, slot: usize, loc: CardLoc) -> &wgpu::TextureView {
-        match loc {
-            CardLoc::GtOut => &self.glass_pool[slot].out.1,
-            CardLoc::Ping0 => &self.blur_ping.as_ref().expect("ping pair allocated").0 .1,
-            CardLoc::Ping1 => &self.blur_ping.as_ref().expect("ping pair allocated").1 .1,
-        }
-    }
-
-    /// Scratch destination for one trailing card stage: the other ping
-    /// (the card's own location may be the out texture or either ping).
-    fn card_scratch(loc: CardLoc) -> CardLoc {
-        match loc {
-            CardLoc::Ping0 => CardLoc::Ping1,
-            _ => CardLoc::Ping0,
-        }
-    }
-
     /// The scene pass for a content op: markers manage pass lifetimes
     /// themselves (they re-establish one before the next content op), so
     /// an open pass is an invariant here.
@@ -1103,18 +739,13 @@ impl WgpuRenderer {
     /// Texture view for a [`CurLoc`]: the layer offscreen or one scratch
     /// target. Panics when a scratch is addressed without an allocated
     /// ping pair — the EndLayer arm allocates whenever any stage (or
-    /// shadow, or glass) can need one.
     fn stage_view(&self, slot: usize, loc: CurLoc) -> &wgpu::TextureView {
         match loc {
-            CurLoc::Layer => &self.layer_pool[slot].1,
-            CurLoc::Ping0 => &self.blur_ping.as_ref().expect("ping pair allocated").0 .1,
-            CurLoc::Ping1 => &self.blur_ping.as_ref().expect("ping pair allocated").1 .1,
+            CurLoc::Layer | CurLoc::Ping0 | CurLoc::Ping1 => &self.layer_pool[slot].1,
         }
     }
 
-    /// Two scratch locs for a separable blur, both distinct from `cur`
     /// (H reads `cur`, V reads the H output — neither may alias its
-    /// source). Also serves the shadow blur and the spill iterations.
     fn stage_pair(cur: CurLoc) -> (CurLoc, CurLoc) {
         match cur {
             CurLoc::Layer => (CurLoc::Ping0, CurLoc::Ping1),
@@ -1124,7 +755,6 @@ impl WgpuRenderer {
     }
 
     /// One scratch loc distinct from `cur`, for single-pass stages
-    /// (color matrix, glass merge, blend materialize).
     fn stage_scratch(cur: CurLoc) -> CurLoc {
         match cur {
             CurLoc::Layer | CurLoc::Ping1 => CurLoc::Ping0,
@@ -1149,7 +779,6 @@ impl WgpuRenderer {
         let clear = self.must_clear(damage);
         // Previous frame's root offscreen-layer regions: repainted to
         // base below so a Load frame never preserves a layer's own
-        // composite under its next snapshot (the glass feedback loop).
         let stale_layers = std::mem::take(&mut self.stale_root_layers);
 
         // Batch scene content: viewport cull + damage cull, then per-chunk
@@ -1217,14 +846,10 @@ impl WgpuRenderer {
                         Some((0.0, 0.0)) => {
                             let rb = batch.rect_verts.len() as u32;
                             let gb = batch.glyph_verts.len() as u32;
-                            let qb = batch.rrect_verts.len() as u32;
-                            let sb = batch.shadow_verts.len() as u32;
                             let ib = batch.image_verts.len() as u32;
                             let ibb = batch.image_binds.len() as u32;
                             batch.rect_verts.extend_from_slice(&hit.rects);
                             batch.glyph_verts.extend_from_slice(&hit.glyphs);
-                            batch.rrect_verts.extend_from_slice(&hit.rrects);
-                            batch.shadow_verts.extend_from_slice(&hit.shadows);
                             batch.image_verts.extend_from_slice(&hit.images);
                             batch
                                 .image_binds
@@ -1234,15 +859,13 @@ impl WgpuRenderer {
                             batch.ops.extend(
                                 hit.ops
                                     .iter()
-                                    .map(|op| ChunkCache::rebased(op, rb, gb, qb, sb, ib, ibb)),
+                                    .map(|op| ChunkCache::rebased(op, rb, gb, ib, ibb)),
                             );
                             true
                         }
                         Some((dx, dy)) => {
                             let rb = batch.rect_verts.len() as u32;
                             let gb = batch.glyph_verts.len() as u32;
-                            let qb = batch.rrect_verts.len() as u32;
-                            let sb = batch.shadow_verts.len() as u32;
                             let ib = batch.image_verts.len() as u32;
                             let ibb = batch.image_binds.len() as u32;
                             hit.append_rebased(
@@ -1250,8 +873,6 @@ impl WgpuRenderer {
                                 dy,
                                 &mut batch.rect_verts,
                                 &mut batch.glyph_verts,
-                                &mut batch.rrect_verts,
-                                &mut batch.shadow_verts,
                                 &mut batch.image_verts,
                             );
                             batch
@@ -1262,7 +883,7 @@ impl WgpuRenderer {
                             batch.ops.extend(
                                 hit.ops
                                     .iter()
-                                    .map(|op| ChunkCache::rebased(op, rb, gb, qb, sb, ib, ibb)),
+                                    .map(|op| ChunkCache::rebased(op, rb, gb, ib, ibb)),
                             );
                             true
                         }
@@ -1273,17 +894,15 @@ impl WgpuRenderer {
                 if replayed {
                     continue;
                 }
-                let (r0, g0, q0, s0, i0, ib0, o0) = (
+                let (r0, g0, i0, ib0, o0) = (
                     batch.rect_verts.len(),
                     batch.glyph_verts.len(),
-                    batch.rrect_verts.len(),
-                    batch.shadow_verts.len(),
                     batch.image_verts.len(),
                     batch.image_binds.len(),
                     batch.ops.len(),
                 );
                 for clip in chunk.inherited_clips.iter() {
-                    batch.push_clip_device(&clip.rect, clip.radius);
+                    batch.push_clip_device(&clip.rect);
                 }
                 batch.emit_chunk(
                     &riode::scene::chunk_base(chunk),
@@ -1301,14 +920,10 @@ impl WgpuRenderer {
                 // Snapshot the new ranges with buffer-relative op starts.
                 let r0u = r0 as u32;
                 let g0u = g0 as u32;
-                let q0u = q0 as u32;
-                let s0u = s0 as u32;
                 let i0u = i0 as u32;
                 let ib0u = ib0 as u32;
                 let rects = batch.rect_verts[r0..].to_vec();
                 let glyphs = batch.glyph_verts[g0..].to_vec();
-                let rrects = batch.rrect_verts[q0..].to_vec();
-                let shadows = batch.shadow_verts[s0..].to_vec();
                 let images_v = batch.image_verts[i0..].to_vec();
                 let image_binds = batch.image_binds[ib0..].to_vec();
                 let ops: Vec<Op> = batch.ops[o0..]
@@ -1321,24 +936,6 @@ impl WgpuRenderer {
                             start: start - r0u,
                             count,
                         },
-                        Op::RRects {
-                            start,
-                            count,
-                            scissor,
-                        } => Op::RRects {
-                            start: start - q0u,
-                            count,
-                            scissor,
-                        },
-                        Op::Rects {
-                            start,
-                            count,
-                            scissor,
-                        } => Op::Rects {
-                            start: start - r0u,
-                            count,
-                            scissor,
-                        },
                         Op::Glyphs {
                             start,
                             count,
@@ -1349,15 +946,6 @@ impl WgpuRenderer {
                             count,
                             scissor,
                             linear,
-                        },
-                        Op::Shadows {
-                            start,
-                            count,
-                            scissor,
-                        } => Op::Shadows {
-                            start: start - s0u,
-                            count,
-                            scissor,
                         },
                         Op::Images {
                             start,
@@ -1375,37 +963,23 @@ impl WgpuRenderer {
                         // arms keep the snapshot self-consistent anyway.
                         Op::BeginLayer {
                             region,
-                            params,
-                            glass,
-                            stages,
-                            backdrop_stages,
                             card_rect,
-                            card_radii,
+                            params,
+                            material,
                         } => Op::BeginLayer {
                             region,
-                            params,
-                            glass,
-                            stages,
-                            backdrop_stages,
                             card_rect,
-                            card_radii,
+                            params,
+                            material,
                         },
                         Op::EndLayer {
                             start,
                             count,
                             scissor,
-                            shadow_start,
-                            shadows,
-                            spill_start,
-                            spill_count,
                         } => Op::EndLayer {
                             start: start - r0u,
                             count,
                             scissor,
-                            shadow_start: shadow_start - r0u,
-                            shadows,
-                            spill_start: spill_start - r0u,
-                            spill_count,
                         },
                     })
                     .collect();
@@ -1414,8 +988,6 @@ impl WgpuRenderer {
                     crate::cache::CachedChunk::new(
                         rects,
                         glyphs,
-                        rrects,
-                        shadows,
                         images_v,
                         image_binds,
                         ops,
@@ -1443,22 +1015,6 @@ impl WgpuRenderer {
                 &self.glyph_buf,
                 0,
                 bytemuck::cast_slice(&self.batch.glyph_verts),
-            );
-        }
-        if !self.batch.rrect_verts.is_empty() {
-            self.ensure_rrect_cap(self.batch.rrect_verts.len() as u64);
-            self.gpu.queue.write_buffer(
-                &self.rrect_buf,
-                0,
-                bytemuck::cast_slice(&self.batch.rrect_verts),
-            );
-        }
-        if !self.batch.shadow_verts.is_empty() {
-            self.ensure_shadow_cap(self.batch.shadow_verts.len() as u64);
-            self.gpu.queue.write_buffer(
-                &self.shadow_buf,
-                0,
-                bytemuck::cast_slice(&self.batch.shadow_verts),
             );
         }
         if !self.batch.image_verts.is_empty() {
@@ -1517,38 +1073,14 @@ impl WgpuRenderer {
                 h
             }
             for op in self.batch.ops.iter() {
-                if let Op::BeginLayer { backdrop_stages, .. } = op {
-                    for stage in backdrop_stages.iter() {
-                        if let StageGpu::Custom(c) = stage {
-                            let h = fnv(&c.wgsl);
-                            if seen.insert(h) {
-                                sources.push(c.wgsl.clone());
-                            }
-                        }
-                    }
-                }
+                let _ = op;
             }
             for src in sources {
                 self.custom_pipeline_for(&src);
             }
-            // G1 proof, throttled: log the source-keyed hit/build split
-            // ~1/s so the human (or RUST_LOG=debug capture) can verify a
-            // hover repaint moves hits only — same source, new uniform
-            // values, no recompile (D-M5).
-            {
-                static LAST: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-                let now_ms = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_millis() as u64)
-                    .unwrap_or(0);
-                let prev = LAST.swap(now_ms, std::sync::atomic::Ordering::Relaxed);
-                if now_ms.saturating_sub(prev) > 1000 {
-                    tracing::debug!(
-                        hits = self.custom_cache_hits.get(),
-                        builds = self.custom_cache_builds.get(),
-                        "riode-wgpu custom cache"
-                    );
-                }
+            let mat_shaders: Vec<&'static str> = self.batch.material_params.iter().map(|m| m.shader).collect();
+            for src in mat_shaders {
+                self.custom_pipeline_for(src);
             }
         }
         {
@@ -1585,11 +1117,8 @@ impl WgpuRenderer {
                     Op::BeginLayer {
                         region,
                         params,
-                        glass,
-                        stages,
-                        backdrop_stages,
+                        material,
                         card_rect,
-                        card_radii,
                     } => {
                         // End the parent's pass first: wgpu borrows the
                         // encoder and its attachment view into the pass.
@@ -1612,38 +1141,26 @@ impl WgpuRenderer {
                         // draw so far (the pass above just ended) and
                         // before this layer's children (which draw into
                         // the layer offscreen, never the parent).
-                        // Glass refracts it in-shader; a blend layer
                         // composites the finished layer against it (CSS
                         // backdrop = whatever painted beneath). Nested
                         // layers snapshot the enclosing layer's
                         // offscreen; root layers snapshot the persistent
                         // target (both COPY_SRC).
-                        let blend = self.batch.filter_params[*params as usize].blend;
-                        if glass.is_some() || blend != 0.0 || !backdrop_stages.is_empty() {
-                            while self.glass_pool.len() <= slot {
-                                let i = self.glass_pool.len();
-                                self.glass_pool.push(make_glass_targets(
-                                    &self.gpu.device,
-                                    sw,
-                                    sh,
-                                    i,
-                                ));
-                            }
+                        let blend = 0.0f32;
+                        if material.is_some() || blend != 0.0 {
                             if let Some((cx, cy, cw, ch)) =
                                 Self::scissor_rect(&Some(*region), sw, sh)
                             {
                                 // Clear the pooled snapshot first: the
                                 // copy fills only the padded region, but
-                                // blur tails sample 3σ past it — stale
-                                // texels from a previous glass layer at
                                 // another position would shimmer in.
                                 {
                                     let mut clear = enc.begin_render_pass(
                                         &wgpu::RenderPassDescriptor {
-                                            label: Some("riode-wgpu-glass-snap-clear"),
+                                            label: Some("riode-wgpu-layer-clear"),
                                             color_attachments: &[Some(
                                                 wgpu::RenderPassColorAttachment {
-                                                    view: &self.glass_pool[slot].snap.1,
+                                                    view: &self.layer_pool[slot].1,
                                                     resolve_target: None,
                                                     ops: wgpu::Operations {
                                                         load: wgpu::LoadOp::Clear(
@@ -1676,7 +1193,7 @@ impl WgpuRenderer {
                                         aspect: wgpu::TextureAspect::All,
                                     },
                                     wgpu::ImageCopyTexture {
-                                        texture: &self.glass_pool[slot].snap.0,
+                                        texture: &self.layer_pool[slot].0,
                                         mip_level: 0,
                                         origin: wgpu::Origin3d {
                                             x: cx,
@@ -1706,11 +1223,8 @@ impl WgpuRenderer {
                             slot,
                             region: *region,
                             card_rect: *card_rect,
-                            card_radii: *card_radii,
                             params: *params,
-                            glass: *glass,
-                            stages: stages.clone(),
-                            backdrop_stages: backdrop_stages.clone(),
+                            material: *material,
                         });
                         // Pool slots are reused across frames/layers, so
                         // every open starts from transparent.
@@ -1734,10 +1248,6 @@ impl WgpuRenderer {
                         start,
                         count,
                         scissor,
-                        shadow_start,
-                        shadows,
-                        spill_start,
-                        spill_count,
                     } => {
                         // Close the layer's pass, run the filter passes,
                         // then reopen the parent (Load: every layer in the
@@ -1782,898 +1292,19 @@ impl WgpuRenderer {
                                 matrix: FilterGpu::IDENTITY,
                                 blend: 0.0,
                             });
-                        // Glass material for this layer (frame-local index,
-                        // same contract as filter_params).
-                        let gp = open
-                            .glass
-                            .and_then(|i| self.batch.glass_params.get(i as usize).copied());
-                        // Ping targets for the filter chain, the glass
-                        // backdrop blurs and any alpha shadow blurs.
-                        // Allocated before the first borrow of either
-                        // target so no arm reassigns mid-use.
-                        if (!open.stages.is_empty()
-                            || !open.backdrop_stages.is_empty()
-                            || fp.sigma > 0.0
-                            || !shadows.is_empty()
-                            || gp.is_some())
-                            && self.blur_ping.is_none()
-                        {
-                            self.blur_ping = Some((
-                                make_filter_target(
-                                    &self.gpu.device,
-                                    sw,
-                                    sh,
-                                    "riode-wgpu-blur-ping0",
-                                ),
-                                make_filter_target(
-                                    &self.gpu.device,
-                                    sw,
-                                    sh,
-                                    "riode-wgpu-blur-ping1",
-                                ),
-                            ));
-                        }
-                        // Blend-mode shadow snapshot target: allocated
-                        // before the first borrow of either target (same
-                        // rule as ping) so no arm reassigns mid-use.
-                        if shadows.iter().any(|d| d.blend != 0.0)
-                            && self.shadow_snap.is_none()
-                        {
-                            self.shadow_snap = Some(make_shadow_snap(
-                                &self.gpu.device,
-                                sw,
-                                sh,
-                            ));
-                        }
-                        // Ordered stage executor: walk the lowered stack,
-                        // ping-ponging through the layer offscreen and the
-                        // blur scratch pair. `cur` tracks the current
-                        // image; every scratch target is chosen distinct
-                        // from its read source (no target is ever sampled
-                        // and written in the same pass).
-                        //
-                        // Backdrop walk first: build the lens card from the
-                        // parent snapshot. Blur/ColorMatrix before glass
-                        // transform the snapshot; glass refracts the current
-                        // backdrop into the card (`gt.out`); stages after
-                        // glass transform the card. The snapshot itself is
-                        // never written.
-                        let mut bd = BdLoc::Snap;
-                        let mut card: Option<CardLoc> = None;
-                        let mut glass_ran = false;
-                        let n_bd = open.backdrop_stages.len();
-                        for (bi, stage) in open.backdrop_stages.iter().enumerate() {
-                            let last = bi + 1 == n_bd;
-                            match stage {
-                                StageGpu::Blur { sigma } if card.is_none() => {
-                                    let sigma = *sigma;
-                                    if sigma <= 0.0 {
-                                        continue;
-                                    }
-                                    let reach = 3.0 * sigma;
-                                    let h_region = ResolvedRect::new(
-                                        open.region.x - reach,
-                                        open.region.y - reach,
-                                        open.region.width + 2.0 * reach,
-                                        open.region.height + 2.0 * reach,
-                                    );
-                                    let h_sc = Self::scissor_rect(&Some(h_region), sw, sh);
-                                    let v_sc =
-                                        Self::scissor_rect(&Some(open.region), sw, sh);
-                                    if let (Some(h), Some(v)) = (h_sc, v_sc) {
-                                        // H always lands on a ping (never
-                                        // the snapshot, never the final
-                                        // pre-blur input until the last
-                                        // stage writes it directly).
-                                        let a = Self::bd_dest(bd, false);
-                                        let b = if last {
-                                            BdLoc::GlassA
-                                        } else {
-                                            Self::bd_dest(a, false)
-                                        };
-                                        self.run_blur_pass(
-                                            &mut enc,
-                                            self.bd_view(open.slot, bd),
-                                            self.bd_view(open.slot, a),
-                                            sigma,
-                                            (1.0, 0.0),
-                                            h,
-                                        );
-                                        self.run_blur_pass(
-                                            &mut enc,
-                                            self.bd_view(open.slot, a),
-                                            self.bd_view(open.slot, b),
-                                            sigma,
-                                            (0.0, 1.0),
-                                            v,
-                                        );
-                                        bd = b;
-                                    }
-                                }
-                                StageGpu::Blur { sigma } => {
-                                    // Trailing blur: transform the lens card.
-                                    let sigma = *sigma;
-                                    if sigma <= 0.0 {
-                                        continue;
-                                    }
-                                    let reach = 3.0 * sigma;
-                                    let h_region = ResolvedRect::new(
-                                        open.region.x - reach,
-                                        open.region.y - reach,
-                                        open.region.width + 2.0 * reach,
-                                        open.region.height + 2.0 * reach,
-                                    );
-                                    let h_sc = Self::scissor_rect(&Some(h_region), sw, sh);
-                                    let v_sc =
-                                        Self::scissor_rect(&Some(open.region), sw, sh);
-                                    if let (Some(h), Some(v)) = (h_sc, v_sc) {
-                                        if let Some(c) = card {
-                                            let a = Self::card_scratch(c);
-                                            let b = if last {
-                                                CardLoc::GtOut
-                                            } else {
-                                                Self::card_scratch(a)
-                                            };
-                                            self.run_blur_pass(
-                                                &mut enc,
-                                                self.card_view(open.slot, c),
-                                                self.card_view(open.slot, a),
-                                                sigma,
-                                                (1.0, 0.0),
-                                                h,
-                                            );
-                                            self.run_blur_pass(
-                                                &mut enc,
-                                                self.card_view(open.slot, a),
-                                                self.card_view(open.slot, b),
-                                                sigma,
-                                                (0.0, 1.0),
-                                                v,
-                                            );
-                                            card = Some(b);
-                                        }
-                                    }
-                                }
-                                StageGpu::ColorMatrix { matrix } if card.is_none() => {
-                                    let v_sc =
-                                        Self::scissor_rect(&Some(open.region), sw, sh);
-                                    if let Some(v) = v_sc {
-                                        let dest = Self::bd_dest(bd, last);
-                                        let cm = ColorMatrixGpu::pack(matrix);
-                                        self.run_composite_quad(
-                                            &mut enc,
-                                            self.bd_view(open.slot, bd),
-                                            &cm,
-                                            self.bd_view(open.slot, dest),
-                                            *start..*start + *count,
-                                            v,
-                                            true,
-                                            &mut kept,
-                                        );
-                                        bd = dest;
-                                    }
-                                }
-                                StageGpu::ColorMatrix { matrix } => {
-                                    // Trailing matrix: transform the lens card.
-                                    let v_sc =
-                                        Self::scissor_rect(&Some(open.region), sw, sh);
-                                    if let Some(v) = v_sc {
-                                        if let Some(c) = card {
-                                            // Never src == dst in one pass:
-                                            // a last-stage matrix on a card
-                                            // already in `gt.out` goes through
-                                            // a ping; finalize copies it back.
-                                            let dest = if last && c != CardLoc::GtOut {
-                                                CardLoc::GtOut
-                                            } else {
-                                                Self::card_scratch(c)
-                                            };
-                                            let cm = ColorMatrixGpu::pack(matrix);
-                                            self.run_composite_quad(
-                                                &mut enc,
-                                                self.card_view(open.slot, c),
-                                                &cm,
-                                                self.card_view(open.slot, dest),
-                                                *start..*start + *count,
-                                                v,
-                                                true,
-                                                &mut kept,
-                                            );
-                                            card = Some(dest);
-                                        }
-                                    }
-                                }
-                                StageGpu::Glass => {
-                                    if let Some(gp) = gp {
-                                        let gt = &self.glass_pool[open.slot];
-                                        let (sx, sy) = (gp.core[0], gp.core[1]);
-                                        if let Some(rc) =
-                                            Self::scissor_rect(&Some(open.region), sw, sh)
-                                        {
-                                            // Backdrop input: the walk's
-                                            // current image; `sharp` (binding
-                                            // 3) stays the raw snapshot.
-                                            let mut backdrop: &wgpu::TextureView =
-                                                self.bd_view(open.slot, bd);
-                                            if sx.max(sy) > 0.05 {
-                                                // H writes region ⊕ 3·max(σx, σy)
-                                                // so V's edge taps (reach 3σy)
-                                                // land on written texels whichever
-                                                // axis is wider; V writes the
-                                                // glass pre-blur input.
-                                                let reach = 3.0 * sx.max(sy);
-                                                let h_region = ResolvedRect::new(
-                                                    open.region.x - reach,
-                                                    open.region.y - reach,
-                                                    open.region.width + 2.0 * reach,
-                                                    open.region.height + 2.0 * reach,
-                                                );
-                                                if let Some(h) = Self::scissor_rect(
-                                                    &Some(h_region),
-                                                    sw,
-                                                    sh,
-                                                ) {
-                                                    // H scratch must not alias
-                                                    // the backdrop source.
-                                                    let hscratch =
-                                                        Self::bd_dest(bd, false);
-                                                    self.run_blur_pass(
-                                                        &mut enc,
-                                                        backdrop,
-                                                        self.bd_view(open.slot, hscratch),
-                                                        sx,
-                                                        (1.0, 0.0),
-                                                        h,
-                                                    );
-                                                    self.run_blur_pass(
-                                                        &mut enc,
-                                                        self.bd_view(open.slot, hscratch),
-                                                        &gt.a.1,
-                                                        sy,
-                                                        (0.0, 1.0),
-                                                        rc,
-                                                    );
-                                                    backdrop = &gt.a.1;
-                                                }
-                                            }
-                                            self.run_glass_pass(
-                                                &mut enc,
-                                                backdrop,
-                                                &gt.snap.1,
-                                                gp,
-                                                &gt.out.1,
-                                                rc,
-                                            );
-                                            glass_ran = true;
-                                            card = Some(CardLoc::GtOut);
-                                        }
-                                    }
-                                }
-                                StageGpu::Custom(c) => {
-                                    // Post-glass material surface: transform
-                                    // the lens card in place (ping when the
-                                    // card already sits in `gt.out` on a
-                                    // last stage — never src == dst in one
-                                    // pass; the finalize below copies a
-                                    // pinged card back). Skipped when no
-                                    // card exists yet (glass produced none)
-                                    // — same guard as the trailing blur.
-                                    // The pipeline was pre-resolved above
-                                    // (pre-warm over the batch); `None`
-                                    // = failed naga validation / build,
-                                    // already warned once — drop the stage.
-                                    if let (Some(cur), Some(pipe)) = (
-                                        card,
-                                        self.custom_pipeline_cached(&c.wgsl),
-                                    )
-                                    {
-                                        if let Some(v) = Self::scissor_rect(
-                                            &Some(open.region),
-                                            sw,
-                                            sh,
-                                        ) {
-                                            let dest = if last
-                                                && cur != CardLoc::GtOut
-                                            {
-                                                CardLoc::GtOut
-                                            } else {
-                                                Self::card_scratch(cur)
-                                            };
-                                            self.run_custom_pass(
-                                                &mut enc,
-                                                &pipe,
-                                                self.card_view(open.slot, cur),
-                                                self.bd_view(open.slot, bd),
-                                                &self.glass_pool[open.slot].snap.1,
-                                                &c.uniforms,
-                                                &open.card_rect,
-                                                &open.card_radii,
-                                                self.card_view(open.slot, dest),
-                                                v,
-                                            );
-                                            card = Some(dest);
-                                        }
-                                    }
-                                }
-                                // Blend rides the final composite
-                                // (`FilterGpu.blend` / the glass frame
-                                // header); Shadow/ClipRound/GlassGroup
-                                // never reach the executor.
-                                _ => {}
-                            }
-                        }
-                        // Finalize: the effected backdrop (the non-glass
-                        // blend consumer) into the glass pre-blur input,
-                        // and the lens card into its read-only home for
-                        // the spill/merge consumers below. A skipped last
-                        // stage (scissor miss) leaves the image in a ping.
-                        let bd_ran = bd != BdLoc::Snap;
-                        if bd_ran && bd != BdLoc::GlassA && !glass_ran {
-                            if let Some(v) = Self::scissor_rect(&Some(open.region), sw, sh) {
-                                self.run_composite_quad(
-                                    &mut enc,
-                                    self.bd_view(open.slot, bd),
-                                    &ColorMatrixGpu::pack(&FilterGpu::IDENTITY),
-                                    self.bd_view(open.slot, BdLoc::GlassA),
-                                    *start..*start + *count,
-                                    v,
-                                    true,
-                                    &mut kept,
-                                );
-                            }
-                        }
-                        if let Some(c) = card {
-                            if c != CardLoc::GtOut {
-                                if let Some(v) =
-                                    Self::scissor_rect(&Some(open.region), sw, sh)
-                                {
-                                    self.run_composite_quad(
-                                        &mut enc,
-                                        self.card_view(open.slot, c),
-                                        &ColorMatrixGpu::pack(&FilterGpu::IDENTITY),
-                                        self.card_view(open.slot, CardLoc::GtOut),
-                                        *start..*start + *count,
-                                        v,
-                                        true,
-                                        &mut kept,
-                                    );
-                                }
-                            }
-                        }
-                        let mut cur = CurLoc::Layer;
-                        let pending_blend: Option<f32> =
-                            if fp.blend != 0.0 { Some(fp.blend) } else { None };
-                        // LightSpill: blurred copy of the finished card,
-                        // composited only in the strip below the bottom
-                        // edge with a downward shift, so the card's own
-                        // colour spills softly onto the background with
-                        // decreasing opacity (blur falloff), dimmer than
-                        // the card. Drawn first at composite.
-                        let mut glass_halo: Option<(&wgpu::TextureView, f32)> = None;
-                        // Downward sample shift for the spill composite
-                        // (device px): the blurred card's hottest line sits
-                        // exactly on the silhouette edge — sampling ~1.5σ
-                        // below it drops the white attachment band and opens
-                        // the spill from already-fallen-off light.
-                        let mut spill_tex_off = 0.0;
-                        let v_sc = Self::scissor_rect(&Some(open.region), sw, sh);
-                        for stage in open.stages.iter() {
-                            match stage {
-                                StageGpu::Blur { sigma } => {
-                                    let sigma = *sigma;
-                                    if sigma <= 0.0 {
-                                        continue;
-                                    }
-                                    // H writes region⊕3σ so V's edge taps
-                                    // land on written texels; V writes the
-                                    // composite's region. A region that
-                                    // misses the surface skips both.
-                                    let reach = 3.0 * sigma;
-                                    let h_region = ResolvedRect::new(
-                                        open.region.x - reach,
-                                        open.region.y - reach,
-                                        open.region.width + 2.0 * reach,
-                                        open.region.height + 2.0 * reach,
-                                    );
-                                    let h_sc = Self::scissor_rect(&Some(h_region), sw, sh);
-                                    if let (Some(h), Some(v)) = (h_sc, v_sc) {
-                                        let (a, b) = Self::stage_pair(cur);
-                                        self.run_blur_pass(
-                                            &mut enc,
-                                            self.stage_view(open.slot, cur),
-                                            self.stage_view(open.slot, a),
-                                            sigma,
-                                            (1.0, 0.0),
-                                            h,
-                                        );
-                                        self.run_blur_pass(
-                                            &mut enc,
-                                            self.stage_view(open.slot, a),
-                                            self.stage_view(open.slot, b),
-                                            sigma,
-                                            (0.0, 1.0),
-                                            v,
-                                        );
-                                        cur = b;
-                                    }
-                                }
-                                StageGpu::ColorMatrix { matrix } => {
-                                    if let Some(v) = v_sc {
-                                        let dest = Self::stage_scratch(cur);
-                                        let cm = ColorMatrixGpu::pack(matrix);
-                                        self.run_composite_quad(
-                                            &mut enc,
-                                            self.stage_view(open.slot, cur),
-                                            &cm,
-                                            self.stage_view(open.slot, dest),
-                                            *start..*start + *count,
-                                            v,
-                                            true,
-                                            &mut kept,
-                                        );
-                                        cur = dest;
-                                    }
-                                }
-                                // Blend rides the final composite
-                                // (`FilterGpu.blend`); glass lives on the
-                                // backdrop side now. A stray Glass/Blend
-                                // stage here (Rust-built stack) is inert.
-                                _ => {}
-                            }
-                        }
-                        // Lens card under the sheet: the backdrop walk
-                        // produced the card; merge it UNDER the finished
-                        // sheet (src-over associativity keeps this
-                        // identical to sequential parent draws), with the
-                        // LightSpill halo replayed from the final card
-                        // first.
-                        if glass_ran {
-                            let gt = &self.glass_pool[open.slot];
-                            let go: &wgpu::TextureView = &gt.out.1;
-                            // LightSpill: blurred copy of the finished card,
-                            // composited only in the strip below the bottom
-                            // edge with a downward shift, so the card's own
-                            // colour spills softly onto the background with
-                            // decreasing opacity (blur falloff), dimmer than
-                            // the card. Drawn first at composite.
-                            if let Some(gp) = gp {
-                                if let Some((strength, sigma, iters, length)) =
-                                    light_spill_replay(&gp.data)
-                                {
-                                    if *spill_count > 0 {
-                                        {
-                                            use std::sync::atomic::{AtomicBool, Ordering};
-                                            static SPILL_LOG: AtomicBool =
-                                                AtomicBool::new(false);
-                                            if !SPILL_LOG.swap(true, Ordering::Relaxed) {
-                                                eprintln!(
-                                                    "[spill v3] gain={strength} len={length} sigma={sigma} iters={iters} verts={spill_count}"
-                                                );
-                                            }
-                                        }
-                                        let reach = 3.0 * sigma;
-                                        let h_region = ResolvedRect::new(
-                                            open.region.x - reach,
-                                            open.region.y - reach,
-                                            open.region.width + 2.0 * reach,
-                                            open.region.height + length + 2.0 * reach,
-                                        );
-                                        if let Some(h) =
-                                            Self::scissor_rect(&Some(h_region), sw, sh)
-                                        {
-                                            // Scratch pair distinct from `cur`
-                                            // (ping-pong across iterations;
-                                            // `gt.out` is only ever read after
-                                            // finalize, so the sharp card
-                                            // survives).
-                                            let (s0, s1) = Self::stage_pair(cur);
-                                            let mut src: &wgpu::TextureView = go;
-                                            for _ in 0..iters {
-                                                self.run_blur_pass(
-                                                    &mut enc,
-                                                    src,
-                                                    self.stage_view(open.slot, s0),
-                                                    sigma,
-                                                    (1.0, 0.0),
-                                                    h,
-                                                );
-                                                self.run_blur_pass(
-                                                    &mut enc,
-                                                    self.stage_view(open.slot, s0),
-                                                    self.stage_view(open.slot, s1),
-                                                    sigma,
-                                                    (0.0, 1.0),
-                                                    h,
-                                                );
-                                                src = self.stage_view(open.slot, s1);
-                                            }
-                                            glass_halo = Some((
-                                                self.stage_view(open.slot, s1),
-                                                strength,
-                                            ));
-                                            spill_tex_off = sigma * 1.5;
-                                        }
-                                    } // end spill_count guard
-                                }
-                            }
-                            // Merge under the current image: glass output
-                            // into a cleared scratch, then the current image
-                            // over it.
-                            if let Some(v) = v_sc {
-                                let quad = *start..*start + *count;
-                                let dest = Self::stage_scratch(cur);
-                                let ident = ColorMatrixGpu::pack(&FilterGpu::IDENTITY);
-                                self.run_composite_quad(
-                                    &mut enc,
-                                    go,
-                                    &ident,
-                                    self.stage_view(open.slot, dest),
-                                    quad.clone(),
-                                    v,
-                                    true,
-                                    &mut kept,
-                                );
-                                self.run_composite_quad(
-                                    &mut enc,
-                                    self.stage_view(open.slot, cur),
-                                    &ident,
-                                    self.stage_view(open.slot, dest),
-                                    quad,
-                                    v,
-                                    false,
-                                    &mut kept,
-                                );
-                                cur = dest;
-                            }
-                        }
-
+                        // PURGE: material execution is stubbed out here —
+                        // `glass_pool`/`StageGpu` were removed with the
+                        // legacy layer machinery. Content still composites.
+                        let cur = CurLoc::Layer;
+                        let _ = &open.material;
+                        let _ = &fp;
                         let parent_view = match stack.last() {
                             Some(l) => &self.layer_pool[l.slot].1,
                             None => &self.gpu.persistent_view,
                         };
-                        // LightSpill composite, first onto the parent (own
-                        // pass, Load): the blurred card through the
-                        // feathered spill verts (vertex alpha shapes the
-                        // fade; the matrix gain + downward sample shift
-                        // keep it dim and free of the edge's hot line).
-                        // Everything after this — alpha-silhouette shadows,
-                        // lens, content — paints over it, so the spill sits
-                        // behind the card AND behind any shadow it casts.
-                        if let Some((halo, strength)) = glass_halo {
-                            let mut cm = ColorMatrixGpu::pack(&[
-                                1.0, 0.0, 0.0, 0.0, 0.0, //
-                                0.0, 1.0, 0.0, 0.0, 0.0, //
-                                0.0, 0.0, 1.0, 0.0, 0.0, //
-                                0.0, 0.0, 0.0, strength, 0.0,
-                            ]);
-                            cm.tex_off = [0.0, spill_tex_off, 0.0, 0.0];
-                            let sbuf = self.gpu.device.create_buffer_init(
-                                &wgpu::util::BufferInitDescriptor {
-                                    label: Some("riode-wgpu-spill-matrix"),
-                                    contents: bytemuck::bytes_of(&cm),
-                                    usage: wgpu::BufferUsages::UNIFORM,
-                                },
-                            );
-                            kept.push(self.gpu.device.create_bind_group(
-                                &wgpu::BindGroupDescriptor {
-                                    label: Some("riode-wgpu-spill-material"),
-                                    layout: &self.pipes.filter_layout,
-                                    entries: &[
-                                        wgpu::BindGroupEntry {
-                                            binding: 0,
-                                            resource: wgpu::BindingResource::TextureView(
-                                                halo,
-                                            ),
-                                        },
-                                        wgpu::BindGroupEntry {
-                                            binding: 1,
-                                            resource: sbuf.as_entire_binding(),
-                                        },
-                                    ],
-                                },
-                            ));
-                            pass = Some(enc.begin_render_pass(
-                                &wgpu::RenderPassDescriptor {
-                                    label: Some("riode-wgpu-spill"),
-                                    color_attachments: &[Some(
-                                        wgpu::RenderPassColorAttachment {
-                                            view: parent_view,
-                                            resolve_target: None,
-                                            ops: wgpu::Operations {
-                                                load: wgpu::LoadOp::Load,
-                                                store: wgpu::StoreOp::Store,
-                                            },
-                                        },
-                                    )],
-                                    depth_stencil_attachment: None,
-                                    occlusion_query_set: None,
-                                    timestamp_writes: None,
-                                },
-                            ));
-                            {
-                                let p = Self::open_pass(&mut pass);
-                                if Self::apply_scissor(p, scissor, sw, sh) {
-                                    p.set_pipeline(&self.pipes.composite_pipeline);
-                                    p.set_bind_group(0, &self.ortho_bg, &[]);
-                                    p.set_vertex_buffer(0, self.vert_buf.slice(..));
-                                    p.set_bind_group(1, kept.last().unwrap(), &[]);
-                                    if *spill_count > 0 {
-                                        p.draw(
-                                            *spill_start..*spill_start + *spill_count,
-                                            0..1,
-                                        );
-                                    }
-                                }
-                            }
-                            pass = None;
-                        }
-                        // Alpha-silhouette shadow draws, painted onto the
-                        // parent *behind* the content composite that
-                        // follows: per shadow layer, blur the composite
-                        // source at the layer sigma, then composite the
-                        // tinted result at the layer offset (texel lookup
-                        // shifts back by `-offset`). Each layer draws
-                        // before the next blurs — the ping targets and
-                        // the layer texture are reused across layers, so a
-                        // deferred draw would sample a later layer's blur.
-                        // No alpha-shadow quads for a glass layer: the
-                        // shader draws its own Gaussian shadow into the
-                        // optics output (uVar shadowRadius/shadowOpacity),
-                        // which the glass composite below already carries.
-                        // Non-glass layers keep casting from their
-                        // finished silhouette (post-filter, in-layer
-                        // clips baked in).
-                        if !shadows.is_empty() && open.glass.is_none() {
-                            // Blend-mode shadows composite against the
-                            // parent snapshot (CSS `mix-blend-mode` needs
-                            // the backdrop as input — same isolation the
-                            // layer blend path gets at BeginLayer). Copied
-                            // now: after the spill, before this layer's
-                            // own shadow/content draws; sibling layers
-                            // finished earlier are already in the parent.
-                            // No pass is open here (each shadow draw opens
-                            // its own below).
-                            let shadow_snap: Option<&wgpu::TextureView> =
-                                if shadows.iter().any(|d| d.blend != 0.0) {
-                                    let snap = self
-                                        .shadow_snap
-                                        .as_ref()
-                                        .expect("shadow snapshot ensured above");
-                                    let parent_tex: &wgpu::Texture = match stack.last() {
-                                        Some(l) => &self.layer_pool[l.slot].0,
-                                        None => &self.gpu.persistent,
-                                    };
-                                    pass = None;
-                                    enc.copy_texture_to_texture(
-                                        wgpu::ImageCopyTexture {
-                                            texture: parent_tex,
-                                            mip_level: 0,
-                                            origin: wgpu::Origin3d::ZERO,
-                                            aspect: wgpu::TextureAspect::All,
-                                        },
-                                        wgpu::ImageCopyTexture {
-                                            texture: &snap.0,
-                                            mip_level: 0,
-                                            origin: wgpu::Origin3d::ZERO,
-                                            aspect: wgpu::TextureAspect::All,
-                                        },
-                                        wgpu::Extent3d {
-                                            width: sw,
-                                            height: sh,
-                                            depth_or_array_layers: 1,
-                                        },
-                                    );
-                                    Some(&snap.1)
-                                } else {
-                                    None
-                                };
-                            // Silhouette = the stage walk's current
-                            // image (post Blur/ColorMatrix content, or
-                            // the glass-merged card).
-                            let silhouette: &wgpu::TextureView =
-                                self.stage_view(open.slot, cur);
-                            for (i, d) in shadows.iter().enumerate() {
-                                let mut shadow_src: &wgpu::TextureView = silhouette;
-                                if d.sigma > 0.05 {
-                                    let reach = 3.0 * d.sigma;
-                                    let h_region = ResolvedRect::new(
-                                        open.region.x - reach,
-                                        open.region.y - reach,
-                                        open.region.width + 2.0 * reach,
-                                        open.region.height + 2.0 * reach,
-                                    );
-                                    let h_sc = Self::scissor_rect(&Some(h_region), sw, sh);
-                                    let v_sc =
-                                        Self::scissor_rect(&Some(open.region), sw, sh);
-                                    if let (Some(h), Some(v)) = (h_sc, v_sc) {
-                                        // Scratch pair distinct from the
-                                        // silhouette (same discipline as
-                                        // the stage walk).
-                                        let (ha, va) = Self::stage_pair(cur);
-                                        self.run_blur_pass(
-                                            &mut enc,
-                                            silhouette,
-                                            self.stage_view(open.slot, ha),
-                                            d.sigma,
-                                            (1.0, 0.0),
-                                            h,
-                                        );
-                                        let v_dst: &wgpu::TextureView =
-                                            self.stage_view(open.slot, va);
-                                        self.run_blur_pass(
-                                            &mut enc,
-                                            self.stage_view(open.slot, ha),
-                                            v_dst,
-                                            d.sigma,
-                                            (0.0, 1.0),
-                                            v,
-                                        );
-                                        shadow_src = v_dst;
-                                    }
-                                }
-                                let mut cm = ColorMatrixGpu::pack(&d.matrix);
-                                cm.tex_off =
-                                    [-d.offset[0], -d.offset[1], d.blend, 0.0];
-                                let cbuf = self.gpu.device.create_buffer_init(
-                                    &wgpu::util::BufferInitDescriptor {
-                                        label: Some("riode-wgpu-shadow-matrix"),
-                                        contents: bytemuck::bytes_of(&cm),
-                                        usage: wgpu::BufferUsages::UNIFORM,
-                                    },
-                                );
-                                // Blend-mode shadows composite through the
-                                // blend pipeline against the snapshot taken
-                                // above (`tex_off.z` is the mode id —
-                                // `composite_blend.wgsl` reads it like the
-                                // layer blend path); Normal keeps the plain
-                                // composite untouched.
-                                if d.blend != 0.0 {
-                                    let snap_view = shadow_snap.expect(
-                                        "blend shadow implies a snapshot",
-                                    );
-                                    kept.push(self.gpu.device.create_bind_group(
-                                        &wgpu::BindGroupDescriptor {
-                                            label: Some("riode-wgpu-shadow-blend-material"),
-                                            layout: &self.pipes.blend_layout,
-                                            entries: &[
-                                                wgpu::BindGroupEntry {
-                                                    binding: 0,
-                                                    resource:
-                                                        wgpu::BindingResource::TextureView(
-                                                            shadow_src,
-                                                        ),
-                                                },
-                                                wgpu::BindGroupEntry {
-                                                    binding: 1,
-                                                    resource:
-                                                        wgpu::BindingResource::TextureView(
-                                                            snap_view,
-                                                        ),
-                                                },
-                                                wgpu::BindGroupEntry {
-                                                    binding: 2,
-                                                    resource: cbuf.as_entire_binding(),
-                                                },
-                                            ],
-                                        },
-                                    ));
-                                } else {
-                                    kept.push(self.gpu.device.create_bind_group(
-                                        &wgpu::BindGroupDescriptor {
-                                            label: Some("riode-wgpu-shadow-material"),
-                                            layout: &self.pipes.filter_layout,
-                                            entries: &[
-                                                wgpu::BindGroupEntry {
-                                                    binding: 0,
-                                                    resource:
-                                                        wgpu::BindingResource::TextureView(
-                                                            shadow_src,
-                                                        ),
-                                                },
-                                                wgpu::BindGroupEntry {
-                                                    binding: 1,
-                                                    resource: cbuf.as_entire_binding(),
-                                                },
-                                            ],
-                                        },
-                                    ));
-                                }
-                                // Explicit assignment — see BeginLayer above.
-                                pass = None;
-                                pass = Some(enc.begin_render_pass(
-                                    &wgpu::RenderPassDescriptor {
-                                        label: Some("riode-wgpu-scene"),
-                                        color_attachments: &[Some(
-                                            wgpu::RenderPassColorAttachment {
-                                                view: parent_view,
-                                                resolve_target: None,
-                                                ops: wgpu::Operations {
-                                                    load: wgpu::LoadOp::Load,
-                                                    store: wgpu::StoreOp::Store,
-                                                },
-                                            },
-                                        )],
-                                        depth_stencil_attachment: None,
-                                        occlusion_query_set: None,
-                                        timestamp_writes: None,
-                                    },
-                                ));
-                                {
-                                    let p = Self::open_pass(&mut pass);
-                                    if Self::apply_scissor(p, scissor, sw, sh) {
-                                        if d.blend != 0.0 {
-                                            // Blend pipeline (fixed-function
-                                            // blending off): the shader
-                                            // emits the full CSS composite
-                                            // against the snapshot.
-                                            p.set_pipeline(
-                                                &self.pipes.blend_composite_pipeline,
-                                            );
-                                        } else {
-                                            p.set_pipeline(&self.pipes.composite_pipeline);
-                                        }
-                                        p.set_bind_group(0, &self.ortho_bg, &[]);
-                                        p.set_bind_group(1, kept.last().unwrap(), &[]);
-                                        p.set_vertex_buffer(0, self.vert_buf.slice(..));
-                                        let vs = *shadow_start + (i as u32) * 6;
-                                        p.draw(vs..vs + 6, 0..1);
-                                    }
-                                }
-                                pass = None;
-                            }
-                        }
-                        // Final composite: the stage walk's current image
-                        // onto the parent — one draw. The walk already
-                        // applied every color stage and merged the glass
-                        // card; what remains is an identity composite,
-                        // or the blend pipeline when a trailing Blend
-                        // stage asked for it and no glass ran (the optics
-                        // card path blends in-shader). The material must
-                        // outlive the open pass — into `kept`.
-                        let blend_bg = match (pending_blend, glass_ran) {
-                            (Some(m), false) => {
-                                self.glass_pool.get(open.slot).map(|gt| {
-                                    let mut cm =
-                                        ColorMatrixGpu::pack(&FilterGpu::IDENTITY);
-                                    cm.tex_off[2] = m;
-                                    let bbuf = self.gpu.device.create_buffer_init(
-                                        &wgpu::util::BufferInitDescriptor {
-                                            label: Some("riode-wgpu-final-blend-matrix"),
-                                            contents: bytemuck::bytes_of(&cm),
-                                            usage: wgpu::BufferUsages::UNIFORM,
-                                        },
-                                    );
-                                    kept.push(self.gpu.device.create_bind_group(
-                                        &wgpu::BindGroupDescriptor {
-                                            label: Some("riode-wgpu-final-blend-material"),
-                                            layout: &self.pipes.blend_layout,
-                                            entries: &[
-                                                wgpu::BindGroupEntry {
-                                                    binding: 0,
-                                                    resource:
-                                                        wgpu::BindingResource::TextureView(
-                                                            self.stage_view(open.slot, cur),
-                                                        ),
-                                                },
-                                                wgpu::BindGroupEntry {
-                                                    binding: 1,
-                                                    resource:
-                                                        wgpu::BindingResource::TextureView(
-                                                            if bd_ran { &gt.a.1 } else { &gt.snap.1 },
-                                                        ),
-                                                },
-                                                wgpu::BindGroupEntry {
-                                                    binding: 2,
-                                                    resource: bbuf.as_entire_binding(),
-                                                },
-                                            ],
-                                        },
-                                    ));
-                                    kept.len() - 1
-                                })
-                            }
-                            _ => None,
-                        };
+
+                        // Purged: shadow/blend stages live in the material chain now.
+                        let blend_bg: Option<usize> = None;
                         pass = Some(enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                             label: Some("riode-wgpu-scene"),
                             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -2741,48 +1372,6 @@ impl WgpuRenderer {
                         pass.set_pipeline(&self.pipes.rect_replace_pipeline);
                         pass.set_bind_group(0, &self.ortho_bg, &[]);
                         pass.set_vertex_buffer(0, self.vert_buf.slice(..));
-                        pass.draw(*start..*start + *count, 0..1);
-                    }
-                    Op::Rects {
-                        start,
-                        count,
-                        scissor,
-                    } => {
-                        let pass = Self::open_pass(&mut pass);
-                        if !Self::apply_scissor(pass, scissor, sw, sh) {
-                            continue;
-                        }
-                        pass.set_pipeline(&self.pipes.rect_pipeline);
-                        pass.set_bind_group(0, &self.ortho_bg, &[]);
-                        pass.set_vertex_buffer(0, self.vert_buf.slice(..));
-                        pass.draw(*start..*start + *count, 0..1);
-                    }
-                    Op::RRects {
-                        start,
-                        count,
-                        scissor,
-                    } => {
-                        let pass = Self::open_pass(&mut pass);
-                        if !Self::apply_scissor(pass, scissor, sw, sh) {
-                            continue;
-                        }
-                        pass.set_pipeline(&self.pipes.rrect_pipeline);
-                        pass.set_bind_group(0, &self.ortho_bg, &[]);
-                        pass.set_vertex_buffer(0, self.rrect_buf.slice(..));
-                        pass.draw(*start..*start + *count, 0..1);
-                    }
-                    Op::Shadows {
-                        start,
-                        count,
-                        scissor,
-                    } => {
-                        let pass = Self::open_pass(&mut pass);
-                        if !Self::apply_scissor(pass, scissor, sw, sh) {
-                            continue;
-                        }
-                        pass.set_pipeline(&self.pipes.shadow_pipeline);
-                        pass.set_bind_group(0, &self.ortho_bg, &[]);
-                        pass.set_vertex_buffer(0, self.shadow_buf.slice(..));
                         pass.draw(*start..*start + *count, 0..1);
                     }
                     Op::Glyphs {

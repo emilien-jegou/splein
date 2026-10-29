@@ -20,7 +20,6 @@
 //!   Each group moves with the code that owns it if this ever splits again.
 //! - [`DirtyFlags`]: `MEASURE` (reshape), `LAYOUT` (replace), `PAINT` (repaint),
 //!   `SCROLL` (paint-class offset shift: moves transforms, never boxes),
-//!   `INTERACTION` (handlers), `SUBTREE_DIRTY` (descendant changed). Fill/opacity/shadow
 //!   are paint-only; text content is measure; structure goes through reconciliation.
 //! - [`mark_node_dirty`]: upward invalidation to layout boundaries. Prefer it over
 //!   touching flags by hand — it maintains the boundary protocol.

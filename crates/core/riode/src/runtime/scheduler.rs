@@ -280,13 +280,7 @@ impl FrameScheduler {
                 let n = self.arena.get_mut(node);
                 let tx_changed =
                     bindings.update_transform(n.state.core.declared_transform, &mut n.transform);
-                let paint_changed = bindings.update_paint(
-                    &mut n.style.appearance.fill,
-                    &mut n.style.appearance.opacity,
-                    &mut n.style.appearance.shadow,
-                    &mut n.style.appearance.backdrop_effects,
-                    &mut n.style.appearance.layer_effects,
-                );
+                let paint_changed = bindings.update_material(&mut n.style.material);
                 // Stacking rides the paint path: it reorders paint without touching layout.
                 let z_changed = bindings.update_z(&mut n.style.z_index, n.style.is_absolute);
                 if tx_changed || paint_changed || z_changed {
@@ -340,7 +334,6 @@ impl FrameScheduler {
     ///
     /// Draining again here closes that gap, restricted to paint-class bindings. The
     /// restriction is what makes it safe to run after layout at all: a transform, a fill, an
-    /// opacity or a shadow cannot change a box, so applying one cannot invalidate the layout that
     /// has already run. Anything that *could* change geometry is deliberately not reapplied —
     /// that would mean laying out twice per frame, and the second pass would need a third drain
     /// after it.

@@ -39,7 +39,7 @@ pub use crate::reactive::{
 /// Call-site-keyed signal hook: `use_signal!("name", init)` (explicit, move-proof keys).
 pub use crate::use_signal;
 
-pub use crate::render::RenderBackend;
+
 pub use crate::runtime::{Engine, FrameDiagnostics, FrameReport};
 pub use crate::scene::vector::VectorGraphic;
 pub use crate::text::{

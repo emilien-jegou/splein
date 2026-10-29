@@ -1,18 +1,15 @@
 // Single responsibility: Discrete bounded slice of display list commands.
 
-use crate::foundation::{Point, Radius, ResolvedRect, Transform};
+use crate::foundation::{Point, ResolvedRect, Transform};
 use crate::scene::command::{LayerId, SceneCommand};
 use smallvec::SmallVec;
 use std::sync::Arc;
 
-/// A clip rectangle in absolute screen space, with the radius it was declared with.
-///
-/// Radius survives as authored rather than being folded into the rect because the
-/// renderer builds the mask path from both.
+/// A clip rectangle in absolute screen space. Clips are square — `radius`
+/// was purged with the legacy paint path.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct InheritedClip {
     pub rect: ResolvedRect,
-    pub radius: Radius,
 }
 
 /// Clips a chunk inherits from ancestors, already expressed in absolute screen space.
@@ -62,12 +59,6 @@ pub struct SceneChunk {
     /// when `has_text`; vacuous `true` otherwise so textless chunks replay
     /// freely.
     pub text_settled: bool,
-    /// Whether glass motion (a pressed member's lens/content or a morphing
-    /// group) was unsettled when this chunk baked. Replay is only valid
-    /// while settled: the press/morph state integrates in the damage pass
-    /// and never marks dirty, so without this the stale stream replays
-    /// forever. Vacuous `false` for glass-free chunks.
-    pub glass_unsettled: bool,
     /// Content hash memoized at finalization (N4): backends read this
     /// instead of re-walking the stream per frame per tile. `None` means
     /// unhashed (hand-built chunks); `push_chunk` fills it exactly once,
@@ -88,7 +79,6 @@ impl SceneChunk {
             content_hash: None,
             has_text: false,
             text_settled: true,
-            glass_unsettled: false,
         }
     }
 
@@ -108,7 +98,6 @@ impl SceneChunk {
             content_hash: None,
             has_text: false,
             text_settled: true,
-            glass_unsettled: false,
         }
     }
 
@@ -123,7 +112,6 @@ impl SceneChunk {
             content_hash: None,
             has_text: false,
             text_settled: true,
-            glass_unsettled: false,
         }
     }
 

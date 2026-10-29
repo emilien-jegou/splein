@@ -1,7 +1,7 @@
 // Single responsibility: Generational arena managing node allocation, hierarchy, and invalidation.
 
 use crate::foundation::{
-    GlassPress, Key, MeasuredElement, Point, ResolvedRect, Transform, GLASS_STANDARD,
+    Key, MeasuredElement, Point, ResolvedRect, Transform,
 };
 use crate::tree::flags::DirtyFlags;
 use crate::tree::id::NodeId;
@@ -186,223 +186,10 @@ impl TreeArena {
         std::mem::take(&mut self.removed_damage)
     }
 
-    /// Live liquid-glass lenses for damage repair: committed bounds plus the
-    /// backdrop-input reach in screen px.
-    ///
-    /// A lens refracts backdrop from outside its own rect (up to its damage
-    /// pad away), so backdrop motion inside that reach must repaint the lens
-    /// even though the lens node itself is static and contributes no damage
-    /// of its own. Pure read over committed state (same pattern as
-    /// [`Self::unsettled_text_bounds`]); the damage pass calls this after
-    /// its walk and repaints the stale slivers (see `repair_glass_lenses`).
-    ///
-    /// The reach rescales the layout-px pad by the node's own scale, derived
-    /// from committed vs layout size and biased upward (clamped ≥ 1.0):
-    /// overestimating only overpaints, underestimating would miss pixels.
-    pub fn glass_lens_bounds(&self) -> SmallVec<[(ResolvedRect, f32); 4]> {
-        let mut out = SmallVec::new();
-        for slot in &self.slots {
-            if !slot.is_active {
-                continue;
-            }
-            let Some((glass, backdrop, _, _, _)) = slot
-                .node
-                .style
-                .appearance
-                .backdrop_effects
-                .as_ref()
-                .and_then(|s| s.glass_single())
-            else {
-                continue;
-            };
-            let Some(bounds) = slot.node.state.paint.last_painted_bounds else {
-                continue;
-            };
-            if bounds.is_empty() {
-                continue;
-            }
-            let pad = glass.damage_pad(&backdrop);
-            let (lw, lh) = (
-                slot.node.resolved_rect.width + 2.0 * pad,
-                slot.node.resolved_rect.height + 2.0 * pad,
-            );
-            let sx = if lw > 0.0 { bounds.width / lw } else { 1.0 };
-            let sy = if lh > 0.0 { bounds.height / lh } else { 1.0 };
-            let scale = sx.max(sy).max(1.0);
-            // Non-finite scale (degenerate layout; never observed since
-            // committed bounds derive from the same layout size) falls back
-            // to unscaled pad: overpaints rather than missing pixels.
-            let reach = if scale.is_finite() {
-                pad * scale
-            } else {
-                pad
-            };
-            out.push((bounds, reach));
-        }
-        out
-    }
-    /// Whether any glass group still has morph tracks gliding (drives
-    /// `has_active_motion` so the frame loop keeps running until every
-    /// glide lands).
-    pub fn morph_unsettled(&self) -> bool {
-        self.slots.iter().any(|slot| {
-            slot.is_active
-                && slot
-                    .node
-                    .style
-                    .appearance
-                    .backdrop_effects
-                    .as_ref()
-                    .is_some_and(|s| s.glass_group_spacing().is_some())
-                && slot.node.state.glass_morph.is_active()
-        })
-    }
+    pub fn press_begin(&mut self, id: NodeId, pos: Point) {}
+    pub fn press_move(&mut self, pos: Point) {}
+    pub fn press_end(&mut self) {}
 
-    /// Whether any glass motion still wants frames: morph glides or an
-    /// active press (finger down, release spring or light hold settling).
-    pub fn glass_motion_active(&self) -> bool {
-        self.morph_unsettled() || self.press_active()
-    }
-
-    /// Whether any glass node holds an active press.
-    pub fn press_active(&self) -> bool {
-        self.slots.iter().any(|slot| {
-            slot.is_active && slot.node.state.glass_press.as_ref().is_some_and(|p| p.is_active())
-        })
-    }
-
-    /// Starts a press on `id` at window-space `pos` (or retargets the
-    /// same node's press). Any other node's press ends first: one active
-    /// press at a time (primary pointer).
-    pub fn press_begin(&mut self, id: NodeId, pos: Point) {
-        let motion = GLASS_STANDARD.motion;
-        for (i, slot) in self.slots.iter_mut().enumerate() {
-            if !slot.is_active {
-                continue;
-            }
-            if slot.node.state.glass_press.is_some()
-                && NodeId::new(i as u32, slot.generation) != id
-            {
-                if let Some(press) = slot.node.state.glass_press.as_mut() {
-                    press.up(&motion);
-                }
-            }
-        }
-        if !self.is_valid(id) {
-            return;
-        }
-        let node = self.get(id);
-        let origin = Point::new(node.absolute_rect.x, node.absolute_rect.y);
-        let touch = Point::new(pos.x - origin.x, pos.y - origin.y);
-        let (w, h) = (node.resolved_rect.width, node.resolved_rect.height);
-        let node = self.get_mut(id);
-        match node.state.glass_press.as_mut() {
-            Some(press) => press.retarget_down(touch, w, h, &motion),
-            None => {
-                node.state.glass_press = Some(GlassPress::down(touch, w, h, &motion));
-            }
-        }
-        // Press state integrates in the damage pass and never marks
-        // dirty on its own: flag the subtree so this frame recompiles
-        // instead of replaying the stale stream (steady-state frames
-        // ride the chunk's `glass_unsettled` flag instead).
-        self.mark_dirty(id, DirtyFlags::PAINT);
-    }
-
-    /// Moves the active press's touch to window-space `pos`.
-    pub fn press_move(&mut self, pos: Point) {
-        for slot in &mut self.slots {
-            if !slot.is_active {
-                continue;
-            }
-            if let Some(press) = slot.node.state.glass_press.as_mut() {
-                if press.is_active() {
-                    let origin = Point::new(
-                        slot.node.absolute_rect.x,
-                        slot.node.absolute_rect.y,
-                    );
-                    press.move_to(Point::new(pos.x - origin.x, pos.y - origin.y));
-                    return;
-                }
-            }
-        }
-    }
-
-    /// Releases the active press (release spring + light hold take over).
-    pub fn press_end(&mut self) {
-        let motion = GLASS_STANDARD.motion;
-        for slot in &mut self.slots {
-            if !slot.is_active {
-                continue;
-            }
-            if let Some(press) = slot.node.state.glass_press.as_mut() {
-                press.up(&motion);
-            }
-        }
-    }
-
-    /// Advances every press one fixed quantum. Returns absolute motion
-    /// bounds (current ∪ target applied shapes) for damage; empty when
-    /// nothing moved.
-    pub fn advance_glass_press(&mut self) -> Vec<ResolvedRect> {
-        let motion = GLASS_STANDARD.motion;
-        let mut out = Vec::new();
-        for slot in &mut self.slots {
-            if !slot.is_active {
-                continue;
-            }
-            let origin = Point::new(slot.node.absolute_rect.x, slot.node.absolute_rect.y);
-            let (w, h) = (slot.node.resolved_rect.width, slot.node.resolved_rect.height);
-            let Some(press) = slot.node.state.glass_press.as_mut() else {
-                continue;
-            };
-            if !press.is_active() {
-                continue;
-            }
-            let base = ResolvedRect::new(origin.x, origin.y, w, h);
-            // Damage covers the last advance's touch as well as this
-            // one: fast finger travel deforms faster than the spring.
-            let before = press.geometry_for(&motion, press.last_touch()).apply(base);
-            press.advance();
-            let after = press.geometry(&motion).apply(base);
-            let moved = before.union(&after).expand(2.0);
-            out.push(moved);
-            // A press that fully settled frees its state (a fresh down
-            // starts clean; `is_active` already covers the light hold).
-            if !press.is_active() {
-                slot.node.state.glass_press = None;
-            }
-        }
-        out
-    }
-
-    /// Advances every glass-group morph track one fixed quantum.
-    /// Returns group-local motion bounds with the group's absolute
-    /// origin for damage (empty when nothing moved).
-    pub fn advance_glass_morphs(&mut self) -> Vec<(ResolvedRect, f32, f32)> {
-        let mut out = Vec::new();
-        for slot in &mut self.slots {
-            let is_group = slot
-                .node
-                .style
-                .appearance
-                .backdrop_effects
-                .as_ref()
-                .is_some_and(|s| s.glass_group_spacing().is_some());
-            if !slot.is_active || !is_group {
-                continue;
-            }
-            let (moved, _) = slot.node.state.glass_morph.advance();
-            if let Some(local) = moved {
-                out.push((
-                    local,
-                    slot.node.absolute_rect.x,
-                    slot.node.absolute_rect.y,
-                ));
-            }
-        }
-        out
-    }
     /// Idle backstop for text settling: collects repaint regions for text
     /// runs that still need observation to reach their baseline.
     ///
@@ -671,7 +458,6 @@ impl TreeArena {
     }
 
     /// Tight layout box in absolute window coordinates, projected through the live transform
-    /// chain but without AA pad, stroke, or shadow.
     ///
     /// The measurement counterpart to [`node_absolute_rect`](Self::node_absolute_rect):
     /// settled, it equals the stored layout box the snapshot publishes; in flight, it tracks

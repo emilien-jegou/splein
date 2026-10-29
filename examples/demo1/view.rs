@@ -30,7 +30,7 @@ pub fn build_ui() -> impl IntoElement {
             direction="vertical"
             width="fill"
             height="fill"
-            fill={Color::WHITE}
+            material={Fill::solid(Color::WHITE)}
             alignment="center"
             distribution="center"
         >
@@ -39,7 +39,7 @@ pub fn build_ui() -> impl IntoElement {
                 width={500.0}
                 height="fill"
                 margin={Margin::y(41.0)}
-                fill={0xCA6D60}
+                material={Fill::solid(0xCA6D60)}
                 alignment="center"
                 distribution="center"
             >
@@ -47,7 +47,7 @@ pub fn build_ui() -> impl IntoElement {
                     direction="horizontal"
                     width={460.0}
                     height={204.0}
-                    fill={0x336133}
+                    material={Fill::solid(0x336133)}
                     gap={16.0}
                     alignment="center"
                     distribution="center"
@@ -56,7 +56,7 @@ pub fn build_ui() -> impl IntoElement {
                         direction="vertical"
                         width={127.0}
                         height={96.0}
-                        fill={0x4900FF}
+                        material={Fill::solid(0x4900FF)}
                         alignment="center"
                         distribution="center"
                     >
@@ -67,7 +67,7 @@ pub fn build_ui() -> impl IntoElement {
                             color={Color::WHITE}
                         >"Hello you"</Text>
                     </Group>
-                    <Group width={116.0} height={45.0} fill={0xFFFFFF}>
+                    <Group width={116.0} height={45.0} material={Fill::solid(0xFFFFFF)}>
                         <Text
                             selectable={true}
                             size={12.0}
@@ -80,9 +80,7 @@ pub fn build_ui() -> impl IntoElement {
                         direction="vertical"
                         width={140.0}
                         height={144.0}
-                        radius="max"
-                        fill={0xFF00FF}
-                        stroke={Stroke::inside(3.0, Color::BLACK)}
+                        material={Fill::solid(0xFF00FF)}
                         alignment="center"
                         distribution="center"
                     >

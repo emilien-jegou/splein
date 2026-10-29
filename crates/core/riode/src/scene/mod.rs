@@ -31,7 +31,7 @@
 //!     fn paint(&self, ctx: &mut PaintContext, bounds: ResolvedRect) {
 //!         // Placement, clipping, and culling are the chunk's problem;
 //!         // here you just describe marks in local coordinates.
-//!         ctx.draw_rect(bounds, Appearance::EMPTY.with_fill(Fill::solid(Color::RED)));
+//!         // Legacy draw_rect removed in purge; custom primitives draw via context methods.
 //!     }
 //! }
 //! ```
@@ -63,7 +63,6 @@ pub mod chunk;
 pub mod command;
 pub mod context;
 pub mod image;
-pub mod islands;
 pub mod scene;
 pub mod settle;
 pub mod sink;
@@ -75,11 +74,10 @@ pub use chunk::SceneChunk;
 pub use command::{LayerId, SceneCommand};
 pub use context::PaintContext;
 pub use image::ImageSource;
-pub use islands::{extract_islands, Island};
 pub use scene::Scene;
 pub use sink::{
-    chunk_base, lower_chunk, sink_ignored_counts, PlacedClip, PlacedImage, PlacedLayer,
-    PlacedRect, PlacedShadow, PlacedSvg, PlacedText, SceneSink, SinkDiagnostics, TextRaster,
+    chunk_base, lower_chunk, sink_ignored_counts, PlacedClip, PlacedImage, PlacedLayer, PlacedSvg,
+    PlacedText, SceneSink, SinkDiagnostics, TextRaster,
 };
 pub use settle::RectSettle;
 pub use snap::{

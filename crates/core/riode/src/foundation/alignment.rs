@@ -104,3 +104,110 @@ impl Default for LayoutConfig {
         }
     }
 }
+
+
+use std::str::FromStr;
+
+fn parse_direction(s: &str) -> Option<Direction> {
+    match s.trim().to_lowercase().as_str() {
+        "horizontal" | "row" | "x" => Some(Direction::Horizontal),
+        "vertical" | "column" | "col" | "y" => Some(Direction::Vertical),
+        _ => None,
+    }
+}
+
+fn parse_alignment(s: &str) -> Option<Alignment> {
+    match s.trim().to_lowercase().as_str() {
+        "start" => Some(Alignment::Start),
+        "center" => Some(Alignment::Center),
+        "end" => Some(Alignment::End),
+        "stretch" => Some(Alignment::Stretch),
+        _ => None,
+    }
+}
+
+fn parse_distribution(s: &str) -> Option<Distribution> {
+    match s.trim().to_lowercase().as_str() {
+        "start" => Some(Distribution::Start),
+        "center" => Some(Distribution::Center),
+        "end" => Some(Distribution::End),
+        "space-between" | "spacebetween" => Some(Distribution::SpaceBetween),
+        _ => None,
+    }
+}
+
+fn parse_flow_wrap(s: &str) -> Option<FlowWrap> {
+    match s.trim().to_lowercase().as_str() {
+        "wrap" => Some(FlowWrap::Wrap),
+        "nowrap" | "no" | "none" => Some(FlowWrap::NoWrap),
+        _ => None,
+    }
+}
+
+impl FromStr for Direction {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, String> {
+        parse_direction(s).ok_or_else(|| "bad direction".to_string())
+    }
+}
+impl From<&str> for Direction {
+    fn from(s: &str) -> Self {
+        parse_direction(s).unwrap_or(Direction::Horizontal)
+    }
+}
+impl From<String> for Direction {
+    fn from(s: String) -> Self {
+        Self::from(s.as_str())
+    }
+}
+
+impl FromStr for Alignment {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, String> {
+        parse_alignment(s).ok_or_else(|| "bad alignment".to_string())
+    }
+}
+impl From<&str> for Alignment {
+    fn from(s: &str) -> Self {
+        parse_alignment(s).unwrap_or(Alignment::Start)
+    }
+}
+impl From<String> for Alignment {
+    fn from(s: String) -> Self {
+        Self::from(s.as_str())
+    }
+}
+
+impl FromStr for Distribution {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, String> {
+        parse_distribution(s).ok_or_else(|| "bad distribution".to_string())
+    }
+}
+impl From<&str> for Distribution {
+    fn from(s: &str) -> Self {
+        parse_distribution(s).unwrap_or(Distribution::Start)
+    }
+}
+impl From<String> for Distribution {
+    fn from(s: String) -> Self {
+        Self::from(s.as_str())
+    }
+}
+
+impl FromStr for FlowWrap {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, String> {
+        parse_flow_wrap(s).ok_or_else(|| "bad flow_wrap".to_string())
+    }
+}
+impl From<&str> for FlowWrap {
+    fn from(s: &str) -> Self {
+        parse_flow_wrap(s).unwrap_or(FlowWrap::NoWrap)
+    }
+}
+impl From<String> for FlowWrap {
+    fn from(s: String) -> Self {
+        Self::from(s.as_str())
+    }
+}

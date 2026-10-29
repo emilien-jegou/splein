@@ -1,84 +1,22 @@
 // Aggregate visual surface appearance specification.
+// Purged: all legacy visual properties removed; only material remains.
 
-use crate::foundation::effect::EffectStack;
-use crate::foundation::fill::Fill;
-use crate::foundation::light::LightEnvironment;
-use crate::foundation::radius::Radius;
-use crate::foundation::shadow::Shadow;
-use crate::foundation::stroke::Stroke;
+use crate::foundation::Material;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Appearance {
-    pub fill: Option<Fill>,
-    pub stroke: Option<Stroke>,
-    pub radius: Radius,
-    /// One shadow per node, internally layered.
-    pub shadow: Option<Shadow>,
-    /// Per-subtree light override. `None` (the case for ~all nodes) inherits
-    /// the ambient light resolved during the paint/damage traversal; the
-    /// resolved value lives in tree state, never here, so overrides never
-    /// dirty unaffected nodes.
-    pub light_override: Option<LightEnvironment>,
-    pub opacity: f32,
-    /// Backdrop effects: transform the sampled background before the
-    /// layer composites (CSS `backdrop-filter` + the glass lens).
-    /// Read-only input for glass/blend sampling. `Some` (even empty)
-    /// forces an isolated layer.
-    pub backdrop_effects: Option<EffectStack>,
-    /// Layer effects: transform the layer's own rasterized content
-    /// (CSS `filter`). The sheet the backdrop card composites under.
-    pub layer_effects: Option<EffectStack>,
+    /// The element's material — the ordered shading chain over the
+    /// sampled background.
+    pub material: Option<Material>,
 }
 
 impl Appearance {
-    pub const EMPTY: Self = Self {
-        fill: None,
-        stroke: None,
-        radius: Radius::ZERO,
-        shadow: None,
-        light_override: None,
-        opacity: 1.0,
-        backdrop_effects: None,
-        layer_effects: None,
-    };
+    pub const EMPTY: Self = Self { material: None };
 
-    pub fn with_fill(mut self, fill: Fill) -> Self {
-        self.fill = Some(fill);
+    pub fn with_material(mut self, material: Material) -> Self {
+        self.material = Some(material);
         self
     }
-
-    pub fn with_stroke(mut self, stroke: Stroke) -> Self {
-        self.stroke = Some(stroke);
-        self
-    }
-
-    pub fn with_radius(mut self, radius: Radius) -> Self {
-        self.radius = radius;
-        self
-    }
-
-    pub fn with_shadow(mut self, shadow: Shadow) -> Self {
-        self.shadow = Some(shadow);
-        self
-    }
-
-    pub fn with_light(mut self, light: LightEnvironment) -> Self {
-        self.light_override = Some(light);
-        self
-    }
-
-
-
-
-
-
-
-
-    pub fn with_opacity(mut self, opacity: f32) -> Self {
-        self.opacity = opacity.clamp(0.0, 1.0);
-        self
-    }
-
 }
 
 impl Default for Appearance {

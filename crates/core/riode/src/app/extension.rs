@@ -71,11 +71,4 @@ pub trait AppExtension {
         _height: usize,
     ) {
     }
-
-    /// Downcast hook for the visual debugger, so event loops holding boxed
-    /// extensions can reach its concrete telemetry and command API without a
-    /// second registry. `None` for every other extension.
-    fn as_debugger(&mut self) -> Option<&mut crate::app::debug::VisualDebugger> {
-        None
-    }
 }

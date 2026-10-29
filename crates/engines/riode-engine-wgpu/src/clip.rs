@@ -1,6 +1,6 @@
 // Single responsibility: Intersecting scissor-rect clip stack.
 
-use riode::foundation::{Radius, ResolvedRect};
+use riode::foundation::ResolvedRect;
 
 /// Intersecting square-clip stack. Rounded clips are approximated by their
 /// bounding box here; true rounded masking lands with the SDF pipeline.
@@ -14,7 +14,7 @@ impl ClipStack {
         self.stack.clear();
     }
 
-    pub fn push(&mut self, rect: &ResolvedRect, _radius: Radius) {
+    pub fn push(&mut self, rect: &ResolvedRect) {
         let next = match self.stack.last() {
             Some(top) => top.intersect(rect),
             None => *rect,

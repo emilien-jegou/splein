@@ -13,13 +13,10 @@ pub mod item_hints;
 pub mod runner;
 pub mod surface;
 
-pub use background_effect::{bind_manager, effect_for_surface, upload_blur_region};
 pub use island_pool::{blit_rgba_to_bgra, IslandPool};
 pub use item_hints::{
-    bind_item_manager, item_for_surface, upload_effect_stages, upload_glass_frame, upload_item_shape,
     RiodeItemManagerV1, RiodeItemV1,
 };
-pub use runner::{overlay_run, GlassMode, OverlayConfig, SurfacePolicy};
 
 pub use backend::{damage_tiles, DamageTile, WaylandBackend};
 pub use surface::{create_overlay_surface, set_passthrough};

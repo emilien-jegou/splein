@@ -9,10 +9,10 @@
 //!
 //! | Concern | Types |
 //! |---------|-------|
-//! | Color & paint | [`Color`], [`Fill`], [`Stroke`], [`Edges`], [`Radius`], [`Appearance`] |
+//! | Color & paint | [`Color`], [`Fill`], [`Appearance`] |
 //! | Geometry | [`Point`], [`ResolvedRect`], [`Transform`], [`Margin`], [`Gap`] |
 //! | Layout intent | [`Size`], [`Constraints`], [`Alignment`], [`Direction`], [`Distribution`], [`LayoutPresence`] |
-//! | Depth & light | [`Shadow`], [`LightEnvironment`], [`FalloffCurve`] |
+//! | Depth & light | [`LightEnvironment`], [`FalloffCurve`] |
 //! | Identity & frames | [`Key`], [`GeometrySnapshot`] |
 //!
 //! # Showcase
@@ -27,10 +27,6 @@
 //!     .height(Size::Fixed(480.0))
 //!     .direction(Direction::Horizontal)       // main axis
 //!     .alignment(Alignment::Center)           // cross axis
-//!     .fill(Color::hex(0xF9FAFB))             // paint
-//!     .radius(Radius::all(12.0))              // corners
-//!     .shadow(Shadow::elevation(8.0))         // physics-based drop shadow…
-//!     .shadow(Shadow::web_like(0.0, 4.0, 6.0, 0.0, Color::BLACK)) // …or web-exact
 //!     .margin(Margin::symmetric(16.0, 8.0))
 //! ```
 //!
@@ -49,29 +45,26 @@
 
 pub mod alignment;
 pub mod appearance;
-pub mod blend;
 pub mod color;
 pub mod constraints;
+pub mod blend;
 pub mod content;
 pub mod edges;
 pub mod effect;
 pub mod falloff;
 pub mod fill;
 pub mod filter;
+pub mod geo;
 pub mod geometry;
-pub mod glass;
 pub mod key;
 pub mod light;
 pub mod literal;
-pub mod material;
 pub mod positioning;
 pub mod presence;
-pub mod radius;
-pub mod shadow;
+pub mod shading;
 pub mod sizing;
 pub mod snapshot;
 pub mod spacing;
-pub mod stroke;
 pub mod transform;
 
 pub use alignment::*;
@@ -85,18 +78,15 @@ pub use effect::*;
 pub use falloff::*;
 pub use fill::*;
 pub use filter::*;
+pub use geo::*;
 pub use geometry::*;
-pub use glass::*;
 pub use key::*;
 pub use light::*;
 pub use literal::*;
-pub use material::*;
 pub use positioning::*;
 pub use presence::*;
-pub use radius::*;
-pub use shadow::*;
+pub use shading::*;
 pub use sizing::*;
 pub use snapshot::*;
 pub use spacing::*;
-pub use stroke::*;
 pub use transform::*;

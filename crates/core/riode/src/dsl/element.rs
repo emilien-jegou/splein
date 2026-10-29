@@ -70,9 +70,9 @@ impl Element {
         match el {
             Element::Group(g) => {
                 out.push_str(&format!(
-                    "Group key={:?} fill={} w={} h={}\n",
+                    "Group key={:?} material={} w={} h={}\n",
                     g.key,
-                    prop_summary(&g.fill),
+                    prop_summary(&g.material),
                     prop_summary(&g.width),
                     prop_summary(&g.height),
                 ));
@@ -211,14 +211,14 @@ impl_into_child_list_tuple!(A, B, C, D, E, F, G, H, I, J, K, L);
 mod tests {
     use super::*;
     use crate::dsl::{group, text};
-    use crate::foundation::Color;
+    use crate::foundation::{Color, Fill};
 
     /// The reload IR summary renders static values for human diffing.
     #[test]
     fn summarize_renders_statics_for_diffing() {
         let tree = group()
             .width(500.0)
-            .fill(Color::WHITE)
+            .material(Fill::solid(Color::WHITE))
             .children([text("Hello").size(16.0).color(Color::BLACK)])
             .into_element();
         let summary = tree.summarize();

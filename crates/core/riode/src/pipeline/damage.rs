@@ -33,16 +33,6 @@ impl DamagePlan {
             plan.region.push(*removed);
         }
 
-        // Glass morphs glide on the fixed animation quantum whether or
-        // not anything else moved: advancing first (and pushing motion
-        // bounds) steers the fast path below away from an idle return
-        // that would freeze the glide mid-flight. Press springs ride
-        // the same advance.
-        advance_glass_morphs(arena, &mut plan.region);
-        for moved in arena.advance_glass_press() {
-            plan.region.push(moved);
-        }
-
         // Fast Path 1: Idle frame (no nodes dirtied, no layout, no unmounted rects)
         if !laid_out && dirty_nodes.is_empty() && plan.removed_rects.is_empty() {
             return plan;
@@ -74,7 +64,6 @@ impl DamagePlan {
                 );
             }
             expand_nested_shifts(&mut plan);
-            repair_glass_lenses(arena, &mut plan.region);
             return plan;
         }
 
@@ -114,72 +103,10 @@ impl DamagePlan {
             &mut plan.region,
         );
         expand_nested_shifts(&mut plan);
-        repair_glass_lenses(arena, &mut plan.region);
         plan
     }
 }
-
-/// Advances glass-group morph tracks one fixed quantum and damages
-/// their motion.
 ///
-/// Morph springs integrate here (not in compile) for two reasons: this
-/// pass runs once per frame while collection may run zero times (culled
-/// groups) or — via chunk replays — read tracks without advancing them;
-/// and pushing motion bounds before the fast-path check keeps an
-/// otherwise-idle frame compiling instead of freezing the glide
-/// mid-flight (the same backstop `unsettled_text_bounds` provides for
-/// text). Bounds come back group-local with the group's absolute origin;
-/// the +2 px fringe matches the text backstop.
-fn advance_glass_morphs(arena: &mut TreeArena, region: &mut DamageRegion) {
-    for (local, ax, ay) in arena.advance_glass_morphs() {
-        region.push(
-            ResolvedRect::new(local.x + ax, local.y + ay, local.width, local.height).expand(2.0),
-        );
-    }
-}
-
-/// Re-adds liquid-glass lenses whose backdrop changed under them.
-///
-/// A lens samples backdrop from outside its own rect (the lens band, the
-/// wide-tail rings, the post-lens taps, the backdrop inset band, the
-/// ambient reach and the in-shader shadow — all inside its damage pad),
-/// so any damage touching its committed bounds invalidates the lens
-/// output — even when the lens node itself is static and the walk above
-/// contributed nothing for it. Without this, a blob sliding behind a
-/// still card leaves a stale refracted strip that only a later redamage
-/// clears.
-///
-/// Only the sliver that can actually be stale is pushed: each damage rect
-/// expanded by the lens's input reach, clipped to the lens bounds. Pushing
-/// whole lens bounds would union-merge neighbouring cards (their pads
-/// overlap) into one giant center rect. Scroll shifts count as damage: a
-/// blit moves the pixels the lens samples. Single pass, no fixpoint:
-/// glass-over-glass chains would need iteration and are rare enough to
-/// leave stale until the next frame touches them.
-fn repair_glass_lenses(arena: &TreeArena, damage: &mut DamageRegion) {
-    if damage.rects().is_empty() && damage.scroll_shifts().is_empty() {
-        return;
-    }
-    // Snapshot first: pushing below must not feed later lenses this frame
-    // (that would chain neighbouring lenses into one merged rect).
-    let rects = damage.rects().to_vec();
-    let shifts = damage.scroll_shifts().to_vec();
-    for (lens, reach) in arena.glass_lens_bounds() {
-        if lens.is_empty() || reach <= 0.0 {
-            continue;
-        }
-        for r in rects.iter().chain(shifts.iter().map(|s| &s.clip)) {
-            if !r.intersects(&lens) {
-                continue;
-            }
-            let sliver = r.expand(reach).intersect(&lens);
-            if !sliver.is_empty() {
-                damage.push(sliver);
-            }
-        }
-    }
-}
-
 /// Nearest scrollable+clip ancestor of `id`: the viewport whose box the
 /// damage walk threaded down. `expected` is that box (recomputed here would
 /// be identical); the walk up finds its node for overlay repair. `None` when
@@ -356,23 +283,16 @@ fn resolve_spatial_and_damage(
         )
     };
 
-    // Ambient light resolves top-down: the nearest override wins, and the
-    // resolved value is stashed for paint/bounds/hit testing to read. The
-    // stash always precedes its consumers within a frame (damage runs before
-    // compile), so it can never feed a stale light to fresh paint.
-    let ambient = arena
-        .get(id)
-        .style
-        .appearance
-        .light_override
-        .unwrap_or(inherited_light);
+    // Light overrides were purged with the legacy paint path: every node
+    // resolves to the inherited ambient value, so the stash still exists
+    // for bounds/hit testing to read but nothing can override it.
+    let ambient = inherited_light;
     arena.get_mut(id).state.core.resolved_light = ambient;
 
     let node_abs = node_tx.transform_point(Point::new(0.0, 0.0));
     // Unclipped occupancy drives damage: a node leaving its clip must still clear its old pixels.
     let full_bounds = arena.get(id).compute_visual_bounds(&node_tx, None);
     // Visible extent under the active clip: the unclipped box intersected.
-    // A second full projection (transform + shadow loop) for the same box
     // is pure waste (N1) — intersect is a few comparisons.
     let visual_bounds = match active_clip {
         Some(clip) => full_bounds.intersect(&clip),

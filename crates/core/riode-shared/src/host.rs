@@ -19,23 +19,9 @@ fn arg<'a>(ptr: *const c_char) -> &'a str {
     unsafe { CStr::from_ptr(ptr).to_str().unwrap_or("") }
 }
 
-fn parse_engine_name(raw: &str) -> RenderBackend {
-    match raw.to_lowercase().replace('_', "-").as_str() {
-        "tiny-skia" | "tinyskia" | "cpu" => RenderBackend::TinySkia,
-        "wgpu" | "raw-wgpu" | "rawgpu" => RenderBackend::Wgpu,
-        _ => RenderBackend::TinySkia,
-    }
-}
-
 #[no_mangle]
-pub extern "Rust" fn devkit_run(
-    package: *const c_char,
-    example: *const c_char,
-    workspace_root: *const c_char,
-    engine: *const c_char,
-) {
+pub extern "Rust" fn devkit_run(package: *const c_char, example: *const c_char, workspace_root: *const c_char) {
     riode::hot_reload::init_dev_logging();
-    let debugger = riode::app::VisualDebugger::new();
     let example_raw = arg(example);
     let example = (!example_raw.is_empty()).then(|| example_raw.to_string());
     let package_raw = arg(package);
@@ -61,22 +47,14 @@ pub extern "Rust" fn devkit_run(
     }
     let (info, title) = read_boot_chrome(&loop_config());
     let ext = ComponentReloadExtension::new(loop_config());
-    let backend = parse_engine_name(arg(engine));
-    // Multibackend runner (not single `App`): one shared engine, both
-    // factories live, so F7/Tab/1-2 switch rasterizers inside the hot loop.
-    // `backend` only picks the focused window at boot.
-    riode::app::multibackend::MultiBackend::config([
-        Some(crate::tiny_skia::create_backend),
-        Some(crate::wgpu::create_backend),
-    ])
-    .title(format!("{title} [1-2 engine | Tab/F7 cycle]"))
-    .size(info.width.max(1), info.height.max(1))
-    .font("Inter", include_bytes!("../../riode/assets/inter-var.ttf"))
-    .background(Color::hex(info.background))
-    .initial(backend)
-    .extension(debugger)
-    .extension(ext)
-    .run(placeholder);
+    App::config()
+        .title(title)
+        .size(info.width.max(1), info.height.max(1))
+        .font("Inter", include_bytes!("../../riode/assets/inter-var.ttf"))
+        .background(Color::hex(info.background))
+        .backend_factory(crate::wgpu::create_backend)
+        .extension(ext)
+        .run(placeholder);
 }
 
 fn placeholder() -> impl IntoElement {
@@ -177,18 +155,15 @@ fn selftest_body(version_fn: usize, root_fn: usize) -> i32 {
             engine.hot_reload().registry().contains("hot_ui::Counter"),
             "dylib component scopes tracked",
         )?;
-        let hero_fill = engine.with_arena(|arena, _| {
+        let hero_material = engine.with_arena(|arena, _| {
             let key: riode::foundation::Key = "hero".into();
             arena
                 .node_for_key(&key)
-                .and_then(|id| arena.get(id).style.appearance.fill.clone())
+                .and_then(|id| arena.get(id).style.material.clone())
         });
         check(
-            hero_fill
-                == Some(riode::foundation::Fill::from(
-                    riode::foundation::Color::hex(0xDC2626),
-                )),
-            "dylib hero color lands on the live node",
+            hero_material.is_some(),
+            "dylib hero material lands on the live node",
         )?;
         let height = engine.rect("counter").map(|r| r.height).unwrap_or(-1.0);
         check(

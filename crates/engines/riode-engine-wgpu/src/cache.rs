@@ -6,7 +6,7 @@
 // atlas generation: an atlas repack rewrites UVs, so stale glyph ranges are
 // dropped while rect-only ranges survive.
 
-use riode::foundation::{Point, Radius, ResolvedRect};
+use riode::foundation::{Point, ResolvedRect};
 use riode::scene::chunk::SceneChunk;
 use riode::scene::command::{hash_commands, transform_bits, SceneCommand};
 use rustc_hash::FxHashMap;
@@ -15,32 +15,10 @@ use std::sync::Arc;
 
 use crate::command::Op;
 use crate::image::ImageGpu;
-use crate::pipeline::{GlyphVertex, ImageVertex, RRectVertex, RectVertex, ShadowVertex};
+use crate::pipeline::{GlyphVertex, ImageVertex, RectVertex};
 
 /// Cap on retained chunks; eviction drops the least-recently-used frame.
 const MAX_CHUNKS: usize = 512;
-
-fn radius_key<H: Hasher>(r: &Radius, h: &mut H) {
-    match r {
-        Radius::Scalar(v) => {
-            0u8.hash(h);
-            v.to_bits().hash(h);
-        }
-        Radius::Max => 1u8.hash(h),
-        Radius::Corners {
-            top_left,
-            top_right,
-            bottom_right,
-            bottom_left,
-        } => {
-            2u8.hash(h);
-            top_left.to_bits().hash(h);
-            top_right.to_bits().hash(h);
-            bottom_right.to_bits().hash(h);
-            bottom_left.to_bits().hash(h);
-        }
-    }
-}
 
 fn rect_key<H: Hasher>(r: &ResolvedRect, h: &mut H) {
     r.x.to_bits().hash(h);
@@ -72,7 +50,6 @@ pub fn chunk_key(chunk: &SceneChunk, scale_q16: u16) -> u64 {
     chunk.inherited_clips.len().hash(&mut h);
     for clip in chunk.inherited_clips.iter() {
         rect_key(&clip.rect, &mut h);
-        radius_key(&clip.radius, &mut h);
     }
     h.finish()
 }
@@ -100,8 +77,6 @@ pub fn rebaseable_stream(commands: &[SceneCommand]) -> bool {
 pub struct CachedChunk {
     pub rects: Vec<RectVertex>,
     pub glyphs: Vec<GlyphVertex>,
-    pub rrects: Vec<RRectVertex>,
-    pub shadows: Vec<ShadowVertex>,
     pub images: Vec<ImageVertex>,
     /// GPU textures for this chunk's image ops, Arc-held so replay stays
     /// valid past LRU eviction from the ImageCache map.
@@ -124,8 +99,6 @@ impl CachedChunk {
     pub fn new(
         rects: Vec<RectVertex>,
         glyphs: Vec<GlyphVertex>,
-        rrects: Vec<RRectVertex>,
-        shadows: Vec<ShadowVertex>,
         images: Vec<ImageVertex>,
         image_binds: Vec<Arc<ImageGpu>>,
         ops: Vec<Op>,
@@ -138,8 +111,6 @@ impl CachedChunk {
         Self {
             rects,
             glyphs,
-            rrects,
-            shadows,
             images,
             image_binds,
             ops,
@@ -154,15 +125,6 @@ impl CachedChunk {
 
     /// Device-space translation from the baked origin to `live`, or `None`
     /// when replay must fall back to fresh emission.
-    ///
-    /// Three guards, each load-bearing: a scale change re-emits (baked device
-    /// px differ); a non-rebaseable stream re-emits (local frames); and when
-    /// glyphs are present the device-X shift must be integral — glyph UVs
-    /// bake the subpixel phase, so a fractional X move needs new bins (Y is
-    /// phase-free and rides the quad position). Rect/rrect verts are raw
-    /// device floats: translating them is exact to float rounding (~1e-4px,
-    /// invisible and non-accumulating — every replay translates from the
-    /// baked origin, never from the last replay).
     pub fn rebase_for(&self, live: Point, scale: f32) -> Option<(f32, f32)> {
         if !self.rebaseable || self.scale != scale {
             return None;
@@ -187,8 +149,6 @@ impl CachedChunk {
         dy: f32,
         rects: &mut Vec<RectVertex>,
         glyphs: &mut Vec<GlyphVertex>,
-        rrects: &mut Vec<RRectVertex>,
-        shadows: &mut Vec<ShadowVertex>,
         images: &mut Vec<ImageVertex>,
     ) {
         rects.extend(self.rects.iter().map(|v| RectVertex {
@@ -197,17 +157,6 @@ impl CachedChunk {
         }));
         glyphs.extend(self.glyphs.iter().map(|v| GlyphVertex {
             pos: [v.pos[0] + dx, v.pos[1] + dy],
-            ..*v
-        }));
-        rrects.extend(self.rrects.iter().map(|v| RRectVertex {
-            pos: [v.pos[0] + dx, v.pos[1] + dy],
-            fbox: [v.fbox[0] + dx, v.fbox[1] + dy, v.fbox[2], v.fbox[3]],
-            ibox: [v.ibox[0] + dx, v.ibox[1] + dy, v.ibox[2], v.ibox[3]],
-            ..*v
-        }));
-        shadows.extend(self.shadows.iter().map(|v| ShadowVertex {
-            pos: [v.pos[0] + dx, v.pos[1] + dy],
-            fbox: [v.fbox[0] + dx, v.fbox[1] + dy, v.fbox[2], v.fbox[3]],
             ..*v
         }));
         images.extend(self.images.iter().map(|v| ImageVertex {
@@ -288,8 +237,6 @@ impl ChunkCache {
         op: &Op,
         rect_base: u32,
         glyph_base: u32,
-        rrect_base: u32,
-        shadow_base: u32,
         image_base: u32,
         image_bind_base: u32,
     ) -> Op {
@@ -297,15 +244,6 @@ impl ChunkCache {
             Op::BaseQuads { start, count } => Op::BaseQuads {
                 start: start + rect_base,
                 count,
-            },
-            Op::Rects {
-                start,
-                count,
-                scissor,
-            } => Op::Rects {
-                start: start + rect_base,
-                count,
-                scissor,
             },
             Op::Glyphs {
                 start,
@@ -317,24 +255,6 @@ impl ChunkCache {
                 count,
                 scissor,
                 linear,
-            },
-            Op::RRects {
-                start,
-                count,
-                scissor,
-            } => Op::RRects {
-                start: start + rrect_base,
-                count,
-                scissor,
-            },
-            Op::Shadows {
-                start,
-                count,
-                scissor,
-            } => Op::Shadows {
-                start: start + shadow_base,
-                count,
-                scissor,
             },
             Op::Images {
                 start,
@@ -353,37 +273,23 @@ impl ChunkCache {
             // exhaustiveness; a stale params index is never read.
             Op::BeginLayer {
                 region,
-                params,
-                glass,
-                stages,
-                backdrop_stages,
                 card_rect,
-                card_radii,
+                params,
+                material,
             } => Op::BeginLayer {
                 region,
-                params,
-                glass,
-                stages: stages.clone(),
-                backdrop_stages: backdrop_stages.clone(),
                 card_rect,
-                card_radii,
+                params,
+                material,
             },
             Op::EndLayer {
                 start,
                 count,
                 scissor,
-                shadow_start,
-                shadows,
-                spill_start,
-                spill_count,
             } => Op::EndLayer {
                 start: start + rect_base,
                 count,
                 scissor,
-                shadow_start: shadow_start + rect_base,
-                shadows,
-                spill_start: spill_start + rect_base,
-                spill_count,
             },
         }
     }

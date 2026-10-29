@@ -7,12 +7,11 @@
 
 use std::sync::Arc;
 
-use crate::foundation::{Appearance, Constraints, Direction, Fill, IntrinsicSize, Point, Size};
+use crate::foundation::{Constraints, Direction, IntrinsicSize, Point, Size};
 use crate::scene::{SceneChunk, SceneCommand};
 use crate::text::config::TextConfig;
-use crate::text::decoration::decoration_rules;
 use crate::text::layout::TextLayout;
-use crate::text::selection::{caret_rect, selection_rects, TextSelection};
+use crate::text::selection::TextSelection;
 use crate::text::TextContext;
 
 impl TextConfig {
@@ -147,83 +146,21 @@ impl TextConfig {
         })
     }
 
-    /// Emits a shaped run, its selection highlight, decorations, and caret.
+    /// Emits a shaped run.
     ///
-    /// The highlight is pushed *before* the glyphs so translucent selection
-    /// tints the background rather than washing the text out; decorations stay
-    /// on top as before. A collapsed selection paints a 1px caret *after* the
-    /// glyphs when `focused` — the caller gates that on focus and the blink
-    /// phase, so blur and blink-off hide it while keeping the range.
-    /// Emits a shaped run, its selection highlight, decorations, and caret.
+    /// The purge removed every internal visual: no selection highlight, no
+    /// decoration rects, no caret. Text renders glyphs, full stop.
     pub fn emit(
         &self,
         layout: &Arc<TextLayout>,
         chunk: &mut SceneChunk,
-        selection: Option<TextSelection>,
-        focused: bool,
+        _selection: Option<TextSelection>,
+        _focused: bool,
     ) {
-        // Alignment is baked into the shaped layout, so it is shared without mutation.
-        if let Some(sel) = selection {
-            if !sel.is_collapsed() {
-                let rects = selection_rects(layout, &self.content, &sel);
-                tracing::debug!(
-                    range = ?sel.normalized(),
-                    rects = rects.len(),
-                    lines = layout.lines.len(),
-                    content_len = self.content.len(),
-                    "painting highlight"
-                );
-                for rect in rects {
-                    chunk.push(SceneCommand::DrawRect {
-                        rect,
-                        appearance: Appearance::EMPTY.with_fill(Fill::Solid(self.selection_color)),
-                    });
-                }
-            }
-        }
-        let decorations: Vec<crate::foundation::ResolvedRect> = if self.decoration.is_empty() {
-            Vec::new()
-        } else {
-            layout
-                .lines
-                .iter()
-                .flat_map(|line| decoration_rules(line, self.size, self.decoration))
-                .collect()
-        };
         chunk.push(SceneCommand::DrawText {
             origin: Point::ZERO,
             layout: Arc::clone(layout),
             color: self.color,
         });
-        for rect in decorations {
-            chunk.push(SceneCommand::DrawRect {
-                rect,
-                appearance: Appearance::EMPTY.with_fill(Fill::Solid(self.color)),
-            });
-        }
-        // A focused caret paints last, over the glyphs. Unfocused collapsed
-        // selections stay invisible, like a blurred browser field.
-        if focused {
-            if let Some(sel) = selection {
-                if sel.is_collapsed() {
-                    match caret_rect(layout, &self.content, sel.focus) {
-                        Some(rect) => {
-                            tracing::debug!(offset = sel.focus, "painting caret");
-                            chunk.push(SceneCommand::DrawRect {
-                                rect,
-                                appearance: Appearance::EMPTY.with_fill(Fill::Solid(self.color)),
-                            });
-                        }
-                        None => {
-                            tracing::debug!(
-                                offset = sel.focus,
-                                lines = layout.lines.len(),
-                                "caret rect missing"
-                            );
-                        }
-                    }
-                }
-            }
-        }
     }
 }

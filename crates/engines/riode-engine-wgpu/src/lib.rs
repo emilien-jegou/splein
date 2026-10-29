@@ -1,5 +1,3 @@
-// Single responsibility: Raw wgpu backend crate root and factory entry point.
-
 pub mod backend;
 pub mod cache;
 pub mod clip;
@@ -8,7 +6,6 @@ pub mod context;
 pub mod image;
 pub mod pipeline;
 pub mod renderer;
-pub mod shadow;
 pub mod svg;
 pub mod text;
 

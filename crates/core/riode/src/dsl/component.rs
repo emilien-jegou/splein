@@ -243,7 +243,7 @@ mod tests {
     use crate::dsl::component::IntoElement;
     use crate::dsl::element::Element;
     use crate::dsl::group;
-    use crate::foundation::Color;
+    use crate::foundation::{Color, Fill};
     use crate::prelude::component;
 
     /// A component body returns something `IntoElement`; the macro's wrapper converts it.
@@ -252,7 +252,7 @@ mod tests {
         group()
             .width(10.0 + taps as f32)
             .height(10.0)
-            .fill(Color::WHITE)
+            .material(Fill::solid(Color::WHITE))
             .into_element()
     }
 

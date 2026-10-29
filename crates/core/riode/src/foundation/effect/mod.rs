@@ -31,25 +31,16 @@ pub struct CustomShader {
     pub backdrop: BackdropNeed,
 }
 
-use crate::foundation::{
-    Backdrop, BlendMode, Filter, FilterOp, Glass, GlassLayer, Glow, LightEnvironment, Radius,
-    Refraction, Shadow, Spectral,
-};
+use crate::foundation::{BlendMode, Filter, FilterOp, LightEnvironment};
 
-/// Builtin primitive stages. Param-carrying variants (`Glass`, `Blend`,
-/// `Shadow`, `ClipRound`) own the material data the executor lowers into
-/// passes; the fine-grained glass stages (`Refract`…`Press`) are the
-/// Phase C split of today's monolithic optics pass.
+/// Builtin primitive stages.
 #[derive(Clone, Debug, PartialEq)]
 pub enum BuiltinStage {
     Blur { sigma: f32 },
     ColorMatrix { matrix: [f32; 20] },
-    ClipRound { radius: Radius },
-    Glass(GlassParams),
     Blend { mode: BlendMode },
-    Shadow(ShadowParams),
     // Phase C split of the glass optics pass. Authorable unit items
-    // (`backdrop_effects=[Refract(), …]`): they carry no knobs — the
+    // (`material=[Refract(), …]`): they carry no knobs — the
     // material rides `Glass`, the fold collects their stage ids into the
     // pass's dispatch list (see `glass_stage_ids`).
     Refract,
@@ -70,10 +61,6 @@ pub enum BuiltinStage {
     EnvReflect,
     LightSpill,
     CardBlend { mode_id: u32 },
-    /// Group-root marker: merges descendant members' glass into one
-    /// shared layer (spacing = smin merge radius factor input). Consumed
-    /// by compile; the executor emits no pass for it.
-    GlassGroup { spacing: f32 },
 }
 
 impl BuiltinStage {
@@ -105,18 +92,9 @@ impl BuiltinStage {
     }
 }
 
-/// Material bundle a `Glass` effect refracts through: today's `GlassLayer`
-/// value verbatim, so the executor's lowering is byte-identical to the
-/// current optics path until Phase C splits it.
-#[derive(Clone, Debug, PartialEq)]
-pub struct GlassParams {
-    pub layer: GlassLayer,
-}
-
-/// `BlendMode` carrier for the in-shader card/content composite.
+/// Shadow params (purged - shadow removed).
 #[derive(Clone, Debug, PartialEq)]
 pub struct ShadowParams {
-    pub shadow: Shadow,
     pub light: LightEnvironment,
 }
 
@@ -168,11 +146,11 @@ pub trait LayerEffect: Effect {
 }
 
 /// Backdrop-side vocabulary: effects that transform the sampled
-/// background (`backdrop_effects`, CSS `backdrop-filter` plus the glass
+/// background (`material`, CSS `backdrop-filter` plus the glass
 /// lens). The lens card is what the layer's sheet composites over.
 /// `Glass` lives here only — it is a backdrop phenomenon.
 pub trait BackdropEffect: Effect {
-    /// Box for a heterogeneous `backdrop_effects=[...]` list.
+    /// Box for a heterogeneous `material=[...]` list.
     fn into_backdrop_effect(self) -> Box<dyn Effect>
     where
         Self: Sized + 'static,
@@ -292,19 +270,6 @@ impl EffectStack {
             .fold(0.0, f32::max)
     }
 
-    /// Whether any stage snapshots the backdrop.
-    pub fn needs_backdrop_layer(&self) -> bool {
-        self.0.iter().any(|e| e.needs_backdrop())
-    }
-
-    /// Group-root spacing, if the stack declares a glass group.
-    pub fn glass_group_spacing(&self) -> Option<f32> {
-        self.0.iter().find_map(|e| match e.shader() {
-            EffectShader::Builtin(BuiltinStage::GlassGroup { spacing }) => Some(spacing),
-            _ => None,
-        })
-    }
-
     /// Lowering for engines until Phase D executes the stack directly:
     /// the stack's blur sigmas as `Blur` ops and each color stage as a
     /// raw `Matrix` op, in order. `None` when the stack carries no
@@ -329,31 +294,6 @@ impl EffectStack {
         } else {
             Some(Filter::from_ops(ops))
         }
-    }
-
-    /// First `Glass` stage's single-material components, if the stack's
-    /// glass is a lone lens (not a group): `(glass, backdrop, spectral,
-    /// glow, refraction)`.
-    pub fn glass_single(
-        &self,
-    ) -> Option<(Glass, Backdrop, Spectral, Glow, Refraction)> {
-        self.0.iter().find_map(|e| match e.shader() {
-            EffectShader::Builtin(BuiltinStage::Glass(p)) => match &p.layer {
-                GlassLayer::Single(g, b, s, gl, r) => Some((*g, *b, *s, *gl, *r)),
-                GlassLayer::Group(_) => None,
-            },
-            _ => None,
-        })
-    }
-
-    /// First `Glass` stage params, if the stack refracts a backdrop.
-    /// Engines and island extraction lower through this until Phase D
-    /// executes the stack directly.
-    pub fn glass_layer(&self) -> Option<GlassLayer> {
-        self.0.iter().find_map(|e| match e.shader() {
-            EffectShader::Builtin(BuiltinStage::Glass(p)) => Some(p.layer.clone()),
-            _ => None,
-        })
     }
 
     /// First `Blend` stage mode, if the stack composites with a blend mode.
@@ -516,58 +456,6 @@ fn debug_id(tag: u8, v: &impl std::fmt::Debug) -> EffectId {
     hash_id(&b)
 }
 
-/// Liquid-glass refraction effect: snapshots the backdrop and refracts it
-/// through the material's SDF. Carries today's `GlassLayer` value so the
-/// executor's lowering is byte-identical until Phase C splits the optics.
-#[derive(Clone, Debug, PartialEq)]
-pub struct GlassEffect {
-    pub params: GlassParams,
-}
-
-impl GlassEffect {
-    pub fn single(
-        glass: Glass,
-        backdrop: Backdrop,
-        spectral: Spectral,
-        glow: Glow,
-        refraction: Refraction,
-    ) -> Self {
-        Self {
-            params: GlassParams {
-                layer: GlassLayer::Single(glass, backdrop, spectral, glow, refraction),
-            },
-        }
-    }
-
-    pub fn new(layer: GlassLayer) -> Self {
-        Self {
-            params: GlassParams { layer },
-        }
-    }
-}
-
-impl Effect for GlassEffect {
-    fn id(&self) -> EffectId {
-        debug_id(0x10, &self.params.layer)
-    }
-
-    fn needs_backdrop(&self) -> bool {
-        true
-    }
-
-    fn pad(&self, scale: f32) -> f32 {
-        self.params.layer.device_pad(scale)
-    }
-
-    fn shader(&self) -> EffectShader {
-        EffectShader::Builtin(BuiltinStage::Glass(self.params.clone()))
-    }
-
-    fn clone_box(&self) -> Box<dyn Effect> {
-        Box::new(self.clone())
-    }
-}
-
 /// CSS mix-blend-mode composite against the backdrop snapshot.
 #[derive(Clone, Debug, PartialEq)]
 pub struct BlendEffect {
@@ -602,170 +490,19 @@ impl Effect for BlendEffect {
     }
 }
 
-/// Alpha-silhouette shadow cast from the layer's finished content.
-#[derive(Clone, Debug, PartialEq)]
-pub struct ShadowEffect {
-    pub params: ShadowParams,
-}
 
-impl ShadowEffect {
-    pub fn new(shadow: Shadow, light: LightEnvironment) -> Self {
-        Self {
-            params: ShadowParams { shadow, light },
-        }
-    }
-}
 
-impl Effect for ShadowEffect {
-    fn id(&self) -> EffectId {
-        debug_id(0x12, &self.params.shadow)
-    }
 
-    fn needs_backdrop(&self) -> bool {
-        !self.params.shadow.blend.is_normal()
-    }
 
-    fn pad(&self, scale: f32) -> f32 {
-        self.params.shadow.max_extent() * scale
-    }
-
-    fn shader(&self) -> EffectShader {
-        EffectShader::Builtin(BuiltinStage::Shadow(self.params.clone()))
-    }
-
-    fn clone_box(&self) -> Box<dyn Effect> {
-        Box::new(self.clone())
-    }
-}
-
-/// Rounded-rect clip as an effect: writes SDF `depth`/`coverage` into the
-/// context for downstream stages (glass refracts inside it, shadows cast
-/// from it). Replaces `Radius`-as-prop on the layer path.
-#[derive(Clone, Debug, PartialEq)]
-pub struct ClipRound {
-    pub radius: Radius,
-}
-
-impl ClipRound {
-    pub fn new(radius: Radius) -> Self {
-        Self { radius }
-    }
-}
-
-impl Effect for ClipRound {
-    fn id(&self) -> EffectId {
-        debug_id(0x13, &self.radius)
-    }
-
-    fn needs_backdrop(&self) -> bool {
-        false
-    }
-
-    fn pad(&self, _scale: f32) -> f32 {
-        1.5
-    }
-
-    fn shader(&self) -> EffectShader {
-        EffectShader::Builtin(BuiltinStage::ClipRound {
-            radius: self.radius,
-        })
-    }
-
-    fn clone_box(&self) -> Box<dyn Effect> {
-        Box::new(self.clone())
-    }
-}
-
-/// Glass-group root marker: merges descendant members' glass into one
-/// shared layer. Consumed by compile (`enclosing_glass_group`); the
-/// executor emits no pass for it.
-#[derive(Clone, Debug, PartialEq)]
-pub struct GlassGroupEffect {
-    pub spacing: f32,
-}
-
-impl GlassGroupEffect {
-    pub fn new(spacing: f32) -> Self {
-        Self {
-            spacing: spacing.max(0.0),
-        }
-    }
-}
-
-impl Effect for GlassGroupEffect {
-    fn id(&self) -> EffectId {
-        debug_id(0x14, &self.spacing.to_bits())
-    }
-
-    fn needs_backdrop(&self) -> bool {
-        false
-    }
-
-    fn pad(&self, scale: f32) -> f32 {
-        self.spacing * scale
-    }
-
-    fn shader(&self) -> EffectShader {
-        EffectShader::Builtin(BuiltinStage::GlassGroup {
-            spacing: self.spacing,
-        })
-    }
-
-    fn clone_box(&self) -> Box<dyn Effect> {
-        Box::new(self.clone())
-    }
-}
-
-// Unit items of the glass pass: authorable in `backdrop_effects=[...]`,
+// Unit items of the glass pass: authorable in `material=[...]`,
 // no knobs of their own — the material (strength, sigmas, colours) rides
 // the stack's `Glass` item, the fold collects their stage ids (one per
 // item, `Tone` two) into the pass's dispatch list. They never open a
 // pass of their own: `Glass` owns the snapshot (`needs_backdrop`).
-
-/// Lens displacement — the backdrop read position (`stageRefract`).
-#[derive(Clone, Debug, PartialEq)]
-pub struct Refract();
-
-impl Effect for Refract {
-    fn id(&self) -> EffectId {
-        debug_id(0x20, self)
-    }
-    fn needs_backdrop(&self) -> bool {
-        false
-    }
-    fn pad(&self, _scale: f32) -> f32 {
-        0.0
-    }
-    fn shader(&self) -> EffectShader {
-        EffectShader::Builtin(BuiltinStage::Refract)
-    }
-    fn clone_box(&self) -> Box<dyn Effect> {
-        Box::new(self.clone())
-    }
-}
-
-/// Frost core / post-lens / wide taps — also the pass's backdrop read
-/// (`stageFrost` fills `col` from the sample point).
-#[derive(Clone, Debug, PartialEq)]
-pub struct Frost();
-
-impl Effect for Frost {
-    fn id(&self) -> EffectId {
-        debug_id(0x21, self)
-    }
-    fn needs_backdrop(&self) -> bool {
-        false
-    }
-    fn pad(&self, _scale: f32) -> f32 {
-        0.0
-    }
-    fn shader(&self) -> EffectShader {
-        EffectShader::Builtin(BuiltinStage::Frost)
-    }
-    fn clone_box(&self) -> Box<dyn Effect> {
-        Box::new(self.clone())
-    }
-}
+//
+// (`Refract`/`Frost` unit markers are gone — the Chain-spec primitives
+// of the same names in `shading::primitives` are the authoring surface
+// now; the old no-knob markers died with `glass/chain.rs`.)
 
 /// Per-wavelength widening of the sample (`stageSpectral`).
 #[derive(Clone, Debug, PartialEq)]
@@ -1047,22 +784,18 @@ impl Effect for EnvReflect {
 }
 
 // Vocabulary impls: what may be authored in `layer_effects=[...]` (the
-// sheet) versus `backdrop_effects=[...]` (the sampled backdrop + lens).
+// sheet) versus `material=[...]` (the sampled backdrop + lens).
 // `Glass` is backdrop-only: it refracts the backdrop, so it has no
 // meaning on a transparent sheet.
 
 impl LayerEffect for Blur {}
 impl LayerEffect for ColorMatrix {}
 impl LayerEffect for Saturate {}
-impl LayerEffect for ShadowEffect {}
 
 impl BackdropEffect for Blur {}
 impl BackdropEffect for ColorMatrix {}
 impl BackdropEffect for Saturate {}
-impl BackdropEffect for GlassEffect {}
 impl BackdropEffect for BlendEffect {}
-impl BackdropEffect for Refract {}
-impl BackdropEffect for Frost {}
 impl BackdropEffect for Disperse {}
 impl BackdropEffect for Saturation {}
 impl BackdropEffect for Tone {}
@@ -1196,7 +929,7 @@ impl Effect for Warp {
 /// lowering target. Phase 0 hand-writes the WGSL (a passthrough surface
 /// for the mechanism demo); Phase 1's `view!` material form emits the
 /// same shape from the closure algebra. Backdrop-side: it reads the
-/// snapshot/backdrop like glass, so it rides `backdrop_effects`.
+/// snapshot/backdrop like glass, so it rides `material`.
 ///
 /// Identity (D-M5): the `EffectId` folds the WGSL source *and* the
 /// uniform values, so a value change (hover) repaints without a

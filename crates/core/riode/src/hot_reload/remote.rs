@@ -20,7 +20,7 @@
 
 use crate::dsl::element::Element;
 use crate::dsl::{group, text, IntoElement};
-use crate::foundation::{Color, Direction, Size};
+use crate::foundation::{Color, Direction, Fill, Size};
 use crate::reactive::{ReactiveRuntime, Signal};
 use rustc_hash::FxHashMap;
 use std::cell::RefCell;
@@ -410,10 +410,7 @@ impl RemoteHost {
             .width(remote_size(node.width))
             .height(remote_size(node.height));
         if let Some(fill) = node.fill {
-            out = out.fill(Color::hex(fill));
-        }
-        if node.radius > 0.0 {
-            out = out.radius(node.radius);
+            out = out.material(Fill::solid(Color::hex(fill)));
         }
         if node.gap > 0.0 {
             out = out.gap(node.gap);

@@ -1,57 +1,29 @@
 [workspace]
 resolver = "2"
 members = [
-  "apps/splein",
-  "apps/dock",
-  "apps/desktop-glass",
   "crates/core/riode",
   "crates/core/riode-shader",
-  "crates/ui/riode-anodeui",
-  "crates/core/riode/benches/bench_suite",
   "crates/core/riode/macros",
   "examples/riode-hot-gen",
   "crates/core/riode-shared",
-  "crates/engines/riode-engine-tiny-skia",
   "crates/engines/riode-engine-wgpu",
-  "crates/platforms/riode-platform-android",
-  "crates/platforms/riode-platform-ios",
-  "crates/platforms/riode-platform-macos",
-  "crates/platforms/riode-platform-wayland",
-  "crates/platforms/riode-platform-windows",
-  "crates/shims/riode-android",
-  "crates/shims/riode-ios",
-  "crates/shims/riode-macos",
-  "crates/shims/riode-tiny-skia",
-  "crates/shims/riode-wayland",
-  "crates/shims/riode-wgpu",
-  "crates/shims/riode-windows",
   "crates/tools/riode-cli",
   "plugins/riode-shader-glue",
   "examples",
 ]
 
+# The purge target: everything that must compile for a demo to build and run.
+# Platform/shim crates are parked out of the default set until they are needed.
 default-members = [
-  "apps/splein",
   # TODO: Instead of two packages riode should re-export local macros
   "crates/core/riode-shader",
   "crates/core/riode",
   "crates/core/riode/macros",
-  "crates/engines/riode-engine-tiny-skia",
+  "crates/core/riode-shared",
   "crates/engines/riode-engine-wgpu",
-  "crates/platforms/riode-platform-android",
-  "crates/platforms/riode-platform-ios",
-  "crates/platforms/riode-platform-macos",
-  "crates/platforms/riode-platform-wayland",
-  "crates/platforms/riode-platform-windows",
-  "crates/shims/riode-android",
-  "crates/shims/riode-ios",
-  "crates/shims/riode-macos",
-  "crates/shims/riode-tiny-skia",
-  "crates/shims/riode-wayland",
-  "crates/shims/riode-wgpu",
-  "crates/shims/riode-windows",
   "crates/tools/riode-cli",
-  "examples"
+  "examples/riode-hot-gen",
+  "examples",
 ]
 
 [workspace.dependencies]

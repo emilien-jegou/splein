@@ -19,31 +19,19 @@ pub struct GroupDef {
     pub key: Option<Key>,
     pub width: Option<Prop<Size>>,
     pub height: Option<Prop<Size>>,
-    pub fill: Option<Prop<Option<Fill>>>,
-    pub opacity: Option<Prop<f32>>,
     pub transform: Option<Prop<Transform>>,
     pub x: Option<Prop<f32>>,
     pub y: Option<Prop<f32>>,
     pub scale: Option<Prop<f32>>,
     pub rotate_degrees: Option<Prop<f32>>,
-    pub shadow: Option<Prop<Shadow>>,
-    /// Backdrop effects: run on the sampled background before the layer
-    /// composites (CSS `backdrop-filter`, plus the glass lens). The
-    /// snapshot is read-only input — these stages transform a copy the
-    /// glass optics and blend then sample; the layer's sheet composites
-    /// over the result. Vocabulary: `Blur`/`Saturate`/`ColorMatrix`
-    /// and `Glass` (backdrop-only — it refracts the backdrop).
-    pub backdrop_effects: Option<Prop<EffectStack>>,
-    /// Layer effects: run on the layer's own rasterized content (CSS
-    /// `filter`). Vocabulary: `Blur`/`Saturate`/`ColorMatrix`/`Shadow`
-    /// — never `Glass` (a transparent sheet has nothing to refract).
-    pub layer_effects: Option<Prop<EffectStack>>,
-    pub light_override: Option<LightEnvironment>,
+    /// Material: the sole carrier of visual identity — the ordered
+    /// shading chain over the sampled background. Everything paintable
+    /// is a `Stage` inside this chain; there is no `fill`, `stroke`,
+    /// `view!` key: `material=` (block, bracket list, or chain expr).
+    pub material: Option<Prop<Material>>,
     pub layout: LayoutConfig,
     pub margin: Margin,
     pub padding: Padding,
-    pub stroke: Option<Stroke>,
-    pub radius: Radius,
     pub clip: bool,
     pub is_absolute: bool,
     /// Scroll viewport marker, retained on the style (see `NodeStyle`).
@@ -112,22 +100,15 @@ pub fn group() -> GroupDef {
         key: None,
         width: None,
         height: None,
-        fill: None,
-        opacity: None,
         transform: None,
         x: None,
         y: None,
         scale: None,
         rotate_degrees: None,
-        shadow: None,
-        backdrop_effects: None,
-        layer_effects: None,
-        light_override: None,
+        material: None,
         layout: LayoutConfig::default(),
         margin: Margin::ZERO,
         padding: Padding::ZERO,
-        stroke: None,
-        radius: Radius::ZERO,
         clip: false,
         is_absolute: false,
         scrollable: false,
@@ -162,20 +143,6 @@ impl GroupDef {
         self
     }
 
-    pub fn fill<P: IntoProp<Fill>>(mut self, p: P) -> Self {
-        let prop = p.into_prop();
-        self.fill = Some(match prop {
-            Prop::Static(v) => Prop::Static(Some(v)),
-            Prop::Dynamic(f) => Prop::Dynamic(std::rc::Rc::new(move || Some(f()))),
-            // Markers compose through `.map`, like any other staged transform.
-            Prop::Context(m) => Prop::Context(m.map(Some)),
-        });
-        self
-    }
-    pub fn opacity<P: IntoProp<f32>>(mut self, p: P) -> Self {
-        self.opacity = Some(p.into_prop());
-        self
-    }
     pub fn transform<P: IntoProp<Transform>>(mut self, t: P) -> Self {
         self.transform = Some(t.into_prop());
         self
@@ -213,57 +180,12 @@ impl GroupDef {
         self.rotate_degrees = Some(Prop::Dynamic(Rc::new(move || source.read())));
         self
     }
-    /// Shadow from anything shadow-like: an elevation (`8.0`), an
-    /// `(elevation, color)` pair, a [`Shadow`], a closure `move || ...`, or
-    /// a reactive signal. Static values stay static; closures and signals
-    /// re-evaluate when their dependencies change.
-    pub fn shadow<P: IntoProp<Shadow>>(mut self, s: P) -> Self {
-        self.shadow = Some(s.into_prop());
-        self
-    }
-
-    /// Material: the ordered stack of surface + lens stages over the
-    /// sampled background (CSS `backdrop-filter`, plus the glass lens). The
-    /// snapshot is read-only input — these stages transform a copy the
-    /// glass optics and blend then sample; the layer's sheet composites
-    /// over the result. Vocabulary: `Blur`/`Saturate`/`ColorMatrix`
-    /// and `Glass` (backdrop-only — it refracts the backdrop).
-    /// `view!` key: `material=` (block, bracket list, or stack expr).
-    pub fn material<P: IntoProp<EffectStack>>(mut self, e: P) -> Self {
-        self.backdrop_effects = Some(e.into_prop());
-        self
-    }
-
-    /// Backdrop effects: run on the layer's own rasterized content (CSS
-    /// `filter`). Never `Glass` — the lens is a backdrop stage.
-    pub fn layer_effects<P: IntoProp<EffectStack>>(mut self, e: P) -> Self {
-        self.layer_effects = Some(e.into_prop());
-        self
-    }
-
-    /// Removed: `backdrop_effects` is now `material=` (same `EffectStack`
-    /// semantics; `view!` routes `material={...}` blocks through the
-    /// material interpreter). Loud error, never a silent misroute.
-    #[deprecated(note = "renamed: use `material(...)` (`view!` key `material=`)")]
-    #[allow(deprecated)]
-    pub fn backdrop_effects<P: IntoProp<EffectStack>>(mut self, e: P) -> Self {
-        self.backdrop_effects = Some(e.into_prop());
-        self
-    }
-
-    /// Removed: `backdrop` is now `material=` (same `EffectStack`
-    /// semantics). Loud error, never a silent misroute.
-    #[deprecated(note = "renamed: use `material(...)` (`view!` key `material=`)")]
-    #[allow(deprecated)]
-    pub fn backdrop<P: IntoProp<EffectStack>>(mut self, e: P) -> Self {
-        self.backdrop_effects(e)
-    }
-
-    /// Light override for this subtree: children inherit it unless they
-    /// declare their own. Resolved during paint traversal, so overrides
-    /// never touch layout or reconciliation.
-    pub fn light(mut self, light: LightEnvironment) -> Self {
-        self.light_override = Some(light);
+    /// Material: the ordered shading chain over the sampled background
+    /// these stages transform a copy the chain then samples; the layer's
+    /// sheet composites over the result.
+    /// `view!` key: `material=` (block, bracket list, or chain expr).
+    pub fn material<P: IntoProp<Material>>(mut self, e: P) -> Self {
+        self.material = Some(e.into_prop());
         self
     }
 
@@ -286,14 +208,6 @@ impl GroupDef {
         self
     }
 
-    pub fn stroke(mut self, s: impl Into<Stroke>) -> Self {
-        self.stroke = Some(s.into());
-        self
-    }
-    pub fn radius<R: Into<Radius>>(mut self, r: R) -> Self {
-        self.radius = r.into();
-        self
-    }
     pub fn clip(mut self, c: bool) -> Self {
         self.clip = c;
         self
@@ -422,14 +336,11 @@ impl GroupDef {
         }
         is_ctx(&self.width)
             || is_ctx(&self.height)
-            || is_ctx(&self.fill)
-            || is_ctx(&self.opacity)
             || is_ctx(&self.transform)
             || is_ctx(&self.x)
             || is_ctx(&self.y)
             || is_ctx(&self.scale)
             || is_ctx(&self.rotate_degrees)
-            || is_ctx(&self.shadow)
             || is_ctx(&self.z_index)
             || is_ctx(&self.presence)
             || is_ctx(&self.scroll_offset)
@@ -936,17 +847,33 @@ pub fn flatten_segments(segments: &[ChildSegment]) -> Vec<Element> {
     out
 }
 
-/// `effects(vec![Blur::new(4.0).into_effect(), Saturate::new(1.3).into_effect()])`:
-/// a boxed-effect vec converts into a static stack prop.
-impl IntoProp<EffectStack> for Vec<Box<dyn Effect>> {
-    fn into_prop(self) -> Prop<EffectStack> {
-        Prop::Static(EffectStack::from(self))
+/// converts into a static chain prop.
+impl IntoProp<Material> for Material {
+    fn into_prop(self) -> Prop<Material> {
+        Prop::Static(self)
     }
 }
 
-/// `effects(stack)` passthrough for a prebuilt stack.
-impl IntoProp<EffectStack> for EffectStack {
-    fn into_prop(self) -> Prop<EffectStack> {
-        Prop::Static(self)
+/// `material=Fill::solid(…)` — a single-stage chain. This is the one
+/// conversion the purge leaves for paint: `Fill` *is* a `Stage`, so the
+/// bracket-list and single-value spellings both land here.
+impl IntoProp<Material> for Fill {
+    fn into_prop(self) -> Prop<Material> {
+        Prop::Static(Material::collect([self]))
+    }
+}
+
+/// `material={|geo: &Geo| …}`: the macro wraps the closure in
+/// [`GeoFn`]; the closure re-evaluates per frame against the fresh
+/// `Geo` (the closure IS the compile path — plan Part 3 (4)). It
+/// stores as a static one-stage chain whose stage re-evaluates the
+/// closure at write time.
+impl<F, S> IntoProp<Material> for GeoFn<F>
+where
+    F: Fn(&Geo) -> S + 'static,
+    S: Stage,
+{
+    fn into_prop(self) -> Prop<Material> {
+        Prop::Static(Material::collect([self]))
     }
 }

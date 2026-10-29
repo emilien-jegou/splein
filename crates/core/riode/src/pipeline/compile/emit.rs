@@ -1,52 +1,16 @@
 // Single responsibility: Node coordinate framing, transformation, and display list command emission.
 
-use crate::foundation::{EffectStack, Point, Radius, ResolvedRect, ShadowShape, Transform};
+use crate::foundation::{Material, Point, ResolvedRect, Transform};
 use crate::scene::{LayerId, PaintContext, SceneChunk, SceneCommand};
 use crate::text::TextContext;
 use crate::tree::LayoutNode;
 use crate::tree::NodeKind;
 
-/// Offscreen margin an alpha-silhouette drop shadow needs around its
-/// layer's content, in layout px — largest over the shadow's layers of
-/// `max(|offset|) + layer_pad` (the offset displaces the silhouette, the
-/// pad covers the blur reach on top of it). `0.0` when the node casts no
-/// alpha drop shadow (including `inset`, which paints as a box interior).
-///
-/// This is also the layer-existence test: a non-zero pad means the
-/// element's content alpha feeds a shadow, so the layer needs an
-/// offscreen even without a filter. [`node_needs_layer`] and the
-/// `BeginLayer` emission both ask this one function, so "open a layer"
-/// and "size its offscreen" can never disagree.
-#[inline(always)]
-pub(crate) fn node_alpha_shadow_pad(node: &LayoutNode) -> f32 {
-    let Some(shadow) = &node.style.appearance.shadow else {
-        return 0.0;
-    };
-    if shadow.shape != ShadowShape::Alpha
-        || shadow.inset
-        || shadow.layers().is_empty()
-    {
-        return 0.0;
-    }
-    let light = &node.state.core.resolved_light;
-    shadow
-        .layers()
-        .iter()
-        .map(|layer| {
-            let (ox, oy) = shadow.layer_offset(light, layer);
-            ox.abs().max(oy.abs()) + shadow.layer_pad(layer)
-        })
-        .fold(0.0, f32::max)
-}
-
-/// Whether a node opens a layer, and what glass that layer carries.
+/// Whether a node opens a layer, and what material that layer carries.
 ///
 /// Decided in `hierarchy.rs` (it alone sees ancestors): a group root
-/// always opens one, a glass node inside a group never does (its shape
-/// joins the group's layer), everything else follows the old rule
-/// (explicit `has_layer`, filter, own glass, alpha-silhouette shadow)
-/// plus blend: any non-`Normal` blend mode opens one (the backdrop
-/// snapshot + in-shader composite live in the layer).
+/// always opens one, and any node carrying a `material` chain opens one
+/// because the pass needs an offscreen to sample its backdrop into.
 /// One struct, passed to both enter and exit, so the push and pop can
 /// never disagree.
 #[derive(Clone, Debug)]
@@ -56,72 +20,37 @@ pub struct NodeLayer {
     /// rect is the union of member rects (group-local, may start
     /// off-origin when members overhang).
     pub rect: ResolvedRect,
-    /// Layer effects (the sheet's transform) cloned from the node's
-    /// appearance; `None` when the node declares no `layer_effects()`.
-    pub layer_effects: Option<EffectStack>,
-    /// Backdrop effects (sampled-background transform + the lens)
-    /// cloned from the node's appearance; `None` when the node declares
-    /// no `backdrop_effects()`.
-    pub backdrop_effects: Option<EffectStack>,
+    /// The material chain — the sole carrier of visual identity. `None`
+    /// when the node declares no `material()`.
+    pub material: Option<Material>,
     /// Press content transform (node-local, about the content centre):
-    /// the pressed member's content scales with its lens. `None` when
-    /// the press is glow/light only (identity transform).
+    /// the pressed member's content scales with its lens. `None` when the
+    /// press is glow/light only (identity transform).
     pub press: Option<Transform>,
 }
 
 impl NodeLayer {
-    /// Whether the emitted layer refracts a backdrop (a `Glass` stage in
-    /// the stack). The parent-target shadow hoist keys off this: inside
-    /// the glass offscreen the shadow would be masked by the lens.
-    pub fn has_glass(&self) -> bool {
-        self.backdrop_effects
-            .as_ref()
-            .is_some_and(|s| s.glass_layer().is_some())
+    /// Whether the emitted layer runs the material pass.
+    pub fn has_material(&self) -> bool {
+        self.material.is_some()
     }
 
-    /// Whether the emitted layer samples the backdrop: any backdrop
-    /// stage at all (glass included — it is a backdrop stage).
+    /// Whether the emitted layer samples the backdrop.
     pub fn needs_backdrop(&self) -> bool {
-        self.backdrop_effects
-            .as_ref()
-            .is_some_and(|s| !s.is_empty())
+        self.material.is_some()
     }
 }
 
-/// The corner radius of the single clip a node imposes on its content, or `None` when it clips
-/// nothing at all.
-///
-/// One clip, not two. A node whose render box is animating is clipped to that box with *square*
-/// corners: the box's edge is a moving reveal boundary, not a designed corner, so clipping to the
-/// declared radius there would slice glyphs along a curve mid-flight. Once the box settles the
-/// declared radius takes over and content is clipped by the real corners again.
-///
-/// Pushing both used to look equivalent but was not: the rounded clip and the square reveal bound
-/// the same rect, so the intersection was the rounded shape and the square reveal was inert. Every
-/// animating clipped view was therefore revealing along its corner curve.
-///
-/// This is the only place that rule is written down. The display-list push, the inherited-clip set a
-/// descendant chunk has to re-assert, and the matching pop all consult it, because when they each
-/// spelled the condition out they drifted -- and a push/pop pair that disagrees corrupts the clip
-/// stack for every tile drawn after it, which is close to untraceable from a screenshot.
-///
-/// The rect is not part of the answer: callers pair this radius with the node's render box in
-/// whichever space they need, local for the display list and absolute for inherited clips.
-#[inline(always)]
-pub fn node_clip_radius(node: &LayoutNode) -> Option<Radius> {
-    if node.style.clip {
-        Some(node.style.appearance.radius)
-    } else {
-        None
-    }
-}
 
-/// Pushes affine transforms, opacity, layers, and clips for a node into the chunk.
+/// Pushes affine transforms, layers, and clips for a node into the chunk.
 ///
 /// When `hoist_root_transform` is set (stacking-context roots only), the node's
 /// own effective transform is recorded into `chunk.placement` instead of being
 /// pushed: placement is what moves when the node animates, so keeping it out
 /// of the stream keeps content reusable across transform-only motion.
+///
+/// Clips are square: `radius` was purged, so a clipping node bounds its
+/// content with its render box outright.
 #[inline(always)]
 pub fn enter_node_frame(
     node: &LayoutNode,
@@ -139,33 +68,11 @@ pub fn enter_node_frame(
     let painted = paint.unwrap_or(node.resolved_rect);
     let local_rect = ResolvedRect::new(0.0, 0.0, painted.width, painted.height);
     chunk.push(SceneCommand::PushOffset(Point::new(x, y)));
-    // A glass node's cast shadow paints to the PARENT target, *before* its
-    // glass layer opens: inside the layer it would be rasterized into the
-    // glass offscreen, which the lens composite replaces (the shader is
-    // transparent outside the shape) — an invisible shadow. `emit_node_content`
-    // skips the shadow when this hoist fires, so it draws exactly once.
-    // Identity-transform glass (every shipped demo) is unaffected by the
-    // hoist landing before the local transform below.
-    if layer.has_glass() {
-        if let Some(s) = &node.style.appearance.shadow {
-            if !s.inset {
-                chunk.push(SceneCommand::DrawShadow {
-                    rect: local_rect,
-                    radius: node.style.appearance.radius,
-                    shadow: s.clone(),
-                    light: node.state.core.resolved_light,
-                });
-            }
-        }
-    }
     if layer.needs_layer {
         chunk.push(SceneCommand::BeginLayer {
             id: layer_id,
             rect: layer.rect,
-            radius: node.style.appearance.radius,
-            layer_effects: layer.layer_effects.clone(),
-            backdrop_effects: layer.backdrop_effects.clone(),
-            shadow_pad: node_alpha_shadow_pad(node),
+            material: layer.material.clone(),
         });
     }
     let transform = node.effective_transform();
@@ -185,15 +92,8 @@ pub fn enter_node_frame(
     if let Some(press) = pressed {
         chunk.push(SceneCommand::PushTransform(press));
     }
-    let opacity = node.effective_opacity();
-    if opacity < 1.0 {
-        chunk.push(SceneCommand::PushOpacity(opacity));
-    }
-    if let Some(radius) = node_clip_radius(node) {
-        chunk.push(SceneCommand::PushClip {
-            rect: local_rect,
-            radius,
-        });
+    if node.style.clip {
+        chunk.push(SceneCommand::PushClip { rect: local_rect });
     }
 }
 
@@ -212,11 +112,8 @@ pub fn exit_node_frame(
     // Pops exactly what the matching enter pushed (same `NodeLayer`), so
     // the pop can never disagree with the push and unbalance the clip
     // stack.
-    if node_clip_radius(node).is_some() {
+    if node.style.clip {
         chunk.push(SceneCommand::PopClip);
-    }
-    if node.effective_opacity() < 1.0 {
-        chunk.push(SceneCommand::PopOpacity);
     }
     if layer.press.is_some() {
         chunk.push(SceneCommand::PopTransform);
@@ -230,13 +127,17 @@ pub fn exit_node_frame(
     chunk.push(SceneCommand::PopOffset);
 }
 
-/// Emits shadows, rect fills/strokes, shaped text, or custom primitives into the active chunk.
+/// Emits shaped text or custom primitives into the active chunk.
 ///
-/// `caret_visible` is the engine's blink phase; the caret paints only while it
-/// is on (and the node is focused with a collapsed selection).
+/// material layer (opened in `enter_node_frame`), not through a draw
+/// command here.
+///
+/// `caret_visible` is the engine's blink phase; the caret itself was
+/// purged with the other internal visuals, so the flag only reaches
+/// `Text::emit` for compatibility.
 /// `abs_origin_y` is the absolute layout-space Y of the node's content
 /// origin (accumulated ancestor offsets). A resting text run nudges its
-/// whole content (glyphs, decorations, caret) by one extra offset so the
+/// whole content (glyphs, decorations) by one extra offset so the
 /// absolute run Y lands on a whole pixel — engines rasterize whatever
 /// origin they receive, no flag needed.
 pub fn emit_node_content(
@@ -246,61 +147,12 @@ pub fn emit_node_content(
     caret_visible: bool,
     abs_origin_y: f32,
     paint: Option<ResolvedRect>,
-    layer: &NodeLayer,
+    _layer: &NodeLayer,
 ) {
-    let settled = paint.unwrap_or(node.resolved_rect);
-    // A node that declares itself a clipping boundary owns its render box as a *surface*:
-    // the card the user sees growing must paint up to the edge that is visibly moving, not
-    // stop at its settled height while its own contents reveal past it. A node that is only
-    // being repositioned by a transition is not a boundary, so its background stays at the
-    // flow size and only its origin moves.
-    let surface_rect = if node.style.clip {
-        ResolvedRect::new(0.0, 0.0, settled.width, settled.height)
-    } else {
-        ResolvedRect::new(0.0, 0.0, settled.width, settled.height)
-    };
+    let _ = paint;
     // Interior content is always laid out at the flow size and revealed by the box above,
     // which is what stops glyphs from stretching while the surface grows around them.
     let flow_rect = ResolvedRect::new(0.0, 0.0, node.resolved_rect.width, node.resolved_rect.height);
-
-    // Drop shadows paint behind the fill; inset shadows darken the fill's
-    // interior and must paint after it (CSS: inset box-shadow sits above
-    // the background, below content). A glass node's shadow was already
-    // hoisted to the parent target in `enter_node_frame`, so it is skipped
-    // here (inside the glass offscreen it would never be seen).
-    if let Some(s) = &node.style.appearance.shadow {
-        if !s.inset && !layer.has_glass() {
-            chunk.push(SceneCommand::DrawShadow {
-                rect: surface_rect,
-                radius: node.style.appearance.radius,
-                shadow: s.clone(),
-                light: node.state.core.resolved_light,
-            });
-        }
-    }
-
-    if node.style.appearance.fill.is_some() || node.style.appearance.stroke.is_some() {
-        // The enclosing PushOpacity already carries opacity, so the brush must not apply it twice.
-        let mut appearance = node.style.appearance.clone();
-        if node.effective_opacity() < 1.0 {
-            appearance.opacity = 1.0;
-        }
-        chunk.push(SceneCommand::DrawRect {
-            rect: surface_rect,
-            appearance,
-        });
-    }
-
-    if let Some(s) = &node.style.appearance.shadow {
-        if s.inset {
-            chunk.push(SceneCommand::DrawShadow {
-                rect: surface_rect,
-                radius: node.style.appearance.radius,
-                shadow: s.clone(),
-                light: node.state.core.resolved_light,
-            });
-        }
-    }
 
     match &node.kind {
         NodeKind::Text(t) => {
@@ -314,8 +166,7 @@ pub fn emit_node_content(
             // and the run starts inset rather than at the border edge.
             // The node's own desired/displayed record decides the nudge:
             // moving follows exactly, resting glides to the whole pixel —
-            // glyphs, decorations, selection, and caret all sit inside, so
-            // they stay glued. X untouched.
+            // glyphs sit inside, so they stay glued. X untouched.
             let pad = node.style.padding;
             let run_y = abs_origin_y + pad.top;
             let adj = node

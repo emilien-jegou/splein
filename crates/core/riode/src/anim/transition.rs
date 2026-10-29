@@ -141,7 +141,6 @@ impl Transition {
     /// Durations: `300ms`, `0.3s`, or a bare number (seconds).
     ///
     /// Named `from_str` (not `from`) because the inherent playback builder
-    /// `from()` would shadow `From::from` at the call site.
     ///
     /// This is the *secondary*, data-driven form — prefer the typed builders
     /// (`Transition::ease`, `Transition::spring`, `Transition::snappy()` /
@@ -304,7 +303,6 @@ impl std::str::FromStr for Transition {
 impl From<&str> for Transition {
     fn from(s: &str) -> Self {
         // NOTE: call as `Transition::from_str(s)`; the inherent playback
-        // builder `from()` shadows `From::from` in `Transition::from(..)` syntax.
         Self::from_str(s)
     }
 }

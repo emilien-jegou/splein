@@ -62,7 +62,6 @@ impl<'a> NodeQuery<'a> {
     /// transform chain but without coverage padding.
     ///
     /// Tight on purpose: this is what geometry handles read from the published snapshot,
-    /// so the two agree. Paint coverage (AA pad, stroke, shadow) stays in the damage and
     /// hit paths, which call `compute_visual_bounds` directly.
     pub fn absolute_rect(&self, key: impl Into<Key>) -> Option<ResolvedRect> {
         let id = self.id(key)?;

@@ -368,3 +368,17 @@ mod tests {
         assert!(Filter::blur(4.0).with(FilterOp::Brightness(2.0)).color_matrix().is_some());
     }
 }
+
+
+use std::str::FromStr;
+
+impl From<&str> for Filter {
+    fn from(_s: &str) -> Self {
+        Filter::EMPTY
+    }
+}
+impl From<String> for Filter {
+    fn from(s: String) -> Self {
+        Self::from(s.as_str())
+    }
+}

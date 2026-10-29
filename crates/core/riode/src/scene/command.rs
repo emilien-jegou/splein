@@ -1,9 +1,6 @@
 // Single responsibility: Backend-agnostic display list drawing commands.
 
-use crate::foundation::{
-    Appearance, Color, EffectStack, Fill, LightEnvironment, Point, Radius,
-    ResolvedRect, Shadow, ShadowOffset, ShadowShape, StrokeAlign, Transform,
-};
+use crate::foundation::{Color, Material, Point, ResolvedRect, Transform};
 use crate::scene::image::ImageSource;
 use crate::scene::vector::VectorGraphic;
 use crate::text::layout::TextLayout;
@@ -23,6 +20,10 @@ impl LayerId {
 }
 
 /// Abstract display list drawing and state transformation commands.
+///
+/// The purge removed `DrawRect`, `DrawShadow`, `PushOpacity`/`PopOpacity`
+/// and every `radius` field: a node paints exactly one thing, its
+/// [`Material`] layer, plus text/image/svg content. Clips are square.
 #[derive(Clone, Debug)]
 pub enum SceneCommand {
     PushTransform(Transform),
@@ -31,41 +32,18 @@ pub enum SceneCommand {
     PopOffset,
     PushClip {
         rect: ResolvedRect,
-        radius: Radius,
     },
     PopClip,
-    PushOpacity(f32),
-    PopOpacity,
     BeginLayer {
         id: LayerId,
         rect: ResolvedRect,
-        /// The node's authored corner radius (local px) — the shape the
-        /// card clips with. Backdrop stages lower it into the custom
-        /// uniform stream (slot 8, device-px resolved corners) so the
-        /// material's edge fields follow the rounded silhouette.
-        radius: Radius,
-        /// Layer effects (bottom → top): the sheet's own transform
-        /// (CSS `filter`). `Some` (or backdrop effects / shadow pad)
-        /// opens an effect layer; `None` everywhere is a plain isolation
-        /// layer (clip-only, the pre-filter behavior).
-        layer_effects: Option<EffectStack>,
-        /// Backdrop effects: transform the sampled background before the
-        /// layer composites (CSS `backdrop-filter` + the glass lens).
-        /// Read-only input for glass/blend sampling.
-        backdrop_effects: Option<EffectStack>,
-        /// Extra offscreen margin in layout px for an alpha-silhouette
-        /// shadow (`ShadowShape::Alpha`): the layer's content alpha is the
-        /// silhouette, so the offscreen must hold the offset + blur reach
-        /// around it, and the layer needs an offscreen even without
-        /// effects. `0.0` when the node carries no alpha drop shadow.
-        shadow_pad: f32,
+        /// The material chain: the single-pass card over the sampled
+        /// background. `Some` opens the offscreen the pass writes into;
+        /// `None` is a plain isolation layer.
+        material: Option<Material>,
     },
     EndLayer {
         id: LayerId,
-    },
-    DrawRect {
-        rect: ResolvedRect,
-        appearance: Appearance,
     },
     DrawImage {
         rect: ResolvedRect,
@@ -74,12 +52,6 @@ pub enum SceneCommand {
     DrawSvg {
         rect: ResolvedRect,
         graphic: VectorGraphic,
-    },
-    DrawShadow {
-        rect: ResolvedRect,
-        radius: Radius,
-        shadow: Shadow,
-        light: LightEnvironment,
     },
     DrawText {
         origin: Point,
@@ -97,10 +69,8 @@ impl SceneCommand {
     pub fn is_drawing(&self) -> bool {
         matches!(
             self,
-            SceneCommand::DrawRect { .. }
-                | SceneCommand::DrawImage { .. }
+            SceneCommand::DrawImage { .. }
                 | SceneCommand::DrawSvg { .. }
-                | SceneCommand::DrawShadow { .. }
                 | SceneCommand::DrawText { .. }
         )
     }
@@ -129,59 +99,29 @@ pub fn hash_commands(commands: &[SceneCommand]) -> u64 {
                 point_bits(p).hash(&mut h);
             }
             SceneCommand::PopOffset => 3u8.hash(&mut h),
-            SceneCommand::PushClip { rect, radius } => {
+            SceneCommand::PushClip { rect } => {
                 4u8.hash(&mut h);
                 rect_bits(rect).hash(&mut h);
-                radius_bits(radius).hash(&mut h);
             }
             SceneCommand::PopClip => 5u8.hash(&mut h),
-            SceneCommand::PushOpacity(o) => {
-                6u8.hash(&mut h);
-                o.to_bits().hash(&mut h);
-            }
-            SceneCommand::PopOpacity => 7u8.hash(&mut h),
-            SceneCommand::BeginLayer {
-                id,
-                rect,
-                radius,
-                layer_effects,
-                backdrop_effects,
-                shadow_pad,
-            } => {
+            SceneCommand::BeginLayer { id, rect, material } => {
                 8u8.hash(&mut h);
                 id.0.hash(&mut h);
                 rect_bits(rect).hash(&mut h);
-                radius_bits(radius).hash(&mut h);
-                shadow_pad.to_bits().hash(&mut h);
-                match backdrop_effects {
+                match material {
                     None => 0u8.hash(&mut h),
-                    Some(stack) => {
+                    Some(mat) => {
+                        // The chain is immutable once authored — identity
+                        // of the shared stage list is the honest hash
+                        // (matches `Material`'s `Arc::ptr_eq` equality).
                         1u8.hash(&mut h);
-                        (stack.len() as u64).hash(&mut h);
-                        for e in stack.0.iter() {
-                            e.id().hash(&mut h);
-                        }
-                    }
-                }
-                match layer_effects {
-                    None => 0u8.hash(&mut h),
-                    Some(stack) => {
-                        1u8.hash(&mut h);
-                        (stack.len() as u64).hash(&mut h);
-                        for e in stack.0.iter() {
-                            e.id().hash(&mut h);
-                        }
+                        Arc::as_ptr(&mat.stages).hash(&mut h);
                     }
                 }
             }
             SceneCommand::EndLayer { id } => {
                 9u8.hash(&mut h);
                 id.0.hash(&mut h);
-            }
-            SceneCommand::DrawRect { rect, appearance } => {
-                10u8.hash(&mut h);
-                rect_bits(rect).hash(&mut h);
-                appearance_bits(appearance).hash(&mut h);
             }
             SceneCommand::DrawImage { rect, image } => {
                 11u8.hash(&mut h);
@@ -192,18 +132,6 @@ pub fn hash_commands(commands: &[SceneCommand]) -> u64 {
                 12u8.hash(&mut h);
                 rect_bits(rect).hash(&mut h);
                 svg_bits(graphic).hash(&mut h);
-            }
-            SceneCommand::DrawShadow {
-                rect,
-                radius,
-                shadow,
-                light,
-            } => {
-                13u8.hash(&mut h);
-                rect_bits(rect).hash(&mut h);
-                radius_bits(radius).hash(&mut h);
-                shadow_bits(shadow).hash(&mut h);
-                light_bits(light).hash(&mut h);
             }
             SceneCommand::DrawText {
                 origin,
@@ -247,168 +175,6 @@ fn rect_bits(r: &ResolvedRect) -> [u32; 4] {
 
 fn color_bits(c: &Color) -> [u32; 4] {
     [c.r.to_bits(), c.g.to_bits(), c.b.to_bits(), c.a.to_bits()]
-}
-
-fn radius_bits(r: &Radius) -> Vec<u32> {
-    match r {
-        Radius::Scalar(v) => vec![0, v.to_bits()],
-        Radius::Max => vec![1],
-        Radius::Corners {
-            top_left,
-            top_right,
-            bottom_right,
-            bottom_left,
-        } => vec![
-            2,
-            top_left.to_bits(),
-            top_right.to_bits(),
-            bottom_right.to_bits(),
-            bottom_left.to_bits(),
-        ],
-    }
-}
-
-fn shadow_bits(s: &Shadow) -> Vec<u32> {
-    let mut v = vec![
-        s.elevation.to_bits(),
-        match s.offset {
-            ShadowOffset::Elevation => 0,
-            ShadowOffset::Explicit { .. } => 1,
-        },
-        match s.offset {
-            ShadowOffset::Elevation => 0,
-            ShadowOffset::Explicit { offset_x, .. } => offset_x.to_bits(),
-        },
-        match s.offset {
-            ShadowOffset::Elevation => 0,
-            ShadowOffset::Explicit { offset_y, .. } => offset_y.to_bits(),
-        },
-        // Shadow's blend wire is 0/1 (Normal / not-Normal — the only two
-        // the shadow paths honour; the rest of the `BlendMode` set folds
-        // to the multiply family and stays approximated on wgpu).
-        u32::from(!s.blend.is_normal()),
-        match s.shape {
-            ShadowShape::Box => 0,
-            ShadowShape::Alpha => 1,
-        },
-        s.elevation.to_bits(),
-        s.spread.to_bits(),
-        s.inset as u32,
-        s.layers().len() as u32,
-    ];
-    for l in s.layers() {
-        v.push(l.falloff.tag() as u32);
-        v.push(l.softness.to_bits());
-        v.push(l.extent.to_bits());
-        v.push(l.opacity.to_bits());
-        match l.offset {
-            None => v.push(0),
-            Some((x, y)) => {
-                v.push(1);
-                v.push(x.to_bits());
-                v.push(y.to_bits());
-            }
-        }
-    }
-    v.into_iter().chain(color_bits(&s.color)).collect()
-}
-
-fn light_bits(l: &LightEnvironment) -> [u32; 3] {
-    [
-        l.azimuth.to_bits(),
-        l.altitude.to_bits(),
-        l.intensity.to_bits(),
-    ]
-}
-
-fn fill_bits(f: &Fill) -> Vec<u32> {
-    match f {
-        Fill::Solid(c) => [vec![0], color_bits(c).to_vec()].concat(),
-        Fill::LinearGradient(g) => {
-            let mut v = vec![1, g.start.x.to_bits(), g.start.y.to_bits()];
-            v.extend([g.end.x.to_bits(), g.end.y.to_bits()]);
-            for s in &g.stops {
-                v.extend([s.position.to_bits()]);
-                v.extend(color_bits(&s.color));
-            }
-            v
-        }
-        Fill::RadialGradient(g) => {
-            let mut v = vec![2, g.center.x.to_bits(), g.center.y.to_bits()];
-            v.push(g.radius.to_bits());
-            for s in &g.stops {
-                v.extend([s.position.to_bits()]);
-                v.extend(color_bits(&s.color));
-            }
-            v
-        }
-    }
-}
-
-fn appearance_bits(a: &Appearance) -> Vec<u32> {
-    let mut v = vec![a.opacity.to_bits()];
-    match &a.fill {
-        None => v.push(0),
-        Some(f) => {
-            v.push(1);
-            v.extend(fill_bits(f));
-        }
-    }
-    match &a.stroke {
-        None => v.push(0),
-        Some(s) => {
-            v.push(1);
-            v.push(s.width.to_bits());
-            v.push(match s.align {
-                StrokeAlign::Inside => 0,
-                StrokeAlign::Center => 1,
-                StrokeAlign::Outside => 2,
-            });
-            match &s.per_edge {
-                None => v.push(0),
-                Some(e) => {
-                    v.push(1);
-                    v.extend([
-                        e.top.to_bits(),
-                        e.right.to_bits(),
-                        e.bottom.to_bits(),
-                        e.left.to_bits(),
-                    ]);
-                }
-            }
-            v.extend(fill_bits(&s.fill));
-        }
-    }
-    v.extend(radius_bits(&a.radius));
-    match &a.shadow {
-        None => v.push(0),
-        Some(s) => {
-            v.push(1);
-            v.extend(shadow_bits(s));
-        }
-    }
-    match &a.light_override {
-        None => v.push(0),
-        Some(l) => {
-            v.push(1);
-            v.extend(light_bits(l));
-        }
-    }
-    for stack in [&a.layer_effects, &a.backdrop_effects] {
-        match stack {
-            None => v.push(0),
-            Some(stack) => {
-                v.push(1);
-                v.push(stack.len() as u32);
-                for e in stack.0.iter() {
-                    let id = e.id();
-                    v.push((id.0 & 0xffff_ffff) as u32);
-                    v.push((id.0 >> 32) as u32);
-                }
-            }
-        }
-    }
-    v
 }
 
 fn image_bits(img: &ImageSource) -> [usize; 3] {

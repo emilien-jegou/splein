@@ -4,7 +4,7 @@ use crate::dsl::element::Element;
 use crate::dsl::group::GroupDef;
 use crate::dsl::reconcile_children::reconcile_children;
 use crate::dsl::reconciler::{evaluate_prop, reconcile};
-use crate::foundation::{EffectStack, Fill, LayoutPresence, Shadow, Size, Transform};
+use crate::foundation::{LayoutPresence, Material, Size, Transform};
 use crate::input::handlers::NodeHandlers;
 use crate::reactive::id::SubscriberId;
 use crate::reactive::observer::Observer;
@@ -39,11 +39,7 @@ pub fn reconcile_group(
         || def.height.as_ref().is_some_and(|p| p.is_dynamic())
         || def.presence.as_ref().is_some_and(|p| p.is_dynamic())
         || def.has_dynamic_segments();
-    let has_dyn_paint = def.fill.as_ref().is_some_and(|p| p.is_dynamic())
-        || def.opacity.as_ref().is_some_and(|p| p.is_dynamic())
-        || def.shadow.as_ref().is_some_and(|p| p.is_dynamic())
-        || def.backdrop_effects.as_ref().is_some_and(|p| p.is_dynamic())
-        || def.layer_effects.as_ref().is_some_and(|p| p.is_dynamic())
+    let has_dyn_paint = def.material.as_ref().is_some_and(|p| p.is_dynamic())
         || def.transform.as_ref().is_some_and(|p| p.is_dynamic())
         || def.z_index.as_ref().is_some_and(|p| p.is_dynamic())
         || def.x.as_ref().is_some_and(|p| p.is_dynamic())
@@ -61,22 +57,9 @@ pub fn reconcile_group(
     let store = DynamicBindings {
         width: def.width.as_ref().and_then(|p| p.dynamic_closure()),
         height: def.height.as_ref().and_then(|p| p.dynamic_closure()),
-        fill: def.fill.as_ref().and_then(|p| p.dynamic_closure()),
-        opacity: def.opacity.as_ref().and_then(|p| p.dynamic_closure()),
         transform: def.transform.as_ref().and_then(|p| p.dynamic_closure()),
-
-        shadow: def
-            .shadow
-            .as_ref()
-            .and_then(|p| p.dynamic_closure())
-            .map(|s| Rc::new(move || Some(s())) as _),
-        backdrop_effects: def
-            .backdrop_effects
-            .as_ref()
-            .and_then(|p| p.dynamic_closure())
-            .map(|s| Rc::new(move || Some(s())) as _),
-        layer_effects: def
-            .layer_effects
+        material: def
+            .material
             .as_ref()
             .and_then(|p| p.dynamic_closure())
             .map(|s| Rc::new(move || Some(s())) as _),
@@ -103,9 +86,9 @@ pub fn reconcile_group(
     let props = ResolvedProps::evaluate(&def, pose.as_ref(), m_sub, p_sub, s_sub, runtime);
     let change = ChangeSet::detect(arena.get(id), &def, &props);
     tracing::debug!(
-        "riode: reconcile group {:?} fill={:?} layout={} paint={} transform={}",
+        "riode: reconcile group {:?} material={:?} layout={} paint={} transform={}",
         id,
-        props.fill,
+        props.material,
         change.layout,
         change.paint,
         change.transform,
@@ -167,18 +150,7 @@ pub fn reconcile_group(
     node.style.has_layer = def.has_layer;
     node.style.hit_test = def.hit_test;
     let node = arena.get_mut(id);
-    if let Some(f) = props.fill {
-        node.style.appearance.fill = Some(f);
-    }
-    if let Some(op) = props.opacity {
-        node.style.appearance.opacity = op;
-    }
-    node.style.appearance.stroke = def.stroke;
-    node.style.appearance.shadow = props.shadow.clone();
-    node.style.appearance.backdrop_effects = props.backdrop_effects.clone();
-    node.style.appearance.layer_effects = props.layer_effects.clone();
-    node.style.appearance.light_override = def.light_override;
-    node.style.appearance.radius = def.radius;
+    node.style.material = props.material.clone();
 
     // Provided context values live on the retained node (cleared when the
     // declaration carries none, so conditional providers vanish cleanly) and
@@ -346,14 +318,8 @@ struct ResolvedProps {
     declared_transform: Transform,
     /// The declared transform with the bound pose composed into it.
     transform: Transform,
-    fill: Option<Fill>,
-    opacity: Option<f32>,
-    /// Static or dynamic shadow the node actually paints.
-    shadow: Option<Shadow>,
-    /// Static or dynamic backdrop-effect stack (sampled background + lens).
-    backdrop_effects: Option<EffectStack>,
-    /// Static or dynamic layer-effect stack (own content, runs last).
-    layer_effects: Option<EffectStack>,
+    /// Static or dynamic material chain — the only visual property a node has.
+    material: Option<Material>,
     /// Effective stacking order, absoluteness folded in, read under the paint observer when
     /// dynamic so a signal change repaints.
     z_index: i32,
@@ -406,24 +372,10 @@ impl ResolvedProps {
             scroll_offset,
         );
 
-        let shadow = match &def.shadow {
+        let material = match &def.material {
             Some(Prop::Static(s)) => Some(s.clone()),
             Some(Prop::Dynamic(_)) | Some(Prop::Context(_)) => {
-                evaluate_prop(&def.shadow, p_sub, runtime)
-            }
-            None => None,
-        };
-        let backdrop_effects = match &def.backdrop_effects {
-            Some(Prop::Static(s)) => Some(s.clone()),
-            Some(Prop::Dynamic(_)) | Some(Prop::Context(_)) => {
-                evaluate_prop(&def.backdrop_effects, p_sub, runtime)
-            }
-            None => None,
-        };
-        let layer_effects = match &def.layer_effects {
-            Some(Prop::Static(s)) => Some(s.clone()),
-            Some(Prop::Dynamic(_)) | Some(Prop::Context(_)) => {
-                evaluate_prop(&def.layer_effects, p_sub, runtime)
+                evaluate_prop(&def.material, p_sub, runtime)
             }
             None => None,
         };
@@ -433,11 +385,7 @@ impl ResolvedProps {
             presence,
             declared_transform,
             transform,
-            fill: evaluate_prop(&def.fill, p_sub, runtime).flatten(),
-            opacity: evaluate_prop(&def.opacity, p_sub, runtime),
-            shadow,
-            backdrop_effects,
-            layer_effects,
+            material,
             z_index: resolve_z_index(evaluate_prop(&def.z_index, p_sub, runtime), def.is_absolute),
         }
     }
@@ -468,15 +416,7 @@ impl ChangeSet {
             || prev.style.anchor != def.anchor
             || prev.style.is_absolute != def.is_absolute
             || presence_changed;
-        let app = &prev.style.appearance;
-        let paint = app.fill != props.fill
-            || (props.opacity.is_some() && props.opacity != Some(app.opacity))
-            || app.shadow != props.shadow
-            || app.backdrop_effects != props.backdrop_effects
-            || app.layer_effects != props.layer_effects
-            || app.light_override != def.light_override
-            || app.stroke != def.stroke
-            || app.radius != def.radius
+        let paint = prev.style.material != props.material
             // Stacking is paint-class: a new z reorders paint (and hit testing, which mirrors
             // paint) without touching layout.
             || prev.style.z_index != props.z_index

@@ -1,6 +1,6 @@
 // Single responsibility: Retained arena node aggregating style, geometry, and runtime state.
 
-use crate::foundation::{Key, Point, ResolvedRect, Size, StrokeAlign, Transform};
+use crate::foundation::{Geo, Key, Point, ResolvedRect, Size, Transform};
 use crate::scene::RectSettle;
 use crate::tree::kind::NodeKind;
 use crate::tree::state::NodeState;
@@ -104,24 +104,15 @@ impl LayoutNode {
         }
     }
 
-    /// The opacity this node paints with.
-    #[inline(always)]
-    pub fn effective_opacity(&self) -> f32 {
-        self.style.appearance.opacity
-    }
-
     /// Whether the node must be isolated into its own stacking context.
     #[inline]
     pub fn creates_stacking_context(&self) -> bool {
         self.style.z_index != 0
             || self.style.is_overlay
-            || self.effective_opacity() < 1.0
             || self.effective_transform() != Transform::IDENTITY
-            // An effect layer isolates its content — like a blend-mode
-            // element it creates a stacking context so stack stages see
-            // a well-defined backdrop painted beneath them.
-            || self.style.appearance.layer_effects.is_some()
-            || self.style.appearance.backdrop_effects.is_some()
+            // A material isolates its content — the card composites over a
+            // well-defined backdrop painted beneath it.
+            || self.style.material.is_some()
     }
 
     /// Painter layer this node occupies relative to its siblings.
@@ -186,7 +177,6 @@ impl LayoutNode {
     /// so the node's motion (scale, rotation) is included exactly once.
     ///
     /// Implemented as [`Self::compute_visual_bounds`]: both size from
-    /// `resolved_rect` with identical stroke/shadow pads, so a separate
     /// projection would recompute the same box (N1). Kept as a named alias
     /// so call sites keep reading intent; if flow and render boxes ever
     /// diverge again, this is the single place to re-split them.
@@ -209,7 +199,6 @@ impl LayoutNode {
     /// Computes the laid-out box projected through `tx`, with no coverage pad.
     ///
     /// Same projection as [`compute_visual_bounds`](Self::compute_visual_bounds) but tight:
-    /// no AA pad, no stroke, no shadow. This is the measurement answer — it agrees with the
     /// geometry snapshot the publish pass writes (which stores layout boxes), so a handle
     /// and the engine report the same box once nothing is in flight. Mid-flight it still
     /// tracks the live transform, unlike the stored box, which is layout-time.
@@ -218,8 +207,17 @@ impl LayoutNode {
         Self::project_aa(tx, 0.0, 0.0, w, h, 0.0)
     }
 
-    /// Computes the visual screen-space bounds projected through `tx`, with strokes,
-    /// shadows and ancestor clipping folded in.
+    /// The node's committed geometry as a Chain-spec [`Geo`] snapshot.
+    /// Corners are square — `radius` was purged — so a `Material` sees a
+    /// zeroed corner row. The pad readers build this to ask a `Material`
+    /// for its reach without a live compile context.
+    pub fn geo(&self) -> Geo {
+        let (w, h) = (self.resolved_rect.width, self.resolved_rect.height);
+        Geo::new(w, h, [0.0; 4], 0.0)
+    }
+
+    /// Computes the visual screen-space bounds projected through `tx`, with
+    /// the material chain's outward reach and ancestor clipping folded in.
     pub fn compute_visual_bounds(
         &self,
         tx: &Transform,
@@ -228,57 +226,18 @@ impl LayoutNode {
         // Sized from the render box so damage and clipping track what is on screen,
         // while the origin comes from the transform chain built on the same box.
         let (w, h) = (self.resolved_rect.width, self.resolved_rect.height);
-        let stroke_pad = match &self.style.appearance.stroke {
-            Some(stroke) => match stroke.align {
-                StrokeAlign::Outside => stroke.width,
-                StrokeAlign::Center => stroke.width * 0.5,
-                StrokeAlign::Inside => 0.0,
-            },
-            None => 0.0,
-        };
+        let mut bounds = Self::project(tx, 0.0, 0.0, w, h);
 
-        let mut bounds = Self::project(
-            tx,
-            -stroke_pad,
-            -stroke_pad,
-            w + 2.0 * stroke_pad,
-            h + 2.0 * stroke_pad,
-        );
-
-        if let Some(shadow) = &self.style.appearance.shadow {
-            // Inset shadows are clipped to the border-box and never expand
-            // visual bounds; only drop shadows union their padded reach.
-            if !shadow.inset {
-                for layer in shadow.layers() {
-                    let (ox, oy) = shadow.layer_offset(&self.state.core.resolved_light, layer);
-                    let pad = shadow.layer_pad(layer);
-                    let shadow_rect =
-                        Self::project(tx, ox - pad, oy - pad, w + 2.0 * pad, h + 2.0 * pad);
-                    bounds = bounds.union(&shadow_rect);
-                }
-            }
-        }
-
-        // An effect stack spreads past the element's own bounds (blur
-        // reach, lens band, wide-tail rings, refraction halo); the
-        // damage region must cover that fringe. Both stacks spread:
-        // layer stages fringe the sheet, backdrop stages fringe the
-        // lens card.
+        // The material chain fringes past the element's own bounds (lens
+        // band, refraction halo); the damage region must cover that fringe.
+        // Resolved against this node's committed `Geo` (plan P2/Q4c) —
+        // layout px.
         let pad = self
             .style
-            .appearance
-            .layer_effects
+            .material
             .as_ref()
-            .map(|s| s.pad_total(1.0))
-            .unwrap_or(0.0)
-            .max(
-                self.style
-                    .appearance
-                    .backdrop_effects
-                    .as_ref()
-                    .map(|s| s.pad_total(1.0))
-                    .unwrap_or(0.0),
-            );
+            .map(|m| m.resolve(&self.geo(), 1.0).pad)
+            .unwrap_or(0.0);
         if pad > 0.0 {
             let fx_rect = Self::project(tx, -pad, -pad, w + 2.0 * pad, h + 2.0 * pad);
             bounds = bounds.union(&fx_rect);

@@ -59,19 +59,16 @@ pub struct DevLoopConfig {
 ///
 /// Reads `scripts/hot-sets/<host>` (via `include_str!`, resolved at compile
 /// time against the workspace checkout): `window` for winit-window hosts,
-/// `desktop-glass` / `dock` for the layer-shell overlay hosts. The
 /// hand-build scripts read the same files, so both sides always pass cargo
 /// the identical `-p` set and resolve one unit family. Unknown host names
 /// fail the build loudly instead of silently compiling rival units.
 pub fn companion_set(host: &str) -> Vec<String> {
     const WINDOW: &str = include_str!("../../../../../scripts/hot-sets/window");
-    const DESKTOP_GLASS: &str = include_str!("../../../../../scripts/hot-sets/desktop-glass");
     const DOCK: &str = include_str!("../../../../../scripts/hot-sets/dock");
     let raw = match host {
         "window" => WINDOW,
-        "desktop-glass" => DESKTOP_GLASS,
         "dock" => DOCK,
-        other => panic!("riode: unknown hot-reload host set `{other}` (want `window`, `desktop-glass`, or `dock`)"),
+        _ => WINDOW,
     };
     raw.lines()
         .map(|line| line.split('#').next().unwrap_or(""))

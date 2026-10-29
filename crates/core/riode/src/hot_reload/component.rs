@@ -50,7 +50,6 @@ use crate::dsl::element::Element;
 use crate::dsl::{group, text, IntoElement};
 use crate::foundation::Color;
 use crate::hot_reload::dev_loop::{DevLoop, DevLoopConfig};
-use crate::hot_reload::progress_bar::ReloadProgressBar;
 use crate::hot_reload::SharedFactory;
 use crate::runtime::Engine;
 use crate::text::TextContext;
@@ -180,8 +179,6 @@ pub struct ComponentReloadExtension {
     /// in which case their freeze stands and no override happens.
     boot_freeze_armed: bool,
     user_froze: bool,
-    /// Top loading bar shown while the loop is rebuilding.
-    bar: ReloadProgressBar,
 }
 
 impl ComponentReloadExtension {
@@ -196,7 +193,6 @@ impl ComponentReloadExtension {
             applied_chrome: None,
             boot_freeze_armed: true,
             user_froze: false,
-            bar: ReloadProgressBar::new(),
         }
     }
 
@@ -401,29 +397,8 @@ impl AppExtension for ComponentReloadExtension {
                 self.dev.request_build("template fast-path miss");
             }
         }
-        // The loop state was just published to stats; advance the loading bar
-        // from it (simulated time, so freeze/slow-motion apply to the bar too).
-        // NOTE: update the bar unconditionally — `||` would short-circuit and
-        // never run it on exactly the frames that matter (`redraw` is true for
-        // the whole build), leaving the bar stuck Hidden forever.
-        let stats = engine.hot_reload_stats();
-        let sim = engine.diagnostics().simulated;
-        let w = engine.logical_size().0 as f32;
-        let bar_needs_frames = self.bar.update(stats.dev_state, sim, w);
-        redraw || bar_needs_frames || fast_redraw
+        let _ = &engine;
+        redraw || fast_redraw
     }
 
-    fn render_overlay(
-        &mut self,
-        paint: &mut OverlayPainter<'_>,
-        _text_ctx: &TextContext,
-        caps: &OverlayCaps,
-        _d: &crate::runtime::FrameDiagnostics,
-    ) {
-        self.bar.draw(paint, caps);
-    }
-
-    fn overlay_damage(&self) -> Option<crate::foundation::ResolvedRect> {
-        self.bar.damage()
-    }
 }

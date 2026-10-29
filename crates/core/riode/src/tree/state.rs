@@ -5,7 +5,7 @@
 // lines the crate split follows: each group moves to its domain crate with the code that
 // reads and writes it, while the tree keeps the arena and the hierarchy.
 
-use crate::foundation::{GlassMorphState, GlassPress, Key, LayoutPresence, LightEnvironment, ResolvedRect, Transform};
+use crate::foundation::{Key, LayoutPresence, LightEnvironment, ResolvedRect, Transform};
 use crate::input::handlers::NodeHandlers;
 use crate::scene::SceneChunk;
 use crate::text::selection::{SelectionGranularity, TextSelection};
@@ -77,7 +77,6 @@ pub struct InputState {
     pub handlers: NodeHandlers,
     /// Whether this node owns keyboard focus for selection editing.
     ///
-    /// Only a focused collapsed selection paints a caret; blur hides it while
     /// keeping the range for the selection API.
     pub text_focused: bool,
 }
@@ -133,11 +132,4 @@ pub struct NodeState {
     pub text: TextState,
     pub scene: SceneState,
     pub paint: PaintState,
-    /// Glass-group morph tracks (`glass_id` → glide state), owned by the
-    /// pipeline domain. Only group roots use it.
-    pub glass_morph: GlassMorphState,
-    /// Press state of an interactive glass node (`Some` while the finger
-    /// is down or the release spring/light is settling), owned by the
-    /// pipeline domain. At most one node holds one at a time.
-    pub glass_press: Option<GlassPress>,
 }

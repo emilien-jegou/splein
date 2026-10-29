@@ -30,7 +30,6 @@ use crate::app::extension::{AppExtension, OverlayCaps};
 use crate::app::painter::OverlayPainter;
 use crate::dsl::{group, text, IntoElement};
 use crate::hot_reload::dev_loop::{DevLoop, DevLoopConfig};
-use crate::hot_reload::progress_bar::ReloadProgressBar;
 use crate::hot_reload::remote::{
     remote_abi_fingerprint, RemoteBuildFn, RemoteEventFn, RemoteHost, RemoteStateFn,
     RemoteVersionFn,
@@ -51,8 +50,6 @@ pub struct RemoteReloadExtension {
     /// A fresh library was observed where no engine was available (idle poll). Latched
     /// so the next frame swaps instead of the observation being lost.
     pending_activation: bool,
-    /// Top loading bar shown while the loop is rebuilding.
-    bar: ReloadProgressBar,
 }
 
 impl RemoteReloadExtension {
@@ -64,7 +61,6 @@ impl RemoteReloadExtension {
             shared_fns: Rc::new(Cell::new(None)),
             factory_installed: false,
             pending_activation: false,
-            bar: ReloadProgressBar::new(),
         }
     }
 
@@ -230,27 +226,8 @@ impl AppExtension for RemoteReloadExtension {
                 true
             },
         );
-        let stats = engine.hot_reload_stats();
-        let sim = engine.diagnostics().simulated;
-        let w = engine.logical_size().0 as f32;
-        // NOTE: update the bar unconditionally — `||` would short-circuit and
-        // never run it on exactly the frames that matter (`redraw` is true for
-        // the whole build), leaving the bar stuck Hidden forever.
-        let bar_needs_frames = self.bar.update(stats.dev_state, sim, w);
-        redraw || bar_needs_frames
+        let _ = &engine;
+        redraw
     }
 
-    fn render_overlay(
-        &mut self,
-        paint: &mut OverlayPainter<'_>,
-        _text_ctx: &TextContext,
-        caps: &OverlayCaps,
-        _d: &crate::runtime::FrameDiagnostics,
-    ) {
-        self.bar.draw(paint, caps);
-    }
-
-    fn overlay_damage(&self) -> Option<crate::foundation::ResolvedRect> {
-        self.bar.damage()
-    }
 }

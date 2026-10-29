@@ -1,9 +1,6 @@
 // Single responsibility: `ext-background-effect-v1` client plumbing for islands.
 //
 // Binds the manager global, mints one effect object per island surface, and
-// uploads blur regions. This is the *where* channel only: it gates which
-// pixels the compositor may treat (and later, which pixels riode-glass may
-// render into) — it carries zero pixels and cannot render glass itself.
 //
 // Embedder contract: the event-loop `State` must implement
 // `Dispatch<WlRegion, ()>` and `Dispatch<ExtBackgroundEffectSurfaceV1, ()>`
@@ -52,11 +49,9 @@ where
     manager.get_background_effect(surface, qh, ())
 }
 
-/// Upload one island's blur region (island-local coordinates) and clear it
 /// when empty. Double-buffered: applies on the next commit of the island
 /// surface the effect belongs to. For a synchronized subsurface that is
 /// the parent commit that flushes it.
-pub fn upload_blur_region<State>(
     qh: &QueueHandle<State>,
     compositor: &WlCompositor,
     effect: &ExtBackgroundEffectSurfaceV1,
@@ -75,13 +70,11 @@ pub fn upload_blur_region<State>(
         }
     }
     if live.is_empty() {
-        effect.set_blur_region(None);
         return;
     }
     let region = compositor.create_region(qh, ());
     for (x, y, w, h) in live {
         region.add(x, y, w, h);
     }
-    effect.set_blur_region(Some(&region));
     region.destroy();
 }

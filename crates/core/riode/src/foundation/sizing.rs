@@ -87,3 +87,55 @@ impl From<f32> for AspectRatio {
         })
     }
 }
+
+
+use std::str::FromStr;
+
+fn parse_aspect_ratio(s: &str) -> Option<AspectRatio> {
+    let s = s.trim();
+    if let Some((a, b)) = s.split_once('/') {
+        let a: f32 = a.trim().parse().ok()?;
+        let b: f32 = b.trim().parse().ok()?;
+        if b != 0.0 { return Some(AspectRatio::from(a / b)); }
+        return None;
+    }
+    if let Some((a, b)) = s.split_once(':') {
+        let a: f32 = a.trim().parse().ok()?;
+        let b: f32 = b.trim().parse().ok()?;
+        if b != 0.0 { return Some(AspectRatio::from(a / b)); }
+        return None;
+    }
+    if let Ok(v) = s.parse::<f32>() {
+        return Some(AspectRatio::from(v));
+    }
+    None
+}
+
+impl FromStr for AspectRatio {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, String> {
+        parse_aspect_ratio(s).ok_or_else(|| "bad aspect_ratio".to_string())
+    }
+}
+impl From<&str> for AspectRatio {
+    fn from(s: &str) -> Self {
+        parse_aspect_ratio(s).unwrap_or(AspectRatio::from(1.0))
+    }
+}
+impl From<String> for AspectRatio {
+    fn from(s: String) -> Self {
+        Self::from(s.as_str())
+    }
+}
+
+
+impl From<u32> for Size {
+    fn from(v: u32) -> Self {
+        Size::Fixed(v as f32)
+    }
+}
+impl From<i32> for Size {
+    fn from(v: i32) -> Self {
+        Size::Fixed(v as f32)
+    }
+}

@@ -2,7 +2,6 @@
 // parse under naga (catches structural breakage from stage refactors
 // without needing a GPU device).
 use riode::foundation::effect::shaders::{
-    BLEND_COMPOSITE_COMBINED_WGSL, BLUR_WGSL, COMPOSITE_WGSL, GLASS_COMBINED_WGSL,
 };
 
 fn parse(name: &str, src: &str) {
@@ -11,8 +10,6 @@ fn parse(name: &str, src: &str) {
 }
 
 #[test]
-fn glass_combined_parses() {
-    parse("glass", GLASS_COMBINED_WGSL);
 }
 
 #[test]
@@ -21,8 +18,6 @@ fn blend_composite_combined_parses() {
 }
 
 #[test]
-fn blur_parses() {
-    parse("blur", BLUR_WGSL);
 }
 
 #[test]
@@ -48,7 +43,7 @@ fn parse_composed(name: &str, surface: &Surface) {
 #[test]
 fn material_g1a_degenerate_ambient_parses() {
     let c = Color::RED * Intensity::factor(30.0);
-    parse_composed("g1a", &c.into_surface());
+    parse_composed("g1a", &c);
 }
 
 #[test]
@@ -56,7 +51,7 @@ fn material_g1d_reactive_lobe_parses() {
     use riode::foundation::fresnel;
     let c = Color::RED * Intensity::factor(30.0);
     let lobe = Microfacet::ggx(Normal::flat(), 1.0);
-    parse_composed("g1d", &(c * lobe * Sky::gain(1.0)).into_surface());
+    parse_composed("g1d", &(c * lobe * Sky::gain(1.0)));
 }
 
 #[test]
@@ -67,7 +62,7 @@ fn material_surfaces_validate_like_engine() {
         ("raw", SOLID_RAW.to_string()),
         ("g1a", {
             let c = Color::RED * Intensity::factor(30.0);
-            let s = c.into_surface();
+            let s = c;
             assert!(!s.uniforms.is_empty());
             s.wgsl
         }),
@@ -78,12 +73,12 @@ fn material_surfaces_validate_like_engine() {
                 Color::RED * Intensity::factor(30.0),
                 Color::rgb(0.0, 0.5, 0.5) * Intensity::factor(30.0),
                 g.position(),
-            ).into_surface().wgsl
+            ).wgsl
         }),
         ("g1d", {
             let c = Color::RED * Intensity::factor(30.0);
             let lobe = Microfacet::ggx(Normal::flat(), 1.0);
-            (c * lobe * Sky::gain(1.0)).into_surface().wgsl
+            (c * lobe * Sky::gain(1.0)).wgsl
         }),
     ];
     for (name, apply_src) in cases {

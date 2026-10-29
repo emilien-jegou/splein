@@ -63,7 +63,6 @@ pub mod component;
 pub mod dev_loop;
 pub mod dylib;
 pub mod extension;
-pub mod progress_bar;
 pub mod registry;
 pub mod remote;
 pub mod template;
@@ -78,7 +77,6 @@ pub use dev_loop::{
 };
 pub use dylib::DylibReloader;
 pub use extension::RemoteReloadExtension;
-pub use progress_bar::ReloadProgressBar;
 pub use template::{
     apply_template_delta, classify_edit, classify_files, clear_template_values,
     clear_view_templates, extract_view_literals, is_template_live, note_view_template,

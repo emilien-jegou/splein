@@ -6,7 +6,6 @@
 // `CWLSurface::fromResource`, which is null for them, and returns early.
 // Proven by the plugin's own rejection counters (`noview_layer` with zero
 // matches). Live islands are top-level layer surfaces instead (see
-// `apps/desktop-glass/src/island_layers.rs`). This pool is retained for a
 // possible window-subsurface future; do not use it for layer islands.
 // its full-scene buffer (robust fallback: content shows even if a
 // subsurface is a frame late); each island duplicates its rect's pixels
@@ -36,7 +35,6 @@ use riode_shared::render::swizzle_rgba_to_bgra;
 use riode_shared::foundation::ResolvedRect;
 use riode_shared::scene::Island;
 
-use crate::background_effect::{effect_for_surface, upload_blur_region};
 
 struct PooledIsland {
     surface: WlSurface,
@@ -154,7 +152,6 @@ impl IslandPool {
             // The region is island-local: the island surface IS the effect
             // area, so it always covers the whole subsurface.
             if let Some(effect) = &pooled.effect {
-                upload_blur_region(
                     qh,
                     compositor,
                     effect,
@@ -178,7 +175,6 @@ impl Default for IslandPool {
 /// Mirrors the swizzle in the SHM presentation backend.
 ///
 /// `pub` for reuse by out-of-crate island managers (e.g. the
-/// desktop-glass layer-surface pool): the blit contract is identical.
 pub fn blit_rgba_to_bgra(
     canvas: &mut [u8],
     src: &[u8],

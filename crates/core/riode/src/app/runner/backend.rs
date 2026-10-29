@@ -96,11 +96,10 @@ pub trait Backend {
 
 /// Constructs a presentation backend for a window, implemented by backend crates.
 ///
-/// `riode` owns this contract but never implements it: `riode-tiny-skia` provides
-/// `create_backend` for [`RenderBackend::TinySkia`](crate::render::RenderBackend) and
-/// `riode-wgpu` for `Wgpu`. The factory is handed to
-/// [`AppConfig::backend_factory`](crate::app::AppConfig::backend_factory) so the engine
-/// crate never names a concrete rasterizer.
+/// `riode` owns this contract but never implements it: `riode-engine-wgpu`
+/// provides `create_backend`. The factory is handed to
+/// [`AppConfig::backend_factory`](crate::app::AppConfig::backend_factory) so the
+/// engine crate never names a concrete rasterizer.
 ///
 /// Desktop-only: headless embedders implement [`Backend`] directly without windows.
 #[cfg(feature = "desktop")]

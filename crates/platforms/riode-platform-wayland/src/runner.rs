@@ -1,15 +1,10 @@
 // Single responsibility: engine-level overlay host runner.
 //
 // This is the whole layer-shell host: Wayland connection, layer surface,
-// SHM raster loop, glass-island effect uploads, pointer bridge, and the
 // hot-reload dev loop. Apps configure it with [`OverlayConfig`] and call
 // [`overlay_run`] — their `main.rs` stays a ~50-line config (the same
 // shape as `devkit_run` owning the winit hot loop in riode-shared).
 //
-// `<Group glass={...}>` in the view is the entire app-side API: every
-// frame the runner extracts glass islands from the scene and uploads blur
-// regions + item hints itself. The two glass presentations differ only in
-// [`GlassMode`]: the blur region + hint can ride the parent layer surface
 // (surface-local coordinates, no mismatch possible) or, where the
 // compositor needs it, one overlay layer surface per island
 // ([`crate::island_layers`]).
@@ -60,27 +55,20 @@ use riode_shared::tiny_skia::HeadlessRaster;
 use crate::island_layers::IslandLayerPool;
 use crate::item_hints::{RiodeItemManagerV1, RiodeItemV1};
 use crate::{
-    bind_manager, effect_for_surface, item_for_surface, upload_blur_region, upload_effect_stages,
-    upload_glass_frame, upload_item_shape,
 };
 use crate::surface::create_overlay_surface;
 
 /// How the overlay surface covers the output.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum SurfacePolicy {
-    /// Fullscreen click-through layer (desktop-glass shape).
     Fullscreen,
     /// Fixed-size bottom-anchored layer (dock shape); the size comes from
     /// the hot window chrome at boot and layer-shell configure after.
     BottomFixed,
 }
 
-/// How glass islands reach the compositor plugin. Both modes upload the
-/// raw [`Glass`](riode_shared::foundation::Glass) material + shape per
 /// island — no preset names anywhere.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum GlassMode {
-    /// Blur region + material hint on the parent layer surface, in
     /// surface-local coordinates (one surface, no coordinate mismatch).
     ParentSurface,
     /// One overlay layer surface per island (see [`crate::island_layers`]).
@@ -110,17 +98,13 @@ pub struct HotConfig {
 }
 
 /// Everything an overlay app configures. Everything else — connection,
-/// raster loop, glass uploads, pointer bridge, hot-reload — is the
 /// runner's job.
 pub struct OverlayConfig {
-    /// Layer namespace + log prefix (e.g. `"dock"`, `"desktop-glass"`).
     pub namespace: &'static str,
     pub hot: HotConfig,
     pub surface: SurfacePolicy,
-    /// Pointer bridge (SCTK → engine) + glass-hugging input region.
     /// Off = click-through overlay that never takes pointer.
     pub interactive: bool,
-    pub glass: GlassMode,
     /// Boot font, e.g. `include_bytes!(".../inter-var.ttf")`.
     pub font_bytes: &'static [u8],
 }
@@ -187,19 +171,15 @@ fn preload_shared(path: &std::path::Path) -> Result<(), String> {
     }
 }
 
-/// Largest glass island in the frame (the bar / the card): tooltips and
 /// transient nodes come and go, the main island stays the biggest rect.
-fn largest_glass(islands: &[riode_shared::scene::Island]) -> Option<&riode_shared::scene::Island> {
     islands
         .iter()
-        .filter(|i| i.glass.is_some())
         .max_by(|a, b| {
             let area = |i: &&riode_shared::scene::Island| i.rect.width * i.rect.height;
             area(a).partial_cmp(&area(b)).unwrap_or(std::cmp::Ordering::Equal)
         })
 }
 
-/// Corner radii for the item-hint shape, from the island's glass material
 /// (emit-stamped with the node's declared corners): `Radius::Max` becomes
 /// a stadium (half the short edge), matching the engine's SDF.
 fn shape_radii(island: &riode_shared::scene::Island, w: f32, h: f32) -> [f64; 4] {
@@ -240,11 +220,9 @@ pub struct OverlayHost {
     engine: Engine,
     raster: HeadlessRaster,
     cfg: OverlayHostCfg,
-    // Parent-surface glass mode: one effect + one item object for the
     // parent layer surface (the protocols allow at most one per surface).
     effect: Option<ExtBackgroundEffectSurfaceV1>,
     item: Option<RiodeItemV1>,
-    // Island-layers glass mode: one overlay layer surface per island, plus
     // the managers the pool sync mints per-island effects/items from
     // (cloned per frame; proxies are cheap handles).
     islands: IslandLayerPool,
@@ -262,7 +240,6 @@ pub struct OverlayHost {
     /// (`paint` early-returns under `waiting_for_frame`, and its uploads for
     /// configured islands ride along): repaint on the next frame callback.
     /// A static view never repaints otherwise — islands stay configured but
-    /// un-uploaded (no glass frame, no shape, no blur region) forever.
     pending_island_paint: bool,
 }
 
@@ -363,12 +340,10 @@ impl OverlayHost {
         true
     }
 
-    /// Input region from the largest glass island (surface coords), so
     /// clicks outside fall through to the windows below. Interactive
     /// hosts only; takes effect on the next commit, which paint()
     /// performs immediately after.
     fn sync_input_region(&mut self, islands: &[riode_shared::scene::Island]) {
-        let Some(bar) = largest_glass(islands) else { return };
         let r = &bar.rect;
         let rect = (
             r.x.floor() as i32,
@@ -387,16 +362,11 @@ impl OverlayHost {
         region.destroy();
     }
 
-    /// Glass uploads for parent-surface mode: the largest glass island's
-    /// rect becomes the blur region, and the item hint carries the raw
     /// material + rounded-rect shape — all in surface-local coordinates.
-    fn upload_parent_glass(&mut self, islands: &[riode_shared::scene::Island]) {
-        let Some(bar) = largest_glass(islands) else { return };
         let r = &bar.rect;
         let w = (r.right().ceil() as i32 - r.x.floor() as i32).max(1) as f32;
         let h = (r.bottom().ceil() as i32 - r.y.floor() as i32).max(1) as f32;
         if let Some(effect) = self.effect.as_ref() {
-            upload_blur_region(
                 &self.qh,
                 self.compositor_state.wl_compositor(),
                 effect,
@@ -407,14 +377,11 @@ impl OverlayHost {
             let radii = shape_radii(bar, w, h);
             // The bar is a single island: pack its material against its
             // own rect at the output scale, like every other island.
-            let words = bar.glass.as_ref().map(|g| {
-                riode_shared::foundation::pack_glass_wire(
                     ResolvedRect::new(r.x, r.y, w, h),
                     g,
                     self.output_scale as f32,
                 )
             });
-            upload_glass_frame(item, words.as_deref().unwrap_or(&[]));
             upload_effect_stages(item, bar.effects.as_ref());
             upload_item_shape(item, r.x as f64, r.y as f64, w as f64, h as f64, radii);
         }
@@ -447,7 +414,6 @@ impl OverlayHost {
                         i.rect.y,
                         i.rect.width,
                         i.rect.height,
-                        if i.glass.is_some() { "glass" } else { "filter" },
                     )
                 })
                 .collect();
@@ -457,7 +423,6 @@ impl OverlayHost {
             self.sync_input_region(&islands);
         }
         if !self.cfg.island_layers {
-            self.upload_parent_glass(&islands);
         }
         let pixmap = self.raster.draw_engine(&mut self.engine);
 
@@ -492,7 +457,6 @@ impl OverlayHost {
         if self.cfg.island_layers {
             // One overlay layer surface per island (subsurface regions are
             // dropped by core 0.56): each carries the island's pixels plus
-            // its own blur region.
             let qh = self.qh.clone();
             let bg = self.island_bg.clone();
             let item_mgr = self.island_item.clone();
@@ -796,10 +760,7 @@ fn read_boot_chrome(config: &DevLoopConfig) -> HotWindowInfo {
 
 /// Runs the overlay: connects, builds the hot UI once, presents it on a
 /// layer-shell surface, and drives frames + hot-reload until killed.
-/// The engine paints glass content-only over transparent
-/// (`RIODE_COMPOSITOR_GLASS=1`); the compositor plugin owns the backdrop.
 pub fn overlay_run(cfg: &OverlayConfig) -> Result<(), Box<dyn std::error::Error>> {
-    std::env::set_var("RIODE_COMPOSITOR_GLASS", "1");
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
@@ -906,7 +867,6 @@ pub fn overlay_run(cfg: &OverlayConfig) -> Result<(), Box<dyn std::error::Error>
             layer.set_exclusive_zone(-1);
             layer.set_keyboard_interactivity(KeyboardInteractivity::None);
             // Boot input region: rough centered rect; the first paint
-            // replaces it with the measured glass-island rect.
             let region = compositor_state.wl_compositor().create_region(&qh, ());
             let rect = (
                 (w as i32 - w as i32 * 90 / 100) / 2,
@@ -922,10 +882,8 @@ pub fn overlay_run(cfg: &OverlayConfig) -> Result<(), Box<dyn std::error::Error>
         }
     };
 
-    // Parent-surface glass mode: one effect + one item object for the
     // parent surface (the protocols allow at most one per surface).
     // Island-layers mode mints its own per island inside the pool sync.
-    let island_layers = matches!(cfg.glass, GlassMode::IslandLayers);
     let (effect, item, island_bg, island_item) = if island_layers {
         (None, None, bg_manager, item_manager)
     } else {

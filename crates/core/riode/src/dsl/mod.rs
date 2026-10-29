@@ -9,7 +9,7 @@
 //!
 //! | Builder | Makes | Typical modifiers |
 //! |---------|-------|-------------------|
-//! | [`group()`] | Flex container | `.direction()`, `.width()`, `.fill()`, `.children()`, `.on_click()`, `.shadow()`, `.clip()`, `.key()` |
+//! | [`group()`] | Flex container | `.direction()`, `.width()`, `.material()`, `.children()`, `.on_click()`, `.clip()`, `.key()` |
 //! | [`text()`] | Shaped text run | `.size()`, `.color()`, `.align()`, `.selectable()`, `.max_lines()` |
 //! | [`image()`] | Raster image | `.size()` (from an [`ImageSource`](crate::scene::ImageSource)) |
 //! | [`svg()`] | Vector graphic | `.size()` (anything `Into<VectorGraphic>`: `&str`, `Arc<_>`, …) |
@@ -29,9 +29,7 @@
 //!                 .size(12.0)
 //!                 .color(Color::hex(0x6B7280)),
 //!         ])
-//!         .fill(Color::WHITE)
-//!         .radius(12.0)
-//!         .shadow(8.0)                        // elevation, an (elevation, color) pair, or a Shadow
+//!         .material(Fill::solid(Color::WHITE))
 //!         .on_click(move |_| open.set(!open.get()))
 //! }
 //! ```

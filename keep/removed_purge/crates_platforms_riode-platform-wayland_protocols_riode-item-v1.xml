@@ -1,0 +1,227 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="riode_item_v1">
+  <copyright>
+    Copyright © 2026 the splein contributors
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the
+    "Software"), to deal in the Software without restriction, including
+    without limitation the rights to use, copy, modify, merge, publish,
+    distribute, sublicense, and/or sell copies of the Software, and to
+    permit persons to whom the Software is furnished to do so, subject to
+    the following conditions:
+
+    The above copyright notice and this permission notice (including the
+    next paragraph) shall be included in all copies or substantial portions
+    of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+    OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+    MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+    IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+    CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+    TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+    SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+  </copyright>
+
+  <description summary="per-surface glass item hints for riode-glass">
+    A riode-glass-specific extension. It lets a client describe how the
+    riode-glass compositor plugin should render the backdrop effect it
+    applies to any surface that also carries an
+    ext-background-effect-v1 blur region: the raw liquid-glass material
+    (exact engine bytes) and what rounded-rect shape to clip the effect
+    to.
+
+    This protocol only ever provides hints. A compositor without the
+    riode-glass plugin loaded, or one that unloads it, has no obligation to
+    honor any request here, and every object created by this protocol
+    keeps working (as a silent no-op) rather than becoming a protocol
+    error, precisely so that hint state never has to be treated as
+    load-bearing by a client.
+
+    Shape of the protocol follows hyprglass-item-v1 (genericized), with
+    the preset-name channel replaced by raw material bytes: client and
+    plugin speak the same `Glass` language, no names anywhere.
+  </description>
+
+  <interface name="riode_item_manager_v1" version="3">
+    <description summary="manager to associate glass item hints with surfaces">
+      This is a Hyprland-riode-glass-specific extension. It lets a client hint
+      how the riode-glass compositor plugin should render the effect it
+      applies to any surface that also carries an
+      ext-background-effect-v1 blur region: the raw glass material, and
+      what rounded-rect shape to clip the effect to.
+
+      This protocol only ever provides hints. A compositor without the
+      riode-glass plugin loaded, or one that unloads it, has no obligation to
+      honor any request here, and every object created by this protocol
+      keeps working (as a silent no-op) rather than becoming a protocol
+      error, precisely so that hint state never has to be treated as
+      load-bearing by a client.
+    </description>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the manager">
+        This does not affect any riode_item_v1 objects already created.
+      </description>
+    </request>
+
+    <request name="get_item">
+      <description summary="create a glass item hint object for a surface">
+        Create a riode_item_v1 object for the given wl_surface. Only one
+        active (non-inert) such object may exist per surface at a time;
+        creating a second one for the same surface while the first is still
+        active raises the item_exists error. Inert objects left over from a
+        previous manager global do not count.
+
+        This request does not, by itself, cause the surface to receive any
+        effect: the effect is still gated on the surface itself carrying an
+        ext-background-effect-v1 blur region. The object created here only
+        supplies hints used when that effect is drawn.
+      </description>
+      <arg name="id" type="new_id" interface="riode_item_v1"/>
+      <arg name="surface" type="object" interface="wl_surface"/>
+    </request>
+
+    <event name="finished">
+      <description summary="the manager is going away">
+        Sent when the compositor is about to make this global permanently
+        unusable, for example because the riode-glass plugin is being
+        unloaded. The client should stop issuing new requests on this
+        manager and any riode_item_v1 objects it created; it does not
+        have to destroy them, since they are guaranteed to remain valid,
+        inert objects rather than become protocol errors.
+      </description>
+    </event>
+
+    <enum name="error">
+      <entry name="item_exists" value="0" summary="the surface already has a riode_item_v1 object"/>
+    </enum>
+  </interface>
+
+  <interface name="riode_item_v1" version="3">
+    <description summary="glass rendering hints for one surface">
+      Carries optional per-surface hints for the riode-glass effect:
+      the raw liquid-glass material, and what rounded-rect shape to clip
+      the effect to. The two hints are independent: either can be set
+      without the other. None of these requests raises an error for an
+      out-of-range value; being hints, invalid values are ignored or
+      clamped as described per request. All state is double-buffered per
+      wl_surface.commit.
+    </description>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy this item hint object">
+        Destroying this object clears the surface's association with it.
+      </description>
+    </request>
+
+    <request name="set_glass" since="2">
+      <description summary="describe the packed liquid-glass frame">
+        Sets the pending material: the packed glass frame as
+        little-endian u32 words — version tag 5, frame blur sigma x/y
+        (device px), integer sample box x0, y0, w, h (device px, used
+        verbatim for blit/scissor/uSize; shape rects in the floats are
+        box-relative), then the 792 uniform
+        floats the optics shader consumes directly (the 736-float
+        prefix plus the 56-float glow tail: count/dpr/light,
+        per-shape rects/radii/variants/tints, the 36 variant-constant
+        vec4s, group/extra/clip/blur arrays, glow/blend tail).
+        799 words exactly; any
+        other size or version is ignored (unset behavior —
+        the plain-blur fallback applies). The client packs
+        (`pack_glass_wire`); the plugin uploads blindly, so there is one
+        source of truth and no C++ pack to drift. There are no preset
+        names. Version history: 1 was the P1 30-float material (retired
+        with the P1 port); 2/3 were engine-internal and never consumed;
+        4 was the 736-float prefix wire; 5 adds the 56-float glow tail.
+      </description>
+      <arg name="material" type="array" summary="v5 packed glass frame: version + sigma + box + 792 floats, LE u32s"/>
+    </request>
+
+    <request name="unset_glass" since="2">
+      <description summary="clear the material hint">
+        Reverts to the compositor's plain-blur fallback for the surface's
+        blur region.
+      </description>
+    </request>
+
+    <request name="set_shape">
+      <description summary="hint an explicit rounded-rect clip shape">
+        Sets the pending shape: a rectangle in surface-local logical
+        coordinates, with up to four independent corner radii, that the
+        effect is clipped and shaped to. If w or h is zero or negative,
+        the shape is ignored (unset behavior). A negative radius is
+        treated as zero. Radii are clamped the same way as CSS
+        border-radius.
+      </description>
+      <arg name="x" type="fixed" summary="left edge, surface-local logical px"/>
+      <arg name="y" type="fixed" summary="top edge, surface-local logical px"/>
+      <arg name="width" type="fixed" summary="width, logical px"/>
+      <arg name="height" type="fixed" summary="height, logical px"/>
+      <arg name="radius_top_left" type="fixed"/>
+      <arg name="radius_top_right" type="fixed"/>
+      <arg name="radius_bottom_right" type="fixed"/>
+      <arg name="radius_bottom_left" type="fixed"/>
+    </request>
+
+    <request name="unset_shape">
+      <description summary="clear the shape hint">
+        Reverts to the compositor's normal shape fallback: the extents of
+        the surface's ext-background-effect-v1 blur region.
+      </description>
+    </request>
+
+    <enum name="backdrop_need">
+      <entry name="none" value="0" summary="stage reads no backdrop texture"/>
+      <entry name="read_sharp" value="1" summary="stage reads the unblurred capture"/>
+      <entry name="read_blurred" value="2" summary="stage reads the frame-blurred backdrop"/>
+    </enum>
+
+    <request name="set_effect" since="3">
+      <description summary="describe one custom effect stage in the ordered stack">
+        Sets one pending custom effect stage: its position in the
+        layer's ordered effect stack (`stack_index`, the absolute index
+        over ALL stages — the glass stage included), the complete WGSL
+        module implementing the effect ABI (the client prepends the ABI
+        definitions; the module defines exactly `fn apply(...) ->
+        EffectCtx` plus any helpers it needs), packed little-endian f32
+        uniforms (whole vec4s only), which backdrop texture the
+        stage reads (`backdrop_need`), and that backdrop's blur sigma in
+        device px (`backdrop_sigma`, meaningful for `read_blurred`
+        only; 0 elsewhere). Indices may arrive in any order;
+        the executor sorts by index. A duplicate index replaces the
+        earlier pending stage at that index. The whole set is cleared by
+        `clear_effects`, which the client sends at the head of every
+        commit's batch, so a shrinking stack can never leak stale stages
+        across commits. Out-of-range or misaligned payloads are ignored
+        per-request — hints never raise protocol errors.
+      </description>
+      <arg name="stack_index" type="int" summary="absolute position among all stages, bottom to top"/>
+      <arg name="wgsl" type="string" summary="complete WGSL module: ABI header (client-prepended) + apply definition"/>
+      <arg name="uniforms" type="array" summary="packed f32 uniforms, LE bytes, whole vec4s"/>
+      <arg name="backdrop_need" type="uint" enum="backdrop_need"/>
+      <arg name="backdrop_sigma" type="fixed" summary="ReadBlurred sigma, device px (0 when unused)"/>
+    </request>
+
+    <request name="clear_effects" since="3">
+      <description summary="clear all pending custom effect stages">
+        Drops every pending effect stage for the next commit's apply.
+        Sent at the head of each commit's batch so the latched set
+        always mirrors the current stack exactly.
+      </description>
+    </request>
+
+    <request name="set_glass_stage" since="3">
+      <description summary="position of the glass frame within the ordered stack">
+        Sets the pending stack index of the glass frame (`set_glass`)
+        among all stages: -1 when the stack carries no glass stage
+        (every latched stage is a plain backdrop stage). Values below
+        -1 clamp to -1; an omitted request keeps the previous value.
+        Sent every commit alongside `clear_effects`, so the position
+        tracks stack edits (moving Glass, then Glass at the bottom).
+      </description>
+      <arg name="stack_index" type="int"/>
+    </request>
+  </interface>
+</protocol>

@@ -55,16 +55,7 @@ pub fn compile_stacking_context(
         .is_some_and(|cached| {
             cached.has_text && (ctx.abs_origin != cached.abs_origin || !cached.text_settled)
         });
-    // Glass settle coherence: press/morph state integrates in the damage
-    // pass and never marks dirty, so a chunk baked mid-glide must
-    // re-emit until its glass settles (see `glass_unsettled`). Damage
-    // overlap deliberately stays out of it, same as text.
-    let glass_stale = node_state
-        .scene
-        .retained_chunk
-        .as_ref()
-        .is_some_and(|cached| cached.glass_unsettled);
-    let replay = if is_clean && clips_match && !text_stale && !glass_stale {
+    let replay = if is_clean && clips_match && !text_stale {
         node_state
             .scene
             .retained_chunk

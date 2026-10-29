@@ -1,6 +1,5 @@
 // Single responsibility: Shared CLI argument parser and telemetry bootstrap for Aurora examples.
 
-use riode::app::VisualDebugger;
 use riode::prelude::*;
 
 #[cfg(feature = "tracy")]
@@ -28,8 +27,6 @@ impl tracing_tracy::Config for TracyConfig {
 
 /// Command-line argument configuration for example applications.
 pub struct ExampleCli {
-    /// Active rendering backend chosen via CLI flags.
-    pub backend: RenderBackend,
     /// Logical window width in pixels.
     pub width: u32,
     /// Logical window height in pixels.
@@ -38,19 +35,6 @@ pub struct ExampleCli {
     pub show_hud: bool,
     /// Frame rate pacing limit policy.
     pub fps_limit: FpsLimit,
-}
-
-/// Maps a user-supplied engine name to a [`RenderBackend`].
-///
-/// Accepts `tiny-skia` / `cpu` and `wgpu` (dashes and underscores are
-/// interchangeable, case-insensitive). Returns `None` for anything else so
-/// typos in unrelated positionals never silently switch the rasterizer.
-fn parse_engine_name(raw: &str) -> Option<RenderBackend> {
-    match raw.to_lowercase().replace('_', "-").as_str() {
-        "tiny-skia" | "tinyskia" | "cpu" => Some(RenderBackend::TinySkia),
-        "wgpu" | "raw-wgpu" | "rawgpu" => Some(RenderBackend::Wgpu),
-        _ => None,
-    }
 }
 
 impl ExampleCli {
@@ -76,19 +60,6 @@ impl ExampleCli {
             println!("│ --height <pixels>  Set custom window height            │");
             println!("└────────────────────────────────────────────────────────┘");
             std::process::exit(0);
-        }
-
-        // Positional engine first: the first bare arg names the rasterizer.
-        let positional = args
-            .iter()
-            .skip(1)
-            .find(|a| !a.starts_with('-'))
-            .and_then(|a| parse_engine_name(a));
-        let mut backend = positional.unwrap_or(RenderBackend::TinySkia);
-        if positional.is_none() {
-            if args.iter().any(|a| a == "--gpu" || a == "--wgpu" || a == "--raw-wgpu") {
-                backend = RenderBackend::Wgpu;
-            }
         }
 
         let mut width = default_w;
@@ -126,17 +97,12 @@ impl ExampleCli {
 
         let show_hud = !args.iter().any(|a| a == "--no-hud");
 
-        let engine_name = match backend {
-            RenderBackend::TinySkia => "tiny-skia",
-            RenderBackend::Wgpu => "wgpu",
-        };
         println!(
-            "⚡ Backend: {} | Resolution: {}x{} | FPS: {:?} | HUD: {}",
-            engine_name, width, height, fps_limit, show_hud
+            "⚡ wgpu | Resolution: {}x{} | FPS: {:?} | HUD: {}",
+            width, height, fps_limit, show_hud
         );
 
         Self {
-            backend,
             width,
             height,
             show_hud,
@@ -180,49 +146,13 @@ impl ExampleCli {
         }
     }
 
-    /// Pre-configures a `MultiBackendConfig` with both raster backends.
-    ///
-    /// One shared engine/reactive state. `1-2` select a single backend
-    /// window, `Tab`/`F7` cycles. The CLI positional/flags pick the focused
-    /// backend.
-    pub fn app_config_multi(&self, title: &str) -> riode::app::multibackend::MultiBackendConfig {
-        use riode::app::multibackend::MultiBackend;
-        let mut debugger = VisualDebugger::new();
-        debugger.show_hud = self.show_hud;
-
-        MultiBackend::config([
-            Some(riode_tiny_skia::create_backend),
-            Some(riode_engine_wgpu::create_backend),
-        ])
-        .title(format!(
-            "{title} [1-2 engine | Tab/F7 cycle | {}]",
-            match self.backend {
-                RenderBackend::TinySkia => "tiny-skia",
-                RenderBackend::Wgpu => "wgpu",
-            }
-        ))
-        .size(self.width, self.height)
-        .initial(self.backend)
-        .show_hud(self.show_hud)
-        .fps_limit(self.fps_limit)
-        .extension(debugger)
-    }
-
     /// Pre-configures an `AppConfig` builder with parsed CLI parameters.
     pub fn app_config(&self, title: &str) -> AppConfig {
-        let mut debugger = VisualDebugger::new();
-        debugger.show_hud = self.show_hud;
-
-        let config = App::config()
+        App::config()
             .title(title)
             .size(self.width, self.height)
-            .backend(self.backend)
             .fps_limit(self.fps_limit)
-            .extension(debugger);
-        match self.backend {
-            RenderBackend::TinySkia => config.backend_factory(riode_tiny_skia::create_backend),
-            RenderBackend::Wgpu => config.backend_factory(riode_engine_wgpu::create_backend),
-        }
+            .backend_factory(riode_engine_wgpu::create_backend)
     }
 }
 
@@ -237,7 +167,6 @@ pub fn example_cli_run<E: IntoElement>(
     default_w: u32,
     default_h: u32,
     background: impl Into<Color>,
-    multi_backend: bool,
     root: impl Fn() -> E + 'static,
 ) {
     let cli = ExampleCli::parse(default_w, default_h);
@@ -245,15 +174,8 @@ pub fn example_cli_run<E: IntoElement>(
     // `include_bytes!` resolves relative to *this* file, so the font path lives
     // here once instead of once per example.
     const INTER: &[u8] = include_bytes!("../../crates/core/riode/assets/inter-var.ttf");
-    if multi_backend {
-        cli.app_config_multi(title)
-            .font("Inter", INTER)
-            .background(background)
-            .run(root);
-    } else {
-        cli.app_config(title)
-            .font("Inter", INTER)
-            .background(background)
-            .run(root);
-    }
+    cli.app_config(title)
+        .font("Inter", INTER)
+        .background(background)
+        .run(root);
 }
