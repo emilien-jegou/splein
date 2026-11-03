@@ -159,7 +159,7 @@ fn selftest_body(version_fn: usize, root_fn: usize) -> i32 {
             let key: riode::foundation::Key = "hero".into();
             arena
                 .node_for_key(&key)
-                .and_then(|id| arena.get(id).style.material.clone())
+                .and_then(|id| arena.get(id).style.paint.material.clone())
         });
         check(
             hero_material.is_some(),

@@ -20,7 +20,7 @@
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-use crate::foundation::{Color, Material, Point, ResolvedRect, Transform};
+use crate::foundation::{Color, LayerPaint, Point, ResolvedRect, Transform};
 use crate::scene::chunk::SceneChunk;
 use crate::scene::command::SceneCommand;
 use crate::scene::image::ImageSource;
@@ -76,16 +76,16 @@ pub struct PlacedSvg<'a> {
     pub transform: Transform,
 }
 
-/// An isolated layer carrying an optional material chain, fully placed.
+/// An isolated layer carrying its paint bundle, fully placed.
 ///
-/// `Some(material)` means the engine renders the layer's content to an
-/// offscreen, runs the material pass into it, and composites the result
-/// under the content. `None` is a plain isolation layer.
+/// The paint rides along as the contract for the shader rewrite: the
+/// current wgpu sink reads `None`/`Some` only to decide "isolation
+/// blit", and composites the layer's content unchanged — no material
+/// pass runs yet. `None` and `Some` therefore render identically today.
 #[derive(Clone, Debug)]
 pub struct PlacedLayer<'a> {
     pub rect: ResolvedRect,
-    /// The material chain, borrowed from the command.
-    pub material: Option<&'a Material>,
+    pub paint: &'a LayerPaint,
     pub transform: Transform,
 }
 
@@ -191,10 +191,10 @@ pub fn lower_chunk(
                 transform: stack.transform(),
             }),
             SceneCommand::PopClip => sink.pop_clip(),
-            SceneCommand::BeginLayer { rect, material, .. } => {
+            SceneCommand::BeginLayer { rect, paint, .. } => {
                 sink.begin_layer(&PlacedLayer {
                     rect: *rect,
-                    material: material.as_ref(),
+                    paint,
                     transform: stack.transform(),
                 })
             }

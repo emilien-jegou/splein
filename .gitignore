@@ -3,6 +3,7 @@
 !.relacher.lock
 !.envrc
 !cliff.toml
+!bacon.toml
 !CHANGELOG.md
 !optimization_plan.md
 !plan_wgpu.md
@@ -13,6 +14,8 @@
 !README.md
 !devenv.nix
 !AGENTS.md
+!.agents
+!.agents/**/*
 
 !keep/
 !keep/*

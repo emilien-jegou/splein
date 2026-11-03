@@ -4,6 +4,7 @@ pub mod clip;
 pub mod command;
 pub mod context;
 pub mod image;
+pub mod material_pipeline;
 pub mod pipeline;
 pub mod renderer;
 pub mod svg;

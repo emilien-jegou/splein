@@ -1,6 +1,6 @@
 // Single responsibility: Pure geometric damage analysis comparing visual bounds against history.
 
-use crate::foundation::{DamageRegion, LightEnvironment, Point, ResolvedRect, Transform};
+use crate::foundation::{DamageRegion, Point, ResolvedRect, Transform};
 use crate::tree::TreeArena;
 use crate::tree::{DirtyFlags, NodeId, NodeKind};
 
@@ -59,7 +59,6 @@ impl DamagePlan {
                     root_clip,
                     root_viewport,
                     false,
-                    LightEnvironment::DEFAULT,
                     &mut plan.region,
                 );
             }
@@ -99,7 +98,6 @@ impl DamagePlan {
             root_clip,
             root_viewport,
             false,
-            LightEnvironment::DEFAULT,
             &mut plan.region,
         );
         expand_nested_shifts(&mut plan);
@@ -263,7 +261,6 @@ fn resolve_spatial_and_damage(
     active_clip: Option<ResolvedRect>,
     scroll_viewport: Option<ResolvedRect>,
     ancestor_shifted: bool,
-    inherited_light: LightEnvironment,
     damage: &mut DamageRegion,
 ) -> ResolvedRect {
     let (node_tx, is_clip, is_scroll_viewport, painted) = {
@@ -283,11 +280,7 @@ fn resolve_spatial_and_damage(
         )
     };
 
-    // Light overrides were purged with the legacy paint path: every node
-    // resolves to the inherited ambient value, so the stash still exists
-    // for bounds/hit testing to read but nothing can override it.
-    let ambient = inherited_light;
-    arena.get_mut(id).state.core.resolved_light = ambient;
+    // Light overrides were purged with the legacy paint path.
 
     let node_abs = node_tx.transform_point(Point::new(0.0, 0.0));
     // Unclipped occupancy drives damage: a node leaving its clip must still clear its old pixels.
@@ -338,9 +331,6 @@ fn resolve_spatial_and_damage(
             return false;
         }
         if node.state.paint.last_painted_flow != Some(flow_bounds) {
-            return false;
-        }
-        if node.state.core.resolved_light != ambient {
             return false;
         }
         for child in arena.each_child(id) {
@@ -431,7 +421,6 @@ fn resolve_spatial_and_damage(
             next_clip,
             next_viewport,
             ancestor_shifted || shifted,
-            ambient,
             damage,
         );
         subtree_bounds = subtree_bounds.union(&child_subtree);

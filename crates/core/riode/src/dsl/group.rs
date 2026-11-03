@@ -10,7 +10,7 @@ use crate::input::{
     ClickInfo, DragInfo, HandlerSet, HitTest, HoverInfo, KeyEvent, PointerEvent, Propagation,
     WheelInfo,
 };
-use crate::reactive::prop::{Prop, IntoProp};
+use crate::reactive::prop::{IntoProp, Prop};
 use crate::reactive::readable::Readable;
 
 /// Declarative flex container builder with reactive properties and styling modifiers.
@@ -24,11 +24,10 @@ pub struct GroupDef {
     pub y: Option<Prop<f32>>,
     pub scale: Option<Prop<f32>>,
     pub rotate_degrees: Option<Prop<f32>>,
-    /// Material: the sole carrier of visual identity — the ordered
-    /// shading chain over the sampled background. Everything paintable
-    /// is a `Stage` inside this chain; there is no `fill`, `stroke`,
-    /// `view!` key: `material=` (block, bracket list, or chain expr).
+    pub shape: Option<Prop<Shape>>,
     pub material: Option<Prop<Material>>,
+    pub overlay: Option<Prop<Overlay>>,
+    pub effect: Option<Prop<Effect>>,
     pub layout: LayoutConfig,
     pub margin: Margin,
     pub padding: Padding,
@@ -106,6 +105,9 @@ pub fn group() -> GroupDef {
         scale: None,
         rotate_degrees: None,
         material: None,
+        overlay: None,
+        effect: None,
+        shape: None,
         layout: LayoutConfig::default(),
         margin: Margin::ZERO,
         padding: Padding::ZERO,
@@ -186,6 +188,26 @@ impl GroupDef {
     /// `view!` key: `material=` (block, bracket list, or chain expr).
     pub fn material<P: IntoProp<Material>>(mut self, e: P) -> Self {
         self.material = Some(e.into_prop());
+        self
+    }
+
+    pub fn shape<P: IntoProp<Shape>>(mut self, s: P) -> Self {
+        self.shape = Some(s.into_prop());
+        self
+    }
+
+    pub fn is_overlay(mut self, on: bool) -> Self {
+        self.is_overlay = on;
+        self
+    }
+
+    pub fn overlay<P: IntoProp<Overlay>>(mut self, o: P) -> Self {
+        self.overlay = Some(o.into_prop());
+        self
+    }
+
+    pub fn effect<P: IntoProp<Effect>>(mut self, e: P) -> Self {
+        self.effect = Some(e.into_prop());
         self
     }
 
@@ -285,10 +307,6 @@ impl GroupDef {
     }
     pub fn z_index<P: IntoProp<i32>>(mut self, z: P) -> Self {
         self.z_index = Some(z.into_prop());
-        self
-    }
-    pub fn overlay(mut self, on: bool) -> Self {
-        self.is_overlay = on;
         self
     }
     /// Sets the layout footprint this view presents to its parent.
@@ -449,13 +467,15 @@ impl GroupDef {
                                         None => el.with_key(key.clone()),
                                     };
                                     if let Some(el_key) = el.key() {
-                                        if let Some(scope) =
-                                            crate::reactive::hooks::current_scope()
+                                        if let Some(scope) = crate::reactive::hooks::current_scope()
                                         {
-                                            scope.runtime().borrow_mut().link_element_hook_instance(
-                                                el_key,
-                                                Rc::from(key.as_str()),
-                                            );
+                                            scope
+                                                .runtime()
+                                                .borrow_mut()
+                                                .link_element_hook_instance(
+                                                    el_key,
+                                                    Rc::from(key.as_str()),
+                                                );
                                         }
                                     }
                                     el
@@ -847,32 +867,98 @@ pub fn flatten_segments(segments: &[ChildSegment]) -> Vec<Element> {
     out
 }
 
-/// converts into a static chain prop.
-impl IntoProp<Material> for Material {
+// 1. Fixed arrays of stages: `<Group material=[Shape::rounded(8.0), Fill::solid(...)]>`
+impl<T: Stage, const N: usize> IntoProp<Material> for [T; N] {
     fn into_prop(self) -> Prop<Material> {
-        Prop::Static(self)
+        Prop::Static(Material::from(self))
     }
 }
 
-/// `material=Fill::solid(…)` — a single-stage chain. This is the one
-/// conversion the purge leaves for paint: `Fill` *is* a `Stage`, so the
-/// bracket-list and single-value spellings both land here.
-impl IntoProp<Material> for Fill {
+// 2. Dynamic lists of stages
+impl<T: Stage> IntoProp<Material> for Vec<T> {
     fn into_prop(self) -> Prop<Material> {
-        Prop::Static(Material::collect([self]))
+        Prop::Static(Material::from(self))
     }
 }
 
-/// `material={|geo: &Geo| …}`: the macro wraps the closure in
-/// [`GeoFn`]; the closure re-evaluates per frame against the fresh
-/// `Geo` (the closure IS the compile path — plan Part 3 (4)). It
-/// stores as a static one-stage chain whose stage re-evaluates the
-/// closure at write time.
+// 3. Heterogeneous boxed stages: `material=vec![Box::new(stage1) as Box<dyn Stage>, Box::new(stage2)]`
+impl IntoProp<Material> for Vec<Box<dyn Stage>> {
+    fn into_prop(self) -> Prop<Material> {
+        Prop::Static(Material::from_boxes(self))
+    }
+}
+
+// 4. Geometry-responsive closures wrapped in GeoFn: `<Group material=GeoFn(|geo| ...)>`
 impl<F, S> IntoProp<Material> for GeoFn<F>
 where
     F: Fn(&Geo) -> S + 'static,
     S: Stage,
 {
+    fn into_prop(self) -> Prop<Material> {
+        Prop::Static(Material::from(self))
+    }
+}
+
+impl IntoProp<Shape> for Shape {
+    fn into_prop(self) -> Prop<Shape> {
+        Prop::Static(self)
+    }
+}
+
+impl<S: Stage, const N: usize> IntoProp<Shape> for [S; N] {
+    fn into_prop(self) -> Prop<Shape> {
+        Prop::Static(Shape::from(self))
+    }
+}
+
+impl IntoProp<Shape> for Vec<Box<dyn Stage>> {
+    fn into_prop(self) -> Prop<Shape> {
+        Prop::Static(Shape::from_boxes(self))
+    }
+}
+impl IntoProp<Overlay> for Overlay {
+    fn into_prop(self) -> Prop<Overlay> {
+        Prop::Static(self)
+    }
+}
+
+impl<T: Stage, const N: usize> IntoProp<Overlay> for [T; N] {
+    fn into_prop(self) -> Prop<Overlay> {
+        Prop::Static(Overlay::from(self))
+    }
+}
+
+impl IntoProp<Overlay> for Vec<Box<dyn Stage>> {
+    fn into_prop(self) -> Prop<Overlay> {
+        Prop::Static(Overlay::from_boxes(self))
+    }
+}
+
+impl IntoProp<Effect> for Effect {
+    fn into_prop(self) -> Prop<Effect> {
+        Prop::Static(self)
+    }
+}
+
+impl<T: EffectStage, const N: usize> IntoProp<Effect> for [T; N] {
+    fn into_prop(self) -> Prop<Effect> {
+        Prop::Static(Effect::from(self))
+    }
+}
+
+impl IntoProp<Effect> for Vec<Box<dyn EffectStage>> {
+    fn into_prop(self) -> Prop<Effect> {
+        Prop::Static(Effect::from_boxes(self))
+    }
+}
+
+impl IntoProp<Effect> for BlendMode {
+    fn into_prop(self) -> Prop<Effect> {
+        Prop::Static(Effect::from(self))
+    }
+}
+
+impl<S: Stage> IntoProp<Material> for BlendedStage<S> {
     fn into_prop(self) -> Prop<Material> {
         Prop::Static(Material::collect([self]))
     }

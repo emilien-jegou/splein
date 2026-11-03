@@ -1,6 +1,6 @@
 // Single responsibility: Dynamic property evaluation closures on a layout node.
 
-use crate::foundation::{LayoutPresence, Material, Size, Transform};
+use crate::foundation::{LayerPaint, LayoutPresence, Size, Transform};
 use std::rc::Rc;
 
 /// Inner storage for dynamic property evaluators.
@@ -10,9 +10,11 @@ pub struct DynamicBindings {
     pub height: Option<Rc<dyn Fn() -> Size>>,
     pub text: Option<Rc<dyn Fn() -> String>>,
     pub transform: Option<Rc<dyn Fn() -> Transform>>,
-    /// Material evaluator, when the node declares a dynamic one. The only
-    /// visual slot left on a node.
-    pub material: Option<Rc<dyn Fn() -> Option<Material>>>,
+    /// Paint evaluator, when the node declares any dynamic paint chain
+    /// (shape, material, overlay, or effect). The one visual slot on a
+    /// node: it evaluates the whole [`LayerPaint`] bundle, so every paint
+    /// prop stays reactive through a single channel.
+    pub paint: Option<Rc<dyn Fn() -> LayerPaint>>,
     pub presence: Option<Rc<dyn Fn() -> LayoutPresence>>,
     /// Stacking order evaluator, when the node declares a dynamic one.
     pub z_index: Option<Rc<dyn Fn() -> i32>>,
@@ -108,7 +110,7 @@ impl DynamicBindings {
             && self.height.is_none()
             && self.text.is_none()
             && self.transform.is_none()
-            && self.material.is_none()
+            && self.paint.is_none()
             && self.presence.is_none()
             && self.z_index.is_none()
             && self.pose.as_ref().is_none_or(|p| !p.is_bound())
@@ -291,19 +293,19 @@ impl NodeBindings {
         }
     }
 
-    /// Re-evaluates the bound material, returning true if it changed.
+    /// Re-evaluates the bound paint bundle, returning true if it changed.
     ///
-    /// The one visual reactive channel left: paint invalidation is now
-    /// literally "did the material change?".
-    pub fn update_material(&self, material: &mut Option<Material>) -> bool {
+    /// The one visual reactive channel: paint invalidation is now literally
+    /// "did the [`LayerPaint`] change?".
+    pub fn update_paint(&self, paint: &mut LayerPaint) -> bool {
         let b = match &self.inner {
             Some(b) => b,
             None => return false,
         };
-        if let Some(e) = &b.material {
+        if let Some(e) = &b.paint {
             let fresh = e();
-            if *material != fresh {
-                *material = fresh;
+            if *paint != fresh {
+                *paint = fresh;
                 return true;
             }
         }

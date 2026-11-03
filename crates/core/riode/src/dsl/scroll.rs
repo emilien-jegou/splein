@@ -16,7 +16,7 @@ use crate::dsl::element::Element;
 use crate::dsl::element_ref::ElementRef;
 use crate::dsl::flip::use_ref;
 use crate::dsl::group::group;
-use crate::foundation::{Anchor, Color, Direction, Fill, Margin, Size};
+use crate::foundation::{Anchor, Direction, Margin, Size};
 use crate::input::{ClickInfo, DragInfo, HoverInfo, KeyCode, KeyEvent, PointerEvent, Propagation, WheelInfo};
 use crate::prelude::component;
 use crate::reactive::hooks::{current_scope, next_slot, no_scope, recall_value, remember_value};
@@ -944,7 +944,6 @@ fn scroll_thumb(
         .height(thumb_h.clone())
         .x(-THUMB_INSET)
         .y(thumb_y.clone())
-        .material(Fill::solid(Color::hex(0x0A0A0Au32)))
         // Gone when faded: an invisible thumb must not intercept clicks meant
         // for content (or silently swallow thumb drags). Presence toggles
         // layout once per fade cycle — bounded and rare.

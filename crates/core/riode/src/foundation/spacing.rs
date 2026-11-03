@@ -70,6 +70,11 @@ impl Margin {
         }
     }
 
+    /// Symmetrical padding along horizontal (x) and vertical (y) axes.
+    pub const fn xy(x: f32, y: f32) -> Self {
+        Self::symmetric(y, x)
+    }
+
     /// Applies a symmetric horizontal (left and right) margin.
     pub const fn x(val: f32) -> Self {
         Self {
@@ -209,6 +214,12 @@ impl Padding {
             left: val,
         }
     }
+
+    /// Symmetrical padding along horizontal (x) and vertical (y) axes.
+    pub const fn xy(x: f32, y: f32) -> Self {
+        Self::symmetric(y, x)
+    }
+
 
     /// Applies a symmetric horizontal (left and right) padding.
     pub const fn x(val: f32) -> Self {
@@ -368,22 +379,6 @@ impl From<f32> for Gap {
     }
 }
 
-
-use std::str::FromStr;
-
-fn parse_size(_s: &str) -> Option<crate::foundation::sizing::Size> {
-    None
-}
-fn parse_gap(_s: &str) -> Option<Gap> {
-    None
-}
-fn parse_margin(_s: &str) -> Option<Margin> {
-    None
-}
-fn parse_padding(_s: &str) -> Option<Padding> {
-    None
-}
-
 impl From<&str> for Gap {
     fn from(s: &str) -> Self {
         let s = s.trim();
@@ -407,8 +402,15 @@ impl From<String> for Gap {
 impl From<&str> for Margin {
     fn from(s: &str) -> Self {
         let s = s.trim();
-        if s.ends_with("px") { let t = s.trim_end_matches("px").trim(); if let Ok(v)=t.parse::<f32>() { return Margin::all(v); } }
-        if let Ok(v)=s.parse::<f32>() { return Margin::all(v); }
+        if s.ends_with("px") {
+            let t = s.trim_end_matches("px").trim();
+            if let Ok(v) = t.parse::<f32>() {
+                return Margin::all(v);
+            }
+        }
+        if let Ok(v) = s.parse::<f32>() {
+            return Margin::all(v);
+        }
         Margin::ZERO
     }
 }
@@ -421,8 +423,15 @@ impl From<String> for Margin {
 impl From<&str> for Padding {
     fn from(s: &str) -> Self {
         let s = s.trim();
-        if s.ends_with("px") { let t = s.trim_end_matches("px").trim(); if let Ok(v)=t.parse::<f32>() { return Padding::all(v); } }
-        if let Ok(v)=s.parse::<f32>() { return Padding::all(v); }
+        if s.ends_with("px") {
+            let t = s.trim_end_matches("px").trim();
+            if let Ok(v) = t.parse::<f32>() {
+                return Padding::all(v);
+            }
+        }
+        if let Ok(v) = s.parse::<f32>() {
+            return Padding::all(v);
+        }
         Padding::ZERO
     }
 }
@@ -432,15 +441,24 @@ impl From<String> for Padding {
     }
 }
 
-
-
 impl From<&str> for crate::foundation::sizing::Size {
     fn from(s: &str) -> Self {
         let s = s.trim();
-        if s == "fill" { return crate::foundation::sizing::Size::Fill; }
-        if s == "hug" || s == "fit" { return crate::foundation::sizing::Size::Fit; }
-        if s.ends_with("px") { let t = s.trim_end_matches("px").trim(); if let Ok(v)=t.parse::<f32>() { return crate::foundation::sizing::Size::Fixed(v); } }
-        if let Ok(v)=s.parse::<f32>() { return crate::foundation::sizing::Size::Fixed(v); }
+        if s == "fill" {
+            return crate::foundation::sizing::Size::Fill;
+        }
+        if s == "hug" || s == "fit" {
+            return crate::foundation::sizing::Size::Fit;
+        }
+        if s.ends_with("px") {
+            let t = s.trim_end_matches("px").trim();
+            if let Ok(v) = t.parse::<f32>() {
+                return crate::foundation::sizing::Size::Fixed(v);
+            }
+        }
+        if let Ok(v) = s.parse::<f32>() {
+            return crate::foundation::sizing::Size::Fixed(v);
+        }
         crate::foundation::sizing::Size::Fit
     }
 }
@@ -449,7 +467,6 @@ impl From<String> for crate::foundation::sizing::Size {
         Self::from(s.as_str())
     }
 }
-
 
 impl From<u32> for Gap {
     fn from(v: u32) -> Self {
@@ -461,7 +478,6 @@ impl From<i32> for Gap {
         Gap::Fixed(v as f32)
     }
 }
-
 
 impl From<f32> for Margin {
     fn from(v: f32) -> Self {

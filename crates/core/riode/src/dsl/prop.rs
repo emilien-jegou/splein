@@ -1,10 +1,10 @@
 // Single responsibility: Declarative UI conversions from foundation types into dynamic properties.
 
 use crate::foundation::{
-    Alignment, Color, Direction, Distribution, Gap, LayoutPresence, Margin, Size, Transform,
+    Alignment, Color, Direction, Distribution, Gap, LayoutPresence, Margin, Material, Size, Transform,
 };
 use crate::reactive::computed::Computed;
-use crate::reactive::prop::{Prop, IntoProp};
+pub use crate::reactive::prop::{IntoProp, Prop};
 use crate::reactive::signal::Signal;
 
 impl IntoProp<Size> for Size {
@@ -40,6 +40,12 @@ impl IntoProp<Size> for Signal<f32> {
 impl IntoProp<Size> for Computed<f32> {
     fn into_prop(self) -> Prop<Size> {
         Prop::Dynamic(std::rc::Rc::new(move || Size::Fixed(self.get())))
+    }
+}
+
+impl IntoProp<Material> for Material {
+    fn into_prop(self) -> Prop<Material> {
+        Prop::Static(self)
     }
 }
 

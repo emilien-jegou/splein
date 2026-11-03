@@ -27,27 +27,8 @@ default-members = [
 ]
 
 [workspace.dependencies]
-smithay-client-toolkit = { version = "0.19", default-features = false }
-wayland-client = "0.31"
-wayland-protocols = { version = "0.32", features = ["client", "staging"] }
-wayland-protocols-wlr = { version = "0.3", features = ["client"] }
-
 # CLI & Logging
 clap = { version = "4.5", features = ["derive"] }
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-tracing-appender = "0.2"
-tracing-error = "0.2"
-tracing-flame = "0.2"
-typed-builder = "0.20"
-eyre = "0.6"
-tokio = { version = "1.40", features = ["full"] }
-
-# Rendering
-tiny-skia = "0.11"
-calloop = "0.13"
-taffy = "0.5"
-cosmic-text = "0.12"
 
 # Embedded size preset (S2 #11): optimize for flash footprint.
 # Build with: cargo build --profile embedded -p riode --no-default-features

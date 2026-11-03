@@ -4,9 +4,6 @@
 // `HOT_*` consts in `./view.rs`.
 #![allow(dead_code)]
 
-#[path = "../common/motion_ui.rs"]
-mod motion_ui;
-
 #[path = "./view.rs"]
 mod view;
 

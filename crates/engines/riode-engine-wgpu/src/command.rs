@@ -1,7 +1,6 @@
-// Single responsibility: SceneCommand -> batched layer, glyph and image
-// vertex emission.
+// Single responsibility: SceneCommand -> batched layer, glyph and image vertex emission.
 
-use riode::foundation::{Color, Point, ResolvedRect, Transform};
+use riode::foundation::{Color, LayerPaint, Point, ResolvedRect, Transform};
 use riode::scene::command::SceneCommand;
 use riode::scene::{
     quantize_quarter, quantize_y, PlacedClip, PlacedImage, PlacedLayer, PlacedSvg, PlacedText,
@@ -12,19 +11,10 @@ use std::sync::Arc;
 
 use crate::clip::ClipStack;
 use crate::image::ImageGpu;
-use crate::pipeline::{GlyphVertex, ImageVertex, MaterialPassGpu, MaterialUniformsGpu, RectVertex};
+use crate::pipeline::{GlyphVertex, ImageVertex, RectVertex};
 use crate::text::GlyphAtlas;
 
-static WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-
-fn warn_once(msg: &str) {
-    if !WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
-        tracing::warn!("riode-wgpu: {msg} (further skips silent)");
-    }
-}
-
-/// One draw op over the base, glyph, image, or layer-composite vertex
-/// paints through its material layer.
+/// One draw op over the base, glyph, image, or layer-composite vertex buffers.
 #[derive(Clone)]
 pub enum Op {
     /// Opaque base-color quads repainting the damaged area on partial
@@ -47,96 +37,38 @@ pub enum Op {
         /// (scale/skew/rotation); translation-only uses nearest.
         linear: bool,
     },
-    /// Opens a material layer.
+    /// Opens an offscreen layer carrying the node's paint bundle.
     BeginLayer {
         region: ResolvedRect,
-        card_rect: ResolvedRect,
-        params: u32,
-        material: Option<u32>,
+        paint: LayerPaint,
     },
-    /// Closes the innermost material layer: the renderer runs the
-    /// material pass over the layer's snapshot, then draws the composite
-    /// quad `start..start + count` (rect_verts, the region) onto the
-    /// parent through `scissor` (ancestor clips; in-layer clips died with
-    /// the layer's balanced pops).
+    /// Closes the innermost layer: draws overlay before close, and
+    /// composites through the effect shader onto the parent.
     EndLayer {
         start: u32,
         count: u32,
         scissor: Option<ResolvedRect>,
+        region: ResolvedRect,
+        paint: LayerPaint,
     },
 }
 
-/// One open layer, emission-side: the offscreen region + filter-params
-/// index (`Some`), or `None` for a plain clip layer.
+/// One open layer, emission-side: the offscreen region and its paint bundle.
 struct LayerStackEntry {
-    region: Option<(ResolvedRect, u32)>,
-}
-
-/// Resolved element filter for one layer, emission-time: the chain's
-/// matrix, unlike the tiny-skia twin which renders unscaled) plus the
-/// combined row-major 4×5 CSS color matrix (identity when the chain is
-/// color-free). `Batch::filter_params` holds one per filter layer,
-/// indexed by `Op::BeginLayer.params`.
-///
-/// Frame-local: layer chunks are non-rebaseable, so a cache replay can
-/// never read another frame's index.
-#[derive(Clone, Copy)]
-pub struct FilterGpu {
-    pub sigma: f32,
-    pub matrix: [f32; 20],
-    /// Blend mode the layer's content composites at against the parent
-    /// snapshot, packed as the wire id (`BlendMode::as_uniform_id`);
-    /// `0.0` = `Normal` = plain source-over through the regular
-    /// composite pipeline. The renderer switches to the blend pipeline
-    pub blend: f32,
-}
-
-impl FilterGpu {
-    /// Row-major 4×5 identity: RGB pass-through, alpha preserved, no offset.
-    pub const IDENTITY: [f32; 20] = [
-        1.0, 0.0, 0.0, 0.0, 0.0, //
-        0.0, 1.0, 0.0, 0.0, 0.0, //
-        0.0, 0.0, 1.0, 0.0, 0.0, //
-        0.0, 0.0, 0.0, 1.0, 0.0,
-    ];
+    region: ResolvedRect,
+    paint: LayerPaint,
 }
 
 /// Emission context: batched verts + ordered ops.
-///
-/// No framing stack: core lowers each chunk into placed items
-/// (`SceneSink`), and every item already carries its absolute transform.
-/// The engine composes its root device scale around each item — the only
-/// matrix it owns.
 pub struct Batch {
     pub clip: ClipStack,
     pub rect_verts: Vec<RectVertex>,
     pub glyph_verts: Vec<GlyphVertex>,
     pub image_verts: Vec<ImageVertex>,
-    /// GPU textures referenced by `Op::Images.bind` indices. Arc-held so
-    /// a cached chunk's replayed ops stay valid past LRU eviction from
-    /// the texture cache (the Arc is the refcount).
     pub image_binds: Vec<Arc<ImageGpu>>,
     pub ops: Vec<Op>,
-    /// Device scale: layout px -> device px. Baked as the root transform
-    /// so all command coords land in device pixels; bin math then operates
-    /// in device space (GPUI parity). Coverage bitmaps stay layout-res
-    /// (engine shapes at logical size) — right size, softer at dsf>1
-    /// until the engine rasters at size*dsf.
     scale: f32,
-    /// Chunk-boundary barrier: set at the start of each chunk's emission so
-    /// the next run push starts a fresh op instead of extending the previous
-    /// chunk's run. Without this, per-chunk cache snapshots slice verts and
-    /// ops that no longer correspond (a chunk whose draws all merged into
-    /// the previous chunk's run snapshots zero ops and replays invisible).
     barrier: bool,
-    /// Resolved filters for the frame's filter layers, indexed by
-    /// `Op::BeginLayer.params`.
-    pub filter_params: Vec<FilterGpu>,
-    pub material_params: Vec<crate::pipeline::MaterialPassGpu>,
-    /// Emission-side layer stack, one entry per open layer: an offscreen
-    /// a plain clip layer (the trait-default degradation, no offscreen).
-    /// Balanced by `WgpuSink::end_layer`; a non-empty stack at `reset`
-    /// means an unbalanced command stream.
     layer_stack: Vec<LayerStackEntry>,
 }
 
@@ -151,8 +83,6 @@ impl Batch {
             ops: Vec::new(),
             scale: 1.0,
             barrier: false,
-            filter_params: Vec::new(),
-            material_params: Vec::new(),
             layer_stack: Vec::new(),
         }
     }
@@ -161,8 +91,6 @@ impl Batch {
         self.scale = dsf.clamp(0.5, 4.0);
     }
 
-    /// Device scale baked into emitted verts; the vertex cache keys replay
-    /// validity off it (a scale change re-emits, never rebases).
     pub fn scale(&self) -> f32 {
         self.scale
     }
@@ -175,8 +103,6 @@ impl Batch {
         self.image_binds.clear();
         self.ops.clear();
         self.barrier = false;
-        self.filter_params.clear();
-        self.material_params.clear();
         if !self.layer_stack.is_empty() {
             tracing::warn!(
                 "riode-wgpu: {} unclosed filter layer(s) at frame end (unbalanced BeginLayer/EndLayer)",
@@ -186,22 +112,14 @@ impl Batch {
         }
     }
 
-    /// Marks the start of a chunk's emission: the next run of any kind
-    /// starts a fresh op. Called by the renderer per chunk (after base
-    /// quads, before clips/base/commands) so snapshots stay complete.
     pub fn begin_chunk(&mut self) {
         self.barrier = true;
     }
 
-    /// Root device matrix: layout px -> device px. Composed around every
-    /// placed item's absolute transform — the only matrix the engine owns.
     fn device_tx(&self, t: &Transform) -> Transform {
         Transform::from_scale(self.scale, self.scale).multiply(t)
     }
 
-    /// Pushes an already-absolute layout-space clip as device pixels.
-    /// For inherited clips, which arrive in absolute screen space.
-    /// Clips are square — `radius` was purged with the legacy paint path.
     pub fn push_clip_device(&mut self, rect: &ResolvedRect) {
         let s = self.scale;
         self.clip.push(&ResolvedRect::new(
@@ -212,13 +130,6 @@ impl Batch {
         ));
     }
 
-    /// Pushes a node-local clip rect, transformed by the composed device
-    /// matrix into device pixels (AABB: over-covers under skew, which
-    /// clips less rather than more).
-    /// For command-stream clips, which are relative to the current frame
-    /// (node offsets precede the clip in the stream). Ignoring the
-    /// transform intersects the rect near the origin and silently drops
-    /// every op of nodes placed far from it.
     pub fn push_clip_local(&mut self, rect: &ResolvedRect, t: Transform) {
         let mut x0 = f32::INFINITY;
         let mut y0 = f32::INFINITY;
@@ -245,23 +156,7 @@ impl Batch {
             )));
     }
 
-    /// Translation + uniform positive scale (within epsilon): the SDF box
-    /// stays axis-aligned and radii scale uniformly.
-    fn tx_is_rigid(t: &Transform) -> bool {
-        t.b.abs() < 1e-6 && t.c.abs() < 1e-6 && t.a > 1e-6 && (t.a - t.d).abs() < 1e-6
-    }
-
-    /// Emits one textured quad for an already-resolved GPU image. Corners
-    /// ride the current affine (any transform is fine: the UVs stay
-    /// 0..1 over the transformed quad, so bilinear sampling remains
-    /// correct under skew/rotation); opacity bakes into `color.a`.
-    fn emit_image_quad(
-        &mut self,
-        rect: &ResolvedRect,
-        gpu: Arc<ImageGpu>,
-        t: Transform,
-        op: f32,
-    ) {
+    fn emit_image_quad(&mut self, rect: &ResolvedRect, gpu: Arc<ImageGpu>, t: Transform, op: f32) {
         if rect.width <= 0.0 || rect.height <= 0.0 || gpu.w == 0 || gpu.h == 0 {
             return;
         }
@@ -323,13 +218,6 @@ impl Batch {
         }
     }
 
-    /// Repaints the damaged area from base color (opaque base quads).
-    ///
-    /// Called once per partial frame, before any chunk content, so chunk
-    /// snapshots never include these verts. Damage is layout-space;
-    /// `scale` converts to the device px the vertex buffer carries.
-    /// Alpha rides verbatim (usually 1.0); the replace pipeline writes
-    /// the quad color over stale pixels with blending disabled.
     pub fn emit_damage_base(
         &mut self,
         damage: &riode::foundation::DamageRegion,
@@ -363,9 +251,6 @@ impl Batch {
         }
     }
 
-    /// One base-color quad in device px, same replace pipeline as
-    /// [`Self::emit_damage_base`]. Merges into a trailing `BaseQuads`
-    /// op so consecutive base rects share one draw call.
     pub fn emit_base_rect_dev(&mut self, r: &ResolvedRect, base: Color) {
         let (x0, y0) = (r.x, r.y);
         let (x1, y1) = (r.x + r.width, r.y + r.height);
@@ -374,7 +259,10 @@ impl Batch {
         }
         let c = [base.r, base.g, base.b, base.a];
         for (px, py) in [(x0, y0), (x1, y0), (x0, y1), (x1, y0), (x1, y1), (x0, y1)] {
-            self.rect_verts.push(RectVertex { pos: [px, py], color: c });
+            self.rect_verts.push(RectVertex {
+                pos: [px, py],
+                color: c,
+            });
         }
         let extend = match self.ops.last_mut() {
             Some(Op::BaseQuads { count, .. }) => Some(count),
@@ -388,7 +276,7 @@ impl Batch {
             }),
         }
     }
-    /// Emits one text run.
+
     #[allow(clippy::too_many_arguments)]
     fn emit_text(
         &mut self,
@@ -406,14 +294,6 @@ impl Batch {
             return;
         }
         let c = [color.r, color.g, color.b, a];
-        // Coverage quads keep linear filtering: the 2px replicated atlas
-        // gutter guarantees border taps read the owning cell, and linear
-        // covers the epsilon between the integer device anchors (below)
-        // and texel centers — nearest snaps that epsilon to blocky steps
-        // ("barely readable"). Device scale: coverage rasters at size*q
-        // (engine scaled slots), metrics below arrive in scaled px and
-        // are unscaled to layout units before the root transform
-        // re-applies the scale.
         let q = quantize_raster_scale(self.scale);
         let sq16 = (q * 16.0).round() as u16;
         for line in layout.lines.iter() {
@@ -421,19 +301,6 @@ impl Batch {
                 let pen_x = origin.x + g.point.x + line.align_offset;
                 let pen_y = origin.y + g.point.y;
                 let placed = t.transform_point(Point::new(pen_x, pen_y));
-                // Subpixel policy — asymmetric quanta, shared with the
-                // tiny-skia reference: X quarters (validated-smooth,
-                // matching the legacy phase bins), Y halves (1/4px
-                // residue). The analytic rasterizer integrates coverage at
-                // exactly that quantum from one linear outline, so glyph
-                // *shape* is identical at every subpixel position — no
-                // per-phase hinter re-fit, no per-bin bbox churn. The quad
-                // integer-anchors at base+bearing, so stems never resample
-                // through fractional filtering either. With baseline
-                // Y-snap armed (`B` key, GPUI's 4x1), Y snaps to whole
-                // device pixels instead (qy forced 0). Settled runs
-                // arrive pre-rounded from core compile, so they take the
-                // integer path naturally here.
                 let (bx, qx) = quantize_quarter(placed.x);
                 let fx = placed.x - bx as f32;
                 let (qy, fy) = if riode::text::baseline_snap_y() {
@@ -443,13 +310,7 @@ impl Batch {
                     let (by, qy) = quantize_y(placed.y);
                     (qy, placed.y - by as f32)
                 };
-                // Atlas slot distinctness only; the bitmap itself is keyed
-                // (key, qx, qy, scale) inside the analytic cache. X fits
-                // the legacy low 2 bits, Y the next 1 — the phase packs
-                // both natively.
                 let phase = (qx as u8) | ((qy as u8) << 2);
-                // Single raster: bitmap + bearing together (no TOCTOU).
-                // Metrics arrive in scaled px (q==1.0 at unity scale).
                 let rastered =
                     text_ctx.raster_glyph_exact_scaled(g.cache_key, qx, qy, self.scale, |bmp| {
                         bmp.and_then(|b| {
@@ -473,12 +334,6 @@ impl Batch {
                 let Some((e, bl, bt)) = rastered else {
                     continue;
                 };
-                // Layout-space glyph rect. Placement backs out the *exact*
-                // device fractions from the quantized base, collapsing to the
-                // reference's integer anchors: device content = (bx + left,
-                // by - top), <=1/8px residual — identical math to the CPU
-                // blit (tiny-skia `render_text_aligned`). UVs arrive
-                // edge-exact from the atlas (2px gutter, no inset).
                 let (u0, v0) = (e.u0, e.v0);
                 let (u1, v1) = (e.u1, e.v1);
                 let (bw, bh) = (e.w as f32 / q, e.h as f32 / q);
@@ -490,7 +345,6 @@ impl Batch {
                     (lx0, ly0 + bh, u0, v1),
                     (lx0 + bw, ly0 + bh, u1, v1),
                 ];
-                // Stack array, not a collected Vec: per glyph (N3).
                 let q: [([f32; 2], [f32; 2]); 4] = corners.map(|(x, y, u, v)| {
                     let pt = t.transform_point(Point::new(x, y));
                     ([pt.x, pt.y], [u, v])
@@ -531,8 +385,6 @@ impl Batch {
     }
 }
 
-/// Engine-side raster state for one chunk emission: the batch plus the
-/// per-frame GPU resources the placed items resolve against.
 pub struct WgpuSink<'a> {
     pub batch: &'a mut Batch,
     pub text_ctx: &'a TextContext,
@@ -553,11 +405,7 @@ impl SceneSink for WgpuSink<'_> {
         self.batch.clip.pop();
     }
 
-    /// Opens a material layer: device-space content box as the offscreen
-    /// region; material execution itself lives in the renderer's layer
-    /// pass. Emits `Op::BeginLayer` and pushes the emission-side stack.
     fn begin_layer(&mut self, layer: &PlacedLayer) {
-        // Device-space content box
         let t = self.batch.device_tx(&layer.transform);
         let mut x0 = f32::INFINITY;
         let mut y0 = f32::INFINITY;
@@ -579,52 +427,41 @@ impl SceneSink for WgpuSink<'_> {
             y1 = y1.max(p.y);
         }
         let region = ResolvedRect::new(x0, y0, x1 - x0, y1 - y0);
-        let card_rect = region;
-
-        // Identity filter slot: material execution is purged, so the
-        // renderer's `filter_params` lookup always resolves to identity.
-        let params = self.batch.filter_params.len() as u32;
-        self.batch.filter_params.push(FilterGpu {
-            sigma: 0.0,
-            matrix: FilterGpu::IDENTITY,
-            blend: 0.0,
-        });
 
         self.batch.ops.push(Op::BeginLayer {
             region,
-            card_rect,
-            params,
-            material: None,
+            paint: layer.paint.clone(),
         });
         self.batch.layer_stack.push(LayerStackEntry {
-            region: Some((region, 0)),
+            region,
+            paint: layer.paint.clone(),
         });
     }
 
-    /// Closes the innermost material layer: pushes the region quad (the
-    /// composite samples the layer offscreen over it) and `Op::EndLayer`.
     fn end_layer(&mut self) {
         let Some(entry) = self.batch.layer_stack.pop() else {
             return;
         };
-        let Some((region, _)) = entry.region else {
-            return;
-        };
+        let region = entry.region;
         let scissor = self.batch.clip.current();
-        let (x0, y0) = (region.x, region.y);
-        let (x1, y1) = (region.x + region.width, region.y + region.height);
+
+        // Expand quad if an effect is present so distortions don't clip at layout edges
+        let margin = if entry.paint.effect.is_some() {
+            32.0
+        } else {
+            0.0
+        };
+        let (x0, y0) = (region.x - margin, region.y - margin);
+        let (x1, y1) = (
+            region.x + region.width + margin,
+            region.y + region.height + margin,
+        );
+
         if x1 <= x0 || y1 <= y0 {
             return;
         }
         let start = self.batch.rect_verts.len() as u32;
-        for (px, py) in [
-            (x0, y0),
-            (x1, y0),
-            (x0, y1),
-            (x1, y0),
-            (x1, y1),
-            (x0, y1),
-        ] {
+        for (px, py) in [(x0, y0), (x1, y0), (x0, y1), (x1, y0), (x1, y1), (x0, y1)] {
             self.batch.rect_verts.push(RectVertex {
                 pos: [px, py],
                 color: [1.0, 1.0, 1.0, 1.0],
@@ -635,6 +472,8 @@ impl SceneSink for WgpuSink<'_> {
             start,
             count,
             scissor,
+            region: entry.region,
+            paint: entry.paint,
         });
     }
 

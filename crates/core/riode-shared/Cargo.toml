@@ -19,4 +19,5 @@ tracy = ["riode/tracy"]
 
 [dependencies]
 riode = { path = "../riode", version = "0.2.0" }
+riode-shader = { path = "../riode-shader", version = "0.2.0" }
 riode-engine-wgpu = { path = "../../engines/riode-engine-wgpu", version = "0.2.0" }

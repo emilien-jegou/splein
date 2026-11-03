@@ -8,5 +8,6 @@ license = "GPL-3.0"
 readme = "README.md"
 
 [dependencies]
+riode = { path = "../riode", version = "0.2.0" }
 smallvec = "1.16.1"
 rustc-hash = "2.1.3"

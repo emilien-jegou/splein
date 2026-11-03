@@ -133,7 +133,7 @@ impl TextContext {
 
     /// Ages the resize hint by one frame (called once per frame).
     pub(crate) fn tick_resize_hint(&self) {
-        let _ = self.resize_hint.fetch_update(
+        let _ = self.resize_hint.try_update(
             std::sync::atomic::Ordering::Relaxed,
             std::sync::atomic::Ordering::Relaxed,
             |v| v.checked_sub(1),

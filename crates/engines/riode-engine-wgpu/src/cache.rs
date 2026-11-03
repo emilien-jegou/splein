@@ -271,25 +271,19 @@ impl ChunkCache {
             // non-rebaseable (`rebaseable_stream`), so `rebase_for`
             // rejects the chunk and it re-emits fresh. Pass through for
             // exhaustiveness; a stale params index is never read.
-            Op::BeginLayer {
-                region,
-                card_rect,
-                params,
-                material,
-            } => Op::BeginLayer {
-                region,
-                card_rect,
-                params,
-                material,
-            },
+            Op::BeginLayer { region, paint } => Op::BeginLayer { region, paint },
             Op::EndLayer {
                 start,
                 count,
                 scissor,
+                region,
+                paint,
             } => Op::EndLayer {
-                start: start + rect_base,
+                start,
                 count,
                 scissor,
+                region,
+                paint,
             },
         }
     }

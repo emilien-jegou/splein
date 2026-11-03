@@ -4,7 +4,7 @@ use crate::dsl::element::Element;
 use crate::dsl::group::GroupDef;
 use crate::dsl::reconcile_children::reconcile_children;
 use crate::dsl::reconciler::{evaluate_prop, reconcile};
-use crate::foundation::{LayoutPresence, Material, Size, Transform};
+use crate::foundation::{LayerPaint, LayoutPresence, Size, Transform};
 use crate::input::handlers::NodeHandlers;
 use crate::reactive::id::SubscriberId;
 use crate::reactive::observer::Observer;
@@ -40,6 +40,9 @@ pub fn reconcile_group(
         || def.presence.as_ref().is_some_and(|p| p.is_dynamic())
         || def.has_dynamic_segments();
     let has_dyn_paint = def.material.as_ref().is_some_and(|p| p.is_dynamic())
+        || def.shape.as_ref().is_some_and(|p| p.is_dynamic())
+        || def.overlay.as_ref().is_some_and(|p| p.is_dynamic())
+        || def.effect.as_ref().is_some_and(|p| p.is_dynamic())
         || def.transform.as_ref().is_some_and(|p| p.is_dynamic())
         || def.z_index.as_ref().is_some_and(|p| p.is_dynamic())
         || def.x.as_ref().is_some_and(|p| p.is_dynamic())
@@ -58,19 +61,12 @@ pub fn reconcile_group(
         width: def.width.as_ref().and_then(|p| p.dynamic_closure()),
         height: def.height.as_ref().and_then(|p| p.dynamic_closure()),
         transform: def.transform.as_ref().and_then(|p| p.dynamic_closure()),
-        material: def
-            .material
-            .as_ref()
-            .and_then(|p| p.dynamic_closure())
-            .map(|s| Rc::new(move || Some(s())) as _),
+        paint: paint_binding(&def),
         text: None,
         presence: def.presence.as_ref().and_then(|p| p.dynamic_closure()),
         z_index: def.z_index.as_ref().and_then(|p| p.dynamic_closure()),
         pose: pose_bindings(&def),
-        scroll_offset: def
-            .scroll_offset
-            .as_ref()
-            .and_then(|p| p.dynamic_closure()),
+        scroll_offset: def.scroll_offset.as_ref().and_then(|p| p.dynamic_closure()),
         children: def
             .has_dynamic_segments()
             .then(|| def.child_segments.clone()),
@@ -86,9 +82,9 @@ pub fn reconcile_group(
     let props = ResolvedProps::evaluate(&def, pose.as_ref(), m_sub, p_sub, s_sub, runtime);
     let change = ChangeSet::detect(arena.get(id), &def, &props);
     tracing::debug!(
-        "riode: reconcile group {:?} material={:?} layout={} paint={} transform={}",
+        "riode: reconcile group {:?} paint={:?} layout={} paint_change={} transform={}",
         id,
-        props.material,
+        props.paint,
         change.layout,
         change.paint,
         change.transform,
@@ -149,8 +145,8 @@ pub fn reconcile_group(
     node.style.is_overlay = def.is_overlay;
     node.style.has_layer = def.has_layer;
     node.style.hit_test = def.hit_test;
-    let node = arena.get_mut(id);
-    node.style.material = props.material.clone();
+
+    node.style.paint = props.paint;
 
     // Provided context values live on the retained node (cleared when the
     // declaration carries none, so conditional providers vanish cleanly) and
@@ -209,12 +205,6 @@ pub fn reconcile_group(
 }
 
 /// Replaces a single child slot of `parent` with a freshly built element.
-///
-/// This is the surgical half of hot-reload: re-running one component factory yields one new
-/// element tree, and only the slot it belongs to is re-reconciled — siblings keep their
-/// `NodeId`s, their layout caches, and their state. `slot` past the end appends.
-///
-/// Returns the (possibly reused) child node.
 pub fn replace_child(
     runtime: &Rc<RefCell<ReactiveRuntime>>,
     arena: &mut TreeArena,
@@ -235,7 +225,6 @@ pub fn replace_child(
         id
     } else {
         let id = reconcile(runtime, arena, router, None, element);
-        // Pad with nothing: callers pass exact slots; beyond-the-end appends.
         children.push(id);
         arena.set_children(parent, children);
         id
@@ -243,6 +232,31 @@ pub fn replace_child(
     arena.bind_key(key, child);
     arena.mark_dirty(parent, DirtyFlags::MEASURE | DirtyFlags::LAYOUT);
     child
+}
+
+/// Collects the paint evaluator a group declared, if any.
+///
+/// One closure over the whole bundle: whichever of the four paint props is
+/// dynamic (or a context read) makes the node reactive through the single
+/// paint channel, and the static siblings ride along as cheap clones.
+fn paint_binding(def: &GroupDef) -> Option<Rc<dyn Fn() -> LayerPaint>> {
+    let any_dynamic = def.shape.as_ref().is_some_and(|p| p.is_dynamic())
+        || def.material.as_ref().is_some_and(|p| p.is_dynamic())
+        || def.overlay.as_ref().is_some_and(|p| p.is_dynamic())
+        || def.effect.as_ref().is_some_and(|p| p.is_dynamic());
+    if !any_dynamic {
+        return None;
+    }
+    let shape = def.shape.clone();
+    let material = def.material.clone();
+    let overlay = def.overlay.clone();
+    let effect = def.effect.clone();
+    Some(Rc::new(move || LayerPaint {
+        shape: shape.as_ref().map(|p| p.evaluate()),
+        material: material.as_ref().map(|p| p.evaluate()),
+        overlay: overlay.as_ref().map(|p| p.evaluate()),
+        effect: effect.as_ref().map(|p| p.evaluate()),
+    }))
 }
 
 /// Collects the pose component evaluators a group declared, if any.
@@ -260,14 +274,6 @@ fn pose_bindings(def: &GroupDef) -> Option<PoseBindings> {
 }
 
 /// Composes the pose components a group declared as plain values, if any.
-///
-/// A `Static` pose prop is a value, not a binding: the closure-only pose store
-/// (`pose_bindings` above) drops it, so without this fold `y={40.0}` would be
-/// never evaluated at all. Statics are baked into the declared half here; the
-/// dynamic half rides the paint subscriber and recomposes per frame from the
-/// same base ([`NodeBindings::update_transform`]), so mount and reactive
-/// updates agree by construction. Mirrors [`PoseBindings::compose`] exactly —
-/// same translate/rotate/scale order, same neutral-value skips.
 fn static_pose(def: &GroupDef) -> Option<Transform> {
     let static_val = |p: &Option<Prop<f32>>| match p {
         Some(Prop::Static(v)) => Some(*v),
@@ -305,23 +311,13 @@ fn static_pose(def: &GroupDef) -> Option<Transform> {
 }
 
 /// Every reactive property of a group, read once before any of them is written.
-///
-/// Grouping them matters for two reasons. Reconciliation has to decide *all* the change flags
-/// before it writes *any* of the node, so the reads cannot be interleaved with the writes; and
-/// each property has to be read under its own observer scope, which is easy to get subtly wrong
-/// when the reads are scattered through the body.
 struct ResolvedProps {
     width: Option<Size>,
     height: Option<Size>,
     presence: Option<LayoutPresence>,
-    /// The transform as declared, before pose components are folded in.
     declared_transform: Transform,
-    /// The declared transform with the bound pose composed into it.
     transform: Transform,
-    /// Static or dynamic material chain — the only visual property a node has.
-    material: Option<Material>,
-    /// Effective stacking order, absoluteness folded in, read under the paint observer when
-    /// dynamic so a signal change repaints.
+    paint: LayerPaint,
     z_index: i32,
 }
 
@@ -340,10 +336,6 @@ impl ResolvedProps {
         let presence = evaluate_prop(&def.presence, m_sub, runtime);
         let declared = evaluate_prop(&def.transform, p_sub, runtime);
 
-        // The pose has to be composed with the paint observer installed, or the signals behind
-        // `.x() .y() .scale() .rotate_degrees()` are read once at mount and never again: nothing
-        // would ever notify this node, because `evaluate_prop` only opens a scope when the node
-        // declares a transform of its own.
         let composed_pose = pose.map(|p| {
             let Some(sub) = p_sub else {
                 return p.compose();
@@ -356,45 +348,61 @@ impl ResolvedProps {
             composed
         });
         let declared_transform = declared.unwrap_or(Transform::IDENTITY);
-        // Static pose components are values, not bindings: fold them into the
-        // declared half so they compose at mount (and on every rebuild) rather
-        // than vanishing with the closure-only pose store.
         let declared_transform = match static_pose(def) {
             Some(statics) => declared_transform.multiply(&statics),
             None => declared_transform,
         };
 
-        // Scroll offset reads under its own subscriber so it schedules SCROLL
-        // rather than paint: same transform effect, cheaper damage downstream.
         let scroll_offset = evaluate_prop(&def.scroll_offset, s_sub, runtime).unwrap_or(0.0);
         let transform = NodeBindings::compose_with_scroll(
             NodeBindings::compose_with_declared(declared_transform, composed_pose),
             scroll_offset,
         );
 
-        let material = match &def.material {
-            Some(Prop::Static(s)) => Some(s.clone()),
-            Some(Prop::Dynamic(_)) | Some(Prop::Context(_)) => {
-                evaluate_prop(&def.material, p_sub, runtime)
-            }
-            None => None,
+        let paint = LayerPaint {
+            shape: match &def.shape {
+                Some(Prop::Static(s)) => Some(s.clone()),
+                Some(Prop::Dynamic(_)) | Some(Prop::Context(_)) => {
+                    evaluate_prop(&def.shape, p_sub, runtime)
+                }
+                None => None,
+            },
+            material: match &def.material {
+                Some(Prop::Static(m)) => Some(m.clone()),
+                Some(Prop::Dynamic(_)) | Some(Prop::Context(_)) => {
+                    evaluate_prop(&def.material, p_sub, runtime)
+                }
+                None => None,
+            },
+            overlay: match &def.overlay {
+                Some(Prop::Static(o)) => Some(o.clone()),
+                Some(Prop::Dynamic(_)) | Some(Prop::Context(_)) => {
+                    evaluate_prop(&def.overlay, p_sub, runtime)
+                }
+                None => None,
+            },
+            effect: match &def.effect {
+                Some(Prop::Static(e)) => Some(e.clone()),
+                Some(Prop::Dynamic(_)) | Some(Prop::Context(_)) => {
+                    evaluate_prop(&def.effect, p_sub, runtime)
+                }
+                None => None,
+            },
         };
+
         Self {
             width,
             height,
             presence,
             declared_transform,
             transform,
-            material,
+            paint,
             z_index: resolve_z_index(evaluate_prop(&def.z_index, p_sub, runtime), def.is_absolute),
         }
     }
 }
 
 /// Which invalidation passes a reconciliation has to schedule.
-///
-/// Detected against the node as it was *before* any write, and combined before marking, so a
-/// single pass over the tree sees one merged flag set instead of several.
 struct ChangeSet {
     layout: bool,
     paint: bool,
@@ -416,13 +424,8 @@ impl ChangeSet {
             || prev.style.anchor != def.anchor
             || prev.style.is_absolute != def.is_absolute
             || presence_changed;
-        let paint = prev.style.material != props.material
-            // Stacking is paint-class: a new z reorders paint (and hit testing, which mirrors
-            // paint) without touching layout.
+        let paint = prev.style.paint != props.paint
             || prev.style.z_index != props.z_index
-            // Scroll viewport flags change what gets encoded/culled, never a
-            // box: repaint-class. The SUBTREE_DIRTY that mark_dirty adds is
-            // what forces the subtree to re-encode under the new clip.
             || prev.style.scrollable != def.scrollable
             || prev.style.overscroll != def.overscroll
             || prev.style.isolate_children != def.isolate_children;

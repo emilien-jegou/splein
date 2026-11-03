@@ -804,7 +804,7 @@ impl Engine {
     /// sending moves to the view it was pressed on, so the view follows a pointer that no
     /// longer exists.
     pub fn cancel_pointer_gesture(&mut self) {
-        self.pointer.cancel_gesture(&mut self.scheduler.arena);
+        self.pointer.cancel_gesture();
     }
 
     /// Drains queued pointer events, returning the state left behind by the last one.

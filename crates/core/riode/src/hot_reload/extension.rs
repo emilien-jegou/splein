@@ -26,8 +26,7 @@
 // a swap followed by `queue_full_reload` is the whole handoff — the engine drain builds
 // from the new code under the old hook scope, and every host signal survives.
 
-use crate::app::extension::{AppExtension, OverlayCaps};
-use crate::app::painter::OverlayPainter;
+use crate::app::extension::AppExtension;
 use crate::dsl::{group, text, IntoElement};
 use crate::hot_reload::dev_loop::{DevLoop, DevLoopConfig};
 use crate::hot_reload::remote::{
@@ -36,7 +35,6 @@ use crate::hot_reload::remote::{
 };
 use crate::hot_reload::SharedFactory;
 use crate::runtime::Engine;
-use crate::text::TextContext;
 use std::cell::Cell;
 use std::rc::Rc;
 

@@ -1,24 +1,12 @@
-// Single responsibility: the demo1 view itself, shared by both modes.
-//
-// Bare module: no `extern crate` line here. Each host aliases its own runtime
-// to the name `riode` before including this file, so the same code compiles
-// against the real `riode` (release binary) and `riode-shared` (dev cdylib):
-//   - release: `examples/demo1/main.rs` (riode-examples)
-//   - dev:     generative `riode-hot-gen-ui` (dep: riode-shared, cdylib)
-// Keep this file free of `define_hot_ui!` / entry points; those live in the
-// dev dispatcher only. Pin component identity so hook state recalls across reloads.
-
 use riode::dsl::IntoElement;
 use riode::prelude::*;
+use riode_shader::{ Shape, Fill };
 
-/// Window chrome shared by the release driver (`main.rs`) and the hot entry
-/// (`hot.rs`): declared once here, referenced by both — never mirrored.
 pub const HOT_TITLE: &str = "Aurora — Demo 1";
 pub const HOT_WIDTH: u32 = 500;
 pub const HOT_HEIGHT: u32 = 482;
 pub const HOT_BG: u32 = 0xFFFFFF;
 
-/// Stable root scope for the demo1 view.
 #[component(name = "demo1::Page")]
 pub fn Page() -> impl IntoElement {
     build_ui()
@@ -56,7 +44,8 @@ pub fn build_ui() -> impl IntoElement {
                         direction="vertical"
                         width={127.0}
                         height={96.0}
-                        material={Fill::solid(0x4900FF)}
+                        shape={Shape::squircle(999.0)}
+                        material=[Fill::new(0x0000FF)]
                         alignment="center"
                         distribution="center"
                     >

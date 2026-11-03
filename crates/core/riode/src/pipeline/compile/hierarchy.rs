@@ -9,7 +9,6 @@ use crate::text::TextContext;
 use crate::tree::TreeArena;
 use crate::tree::{DirtyFlags, NodeId};
 
-
 /// Recursively traverses a node hierarchy and emits commands into the current scene chunk.
 pub fn compile_node_hierarchy(
     arena: &mut TreeArena,
@@ -29,8 +28,9 @@ pub fn compile_node_hierarchy(
     // Materials are a single-card phenomenon in M2: a node carrying a
     // `material` chain opens its own offscreen layer and one card. The
     // group optics folding) is deleted as replaced — multi-card union
-    let material = node.style.material.clone();
+    let paint = node.style.paint.clone();
     let node_has_layer = node.style.has_layer;
+
     let own_tx = if is_stacking_root {
         parent_tx.multiply(&node.effective_transform())
     } else {
@@ -69,15 +69,15 @@ pub fn compile_node_hierarchy(
     // subpixel placement.)
     let abs_origin = own_tx.transform_point(Point::ZERO);
     // The layer decision is now two facts: an explicit `has_layer`, or a
-    // material chain (the card needs an offscreen to sample its backdrop
+    // paint chain (the card needs an offscreen to sample its backdrop
     // into). Nothing else opens a layer any more.
-    let needs_layer = node_has_layer || material.is_some();
+    let needs_layer = node_has_layer || paint.opens_layer();
+
     let content_rect = ResolvedRect::new(0.0, 0.0, painted.width, painted.height);
     let layer = NodeLayer {
         needs_layer,
         rect: content_rect,
-        material: material.clone(),
-        press: None,
+        paint,
     };
     {
         let node_mut = arena.get_mut(id);
@@ -94,7 +94,15 @@ pub fn compile_node_hierarchy(
             Some(paint),
             &layer,
         );
-        emit_node_content(node_mut, chunk, text_ctx, caret_visible, abs_origin.y, Some(paint), &layer);
+        emit_node_content(
+            node_mut,
+            chunk,
+            text_ctx,
+            caret_visible,
+            abs_origin.y,
+            Some(paint),
+            &layer,
+        );
     }
     // Hoisted single copy (see bounds.rs): per-index `children()` calls
     // rebuild the whole child list N+1 times per node per frame.

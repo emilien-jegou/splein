@@ -1,4 +1,6 @@
-// Single responsibility: Global lighting direction for elevation-based shadows.
+// Single responsibility: global lighting direction for shadow stages.
+//
+// Shader-side notion: lives here now, `riode` no longer carries lighting.
 
 /// Lighting direction shared by elevation-based shadows.
 ///
@@ -23,11 +25,7 @@ impl LightEnvironment {
     };
 
     pub const fn from_angles(azimuth: f32, altitude: f32) -> Self {
-        Self {
-            azimuth,
-            altitude,
-            intensity: 1.0,
-        }
+        Self { azimuth, altitude, intensity: 1.0 }
     }
 
     /// Shadow offset for an element `elevation` px above the surface.

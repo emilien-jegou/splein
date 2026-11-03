@@ -242,7 +242,7 @@ pub fn pre_shaped_impl(input: proc_macro::TokenStream) -> syn::Result<TokenStrea
                         .hint(size <= 16.0)
                         .normalized_coords(&Vec::<i16>::new())
                         .build();
-                    let mut render = swash::scale::Render::new(&[
+                    let render = swash::scale::Render::new(&[
                         swash::scale::Source::ColorOutline(0),
                         swash::scale::Source::ColorBitmap(
                             swash::scale::StrikeWith::BestFit,

@@ -280,7 +280,7 @@ impl FrameScheduler {
                 let n = self.arena.get_mut(node);
                 let tx_changed =
                     bindings.update_transform(n.state.core.declared_transform, &mut n.transform);
-                let paint_changed = bindings.update_material(&mut n.style.material);
+                let paint_changed = bindings.update_paint(&mut n.style.paint);
                 // Stacking rides the paint path: it reorders paint without touching layout.
                 let z_changed = bindings.update_z(&mut n.style.z_index, n.style.is_absolute);
                 if tx_changed || paint_changed || z_changed {

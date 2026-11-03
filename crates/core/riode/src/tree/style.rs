@@ -1,6 +1,6 @@
 // Single responsibility: Immutable styling intent and layout constraints for retained nodes.
 
-use crate::foundation::{Anchor, LayoutConfig, Margin, Material, Padding, Size};
+use crate::foundation::{Anchor, LayoutConfig, LayerPaint, Margin, Padding, Size};
 use crate::input::HitTest;
 
 /// Declared styling specification and layout constraints on a tree node.
@@ -32,10 +32,8 @@ pub struct NodeStyle {
     /// the same row-granular replay.
     pub isolate_children: bool,
     pub anchor: Option<Anchor>,
-    /// The sole carrier of visual identity: the element's material chain.
-    /// /`opacity` on a node any more — every one of those is a `Stage`
-    /// inside this chain.
-    pub material: Option<Material>,
+    /// The four paint chains as one value — see [`LayerPaint`].
+    pub paint: LayerPaint,
     pub z_index: i32,
     pub is_overlay: bool,
     pub has_layer: bool,
@@ -62,7 +60,7 @@ impl Default for NodeStyle {
             overscroll: 0.0,
             isolate_children: false,
             anchor: None,
-            material: None,
+            paint: LayerPaint::default(),
             z_index: 0,
             is_overlay: false,
             has_layer: false,

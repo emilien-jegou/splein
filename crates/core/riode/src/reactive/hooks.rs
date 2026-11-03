@@ -878,7 +878,7 @@ where
 ///     displayed_sig.set_if_changed(displayed.get());
 /// });
 /// ```
-pub fn use_effect_post_layout(mut frame: impl FnMut(f32) + 'static) {
+pub fn use_effect_post_layout(frame: impl FnMut(f32) + 'static) {
     let Some(scope) = current_scope() else {
         no_scope()
     };

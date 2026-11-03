@@ -1,6 +1,6 @@
 // Single responsibility: Backend-agnostic display list drawing commands.
 
-use crate::foundation::{Color, Material, Point, ResolvedRect, Transform};
+use crate::foundation::{Color, LayerPaint, Point, ResolvedRect, Transform};
 use crate::scene::image::ImageSource;
 use crate::scene::vector::VectorGraphic;
 use crate::text::layout::TextLayout;
@@ -37,10 +37,7 @@ pub enum SceneCommand {
     BeginLayer {
         id: LayerId,
         rect: ResolvedRect,
-        /// The material chain: the single-pass card over the sampled
-        /// background. `Some` opens the offscreen the pass writes into;
-        /// `None` is a plain isolation layer.
-        material: Option<Material>,
+        paint: LayerPaint,
     },
     EndLayer {
         id: LayerId,
@@ -104,20 +101,18 @@ pub fn hash_commands(commands: &[SceneCommand]) -> u64 {
                 rect_bits(rect).hash(&mut h);
             }
             SceneCommand::PopClip => 5u8.hash(&mut h),
-            SceneCommand::BeginLayer { id, rect, material } => {
+            SceneCommand::BeginLayer {
+                id,
+                rect,
+                paint,
+            } => {
                 8u8.hash(&mut h);
                 id.0.hash(&mut h);
                 rect_bits(rect).hash(&mut h);
-                match material {
-                    None => 0u8.hash(&mut h),
-                    Some(mat) => {
-                        // The chain is immutable once authored — identity
-                        // of the shared stage list is the honest hash
-                        // (matches `Material`'s `Arc::ptr_eq` equality).
-                        1u8.hash(&mut h);
-                        Arc::as_ptr(&mat.stages).hash(&mut h);
-                    }
-                }
+                hash_chain(paint.shape.as_ref().map(|c| &c.stages), &mut h);
+                hash_chain(paint.material.as_ref().map(|c| &c.stages), &mut h);
+                hash_chain(paint.overlay.as_ref().map(|c| &c.stages), &mut h);
+                hash_chain(paint.effect.as_ref().map(|c| &c.stages), &mut h);
             }
             SceneCommand::EndLayer { id } => {
                 9u8.hash(&mut h);
@@ -158,6 +153,17 @@ pub fn transform_bits(t: &Transform) -> [u32; 6] {
         t.tx.to_bits(),
         t.ty.to_bits(),
     ]
+}
+
+/// Presence + allocation identity of one stage chain, for cache keys.
+fn hash_chain<T>(chain: Option<&Arc<Vec<T>>>, h: &mut impl Hasher) {
+    match chain {
+        None => 0u8.hash(h),
+        Some(c) => {
+            1u8.hash(h);
+            Arc::as_ptr(c).hash(h);
+        }
+    }
 }
 
 fn point_bits(p: &Point) -> [u32; 2] {

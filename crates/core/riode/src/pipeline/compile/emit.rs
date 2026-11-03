@@ -1,6 +1,6 @@
 // Single responsibility: Node coordinate framing, transformation, and display list command emission.
 
-use crate::foundation::{Material, Point, ResolvedRect, Transform};
+use crate::foundation::{LayerPaint, Point, ResolvedRect, Transform};
 use crate::scene::{LayerId, PaintContext, SceneChunk, SceneCommand};
 use crate::text::TextContext;
 use crate::tree::LayoutNode;
@@ -16,31 +16,9 @@ use crate::tree::NodeKind;
 #[derive(Clone, Debug)]
 pub struct NodeLayer {
     pub needs_layer: bool,
-    /// The `BeginLayer` rect: the content box, except group roots whose
-    /// rect is the union of member rects (group-local, may start
-    /// off-origin when members overhang).
     pub rect: ResolvedRect,
-    /// The material chain — the sole carrier of visual identity. `None`
-    /// when the node declares no `material()`.
-    pub material: Option<Material>,
-    /// Press content transform (node-local, about the content centre):
-    /// the pressed member's content scales with its lens. `None` when the
-    /// press is glow/light only (identity transform).
-    pub press: Option<Transform>,
+    pub paint: LayerPaint,
 }
-
-impl NodeLayer {
-    /// Whether the emitted layer runs the material pass.
-    pub fn has_material(&self) -> bool {
-        self.material.is_some()
-    }
-
-    /// Whether the emitted layer samples the backdrop.
-    pub fn needs_backdrop(&self) -> bool {
-        self.material.is_some()
-    }
-}
-
 
 /// Pushes affine transforms, layers, and clips for a node into the chunk.
 ///
@@ -72,7 +50,7 @@ pub fn enter_node_frame(
         chunk.push(SceneCommand::BeginLayer {
             id: layer_id,
             rect: layer.rect,
-            material: layer.material.clone(),
+            paint: layer.paint.clone(),
         });
     }
     let transform = node.effective_transform();
@@ -84,14 +62,7 @@ pub fn enter_node_frame(
             chunk.push(SceneCommand::PushTransform(transform));
         }
     }
-    // Press content transform: the pressed member's content scales about
-    // its centre with its lens (the reference's `contentTransform`).
-    // Pushed in-stream (never hoisted): it is per-frame animation, not
-    // reusable placement.
-    let pressed = layer.press;
-    if let Some(press) = pressed {
-        chunk.push(SceneCommand::PushTransform(press));
-    }
+    // Press content transform purged with the legacy paint path.
     if node.style.clip {
         chunk.push(SceneCommand::PushClip { rect: local_rect });
     }
@@ -114,9 +85,6 @@ pub fn exit_node_frame(
     // stack.
     if node.style.clip {
         chunk.push(SceneCommand::PopClip);
-    }
-    if layer.press.is_some() {
-        chunk.push(SceneCommand::PopTransform);
     }
     if node.effective_transform() != Transform::IDENTITY && !hoist_root_transform {
         chunk.push(SceneCommand::PopTransform);

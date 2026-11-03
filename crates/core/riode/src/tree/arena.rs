@@ -186,10 +186,6 @@ impl TreeArena {
         std::mem::take(&mut self.removed_damage)
     }
 
-    pub fn press_begin(&mut self, id: NodeId, pos: Point) {}
-    pub fn press_move(&mut self, pos: Point) {}
-    pub fn press_end(&mut self) {}
-
     /// Idle backstop for text settling: collects repaint regions for text
     /// runs that still need observation to reach their baseline.
     ///

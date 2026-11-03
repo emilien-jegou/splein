@@ -191,10 +191,9 @@ impl PointerRouter {
     ///
     /// Distinct from [`Self::clear_hover`] because a pointer that disappeared mid-drag has to
     /// give up its capture as well; see [`crate::input::tracker::PointerTracker::cancel_gesture`].
-    pub fn cancel_gesture(&mut self, arena: &mut TreeArena) {
+    pub fn cancel_gesture(&mut self) {
         self.clear_hover();
         self.press_chain.clear();
-        arena.press_end();
         self.chain.clear();
         self.tracker.cancel_gesture();
         // The gesture ends but the highlight persists, like a browser keeping
@@ -312,11 +311,9 @@ impl PointerRouter {
                     // A press into the void breaks the burst like any retarget.
                     self.tracker.reset_burst();
                     self.last_press = None;
-                    arena.press_end();
-                }
+                            }
             }
             TrackerChange::Moved => {
-                arena.press_move(event.position);
                 handled |= self.update_hover(&*arena, event.position);
                 // Plain moves reach `on:pointer_move` topmost-first (the web's
                 // mousemove bubbling). The DSL setter existed but nothing ever
@@ -359,7 +356,6 @@ impl PointerRouter {
                 self.extend_active_selection(arena, event.position);
             }
             TrackerChange::Dragged => {
-                arena.press_move(event.position);
                 handled |= self.deliver_to(
                     &*arena,
                     captured,
@@ -400,8 +396,7 @@ impl PointerRouter {
                     }
                 }
                 self.press_chain.clear();
-                arena.press_end();
-                self.release_selection(arena, click);
+                        self.release_selection(arena, click);
                 handled |= self.update_hover(&*arena, event.position);
             }
             TrackerChange::DragEnded => {
@@ -414,8 +409,7 @@ impl PointerRouter {
                     false,
                 );
                 self.press_chain.clear();
-                arena.press_end();
-                // The highlight stays selected and stays tracked: a later
+                        // The highlight stays selected and stays tracked: a later
                 // foreign press must still find and clear it, and shift-click
                 // extends from the same anchor. Only the gesture ends.
                 if let Some(active) = &self.active_selection {
@@ -759,12 +753,6 @@ fn absorbs(arena: &TreeArena, id: NodeId) -> bool {
     !arena.get(id).state.input.handlers.is_empty()
         || arena.get(id).style.hit_test == HitTest::Opaque
         || selectable_text(arena, id)
-        || arena
-            .get(id)
-            .style
-            .material
-            .as_ref()
-            .is_some_and(|m| m.interactive)
 }
 
 /// Whether a node has handlers to fire (vs. absorbing silently as Opaque space).

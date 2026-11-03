@@ -1,10 +1,6 @@
 // Single responsibility: Rect + glyph + blit pipeline creation and vertex staging.
 
 use bytemuck::{Pod, Zeroable};
-use riode::foundation::effect::shaders::{
-    BLEND_COMPOSITE_COMBINED_WGSL as BLEND_COMPOSITE_WGSL,
-    COMPOSITE_WGSL as COMPOSITE_SRC,
-};
 
 /// CPU-transformed rect vertex: screen-space pixels + straight-alpha color.
 #[repr(C)]
@@ -73,76 +69,6 @@ impl GlyphVertex {
 /// Rounded-rect vertex: device-space outer box + inner (fill) box +
 /// corner radii for both walls + fill / stroke colors + gradient slot.
 ///
-/// StrokeAlign is fully resolved CPU-side: `fbox`/`radii` are the outer
-/// wall (fill + border), `ibox`/`iradii` the inner wall (fill only). The
-/// fragment paints fill inside the inner wall and border between walls
-/// (SDF double-wall). `grad` is reserved for gradient fills
-/// (dir.x, dir.y, stop0_t, stop1_t) with the mode flag in `grad.w`;
-/// zeroed for solid fills.
-#[repr(C)]
-#[derive(Copy, Clone, Pod, Zeroable)]
-pub struct RRectVertex {
-    pub pos: [f32; 2],
-    pub fbox: [f32; 4],
-    pub radii: [f32; 4],
-    pub ibox: [f32; 4],
-    pub iradii: [f32; 4],
-    pub fill: [f32; 4],
-    pub stroke: [f32; 4],
-    pub grad: [f32; 4],
-}
-
-impl RRectVertex {
-    pub fn layout() -> wgpu::VertexBufferLayout<'static> {
-        wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<Self>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &[
-                wgpu::VertexAttribute {
-                    offset: 0,
-                    shader_location: 0,
-                    format: wgpu::VertexFormat::Float32x2,
-                },
-                wgpu::VertexAttribute {
-                    offset: 8,
-                    shader_location: 1,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-                wgpu::VertexAttribute {
-                    offset: 24,
-                    shader_location: 2,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-                wgpu::VertexAttribute {
-                    offset: 40,
-                    shader_location: 3,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-                wgpu::VertexAttribute {
-                    offset: 56,
-                    shader_location: 4,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-                wgpu::VertexAttribute {
-                    offset: 72,
-                    shader_location: 5,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-                wgpu::VertexAttribute {
-                    offset: 88,
-                    shader_location: 6,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-                wgpu::VertexAttribute {
-                    offset: 104,
-                    shader_location: 7,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-            ],
-        }
-    }
-}
-
 /// Textured image quad: device-space corners + full-texture UV + tint
 /// (straight-alpha, premultiplied in the shader) + current opacity in
 /// `color.a`. Full-quad UVs let the hardware pick the mip level from
@@ -181,54 +107,9 @@ impl ImageVertex {
     }
 }
 
-/// Row-major 4×5 CSS color matrix packed as the shader's five vec4 rows:
-/// four coefficient rows (stride 16) + the offset column. A plain f32
-/// array would violate the uniform address space's 16-byte stride rule.
-/// `tex_off` shifts the source texel lookup away from the fragment
-/// offset while still sampling the un-shifted layer texels (zero for
-/// every normal content composite).
-#[repr(C)]
-#[derive(Copy, Clone, Pod, Zeroable)]
-pub struct ColorMatrixGpu {
-    pub r0: [f32; 4],
-    pub r1: [f32; 4],
-    pub r2: [f32; 4],
-    pub r3: [f32; 4],
-    pub off: [f32; 4],
-    pub tex_off: [f32; 4],
-}
+/// Row-major 4×5 CSS color matrix removed with the legacy filter path:
+/// layer compositing is a plain texture blit now.
 
-impl ColorMatrixGpu {
-    /// Packs `[r0 m0..m3 | r1 | r2 | r3]` (row-major, offset last in
-    /// each row) into vec4 rows. `tex_off` starts at zero (identity
-    pub fn pack(m: &[f32; 20]) -> Self {
-        Self {
-            r0: [m[0], m[1], m[2], m[3]],
-            r1: [m[5], m[6], m[7], m[8]],
-            r2: [m[10], m[11], m[12], m[13]],
-            r3: [m[15], m[16], m[17], m[18]],
-            off: [m[4], m[9], m[14], m[19]],
-            tex_off: [0.0; 4],
-        }
-    }
-}
-
-
-
-///
-
-/// Generic 256 B material pass uniform block
-#[repr(C)]
-#[derive(Copy, Clone, Pod, Zeroable)]
-pub struct MaterialUniformsGpu {
-    pub block: [f32; 64],
-}
-
-#[derive(Clone)]
-pub struct MaterialPassGpu {
-    pub shader: &'static str,
-    pub uniforms: MaterialUniformsGpu,
-}
 
 
 
@@ -237,7 +118,6 @@ pub struct Pipelines {
     /// Same shaders/geometry as rect_pipeline but blending disabled:
     /// damage-base quads replace stale pixels instead of blending over.
     pub rect_replace_pipeline: wgpu::RenderPipeline,
-    pub rrect_pipeline: wgpu::RenderPipeline,
     pub ortho_layout: wgpu::BindGroupLayout,
     pub blit_layout: wgpu::BindGroupLayout,
     pub blit_pipeline: wgpu::RenderPipeline,
@@ -246,33 +126,15 @@ pub struct Pipelines {
     pub glyph_sampler_linear: wgpu::Sampler,
     pub glyph_sampler_nearest: wgpu::Sampler,
     pub image_pipeline: wgpu::RenderPipeline,
-    /// Shared material layout for the element-filter passes: source
-    /// texture (textureLoad, no sampler — blit precedent) + a params
-    /// (which puts ortho in group 0, like every scene pipeline).
+    /// Layer-composite layout: the layer source texture (textureLoad,
+    /// no sampler — blit precedent), with ortho in group 0 like every
+    /// scene pipeline.
     pub filter_layout: wgpu::BindGroupLayout,
-    /// fullscreen triangle, nine `textureLoad` taps, blend disabled
-    /// (each target is cleared by its load op).
-    /// parent: samples 1:1 by position, unpremultiplies, applies the
-    /// 4×5 matrix, re-premultiplies. Premultiplied blending — scene
-    /// targets accumulate premultiplied by construction (alpha blending
-    /// over a transparent clear).
+    /// fullscreen triangle, `textureLoad` tap, blend disabled (each
+    /// target is cleared by its load op): src-over of the layer
+    /// offscreen onto the parent. Premultiplied blending — scene
+    /// targets accumulate premultiplied by construction.
     pub composite_pipeline: wgpu::RenderPipeline,
-    /// Backdrop-blend composite: `BLEND_COMPOSITE_WGSL` (the blend
-    /// library + `composite.wgsl`'s path extended with the BeginLayer
-    /// parent snapshot), group 1 = source texture + snapshot texture +
-    /// params uniform. Blend disabled — the shader emits the full CSS
-    /// compositing result (backdrop contribution included); hardware
-    /// source-over on top would double-blend. Only blend-mode layers
-    /// route here; `Normal` keeps `composite_pipeline` untouched.
-    pub blend_layout: wgpu::BindGroupLayout,
-    pub blend_composite_pipeline: wgpu::RenderPipeline,
-    /// Shared bind-group layout + sampler for custom (material-DSL)
-    /// stages. Every custom stage uses the same binding numbering (the
-    /// engine entry scaffold fixes it: 0 sampler, 1 uniforms, 2 input,
-    /// 3 backdrop, 4 sharp), so one layout serves them all; the
-    /// *pipeline* is per-source and cached on the renderer.
-    pub custom_layout: wgpu::BindGroupLayout,
-    pub custom_sampler: wgpu::Sampler,
 }
 
 fn ortho_bind_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
@@ -382,42 +244,6 @@ pub fn create_pipelines(
         multiview: None,
     });
 
-    // Rounded-rect pipeline: SDF fill disc + stroke ring (same target).
-    let rrect_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("riode-wgpu-rrect"),
-        source: wgpu::ShaderSource::Wgsl(include_str!("shaders/rounded.wgsl").into()),
-    });
-    let rrect_pipe_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: Some("riode-wgpu-rrect-pipe-layout"),
-        bind_group_layouts: &[&ortho_layout],
-        push_constant_ranges: &[],
-    });
-    let rrect_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("riode-wgpu-rrect-pipeline"),
-        layout: Some(&rrect_pipe_layout),
-        vertex: wgpu::VertexState {
-            module: &rrect_shader,
-            entry_point: "vs_main",
-            compilation_options: Default::default(),
-            buffers: &[RRectVertex::layout()],
-        },
-        fragment: Some(wgpu::FragmentState {
-            module: &rrect_shader,
-            entry_point: "fs_main",
-            compilation_options: Default::default(),
-            targets: &[Some(wgpu::ColorTargetState {
-                format: target_format,
-                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                write_mask: wgpu::ColorWrites::ALL,
-            })],
-        }),
-        primitive: wgpu::PrimitiveState::default(),
-        depth_stencil: None,
-        multisample: wgpu::MultisampleState::default(),
-        multiview: None,
-    });
-
-    // Blit pipeline (persistent target -> swapchain).
     let blit_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("riode-wgpu-blit"),
         source: wgpu::ShaderSource::Wgsl(include_str!("shaders/solid.wgsl").into()),
@@ -538,6 +364,7 @@ pub fn create_pipelines(
     // Image pipeline: premultiplied sRGB bytes composited as-is onto the
     // plain Unorm target, premultiplied alpha, per-image bind group on
     // group 1 (same layout shape as the glyph atlas).
+
     let image_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("riode-wgpu-image"),
         source: wgpu::ShaderSource::Wgsl(include_str!("shaders/image.wgsl").into()),
@@ -576,32 +403,20 @@ pub fn create_pipelines(
     // the Rgba8Unorm scene targets).
     let composite_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("riode-wgpu-composite"),
-        source: wgpu::ShaderSource::Wgsl(COMPOSITE_SRC.into()),
+        source: wgpu::ShaderSource::Wgsl(include_str!("shaders/composite.wgsl").into()),
     });
     let filter_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("riode-wgpu-filter-layout"),
-        entries: &[
-            wgpu::BindGroupLayoutEntry {
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                binding: 0,
-                ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    view_dimension: wgpu::TextureViewDimension::D2,
-                    multisampled: false,
-                },
-                count: None,
+        entries: &[wgpu::BindGroupLayoutEntry {
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            binding: 0,
+            ty: wgpu::BindingType::Texture {
+                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                view_dimension: wgpu::TextureViewDimension::D2,
+                multisampled: false,
             },
-            wgpu::BindGroupLayoutEntry {
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                binding: 1,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            },
-        ],
+            count: None,
+        }],
     });
     let composite_pipe_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("riode-wgpu-composite-pipe-layout"),
@@ -633,150 +448,9 @@ pub fn create_pipelines(
         multiview: None,
     });
 
-    // Backdrop-blend layer composite: the library + dispatcher prepended
-    // to an extended copy of the composite fragment (two textures: the
-    // layer source and the BeginLayer parent snapshot). Its own bind
-    // existing composite caller are untouched. Blend disabled: the
-    // shader writes premultiplied `co`/`αo`, backdrop contribution
-    // included (see `composite_blend.wgsl`).
-    let blend_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("riode-wgpu-blend-composite"),
-        source: wgpu::ShaderSource::Wgsl(BLEND_COMPOSITE_WGSL.into()),
-    });
-    let blend_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        label: Some("riode-wgpu-blend-layout"),
-        entries: &[
-            wgpu::BindGroupLayoutEntry {
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                binding: 0,
-                ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    view_dimension: wgpu::TextureViewDimension::D2,
-                    multisampled: false,
-                },
-                count: None,
-            },
-            wgpu::BindGroupLayoutEntry {
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                binding: 1,
-                ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    view_dimension: wgpu::TextureViewDimension::D2,
-                    multisampled: false,
-                },
-                count: None,
-            },
-            wgpu::BindGroupLayoutEntry {
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                binding: 2,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            },
-        ],
-    });
-    let blend_pipe_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: Some("riode-wgpu-blend-pipe-layout"),
-        bind_group_layouts: &[&ortho_layout, &blend_layout],
-        push_constant_ranges: &[],
-    });
-    let blend_composite_pipeline =
-        device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("riode-wgpu-blend-composite-pipeline"),
-            layout: Some(&blend_pipe_layout),
-            vertex: wgpu::VertexState {
-                module: &blend_shader,
-                entry_point: "vs_main",
-                compilation_options: Default::default(),
-                buffers: &[RectVertex::layout()],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &blend_shader,
-                entry_point: "fs_main",
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: target_format,
-                    blend: None,
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-        });
-
-    // Custom (material-DSL) stage layout: bindings fixed by the engine
-    // entry scaffold (`ENGINE_ENTRY_WGSL`) — 0 sampler (effect_sampler),
-    // 1 uniforms, 2 input/card, 3 backdrop, 4 sharp. One layout for every
-    // custom stage; the pipeline itself is per-source (renderer cache).
-    let custom_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        label: Some("riode-wgpu-custom-layout"),
-        entries: &[
-            wgpu::BindGroupLayoutEntry {
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                binding: 0,
-                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                count: None,
-            },
-            wgpu::BindGroupLayoutEntry {
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                binding: 1,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            },
-            wgpu::BindGroupLayoutEntry {
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                binding: 2,
-                ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    view_dimension: wgpu::TextureViewDimension::D2,
-                    multisampled: false,
-                },
-                count: None,
-            },
-            wgpu::BindGroupLayoutEntry {
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                binding: 3,
-                ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    view_dimension: wgpu::TextureViewDimension::D2,
-                    multisampled: false,
-                },
-                count: None,
-            },
-            wgpu::BindGroupLayoutEntry {
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                binding: 4,
-                ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    view_dimension: wgpu::TextureViewDimension::D2,
-                    multisampled: false,
-                },
-                count: None,
-            },
-        ],
-    });
-    let custom_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-        label: Some("riode-wgpu-custom-sampler"),
-        mag_filter: wgpu::FilterMode::Linear,
-        min_filter: wgpu::FilterMode::Linear,
-        address_mode_u: wgpu::AddressMode::ClampToEdge,
-        address_mode_v: wgpu::AddressMode::ClampToEdge,
-        ..Default::default()
-    });
-
     Pipelines {
         rect_pipeline,
         rect_replace_pipeline,
-        rrect_pipeline,
         ortho_layout,
         blit_layout,
         blit_pipeline,
@@ -787,9 +461,5 @@ pub fn create_pipelines(
         image_pipeline,
         filter_layout,
         composite_pipeline,
-        blend_layout,
-        blend_composite_pipeline,
-        custom_layout,
-        custom_sampler,
     }
 }

@@ -1,0 +1,34 @@
+# Fast iteration loop: save a file, the demo restarts.
+#
+# LIMITATION (by design, not a bug): this is process restart, so all
+# in-memory state (signals, springs, scroll positions) resets on every
+# reload. Layout/styling iteration is instant; state continuity across
+# reloads needs stable hook identity (done) plus a future dylib swap.
+#
+# Usage: `bacon` (runs view_demo), then single keys below to switch jobs.
+
+default_job = "build-view"
+
+[jobs.build-view]
+command = ["cargo", "build", "--example", "demo1"]
+watch = ["crates/", "examples/"]
+kill = ["SIGTERM"]
+
+[jobs.build-press]
+command = ["cargo", "build", "--example", "demo1"]
+watch = ["crates/", "examples/"]
+kill = ["SIGTERM"]
+
+[jobs.check]
+command = ["cargo", "check", "--workspace", "--examples", "--tests"]
+watch = ["crates/", "examples/"]
+
+[jobs.test]
+command = ["cargo", "test", "-p", "aurora", "--lib"]
+watch = ["crates/"]
+
+[keybindings]
+r = "job:run-view"
+p = "job:run-press"
+c = "job:check"
+t = "job:test"

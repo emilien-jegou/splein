@@ -112,7 +112,7 @@ impl LayoutNode {
             || self.effective_transform() != Transform::IDENTITY
             // A material isolates its content — the card composites over a
             // well-defined backdrop painted beneath it.
-            || self.style.material.is_some()
+            || self.style.paint.material.is_some()
     }
 
     /// Painter layer this node occupies relative to its siblings.
@@ -226,22 +226,7 @@ impl LayoutNode {
         // Sized from the render box so damage and clipping track what is on screen,
         // while the origin comes from the transform chain built on the same box.
         let (w, h) = (self.resolved_rect.width, self.resolved_rect.height);
-        let mut bounds = Self::project(tx, 0.0, 0.0, w, h);
-
-        // The material chain fringes past the element's own bounds (lens
-        // band, refraction halo); the damage region must cover that fringe.
-        // Resolved against this node's committed `Geo` (plan P2/Q4c) —
-        // layout px.
-        let pad = self
-            .style
-            .material
-            .as_ref()
-            .map(|m| m.resolve(&self.geo(), 1.0).pad)
-            .unwrap_or(0.0);
-        if pad > 0.0 {
-            let fx_rect = Self::project(tx, -pad, -pad, w + 2.0 * pad, h + 2.0 * pad);
-            bounds = bounds.union(&fx_rect);
-        }
+        let bounds = Self::project(tx, 0.0, 0.0, w, h);
 
         if let Some(clip) = active_clip {
             bounds.intersect(&clip)

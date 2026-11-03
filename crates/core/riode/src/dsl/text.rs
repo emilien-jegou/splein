@@ -3,7 +3,7 @@
 use crate::dsl::component::IntoElement;
 use crate::dsl::element::Element;
 use crate::foundation::{Anchor, Color, Key, Margin, Padding, Size};
-use crate::reactive::prop::{Prop, IntoProp};
+use crate::reactive::prop::{IntoProp, Prop};
 use crate::text::{
     FontId, FontStyle, FontVariation, LineHeight, TextAlign, TextConfig, TextDecoration,
     TextOverflow, TextWrap,
@@ -61,6 +61,7 @@ pub struct TextDef {
     pub width: Option<Size>,
     /// Layout height sizing intent.
     pub height: Option<Size>,
+    pub blend: crate::foundation::BlendMode,
     /// Rendering stacking order index.
     pub z_index: i32,
     /// Whether element hovers in the overlay plane.
@@ -94,6 +95,7 @@ pub fn text<P: IntoProp<String>>(content: P) -> TextDef {
         anchor: None,
         margin: Margin::ZERO,
         padding: Padding::ZERO,
+        blend: crate::foundation::BlendMode::Normal,
         width: None,
         height: None,
         z_index: 0,
@@ -124,6 +126,12 @@ impl TextDef {
         self.family = Some(name.into());
         self
     }
+
+    pub fn blend(mut self, b: impl Into<crate::foundation::BlendMode>) -> Self {
+        self.blend = b.into();
+        self
+    }
+
     /// Sets the font style (normal, italic, oblique).
     pub fn font_style(mut self, style: FontStyle) -> Self {
         self.style = style;

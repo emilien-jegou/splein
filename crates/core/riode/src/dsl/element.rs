@@ -211,14 +211,13 @@ impl_into_child_list_tuple!(A, B, C, D, E, F, G, H, I, J, K, L);
 mod tests {
     use super::*;
     use crate::dsl::{group, text};
-    use crate::foundation::{Color, Fill};
+    use crate::foundation::Color;
 
     /// The reload IR summary renders static values for human diffing.
     #[test]
     fn summarize_renders_statics_for_diffing() {
         let tree = group()
             .width(500.0)
-            .material(Fill::solid(Color::WHITE))
             .children([text("Hello").size(16.0).color(Color::BLACK)])
             .into_element();
         let summary = tree.summarize();

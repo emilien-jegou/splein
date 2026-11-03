@@ -44,15 +44,13 @@ impl HotWindowInfo {
 // Unlike the remote loop, clicks need no action queue: interpreted handlers are real
 // closures dispatching through the engine's own input path.
 
-use crate::app::extension::{AppExtension, OverlayCaps};
-use crate::app::painter::OverlayPainter;
+use crate::app::extension::AppExtension;
 use crate::dsl::element::Element;
 use crate::dsl::{group, text, IntoElement};
 use crate::foundation::Color;
 use crate::hot_reload::dev_loop::{DevLoop, DevLoopConfig};
 use crate::hot_reload::SharedFactory;
 use crate::runtime::Engine;
-use crate::text::TextContext;
 use std::cell::Cell;
 use std::rc::Rc;
 

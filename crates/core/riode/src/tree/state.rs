@@ -5,7 +5,7 @@
 // lines the crate split follows: each group moves to its domain crate with the code that
 // reads and writes it, while the tree keeps the arena and the hierarchy.
 
-use crate::foundation::{Key, LayoutPresence, LightEnvironment, ResolvedRect, Transform};
+use crate::foundation::{Key, LayoutPresence, ResolvedRect, Transform};
 use crate::input::handlers::NodeHandlers;
 use crate::scene::SceneChunk;
 use crate::text::selection::{SelectionGranularity, TextSelection};
@@ -38,14 +38,6 @@ pub struct CoreState {
     /// A node whose children come from reactive state is re-reconciled only when this
     /// sequence actually differs, so an unchanged list costs one comparison per frame.
     pub child_keys: Vec<Option<Key>>,
-    /// Ambient light resolved for this node during the damage traversal:
-    /// the nearest ancestor override wins, else the global default.
-    ///
-    /// Written outside reconciliation (which never sees it, so overrides
-    /// never dirty unaffected nodes) and read by paint, bounds, and hit
-    /// testing. Stale at most until the next damage walk, which always
-    /// precedes the paint that consumes it.
-    pub resolved_light: LightEnvironment,
     /// Context values this node provides to its subtree: `(context id,
     /// erased signal reader)` pairs, nearest entry wins on lookup.
     ///

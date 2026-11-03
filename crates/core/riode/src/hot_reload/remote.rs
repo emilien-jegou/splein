@@ -20,7 +20,7 @@
 
 use crate::dsl::element::Element;
 use crate::dsl::{group, text, IntoElement};
-use crate::foundation::{Color, Direction, Fill, Size};
+use crate::foundation::{Color, Direction, Size};
 use crate::reactive::{ReactiveRuntime, Signal};
 use rustc_hash::FxHashMap;
 use std::cell::RefCell;
@@ -89,10 +89,6 @@ pub struct RemoteNode {
     pub width: RemoteSize,
     /// Box height.
     pub height: RemoteSize,
-    /// Fill as `0xRRGGBB`, if any.
-    pub fill: Option<u32>,
-    /// Corner radius in pixels (0 disables).
-    pub radius: f32,
     /// Gap between children in pixels (0 disables).
     pub gap: f32,
     /// Text content (text nodes should carry exactly one).
@@ -116,8 +112,6 @@ impl RemoteNode {
             direction: RemoteDirection::Vertical,
             width: RemoteSize::Fill,
             height: RemoteSize::Fill,
-            fill: None,
-            radius: 0.0,
             gap: 0.0,
             text: None,
             text_size: 14.0,
@@ -409,9 +403,6 @@ impl RemoteHost {
             })
             .width(remote_size(node.width))
             .height(remote_size(node.height));
-        if let Some(fill) = node.fill {
-            out = out.material(Fill::solid(Color::hex(fill)));
-        }
         if node.gap > 0.0 {
             out = out.gap(node.gap);
         }
@@ -566,7 +557,6 @@ mod tests {
         let mut root = RemoteNode::group("root");
         root.width = RemoteSize::Fixed(400.0);
         root.height = RemoteSize::Fixed(300.0);
-        root.fill = Some(0x4563EB);
         let mut label = RemoteNode::text("label", "");
         label.text = Some(RemoteText::BoundF32 {
             path: "taps".to_string(),
@@ -594,7 +584,7 @@ mod tests {
 
     fn host() -> RemoteHost {
         let runtime = Rc::new(RefCell::new(ReactiveRuntime::new()));
-        let mut host = RemoteHost::new();
+        let host = RemoteHost::new();
         host.attach_runtime(runtime);
         host.set_fns(stub_state, stub_build, stub_event);
         host
@@ -602,7 +592,7 @@ mod tests {
 
     #[test]
     fn ensure_state_creates_once_and_preserves_live_values() {
-        let mut host = host();
+        let host = host();
         assert!(host.ensure_state(&stub_state()));
         assert_eq!(host.signal_count(), 2);
         host.apply_writes(&[StateWrite::SetF32("taps".to_string(), 7.0)]);
@@ -623,7 +613,7 @@ mod tests {
 
     #[test]
     fn event_writes_toggle_and_accumulate() {
-        let mut host = host();
+        let host = host();
         assert!(host.ensure_state(&stub_state()));
         host.apply_writes(&stub_event("tap"));
         host.apply_writes(&stub_event("tap"));
