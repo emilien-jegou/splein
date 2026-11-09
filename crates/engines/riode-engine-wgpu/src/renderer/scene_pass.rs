@@ -236,6 +236,53 @@ impl<'a> ScenePassExecutor<'a> {
                         };
 
                         // 3. Composite offscreen onto parent: plain or through Effect shader
+                        // TEMP DIAGNOSTIC (clip-escape hunt; remove after fix):
+                        // same escape check for the layer composite quad — this
+                        // is what paints row boxes; escaping it is the reported
+                        // bottom overflow.
+                        static NONE_C: std::sync::atomic::AtomicU32 =
+                            std::sync::atomic::AtomicU32::new(0);
+                        if scissor.is_none()
+                            && NONE_C.fetch_add(1, std::sync::atomic::Ordering::Relaxed) < 40
+                        {
+                            tracing::warn!(
+                                "TEMP composite with NO scissor: region=({:.0},{:.0})+{:.0}x{:.0}",
+                                region.x,
+                                region.y,
+                                region.width,
+                                region.height
+                            );
+                        }
+                        if let Some(sc) = scissor {
+                            let (mut x0, mut y0, mut x1, mut y1) =
+                                (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
+                            for v in &self.batch.rect_verts[*start as usize
+                                ..(*start + *count).min(self.batch.rect_verts.len() as u32)
+                                    as usize]
+                            {
+                                x0 = x0.min(v.pos[0]);
+                                y0 = y0.min(v.pos[1]);
+                                x1 = x1.max(v.pos[0]);
+                                y1 = y1.max(v.pos[1]);
+                            }
+                            if x0 < sc.x - 1.0
+                                || y0 < sc.y - 1.0
+                                || x1 > sc.x + sc.width + 1.0
+                                || y1 > sc.y + sc.height + 1.0
+                            {
+                                tracing::warn!(
+                                    "TEMP composite escape: quad=({x0:.0},{y0:.0})-({x1:.0},{y1:.0}) scissor=({:.0},{:.0})+{:.0}x{:.0} region=({:.0},{:.0})+{:.0}x{:.0}",
+                                    sc.x,
+                                    sc.y,
+                                    sc.width,
+                                    sc.height,
+                                    region.x,
+                                    region.y,
+                                    region.width,
+                                    region.height
+                                );
+                            }
+                        }
                         if apply_scissor(&mut p, scissor, self.sw, self.sh) {
                             let layer_view = &self.layers.pool[open.slot].1;
                             let has_effect =
@@ -296,6 +343,44 @@ impl<'a> ScenePassExecutor<'a> {
                         linear,
                     } => {
                         let p = pass.as_mut().unwrap();
+                        // TEMP DIAGNOSTIC (clip-escape hunt; remove after fix):
+                        // a glyph quad outside its op scissor paints invisible
+                        // (cut) — the fingerprint of lost text; inside a layer
+                        // offscreen it also explains boxes-without-text.
+                        if let Some(sc) = scissor {
+                            let (mut x0, mut y0, mut x1, mut y1) =
+                                (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
+                            for v in &self.batch.glyph_verts[*start as usize
+                                ..(*start + *count).min(self.batch.glyph_verts.len() as u32)
+                                    as usize]
+                            {
+                                x0 = x0.min(v.pos[0]);
+                                y0 = y0.min(v.pos[1]);
+                                x1 = x1.max(v.pos[0]);
+                                y1 = y1.max(v.pos[1]);
+                            }
+                            if x0 < sc.x - 1.0
+                                || y0 < sc.y - 1.0
+                                || x1 > sc.x + sc.width + 1.0
+                                || y1 > sc.y + sc.height + 1.0
+                            {
+                                tracing::warn!(
+                                    "TEMP glyph escape: quad=({x0:.0},{y0:.0})-({x1:.0},{y1:.0}) scissor=({:.0},{:.0})+{:.0}x{:.0}",
+                                    sc.x,
+                                    sc.y,
+                                    sc.width,
+                                    sc.height
+                                );
+                            }
+                        } else {
+                            static NONE_W: std::sync::atomic::AtomicU32 =
+                                std::sync::atomic::AtomicU32::new(0);
+                            if NONE_W.fetch_add(1, std::sync::atomic::Ordering::Relaxed) < 40 {
+                                tracing::warn!(
+                                    "TEMP glyph op with NO scissor: start={start} count={count}"
+                                );
+                            }
+                        }
                         if !apply_scissor(p, scissor, self.sw, self.sh) {
                             continue;
                         }

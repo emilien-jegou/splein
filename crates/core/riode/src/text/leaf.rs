@@ -7,11 +7,11 @@
 
 use std::sync::Arc;
 
-use crate::foundation::{Constraints, Direction, IntrinsicSize, Point, Size};
-use crate::scene::{SceneChunk, SceneCommand};
+use crate::foundation::{Constraints, Direction, IntrinsicSize, LayerPaint, Point, Size};
+use crate::scene::{LayerId, SceneChunk, SceneCommand};
 use crate::text::config::TextConfig;
 use crate::text::layout::TextLayout;
-use crate::text::selection::TextSelection;
+use crate::text::selection::{selection_rects, TextSelection};
 use crate::text::TextContext;
 
 impl TextConfig {
@@ -146,17 +146,41 @@ impl TextConfig {
         })
     }
 
-    /// Emits a shaped run.
+    /// Emits a shaped run: selection highlight bands, then glyphs.
     ///
-    /// The purge removed every internal visual: no selection highlight, no
-    /// decoration rects, no caret. Text renders glyphs, full stop.
+    /// Core contributes geometry only — one `BeginLayer`/`EndLayer` pair per
+    /// overlapped line, carrying whatever material stages the caller authored
+    /// on `selection_fill` (concrete fill stages live in `riode-shader`). No
+    /// fill stage exists in core; without a fill the bands are simply not
+    /// emitted. Decorations and the caret remain purged.
     pub fn emit(
         &self,
         layout: &Arc<TextLayout>,
         chunk: &mut SceneChunk,
-        _selection: Option<TextSelection>,
+        layer_id: LayerId,
+        selection: Option<TextSelection>,
         _focused: bool,
     ) {
+        if let (Some(sel), Some(fill)) = (selection, self.selection_fill.as_ref()) {
+            // One band per line, behind the glyphs: emitted in stream order
+            // before `DrawText`, each its own material layer so the engine's
+            // standard fill-then-composite paints it.
+            for (i, band) in selection_rects(layout, &self.content, &sel)
+                .into_iter()
+                .enumerate()
+            {
+                let id = LayerId::from_packed(layer_id.0.wrapping_sub(i as u64 + 1));
+                chunk.push(SceneCommand::BeginLayer {
+                    id,
+                    rect: band,
+                    paint: LayerPaint {
+                        material: Some(fill.clone()),
+                        ..LayerPaint::default()
+                    },
+                });
+                chunk.push(SceneCommand::EndLayer { id });
+            }
+        }
         chunk.push(SceneCommand::DrawText {
             origin: Point::ZERO,
             layout: Arc::clone(layout),

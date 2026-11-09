@@ -108,7 +108,6 @@ pub use selection::{
     caret_at_point, caret_line_col, caret_rect, expand_selection, grapheme_boundaries,
     is_word_char, line_byte_ranges, move_grapheme, offset_at_visual_line, selection_rects,
     snap_to_boundary, word_bounds, word_edge, SelectionGranularity, TextSelection, CARET_WIDTH,
-    DEFAULT_SELECTION_COLOR,
 };
 pub use settle::TextPlacement;
 pub use shaper::{TextShapeParams, TextShaper};

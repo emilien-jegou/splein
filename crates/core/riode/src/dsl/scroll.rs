@@ -16,7 +16,7 @@ use crate::dsl::element::Element;
 use crate::dsl::element_ref::ElementRef;
 use crate::dsl::flip::use_ref;
 use crate::dsl::group::group;
-use crate::foundation::{Anchor, Direction, Margin, Size};
+use crate::foundation::{Anchor, Direction, Margin, Material, Size};
 use crate::input::{ClickInfo, DragInfo, HoverInfo, KeyCode, KeyEvent, PointerEvent, Propagation, WheelInfo};
 use crate::prelude::component;
 use crate::reactive::hooks::{current_scope, next_slot, no_scope, recall_value, remember_value};
@@ -477,9 +477,10 @@ impl ScrollClamp {
 ///
 /// `offset={signal}` binds a caller-owned `Signal<f32>` directly instead of a
 /// handle. `sticky={element}` pins one overlay in viewport space.
-/// `scrollbar` shows an overlay thumb while the content overflows. Only
-/// `Direction::Vertical` is honored in v1; anything else warns and behaves
-/// vertically.
+/// `scrollbar` shows an overlay thumb while the content overflows; its paint
+/// is `thumb_fill` (material stages authored in `riode-shader`) — without one
+/// the thumb stays invisible, gestures still work. Only `Direction::Vertical`
+/// is honored in v1; anything else warns and behaves vertically.
 ///
 /// Interaction is contain-only: drags (axis-locked vertical), wheel, fling,
 /// and keys stop at the innermost viewport and never chain outward. A drag
@@ -496,6 +497,7 @@ pub fn ScrollView(
     on_scroll: Option<OnScroll>,
     sticky: Option<Element>,
     scrollbar: Option<Scrollbar>,
+    thumb_fill: Option<Material>,
     bounce: Option<bool>,
     children: Vec<Element>,
 ) -> impl IntoElement {
@@ -702,6 +704,7 @@ pub fn ScrollView(
             &max_sig,
             &fling,
             &held,
+            thumb_fill,
             &thumb_y,
             &thumb_h,
             &thumb_travel,
@@ -905,11 +908,16 @@ fn scroll_viewport_group(
 /// parity on release; it captures its own press, so the viewport gesture
 /// never starts from the thumb, and swallows its own clicks so they never
 /// page the track beneath it.
+///
+/// The paint is caller-authored (`thumb_fill`, stages from `riode-shader`);
+/// without it the thumb stays invisible — geometry, presence, and gestures
+/// keep working.
 fn scroll_thumb(
     offset_sig: &Signal<f32>,
     max_sig: &Signal<f32>,
     fling: &Rc<Cell<f32>>,
     held: &Rc<Cell<bool>>,
+    thumb_fill: Option<Material>,
     thumb_y: &Signal<f32>,
     thumb_h: &Signal<f32>,
     thumb_travel: &Signal<f32>,
@@ -937,13 +945,18 @@ fn scroll_thumb(
     let hover_thumb_enter = Rc::clone(hovered);
     let hover_thumb_move = Rc::clone(hovered);
 
-    group()
+    let base = group()
         .absolute()
         .anchor(Anchor::TopRight)
         .width(THUMB_WIDTH)
         .height(thumb_h.clone())
         .x(-THUMB_INSET)
         .y(thumb_y.clone())
+        // Caller-authored chrome: rio-de-shader stages through the material
+        // channel. No fill = no paint at all, by contract — geometry and
+        // gestures exist regardless (see ScrollView).
+        .material_opt(thumb_fill);
+    base
         // Gone when faded: an invisible thumb must not intercept clicks meant
         // for content (or silently swallow thumb drags). Presence toggles
         // layout once per fade cycle — bounded and rare.
@@ -1076,6 +1089,7 @@ pub fn VirtualScrollView(
     on_scroll: Option<OnScroll>,
     sticky: Option<Element>,
     scrollbar: Option<Scrollbar>,
+    thumb_fill: Option<Material>,
     bounce: Option<bool>,
 ) -> impl IntoElement {
     let direction = direction.unwrap_or(Direction::Vertical);
@@ -1339,6 +1353,7 @@ pub fn VirtualScrollView(
             &max_sig,
             &fling,
             &held,
+            thumb_fill,
             &thumb_y,
             &thumb_h,
             &thumb_travel,

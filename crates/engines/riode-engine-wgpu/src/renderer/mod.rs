@@ -12,7 +12,7 @@ use riode::scene::scene::Scene;
 use riode::text::TextContext;
 
 use crate::cache::{chunk_key, ChunkCache};
-use crate::command::Batch;
+use crate::command::{Batch, Op};
 use crate::context::WgpuContext;
 use crate::image::ImageCache;
 use crate::material_pipeline::MaterialPipelineCache;
@@ -48,6 +48,8 @@ pub struct WgpuRenderer {
     pub chunks: ChunkCache,
     pub clear_next: bool,
     pub readback: ReadbackBuffer,
+    /// TEMP: exact frame index to PPM-dump once (bottom-overflow hunt). Remove after fix.
+    temp_dump_frame: Option<u32>,
     pub layers: LayerPool,
     pub materials: MaterialPipelineCache,
 }
@@ -110,6 +112,9 @@ impl WgpuRenderer {
             chunks: ChunkCache::default(),
             clear_next: true,
             readback: ReadbackBuffer::new(),
+            temp_dump_frame: std::env::var("RIODE_TEMP_DUMP_FRAME")
+                .ok()
+                .and_then(|v| v.parse().ok()),
             layers: LayerPool::new(),
             materials: MaterialPipelineCache::default(),
             gpu,
@@ -153,7 +158,7 @@ impl WgpuRenderer {
             self.clear_next = false;
             true
         } else {
-            damage.is_empty()
+            damage.is_empty() || std::env::var("RIODE_TEMP_FULL_CLEAR").is_ok() // TEMP DIAGNOSTIC (stale-pixel hunt; remove after fix)
         };
         let stale = std::mem::take(&mut self.layers.stale_root_layers);
 
@@ -181,14 +186,24 @@ impl WgpuRenderer {
             self.gpu.config.height as f32 / self.scale,
         );
 
+        // TEMP DIAGNOSTIC (clip-escape hunt; remove after fix): frame counter.
+        static TEMP_F: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let f = TEMP_F.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
         for chunk in scene.chunks.iter() {
             if !chunk.bounds.overlaps(&viewport) {
                 continue;
             }
             self.batch.begin_chunk();
+            // TEMP DIAGNOSTIC (clip-escape hunt; remove after fix): a chunk
+            // stream that ends at a different clip depth than it started is
+            // unbalanced — its stale clip pollutes every later chunk's
+            // scissors this frame.
+            let depth_before = self.batch.clip.len();
             for clip in chunk.inherited_clips.iter() {
                 self.batch.push_clip_device(&clip.rect);
             }
+            let depth_after_push = self.batch.clip.len();
             self.batch.emit_chunk(
                 &riode::scene::chunk_base(chunk),
                 &chunk.commands,
@@ -199,8 +214,123 @@ impl WgpuRenderer {
                 &mut self.images,
                 &mut self.svgs,
             );
+            let depth_after_emit = self.batch.clip.len();
+            if depth_after_emit != depth_after_push {
+                tracing::warn!(
+                    "TEMP unbalanced chunk stream: bounds={:?} clips={} depth {} -> {}",
+                    chunk.bounds,
+                    depth_after_push - depth_before,
+                    depth_after_push,
+                    depth_after_emit
+                );
+            }
+            // TEMP DIAGNOSTIC (clip-escape hunt; remove after fix): per-chunk
+            // inherited clip census — empty clips on a scrolled row chunk mean
+            // its composites and glyphs paint with no scissor at all.
+            if f % 60 == 0 {
+                let clips: Vec<String> = chunk
+                    .inherited_clips
+                    .iter()
+                    .map(|c| {
+                        format!(
+                            "({:.0},{:.0})+{:.0}x{:.0}",
+                            c.rect.x, c.rect.y, c.rect.width, c.rect.height
+                        )
+                    })
+                    .collect();
+                tracing::info!(
+                    "TEMP chunk clips: bounds=({:.0},{:.0})+{:.0}x{:.0} origin=({:.0},{:.0}) clips={}",
+                    chunk.bounds.x,
+                    chunk.bounds.y,
+                    chunk.bounds.width,
+                    chunk.bounds.height,
+                    chunk.abs_origin.x,
+                    chunk.abs_origin.y,
+                    clips.join(" | ")
+                );
+            }
             for _ in chunk.inherited_clips.iter() {
                 self.batch.clip.pop();
+            }
+        }
+
+        // TEMP DIAGNOSTIC (clip-escape hunt; remove after fix): frame census.
+        if f % 60 == 0 {
+            let mut bands = [0usize; 6]; // driftX driftY driftXY scrollview virtual below
+            for op in self.batch.ops.iter() {
+                if let Op::Glyphs { start, count, .. } = op {
+                    let s = *start as usize;
+                    let e = (*start + *count).min(self.batch.glyph_verts.len() as u32) as usize;
+                    if s >= e {
+                        continue;
+                    }
+                    let (mut x0, mut y0, mut x1, mut y1) =
+                        (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
+                    for v in &self.batch.glyph_verts[s..e] {
+                        x0 = x0.min(v.pos[0]);
+                        y0 = y0.min(v.pos[1]);
+                        x1 = x1.max(v.pos[0]);
+                        y1 = y1.max(v.pos[1]);
+                    }
+                    let cy = (y0 + y1) * 0.5;
+                    let band = if cy < 300.0 {
+                        0
+                    } else if cy < 430.0 {
+                        1
+                    } else if cy < 550.0 {
+                        2
+                    } else if cy < 680.0 {
+                        3
+                    } else if cy < 800.0 {
+                        4
+                    } else {
+                        5
+                    };
+                    bands[band] += (e - s) / 6;
+                }
+            }
+            tracing::info!(
+                "TEMP glyph bands [driftX driftY driftXY scrollview virtual below]: {:?}",
+                bands
+            );
+            tracing::info!(
+                "TEMP census: chunks={} ops={} glyph_ops={} glyph_verts={} clip_depth={}",
+                scene.chunks.len(),
+                self.batch.ops.len(),
+                self.batch
+                    .ops
+                    .iter()
+                    .filter(|o| matches!(o, Op::Glyphs { .. }))
+                    .count(),
+                self.batch.glyph_verts.len(),
+                self.batch.clip.len()
+            );
+        }
+
+        // TEMP DIAGNOSTIC (bottom-overflow hunt; remove after fix): dump the
+        // presented target as PPM once, at the env-specified frame, buffered.
+        if self.temp_dump_frame == Some(f) {
+            self.temp_dump_frame = None;
+            if let Ok(px) = self.readback_rgba8() {
+                let (w, h) = (
+                    self.gpu.config.width.max(1) as usize,
+                    self.gpu.config.height.max(1) as usize,
+                );
+                let pitch = px.len() / h;
+                let mut rgb = Vec::with_capacity(w * h * 3);
+                for y in 0..h {
+                    for x in 0..w {
+                        let i = y * pitch + x * 4;
+                        // BGRA8 → PPM RGB
+                        rgb.extend_from_slice(&[px[i + 2], px[i + 1], px[i]]);
+                    }
+                }
+                if let Ok(mut file) = std::fs::File::create("/tmp/opencode/persistent.ppm") {
+                    use std::io::Write;
+                    let _ = file.write_all(format!("P6\n{w} {h}\n255\n").as_bytes());
+                    let _ = file.write_all(&rgb);
+                }
+                tracing::info!("TEMP dump: frame={f} bytes={}", rgb.len());
             }
         }
 

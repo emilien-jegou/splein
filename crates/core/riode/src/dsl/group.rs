@@ -191,6 +191,19 @@ impl GroupDef {
         self
     }
 
+    /// Attaches a material only when one was authored.
+    ///
+    /// The absent case means "no paint at all" — no layer opens, nothing
+    /// composites — which is what optional chrome (a scrollbar thumb, a
+    /// themeless highlight) needs: the element keeps its geometry, handlers,
+    /// and visibility contract, and simply contributes zero pixels.
+    pub fn material_opt(mut self, e: Option<Material>) -> Self {
+        if let Some(m) = e {
+            self.material = Some(m.into_prop());
+        }
+        self
+    }
+
     pub fn shape<P: IntoProp<Shape>>(mut self, s: P) -> Self {
         self.shape = Some(s.into_prop());
         self

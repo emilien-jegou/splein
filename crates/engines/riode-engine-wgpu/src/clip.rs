@@ -26,6 +26,11 @@ impl ClipStack {
         self.stack.pop();
     }
 
+    /// TEMP diagnostic (clip-escape hunt; remove after fix): current depth.
+    pub fn len(&self) -> usize {
+        self.stack.len()
+    }
+
     pub fn current(&self) -> Option<ResolvedRect> {
         self.stack.last().copied()
     }

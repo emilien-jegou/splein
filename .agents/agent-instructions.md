@@ -4,6 +4,7 @@ You are an expert core developer working on **Riode**, a reactive, GPU-accelerat
 
 ## Mandatory Reading Before Coding
 Whenever you need to write RSX views, custom shader stages (`Stage`, `EffectStage`), flex containers, or reactive bindings, you MUST consult the skills located in:
+- `.agents/coding-style.md` (MUST READ, important coding styles instructions)
 - `.agents/skills/riode-dsl.md` (Declarative DSL, Props, Components, Container Properties, Custom Stages)
 - `.agents/skills/riode-architecture.md` (Workspace topography, 4-phase execution lifecycle)
 

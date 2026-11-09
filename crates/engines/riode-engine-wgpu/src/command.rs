@@ -54,9 +54,15 @@ pub enum Op {
 }
 
 /// One open layer, emission-side: the offscreen region and its paint bundle.
+/// `empty` marks a degenerate (zero-area) layer: no ops are emitted for it,
+/// begin or end, so the op stream stays balanced and the executor's layer
+/// stack stays in sync. Without this, a zero-area layer (e.g. an invisible
+/// scrollbar thumb at scroll rest) opened a dangling executor entry that
+/// never composited — blanking every frame after the first.
 struct LayerStackEntry {
     region: ResolvedRect,
     paint: LayerPaint,
+    empty: bool,
 }
 
 /// Emission context: batched verts + ordered ops.
@@ -395,6 +401,28 @@ pub struct WgpuSink<'a> {
     pub svgs: &'a mut crate::svg::SvgCache,
 }
 
+/// Transforms a rect's four corners and returns their device-space bounding
+/// box — the layer region used by both `begin_layer` and `end_layer`.
+fn transform_region(t: Transform, rect: &ResolvedRect) -> ResolvedRect {
+    let mut x0 = f32::INFINITY;
+    let mut y0 = f32::INFINITY;
+    let mut x1 = f32::NEG_INFINITY;
+    let mut y1 = f32::NEG_INFINITY;
+    for (px, py) in [
+        (rect.x, rect.y),
+        (rect.x + rect.width, rect.y),
+        (rect.x, rect.y + rect.height),
+        (rect.x + rect.width, rect.y + rect.height),
+    ] {
+        let p = t.transform_point(Point::new(px, py));
+        x0 = x0.min(p.x);
+        y0 = y0.min(p.y);
+        x1 = x1.max(p.x);
+        y1 = y1.max(p.y);
+    }
+    ResolvedRect::new(x0, y0, x1 - x0, y1 - y0)
+}
+
 impl SceneSink for WgpuSink<'_> {
     fn push_clip(&mut self, clip: &PlacedClip) {
         let t = self.batch.device_tx(&clip.transform);
@@ -407,26 +435,19 @@ impl SceneSink for WgpuSink<'_> {
 
     fn begin_layer(&mut self, layer: &PlacedLayer) {
         let t = self.batch.device_tx(&layer.transform);
-        let mut x0 = f32::INFINITY;
-        let mut y0 = f32::INFINITY;
-        let mut x1 = f32::NEG_INFINITY;
-        let mut y1 = f32::NEG_INFINITY;
-        for (px, py) in [
-            (layer.rect.x, layer.rect.y),
-            (layer.rect.x + layer.rect.width, layer.rect.y),
-            (layer.rect.x, layer.rect.y + layer.rect.height),
-            (
-                layer.rect.x + layer.rect.width,
-                layer.rect.y + layer.rect.height,
-            ),
-        ] {
-            let p = t.transform_point(Point::new(px, py));
-            x0 = x0.min(p.x);
-            y0 = y0.min(p.y);
-            x1 = x1.max(p.x);
-            y1 = y1.max(p.y);
+        let region = transform_region(t, &layer.rect);
+
+        // A degenerate (zero-area) layer paints nothing and cannot isolate
+        // children meaningfully: emit no ops at all, but keep the stack entry
+        // so the matching end_layer stays balanced.
+        if region.width <= 0.0 || region.height <= 0.0 {
+            self.batch.layer_stack.push(LayerStackEntry {
+                region,
+                paint: layer.paint.clone(),
+                empty: true,
+            });
+            return;
         }
-        let region = ResolvedRect::new(x0, y0, x1 - x0, y1 - y0);
 
         self.batch.ops.push(Op::BeginLayer {
             region,
@@ -435,6 +456,7 @@ impl SceneSink for WgpuSink<'_> {
         self.batch.layer_stack.push(LayerStackEntry {
             region,
             paint: layer.paint.clone(),
+            empty: false,
         });
     }
 
@@ -442,6 +464,10 @@ impl SceneSink for WgpuSink<'_> {
         let Some(entry) = self.batch.layer_stack.pop() else {
             return;
         };
+        // Degenerate layer: its begin emitted no op, so emit none here either.
+        if entry.empty {
+            return;
+        }
         let region = entry.region;
         let scissor = self.batch.clip.current();
 
@@ -457,9 +483,6 @@ impl SceneSink for WgpuSink<'_> {
             region.y + region.height + margin,
         );
 
-        if x1 <= x0 || y1 <= y0 {
-            return;
-        }
         let start = self.batch.rect_verts.len() as u32;
         for (px, py) in [(x0, y0), (x1, y0), (x0, y1), (x1, y0), (x1, y1), (x0, y1)] {
             self.batch.rect_verts.push(RectVertex {

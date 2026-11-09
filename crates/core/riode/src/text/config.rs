@@ -1,11 +1,10 @@
 // Single responsibility: Configuration and layout parameters for styled typography.
 
-use crate::foundation::Color;
+use crate::foundation::{Color, Material};
 use crate::text::align::TextAlign;
 use crate::text::decoration::TextDecoration;
 use crate::text::fonts::{FontId, FontStyle, FontVariation};
 use crate::text::overflow::TextOverflow;
-use crate::text::selection::DEFAULT_SELECTION_COLOR;
 use crate::text::wrap::TextWrap;
 
 /// Line height policy: fixed pixels or a multiple of the font size.
@@ -78,8 +77,11 @@ pub struct TextConfig {
     /// be enabled deliberately: every label becoming a drag source would break
     /// click-only parents.
     pub selectable: bool,
-    /// Highlight painted behind the selected range.
-    pub selection_color: Color,
+    /// Highlight painted behind the selected range, one material layer per
+    /// overlapped line. Stages are authored by the caller (concrete fill
+    /// stages live in `riode-shader`, see `foundation::material`); `None`
+    /// highlights nothing.
+    pub selection_fill: Option<Material>,
 }
 
 impl Default for TextConfig {
@@ -101,7 +103,7 @@ impl Default for TextConfig {
             max_lines: None,
             color: Color::WHITE,
             selectable: false,
-            selection_color: DEFAULT_SELECTION_COLOR,
+            selection_fill: None,
         }
     }
 }

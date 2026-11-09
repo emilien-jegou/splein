@@ -5,12 +5,9 @@
 // the document-order helpers the router uses to span a range across runs.
 // Keyboard and clipboard are deliberately out of scope.
 
-use crate::foundation::{Color, Point, ResolvedRect};
+use crate::foundation::{Point, ResolvedRect};
 use crate::text::layout::TextLayout;
 use unicode_segmentation::UnicodeSegmentation;
-
-/// Default highlight painted behind selected text, before the glyphs themselves.
-pub const DEFAULT_SELECTION_COLOR: Color = Color::rgba(0.0, 0.47, 0.84, 0.30);
 
 /// Width of the caret drawn for a focused collapsed selection.
 ///

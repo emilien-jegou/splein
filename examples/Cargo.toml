@@ -31,3 +31,11 @@ path = "demo1/main.rs"
 [[example]]
 name = "demo_effects"
 path = "demo_effects/main.rs"
+
+[[example]]
+name = "scroll_demo"
+path = "scroll_demo/main.rs"
+
+[[example]]
+name = "scroll_probe"
+path = "scroll_probe/main.rs"

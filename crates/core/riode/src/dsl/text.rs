@@ -2,7 +2,7 @@
 
 use crate::dsl::component::IntoElement;
 use crate::dsl::element::Element;
-use crate::foundation::{Anchor, Color, Key, Margin, Padding, Size};
+use crate::foundation::{Anchor, Color, Key, Margin, Material, Padding, Size};
 use crate::reactive::prop::{IntoProp, Prop};
 use crate::text::{
     FontId, FontStyle, FontVariation, LineHeight, TextAlign, TextConfig, TextDecoration,
@@ -46,8 +46,9 @@ pub struct TextDef {
     pub color: Color,
     /// Whether this run participates in mouse text selection.
     pub selectable: bool,
-    /// Highlight painted behind the selected range.
-    pub selection_color: Color,
+    /// Layered highlight painted behind the selected range. `None` paints
+    /// nothing; see `TextConfig::selection_fill`.
+    pub selection_fill: Option<Material>,
     /// Whether layout uses absolute positioning.
     pub is_absolute: bool,
     /// Optional anchoring target for positioning.
@@ -90,7 +91,7 @@ pub fn text<P: IntoProp<String>>(content: P) -> TextDef {
         max_lines: None,
         color: Color::WHITE,
         selectable: false,
-        selection_color: crate::text::DEFAULT_SELECTION_COLOR,
+        selection_fill: None,
         is_absolute: false,
         anchor: None,
         margin: Margin::ZERO,
@@ -235,9 +236,14 @@ impl TextDef {
         self.selectable = on;
         self
     }
-    /// Sets the highlight painted behind the selected range.
-    pub fn selection_color(mut self, c: Color) -> Self {
-        self.selection_color = c;
+    /// Sets the layered highlight painted behind the selected range
+    /// (`Fill::solid(...)` and stage lists from `riode-shader`).
+    ///
+    /// Without one, selectable text highlights nothing: core tracks the
+    /// selection geometry, the fill stage paints it, and each is meaningless
+    /// without the other.
+    pub fn selection_fill(mut self, fill: impl Into<crate::foundation::Material>) -> Self {
+        self.selection_fill = Some(fill.into());
         self
     }
     /// Sets surrounding margin offset.
@@ -306,7 +312,7 @@ impl TextDef {
             max_lines: self.max_lines,
             color: self.color,
             selectable: self.selectable,
-            selection_color: self.selection_color,
+            selection_fill: self.selection_fill.clone(),
         }
     }
 }

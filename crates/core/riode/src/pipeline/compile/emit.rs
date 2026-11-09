@@ -112,6 +112,7 @@ pub fn emit_node_content(
     node: &mut LayoutNode,
     chunk: &mut SceneChunk,
     text_ctx: &TextContext,
+    layer_id: LayerId,
     caret_visible: bool,
     abs_origin_y: f32,
     paint: Option<ResolvedRect>,
@@ -157,6 +158,7 @@ pub fn emit_node_content(
             t.emit(
                 &layout,
                 chunk,
+                layer_id,
                 node.state.text.text_selection,
                 node.state.input.text_focused && caret_visible,
             );

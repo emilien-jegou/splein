@@ -98,6 +98,7 @@ pub fn compile_node_hierarchy(
             node_mut,
             chunk,
             text_ctx,
+            LayerId::from_packed(id.packed()),
             caret_visible,
             abs_origin.y,
             Some(paint),

@@ -218,10 +218,10 @@ impl GlyphAtlas {
                 );
             }
         }
-        tracing::debug!(
+        tracing::info!(
             dropped,
             live = self.map.len(),
-            "riode-wgpu coverage glyph atlas repacked"
+            "TEMP atlas repack (remove after fix)"
         );
         self.gen += 1;
     }
