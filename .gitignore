@@ -17,10 +17,6 @@
 !.agents
 !.agents/**/*
 
-!keep/
-!keep/*
-!keep/**/*
-
 !scripts
 !scripts/*
 !scripts/**/*

@@ -1,5 +1,6 @@
-// Single responsibility: Material, overlay, and post-processing effect dynamic execution.
+// Responsibility: Dispatches material, overlay, and post-effect passes using pre-cached persistent bind groups.
 
+use bon::bon;
 use riode::foundation::{LayerPaint, ResolvedRect};
 
 use crate::context::WgpuContext;
@@ -14,12 +15,12 @@ pub struct MaterialRunner<'a> {
     pub sh: u32,
 }
 
+#[bon]
 impl<'a> MaterialRunner<'a> {
     pub fn draw_material(
         &self,
         materials: &mut MaterialPipelineCache,
         pass: &mut wgpu::RenderPass<'_>,
-        kept: &mut Vec<wgpu::BindGroup>,
         region: &ResolvedRect,
         paint: &LayerPaint,
     ) {
@@ -32,6 +33,8 @@ impl<'a> MaterialRunner<'a> {
         let composed = riode_shader::compose_material_shader(paint);
         let entry = materials.get_or_create(
             &self.gpu.device,
+            &self.buffers.material_geo_buf,
+            &self.buffers.material_uniform_buf,
             &composed.wgsl,
             composed.total_uniform_size > 0,
             wgpu::TextureFormat::Rgba8Unorm,
@@ -54,20 +57,7 @@ impl<'a> MaterialRunner<'a> {
             bytemuck::cast_slice(&geo_data),
         );
 
-        let geo_bg = self.gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("riode-material-geo-bg"),
-            layout: &entry.geo_bind_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                    buffer: &self.buffers.material_geo_buf,
-                    offset: 0,
-                    size: wgpu::BufferSize::new(32),
-                }),
-            }],
-        });
-
-        let u_bg_and_offset = if let Some(ref u_layout) = entry.uniform_bind_layout {
+        let u_offset = if entry.uniform_bind_group.is_some() {
             let u_size = composed.total_uniform_size.max(16);
             let u_offset = self.buffers.alloc_uniform_offset(u_size);
             let mut uniform_bytes = vec![0u8; u_size];
@@ -80,20 +70,7 @@ impl<'a> MaterialRunner<'a> {
                 u_offset as u64,
                 &uniform_bytes,
             );
-
-            let bg = self.gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("riode-material-uniform-bg"),
-                layout: u_layout,
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                        buffer: &self.buffers.material_uniform_buf,
-                        offset: 0,
-                        size: wgpu::BufferSize::new(u_size as u64),
-                    }),
-                }],
-            });
-            Some((bg, u_offset))
+            Some(u_offset)
         } else {
             None
         };
@@ -101,31 +78,26 @@ impl<'a> MaterialRunner<'a> {
         unsafe {
             let pass_dyn: &mut wgpu::RenderPass<'_> = std::mem::transmute(pass);
             let pipe_dyn: &wgpu::RenderPipeline = std::mem::transmute(&entry.pipeline);
-            let geo_dyn: &wgpu::BindGroup = std::mem::transmute(&geo_bg);
+            let geo_dyn: &wgpu::BindGroup = std::mem::transmute(&entry.geo_bind_group);
 
             pass_dyn.set_pipeline(pipe_dyn);
             pass_dyn.set_bind_group(0, geo_dyn, &[geo_offset]);
 
-            if let Some((ref u_bg, u_offset)) = u_bg_and_offset {
-                let u_dyn: &wgpu::BindGroup = std::mem::transmute(u_bg);
-                pass_dyn.set_bind_group(1, u_dyn, &[u_offset]);
+            if let Some(u_offset) = u_offset {
+                if let Some(ref u_bg) = entry.uniform_bind_group {
+                    let u_dyn: &wgpu::BindGroup = std::mem::transmute(u_bg);
+                    pass_dyn.set_bind_group(1, u_dyn, &[u_offset]);
+                }
             }
 
             pass_dyn.draw(0..6, 0..1);
         }
-
-        kept.push(geo_bg);
-        if let Some((u_bg, _)) = u_bg_and_offset {
-            kept.push(u_bg);
-        }
     }
 
-    /// Renders an overlay on top of children, clipped to the shape boundary.
     pub fn draw_overlay(
         &self,
         materials: &mut MaterialPipelineCache,
         pass: &mut wgpu::RenderPass<'_>,
-        kept: &mut Vec<wgpu::BindGroup>,
         region: &ResolvedRect,
         paint: &LayerPaint,
     ) {
@@ -138,6 +110,8 @@ impl<'a> MaterialRunner<'a> {
         let composed = riode_shader::compose_overlay_shader(paint);
         let entry = materials.get_or_create(
             &self.gpu.device,
+            &self.buffers.material_geo_buf,
+            &self.buffers.material_uniform_buf,
             &composed.wgsl,
             composed.total_uniform_size > 0,
             wgpu::TextureFormat::Rgba8Unorm,
@@ -160,20 +134,7 @@ impl<'a> MaterialRunner<'a> {
             bytemuck::cast_slice(&geo_data),
         );
 
-        let geo_bg = self.gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("riode-overlay-geo-bg"),
-            layout: &entry.geo_bind_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                    buffer: &self.buffers.material_geo_buf,
-                    offset: 0,
-                    size: wgpu::BufferSize::new(32),
-                }),
-            }],
-        });
-
-        let u_bg_and_offset = if let Some(ref u_layout) = entry.uniform_bind_layout {
+        let u_offset = if entry.uniform_bind_group.is_some() {
             let u_size = composed.total_uniform_size.max(16);
             let u_offset = self.buffers.alloc_uniform_offset(u_size);
             let mut uniform_bytes = vec![0u8; u_size];
@@ -186,20 +147,7 @@ impl<'a> MaterialRunner<'a> {
                 u_offset as u64,
                 &uniform_bytes,
             );
-
-            let bg = self.gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("riode-overlay-uniform-bg"),
-                layout: u_layout,
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                        buffer: &self.buffers.material_uniform_buf,
-                        offset: 0,
-                        size: wgpu::BufferSize::new(u_size as u64),
-                    }),
-                }],
-            });
-            Some((bg, u_offset))
+            Some(u_offset)
         } else {
             None
         };
@@ -207,27 +155,23 @@ impl<'a> MaterialRunner<'a> {
         unsafe {
             let pass_dyn: &mut wgpu::RenderPass<'_> = std::mem::transmute(pass);
             let pipe_dyn: &wgpu::RenderPipeline = std::mem::transmute(&entry.pipeline);
-            let geo_dyn: &wgpu::BindGroup = std::mem::transmute(&geo_bg);
+            let geo_dyn: &wgpu::BindGroup = std::mem::transmute(&entry.geo_bind_group);
 
             pass_dyn.set_pipeline(pipe_dyn);
             pass_dyn.set_bind_group(0, geo_dyn, &[geo_offset]);
 
-            if let Some((ref u_bg, u_offset)) = u_bg_and_offset {
-                let u_dyn: &wgpu::BindGroup = std::mem::transmute(u_bg);
-                pass_dyn.set_bind_group(1, u_dyn, &[u_offset]);
+            if let Some(u_offset) = u_offset {
+                if let Some(ref u_bg) = entry.uniform_bind_group {
+                    let u_dyn: &wgpu::BindGroup = std::mem::transmute(u_bg);
+                    pass_dyn.set_bind_group(1, u_dyn, &[u_offset]);
+                }
             }
 
             pass_dyn.draw(0..6, 0..1);
         }
-
-        kept.push(geo_bg);
-        if let Some((u_bg, _)) = u_bg_and_offset {
-            kept.push(u_bg);
-        }
     }
 
-    /// Renders a post-processed composite quad for a layer with effects.
-    #[allow(clippy::too_many_arguments)]
+    #[builder]
     pub fn draw_effect(
         &self,
         materials: &mut MaterialPipelineCache,
@@ -243,6 +187,8 @@ impl<'a> MaterialRunner<'a> {
         let composed = riode_shader::compose_effect_shader(paint);
         let entry = materials.get_or_create_effect(
             &self.gpu.device,
+            &self.buffers.ortho_buf,
+            &self.buffers.material_geo_buf,
             &composed.wgsl,
             composed.total_uniform_size > 0,
             wgpu::TextureFormat::Rgba8Unorm,
@@ -265,31 +211,6 @@ impl<'a> MaterialRunner<'a> {
             bytemuck::cast_slice(&geo_data),
         );
 
-        // Group 0: Ortho + ElementGeo
-        let g0_bg = self.gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("riode-effect-g0-bg"),
-            layout: &entry.geo_bind_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                        buffer: &self.buffers.ortho_buf,
-                        offset: 0,
-                        size: None,
-                    }),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                        buffer: &self.buffers.material_geo_buf,
-                        offset: 0,
-                        size: wgpu::BufferSize::new(32),
-                    }),
-                },
-            ],
-        });
-
-        // Group 1: Textures, sampler, and effect uniforms
         let u_size = composed.total_uniform_size.max(16);
         let u_offset = self.buffers.alloc_uniform_offset(u_size);
         let mut uniform_bytes = vec![0u8; u_size];
@@ -332,7 +253,7 @@ impl<'a> MaterialRunner<'a> {
                 resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
                     buffer: &self.buffers.material_uniform_buf,
                     offset: 0,
-                    size: wgpu::BufferSize::new(u_size as u64),
+                    size: wgpu::BufferSize::new(256),
                 }),
             });
         }
@@ -346,7 +267,7 @@ impl<'a> MaterialRunner<'a> {
         unsafe {
             let pass_dyn: &mut wgpu::RenderPass<'_> = std::mem::transmute(pass);
             let pipe_dyn: &wgpu::RenderPipeline = std::mem::transmute(&entry.pipeline);
-            let g0_dyn: &wgpu::BindGroup = std::mem::transmute(&g0_bg);
+            let g0_dyn: &wgpu::BindGroup = std::mem::transmute(&entry.geo_bind_group);
             let g1_dyn: &wgpu::BindGroup = std::mem::transmute(&g1_bg);
 
             pass_dyn.set_pipeline(pipe_dyn);
@@ -361,7 +282,7 @@ impl<'a> MaterialRunner<'a> {
             pass_dyn.draw(start..start + count, 0..1);
         }
 
-        kept.push(g0_bg);
+        // Keep the bind group alive until the end of the frame!
         kept.push(g1_bg);
     }
 }

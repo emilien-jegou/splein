@@ -59,44 +59,7 @@ pub fn Page() -> impl IntoElement {
 
     // P7 driver: uncontrolled scroll; human drags/wheels it.
     let _sc = use_scroll(0.0);
-
     let rows: Vec<Element> = vec![
-        // P1: bare text, nothing between it and the window background.
-        strip(0xE53935, "P1", plain_text("bare text")),
-        // P2: demo1 idiom — text inside a material group.
-        strip(0x43A047, "P2", {
-            group()
-                .width("fill")
-                .height("fill")
-                .children([plain_text("text in material group")])
-                .into_element()
-        }),
-        // P3: the same, one clipped ancestor in between.
-        strip(0x1E88E5, "P3", {
-            group()
-                .width("fill")
-                .height("fill")
-                .clip(true)
-                .children([plain_text("text under clip")])
-                .into_element()
-        }),
-        // P4: the chrome component path (u32 color props, weight 700).
-        strip(0xFB8C00, "P4", {
-            group()
-                .direction("vertical")
-                .width("fill")
-                .height("fill")
-                .children([
-                    text("component text — weight 700")
-                        .size(18.0)
-                        .weight(700u16)
-                        .color(INK),
-                    text("component text — u32 hex color")
-                        .size(14.0)
-                        .color(0x7B7B7B),
-                ])
-                .into_element()
-        }),
         // P5: tuple children + margins, Shell-style.
         strip(0x8E24AA, "P5", {
             group()
@@ -121,14 +84,14 @@ pub fn Page() -> impl IntoElement {
                     .into_element()])
                 .into_element()
         }),
-        // P7: the restored ScrollView mount; thumb ink dark, appears on scroll.
-        strip(0xD81B60, "P7", scroll_view_probe()),
     ];
 
     group()
         .direction("vertical")
         .width("fill")
-        .height("fit")
+        .height("fill")
+        .alignment(Alignment::Center)
+        .distribution(Distribution::Center)
         .children(rows)
         .into_element()
 }

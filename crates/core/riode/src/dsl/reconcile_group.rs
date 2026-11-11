@@ -29,12 +29,8 @@ pub fn reconcile_group(
 
     // Evaluation node for context reads below: every Prop::Context in
     // this declaration resolves against the retained ancestors of THIS node.
-    // Restored on drop (regions nest: scheduler rebuilds reconcile children).
     let _eval_node = crate::reactive::context::enter_node(id, arena);
 
-    // A reactive child segment needs a measure subscriber of its own. Without one a node whose only
-    // reactive input is dynamic children would allocate nothing to track against, read its list
-    // once at mount, and never hear about a reorder.
     let has_dyn_measure = def.width.as_ref().is_some_and(|p| p.is_dynamic())
         || def.height.as_ref().is_some_and(|p| p.is_dynamic())
         || def.presence.as_ref().is_some_and(|p| p.is_dynamic())
@@ -49,8 +45,6 @@ pub fn reconcile_group(
         || def.y.as_ref().is_some_and(|p| p.is_dynamic())
         || def.scale.as_ref().is_some_and(|p| p.is_dynamic())
         || def.rotate_degrees.as_ref().is_some_and(|p| p.is_dynamic());
-    // Scroll offset rides its own channel: same transform effect as x/y, but
-    // tracked as SCROLL so damage applies the scroll rule instead of repaint.
     let has_dyn_scroll = def.scroll_offset.as_ref().is_some_and(|p| p.is_dynamic());
 
     let m_sub = has_dyn_measure.then(|| router.measure_sub(id, &mut runtime.borrow_mut()));
@@ -66,19 +60,15 @@ pub fn reconcile_group(
         presence: def.presence.as_ref().and_then(|p| p.dynamic_closure()),
         z_index: def.z_index.as_ref().and_then(|p| p.dynamic_closure()),
         pose: pose_bindings(&def),
+        scroll_offset_x: None,
+        scroll_offset_y: def.scroll_offset.as_ref().and_then(|p| p.dynamic_closure()),
         scroll_offset: def.scroll_offset.as_ref().and_then(|p| p.dynamic_closure()),
         children: def
             .has_dynamic_segments()
             .then(|| def.child_segments.clone()),
     };
-    // Pose components compose into the single transform the tree stores, so the hot path
-    // keeps one value per node while the DSL exposes them independently.
     let pose = store.pose.clone();
 
-    // Every reactive property is read here, once, before anything is written. Reading them in
-    // two passes with node writes in between meant the second batch could observe a tree the
-    // first batch had already half-updated. It also has to precede the handler extraction below,
-    // which moves `def.handlers` out and so would leave `def` partially moved.
     let props = ResolvedProps::evaluate(&def, pose.as_ref(), m_sub, p_sub, s_sub, runtime);
     let change = ChangeSet::detect(arena.get(id), &def, &props);
     tracing::debug!(
@@ -89,17 +79,13 @@ pub fn reconcile_group(
         change.paint,
         change.transform,
     );
-    // Hoisted before the writes below move fields out of `def`.
     let has_dynamics = def.has_dynamic_segments();
 
     let bindings = NodeBindings::from_store(store);
-    // Handlers ride alongside the bindings: both are per-node closures that reconciliation
-    // replaces wholesale, and both are stored behind one pointer clone.
     let handlers = NodeHandlers::from_store(def.handlers);
     let node = arena.get_mut(id);
     node.state.core.bindings = bindings;
     node.state.input.handlers = handlers;
-    // Bindings decide staticness: clear this node's proof and ancestors'.
     arena.invalidate_static_up(id);
 
     if change.layout {
@@ -109,9 +95,6 @@ pub fn reconcile_group(
         arena.mark_dirty(id, DirtyFlags::PAINT);
     }
 
-    // Same reasoning for a geometry handle: this is the first and only moment the node id exists,
-    // so this is where a handle becomes readable. Re-binding on a rebuild is what keeps the
-    // handle pointing at the retained node rather than the one it replaced.
     if let Some(handle) = &def.element_ref {
         handle.bind(id);
     }
@@ -127,8 +110,6 @@ pub fn reconcile_group(
     if let Some(h) = props.height {
         node.style.height = h;
     }
-    // Persist the declared half separately: the reactive path recomposes from it, and the
-    // composed value cannot be decomposed back out.
     node.state.core.declared_transform = props.declared_transform;
     node.transform = props.transform;
     node.style.layout = def.layout;
@@ -148,31 +129,15 @@ pub fn reconcile_group(
 
     node.style.paint = props.paint;
 
-    // Provided context values live on the retained node (cleared when the
-    // declaration carries none, so conditional providers vanish cleanly) and
-    // on the descent stack for the children reconcile below: freshly mounted
-    // links don't exist in the tree yet, but the lexical chain is live.
-    // Reads walk ancestors for the nearest entry; see `reactive::context`.
     if def.provided.is_empty() {
         arena.get_mut(id).state.core.provided = None;
     } else {
         arena.get_mut(id).state.core.provided = Some(def.provided.clone());
     }
-    // Providers are reactive (signal readers): same invalidation.
     arena.invalidate_static_up(id);
     let _descent = crate::reactive::context::enter_descent(&def.provided);
 
-    // Children merge in declaration order: static segments splice in place,
-    // dynamic segments build now, inside the measure observer, so a builder
-    // subscribes to the signals it reads on the very first build rather than
-    // only on a later re-mount. Static-only nodes skip all of this: the merged
-    // vec moves out with no cloning and no subscription.
     let (children, child_keys) = if has_dynamics {
-        // A reactive segment is rebuilt during reconciliation, not during mount, so no
-        // ambient hook scope is installed. A child that is a `#[component]` calling
-        // `use_signal` would therefore panic with "hook called outside a component body"
-        // the first time its parent re-rendered. Entering the scope here makes the two
-        // compose: the list can be rebuilt as often as its signals change.
         let cx = crate::reactive::Cx::new(Rc::clone(runtime));
         let spec = if let Some(sub) = m_sub.or(p_sub).or(s_sub) {
             runtime
@@ -234,11 +199,6 @@ pub fn replace_child(
     child
 }
 
-/// Collects the paint evaluator a group declared, if any.
-///
-/// One closure over the whole bundle: whichever of the four paint props is
-/// dynamic (or a context read) makes the node reactive through the single
-/// paint channel, and the static siblings ride along as cheap clones.
 fn paint_binding(def: &GroupDef) -> Option<Rc<dyn Fn() -> LayerPaint>> {
     let any_dynamic = def.shape.as_ref().is_some_and(|p| p.is_dynamic())
         || def.material.as_ref().is_some_and(|p| p.is_dynamic())
@@ -259,7 +219,6 @@ fn paint_binding(def: &GroupDef) -> Option<Rc<dyn Fn() -> LayerPaint>> {
     }))
 }
 
-/// Collects the pose component evaluators a group declared, if any.
 fn pose_bindings(def: &GroupDef) -> Option<PoseBindings> {
     let pose = PoseBindings {
         x: def.x.as_ref().and_then(|p| p.dynamic_closure()),
@@ -273,7 +232,6 @@ fn pose_bindings(def: &GroupDef) -> Option<PoseBindings> {
     pose.is_bound().then_some(pose)
 }
 
-/// Composes the pose components a group declared as plain values, if any.
 fn static_pose(def: &GroupDef) -> Option<Transform> {
     let static_val = |p: &Option<Prop<f32>>| match p {
         Some(Prop::Static(v)) => Some(*v),
@@ -310,7 +268,6 @@ fn static_pose(def: &GroupDef) -> Option<Transform> {
     Some(out)
 }
 
-/// Every reactive property of a group, read once before any of them is written.
 struct ResolvedProps {
     width: Option<Size>,
     height: Option<Size>,
@@ -322,7 +279,6 @@ struct ResolvedProps {
 }
 
 impl ResolvedProps {
-    /// Reads every declared property under the observer scope its own bindings need.
     fn evaluate(
         def: &GroupDef,
         pose: Option<&PoseBindings>,
@@ -354,9 +310,14 @@ impl ResolvedProps {
         };
 
         let scroll_offset = evaluate_prop(&def.scroll_offset, s_sub, runtime).unwrap_or(0.0);
+        let (ox, oy) = match def.layout.direction {
+            crate::foundation::Direction::Horizontal => (scroll_offset, 0.0),
+            crate::foundation::Direction::Vertical => (0.0, scroll_offset),
+        };
         let transform = NodeBindings::compose_with_scroll(
             NodeBindings::compose_with_declared(declared_transform, composed_pose),
-            scroll_offset,
+            ox,
+            oy,
         );
 
         let paint = LayerPaint {
@@ -402,7 +363,6 @@ impl ResolvedProps {
     }
 }
 
-/// Which invalidation passes a reconciliation has to schedule.
 struct ChangeSet {
     layout: bool,
     paint: bool,
@@ -410,7 +370,6 @@ struct ChangeSet {
 }
 
 impl ChangeSet {
-    /// Compares freshly resolved properties against the node's retained state.
     fn detect(prev: &LayoutNode, def: &GroupDef, props: &ResolvedProps) -> Self {
         let presence_changed =
             props.presence.is_some() && props.presence != Some(prev.state.core.presence);

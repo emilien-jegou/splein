@@ -1,17 +1,20 @@
-// Single responsibility: Offscreen filter layer pool, targets, and nesting stack.
+// Responsibility: Manages retained offscreen filter texture targets, composite bindings, and nesting stack.
 
 use riode::foundation::ResolvedRect;
 
-/// One filter-layer offscreen slot: surface-sized Rgba8Unorm, same
-/// format/coords as the persistent target so scene passes, scissors and
-/// verts work unchanged inside the layer; texture-bound so a nested
-/// layer can snapshot this layer as its backdrop.
-pub fn make_filter_target(
+pub struct LayerSlot {
+    pub texture: wgpu::Texture,
+    pub view: wgpu::TextureView,
+    pub composite_bg: wgpu::BindGroup,
+}
+
+pub fn make_filter_slot(
     device: &wgpu::Device,
+    filter_layout: &wgpu::BindGroupLayout,
     w: u32,
     h: u32,
     label: &str,
-) -> (wgpu::Texture, wgpu::TextureView) {
+) -> LayerSlot {
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some(label),
         size: wgpu::Extent3d {
@@ -26,21 +29,32 @@ pub fn make_filter_target(
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT
             | wgpu::TextureUsages::TEXTURE_BINDING
             | wgpu::TextureUsages::COPY_SRC
-            | wgpu::TextureUsages::COPY_DST, // <-- add COPY_DST
+            | wgpu::TextureUsages::COPY_DST,
         view_formats: &[],
     });
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-    (texture, view)
+    let composite_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some(&format!("{label}-composite-bg")),
+        layout: filter_layout,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: wgpu::BindingResource::TextureView(&view),
+        }],
+    });
+
+    LayerSlot {
+        texture,
+        view,
+        composite_bg,
+    }
 }
 
-/// One open offscreen layer at draw time: its pool slot index.
 pub struct OpenLayer {
     pub slot: usize,
 }
 
-/// Manages the pool of surface-sized intermediate layer textures.
 pub struct LayerPool {
-    pub pool: Vec<(wgpu::Texture, wgpu::TextureView)>,
+    pub pool: Vec<LayerSlot>,
     pub stack: Vec<OpenLayer>,
     pub stale_root_layers: Vec<ResolvedRect>,
 }
@@ -60,11 +74,19 @@ impl LayerPool {
         self.stale_root_layers.clear();
     }
 
-    pub fn ensure_slot(&mut self, device: &wgpu::Device, slot: usize, sw: u32, sh: u32) {
+    pub fn ensure_slot(
+        &mut self,
+        device: &wgpu::Device,
+        filter_layout: &wgpu::BindGroupLayout,
+        slot: usize,
+        sw: u32,
+        sh: u32,
+    ) {
         while self.pool.len() <= slot {
             let i = self.pool.len();
-            self.pool.push(make_filter_target(
+            self.pool.push(make_filter_slot(
                 device,
+                filter_layout,
                 sw,
                 sh,
                 &format!("riode-wgpu-layer-{i}"),
@@ -74,7 +96,7 @@ impl LayerPool {
 
     pub fn parent_view<'a>(&'a self, persistent: &'a wgpu::TextureView) -> &'a wgpu::TextureView {
         match self.stack.last() {
-            Some(l) => &self.pool[l.slot].1,
+            Some(l) => &self.pool[l.slot].view,
             None => persistent,
         }
     }

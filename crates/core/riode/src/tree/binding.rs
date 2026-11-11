@@ -19,10 +19,11 @@ pub struct DynamicBindings {
     /// Stacking order evaluator, when the node declares a dynamic one.
     pub z_index: Option<Rc<dyn Fn() -> i32>>,
     pub pose: Option<PoseBindings>,
+    /// Horizontal scroll offset in logical px, when the node declares one.
+    pub scroll_offset_x: Option<Rc<dyn Fn() -> f32>>,
     /// Vertical scroll offset in logical px, when the node declares one.
-    /// Evaluated on the `SCROLL` channel and folded into the transform as a
-    /// `(0, -offset)` translation — after the pose, so an offset never fights
-    /// a bound x/y; both are pure translations and compose additively.
+    pub scroll_offset_y: Option<Rc<dyn Fn() -> f32>>,
+    /// Legacy alias retaining backward compatibility with single-scalar vertical offset.
     pub scroll_offset: Option<Rc<dyn Fn() -> f32>>,
     /// Retained child segments, when any rebuild from reactive state.
     ///
@@ -114,6 +115,8 @@ impl DynamicBindings {
             && self.presence.is_none()
             && self.z_index.is_none()
             && self.pose.as_ref().is_none_or(|p| !p.is_bound())
+            && self.scroll_offset_x.is_none()
+            && self.scroll_offset_y.is_none()
             && self.scroll_offset.is_none()
             && self.children.is_none()
     }
@@ -158,10 +161,6 @@ impl NodeBindings {
     }
 
     /// Whether this node's position is driven by a bound `x` or `y` translation.
-    ///
-    /// Narrower than [`Self::has_pose_bindings`] on purpose: scale and rotation compose with a
-    /// springing box without conflict, but a bound translation commands the same axis the box
-    /// moves on and so does.
     #[inline(always)]
     pub fn has_translation_bindings(&self) -> bool {
         self.inner.as_ref().is_some_and(|b| {
@@ -218,40 +217,42 @@ impl NodeBindings {
     /// Whether this node has a bound scroll offset evaluator.
     #[inline(always)]
     pub fn has_scroll_binding(&self) -> bool {
-        self.inner
-            .as_ref()
-            .is_some_and(|b| b.scroll_offset.is_some())
+        self.inner.as_ref().is_some_and(|b| {
+            b.scroll_offset_x.is_some()
+                || b.scroll_offset_y.is_some()
+                || b.scroll_offset.is_some()
+        })
     }
 
-    /// Folds a scroll offset into a composed transform.
+    /// Folds 2D scroll offsets into a composed transform.
     ///
-    /// Positive offset scrolls content up (translation is negated), matching
-    /// the "offset = distance from the top" convention. Zero is exact, so the
-    /// unbound case needs no branch at either call site.
+    /// Positive offset scrolls content up/left (translation is negated), matching
+    /// the "offset = distance from the top/left edge" convention.
     #[inline]
-    pub fn compose_with_scroll(base: Transform, offset: f32) -> Transform {
-        if offset == 0.0 {
+    pub fn compose_with_scroll(base: Transform, offset_x: f32, offset_y: f32) -> Transform {
+        if offset_x == 0.0 && offset_y == 0.0 {
             base
         } else {
-            base.multiply(&Transform::from_translation(0.0, -offset))
+            base.multiply(&Transform::from_translation(-offset_x, -offset_y))
         }
     }
 
-    /// Re-evaluates the bound scroll offset, returning 0.0 when unbound.
-    pub fn eval_scroll_offset(&self) -> f32 {
+    /// Re-evaluates the bound 2D scroll offset, returning (0.0, 0.0) when unbound.
+    pub fn eval_scroll_offset(&self) -> (f32, f32) {
         self.inner
             .as_deref()
-            .and_then(|b| b.scroll_offset.as_ref())
-            .map_or(0.0, |f| f())
+            .map_or((0.0, 0.0), |b| {
+                let ox = b.scroll_offset_x.as_ref().map_or(0.0, |f| f());
+                let oy = b
+                    .scroll_offset_y
+                    .as_ref()
+                    .or(b.scroll_offset.as_ref())
+                    .map_or(0.0, |f| f());
+                (ox, oy)
+            })
     }
 
     /// Folds a pose into a declared transform.
-    ///
-    /// The one place the two are combined. Both writers of a node's transform go through
-    /// here -- reconciliation at mount, and the reactive update below -- because when they
-    /// composed independently they drifted, and the reactive path overwrote the declared
-    /// transform instead of folding the pose into it. Pose components are applied on top of
-    /// the declared transform, matching the documented "translate, rotate, scale" order.
     #[inline]
     pub fn compose_with_declared(declared: Transform, pose: Option<Transform>) -> Transform {
         match pose {
@@ -261,30 +262,24 @@ impl NodeBindings {
     }
 
     /// Re-evaluates bound local transform, returning true if changed.
-    ///
-    /// Recomposes from the node's declared transform rather than overwriting the stored one,
-    /// so a node declared with both `.transform(t)` and bound pose components keeps `t`.
     pub fn update_transform(&self, declared: Transform, transform: &mut Transform) -> bool {
         let b = match &self.inner {
             Some(b) => b,
             None => return false,
         };
-        // A bound `.transform(..)` is itself a declared transform, so it replaces the static
-        // one before the pose is folded in.
         let declared = match &b.transform {
             Some(t) => t(),
             None => declared,
         };
-        // `compose()` is identity when nothing is bound, and multiplying by identity is
-        // exact in this representation, so the unbound case needs no branch here.
-        // Scroll folds in last: a pure translation composes additively with the
-        // pose, so a bound x/y and a scroll offset never fight over an axis.
         let composed =
             Self::compose_with_declared(declared, b.pose.as_ref().map(PoseBindings::compose));
-        let composed = Self::compose_with_scroll(
-            composed,
-            b.scroll_offset.as_ref().map_or(0.0, |f| f()),
-        );
+        let ox = b.scroll_offset_x.as_ref().map_or(0.0, |f| f());
+        let oy = b
+            .scroll_offset_y
+            .as_ref()
+            .or(b.scroll_offset.as_ref())
+            .map_or(0.0, |f| f());
+        let composed = Self::compose_with_scroll(composed, ox, oy);
         if *transform == composed {
             false
         } else {
@@ -294,9 +289,6 @@ impl NodeBindings {
     }
 
     /// Re-evaluates the bound paint bundle, returning true if it changed.
-    ///
-    /// The one visual reactive channel: paint invalidation is now literally
-    /// "did the [`LayerPaint`] change?".
     pub fn update_paint(&self, paint: &mut LayerPaint) -> bool {
         let b = match &self.inner {
             Some(b) => b,
@@ -345,11 +337,6 @@ impl NodeBindings {
     }
 
     /// Re-evaluates a bound stacking order, returning true if changed.
-    ///
-    /// Paint-class like opacity: a new z reorders paint (and hit testing, which mirrors
-    /// paint) without touching layout. The absolute-implicit-one rule from reconciliation
-    /// applies here too, so an explicit zero on an absolute node still stacks above in-flow
-    /// siblings exactly as it would had it been declared statically.
     pub fn update_z(&self, z: &mut i32, is_absolute: bool) -> bool {
         let b = match &self.inner {
             Some(b) => b,
@@ -367,9 +354,6 @@ impl NodeBindings {
 }
 
 /// The z-index a node ends up with once absoluteness is taken into account.
-///
-/// An absolute node with no declared z still has to stack above in-flow siblings, which is what
-/// the implicit `1` is for. One function so reconciliation and the reactive update agree.
 pub fn resolve_z_index(declared: Option<i32>, is_absolute: bool) -> i32 {
     match declared {
         Some(z) if z != 0 => z,
