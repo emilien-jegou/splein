@@ -522,7 +522,10 @@ impl SceneSink for WgpuSink<'_> {
     }
 
     fn text(&mut self, t: &PlacedText) {
-        let start = self.batch.glyph_verts.len() as u32;
+        // `emit_text` pushes one glyph run per glyph (merged while scissor and
+        // chunk are unchanged). Pushing the placement's total again here would
+        // extend the last op to 2× its vertex range, making it draw the NEXT
+        // placement's glyphs with this placement's scissor.
         let tx = self.batch.device_tx(&t.transform);
         self.batch.emit_text(
             &t.origin,
@@ -534,10 +537,6 @@ impl SceneSink for WgpuSink<'_> {
             tx,
             1.0,
         );
-        let count = self.batch.glyph_verts.len() as u32 - start;
-        if count > 0 {
-            self.batch.push_glyph_run(count, true);
-        }
     }
 }
 
