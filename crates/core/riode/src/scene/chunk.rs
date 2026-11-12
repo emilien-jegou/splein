@@ -64,6 +64,16 @@ pub struct SceneChunk {
     /// unhashed (hand-built chunks); `push_chunk` fills it exactly once,
     /// clones carry it, and any `push` clears it.
     pub content_hash: Option<u64>,
+    /// Whether this bake includes every descendant the compile visited. The
+    /// viewport cull (compile/hierarchy.rs) decides visibility against the
+    /// bake-time viewport; a replay translates the stream without re-running
+    /// that decision, so an incomplete bake must never replay — a scrolled
+    /// ancestor carries culled-out content into view and it would stay
+    /// missing forever. The next fresh emit re-runs the cull on live
+    /// positions: still-hidden descendants cull again (the chunk stays
+    /// incomplete and re-emits), a fully-visible bake replaces the chunk and
+    /// clears the flag.
+    pub content_complete: bool,
 }
 
 impl SceneChunk {
@@ -79,6 +89,7 @@ impl SceneChunk {
             content_hash: None,
             has_text: false,
             text_settled: true,
+            content_complete: true,
         }
     }
 
@@ -98,6 +109,7 @@ impl SceneChunk {
             content_hash: None,
             has_text: false,
             text_settled: true,
+            content_complete: true,
         }
     }
 
@@ -112,6 +124,7 @@ impl SceneChunk {
             content_hash: None,
             has_text: false,
             text_settled: true,
+            content_complete: true,
         }
     }
 

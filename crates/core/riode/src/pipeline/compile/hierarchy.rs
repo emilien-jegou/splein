@@ -53,6 +53,16 @@ pub fn compile_node_hierarchy(
         && !is_stacking_root
         && subtree_settled
     {
+        // The cull verdict is valid only for the position the node was baked
+        // at. A replay translates this chunk without re-running the cull, so
+        // the bake must be marked incomplete: an ancestor's transform (a
+        // scroll offset) can carry this node into view, and a replayed stream
+        // that left it out would keep it invisible forever — the row's text
+        // baked below a scroll viewport is exactly that case. The replay gate
+        // (compile/context.rs) refuses incomplete bakes; the next fresh emit
+        // either culls again (still hidden) or bakes complete and clears the
+        // flag by replacement.
+        chunk.content_complete = false;
         return;
     }
 

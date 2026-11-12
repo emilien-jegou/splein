@@ -55,7 +55,17 @@ pub fn compile_stacking_context(
         .is_some_and(|cached| {
             cached.has_text && (ctx.abs_origin != cached.abs_origin || !cached.text_settled)
         });
-    let replay = if is_clean && clips_match && !text_stale {
+    // A bake that culled descendants is incomplete: the cull read the
+    // bake-time viewport, but a replay moves the stream (scrolled ancestor,
+    // moved parent) without re-evaluating it. Content the cull left out would
+    // stay missing forever once it enters the viewport, so only a cull-free
+    // bake may replay.
+    let replay_complete = node_state
+        .scene
+        .retained_chunk
+        .as_ref()
+        .map_or(true, |cached| cached.content_complete);
+    let replay = if is_clean && clips_match && !text_stale && replay_complete {
         node_state
             .scene
             .retained_chunk
