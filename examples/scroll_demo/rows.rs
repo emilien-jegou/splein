@@ -1,198 +1,149 @@
-// Responsibility: Scroll-demo row compositions — clock-driven drift
-// viewports, the ScrollView / VirtualScrollView runs, and the selectable-text
-// card. The two restore cases under review here: `thumb_fill` inks the
-// scrollbar thumb, `selection_fill` inks selected text.
+// Responsibility: Scroll-demo row compositions — clock-driven drift, ScrollView, VirtualScrollView, and selection card.
 
-use riode::internal::*; // P10 escape hatch: rows compose repr-builders directly
 use riode::prelude::*;
 use riode_shader::Fill;
 
-use super::chrome::{selection_ink, thumb_ink, EyebrowProps, INK, SURFACE};
+use super::chrome::*;
 
-/// Travel in px per axis (less than content overflow so clamp never engages).
 pub const TRAVEL: f32 = 160.0;
 
-/// One labelled clipped viewport holding a pre-shifted content element.
 #[component]
-pub fn ScrollRow(label: &'static str, content: Element) -> impl IntoElement {
+pub fn ScrollRow(label: &'static str, children: Vec<Element>) -> GroupElement {
     view! {
-        <Group
-            direction="horizontal"
-            width="fill"
-            height={110.0}
-            alignment="center"
-            gap={16.0}
-        >
-            <Group width={96.0} height="fill" alignment="center">
+        <g row w="fill" h=110 align="center" gap=16>
+            <g w=96 h="fill" align="center">
                 <Eyebrow label={label} />
-            </Group>
-            <Group
-                width="fill"
-                height="fill"
-                material={Fill::solid(SURFACE)}
-                clip={true}
-            >
-                {content}
-            </Group>
-        </Group>
+            </g>
+            <g w="fill" h="fill" material={Fill::solid(SURFACE)} clip>
+                {children}
+            </g>
+        </g>
     }
 }
 
-/// A controlled `ScrollView` auto-scrolling end to end (see `Page`). This is
-/// the scrollbar watch: the thumb fill must appear at the top-right edge
-/// while content moves and fade out when the scroll rests.
 #[component]
-pub fn ScrollViewRow(label: &'static str, handle: ScrollHandle) -> impl IntoElement {
+pub fn ScrollViewRow(label: &'static str, handle: ScrollHandle) -> GroupElement {
     view! {
-        <Group
-            direction="horizontal"
-            width="fill"
-            height={110.0}
-            alignment="center"
-            gap={16.0}
-        >
-            <Group width={96.0} height="fill" alignment="center">
+        <g row w="fill" h=110 align="center" gap=16>
+            <g w=96 h="fill" align="center">
                 <Eyebrow label={label} />
-            </Group>
-            <Group width="fill" height="fill" clip={true}>
+            </g>
+            <g w="fill" h="fill" clip>
                 <ScrollView
-                    width={Size::fill()}
-                    height={Size::fill()}
+                    width="fill"
+                    height="fill"
                     handle={handle}
                     thumb_fill={thumb_ink()}
                 >
-                    {scroll_content("view")}
+                    <ScrollContent axis="view" />
                 </ScrollView>
-            </Group>
-        </Group>
+            </g>
+        </g>
     }
 }
 
-/// A manually-driven 100k-row virtualized viewport (see `Page`). Same thumb
-/// contract, plus wheel/drag/key input instead of the ticker.
 #[component]
-pub fn VirtualScrollRow(label: &'static str, handle: ScrollHandle) -> impl IntoElement {
+pub fn VirtualScrollRow(label: &'static str, handle: ScrollHandle) -> GroupElement {
     view! {
-        <Group
-            direction="horizontal"
-            width="fill"
-            height={110.0}
-            alignment="center"
-            gap={16.0}
-        >
-            <Group width={96.0} height="fill" alignment="center">
+        <g row w="fill" h=110 align="center" gap=16>
+            <g w=96 h="fill" align="center">
                 <Eyebrow label={label} />
-            </Group>
-            <Group width="fill" height="fill" clip={true}>
+            </g>
+            <g w="fill" h="fill" clip>
                 <VirtualScrollView
-                    width={Size::fill()}
-                    height={Size::fill()}
+                    width="fill"
+                    height="fill"
                     len={100_000usize}
-                    row_height={36.0}
+                    row_height=36.0
                     handle={handle}
                     thumb_fill={thumb_ink()}
-                    row={vrow}
+                    row={|i| view! { <VRow index={i} /> }}
                 />
-            </Group>
-        </Group>
+            </g>
+        </g>
     }
 }
 
-/// A padded surface card of selectable text: drag across the lines to judge
-/// the live highlight, double-click for a word, `Ctrl+C` to copy, click
-/// elsewhere to clear.
 #[component]
 pub fn SelectionRow(label: &'static str) -> impl IntoElement {
     view! {
-        <Group
-            direction="horizontal"
-            width="fill"
-            height={150.0}
-            alignment="center"
-            gap={16.0}
-        >
-            <Group width={96.0} height="fill" alignment="center">
+        <g row w="fill" h=150 align="center" gap=16>
+            <g w=96 h="fill" align="center">
                 <Eyebrow label={label} />
-            </Group>
-            <Group
-                direction="vertical"
-                width="fill"
-                height="fill"
-                padding={18.0}
-                gap={6.0}
-                material={Fill::solid(SURFACE)}
-            >
+            </g>
+            <g col w="fill" h="fill" p=18 gap=6 material={Fill::solid(SURFACE)}>
                 <SelectionLine text="Drag across these lines — one highlight band per line, behind the glyphs." />
                 <SelectionLine text="Double-click a word for a whole-word grab; hold and sweep across nodes." />
                 <SelectionLine text="Release keeps the band; Ctrl+C reaches the OS clipboard; one click clears." />
                 <SelectionLine text="Text without a selection_fill highlight stays selectable and paints nothing." />
-            </Group>
-        </Group>
+            </g>
+        </g>
     }
 }
 
-/// One selectable body line, the exact contract under review.
 #[component]
 pub fn SelectionLine(text: &'static str) -> impl IntoElement {
     view! {
-        <Text
-            size={14.0}
-            line_height={20.0}
+        <text
+            s=14
+            line_height=20.0
             color={INK}
             width="fill"
-            selectable={true}
+            selectable
             selection_fill={selection_ink()}
-        >{text}</Text>
+        >{text}</text>
     }
 }
 
-/// Tall striped content with numbered rows so motion and holes are visible.
-pub fn scroll_content(axis: &str) -> Element {
-    let rows: Vec<Element> = (0..24)
-        .map(|i| {
-            group()
-                .width(1200.0)
-                .height(48.0)
-                .material(Fill::solid(if i % 2 == 0 { 0xEDEFF3 } else { 0xE2E5EC }))
-                .children([
-                    text(format!("{axis} · row {i:02} — pack my box with five dozen liquor jugs"))
-                        .size(14.0)
-                        .color(INK),
-                ])
-                .into_element()
-        })
-        .collect();
-    group()
-        .direction("vertical")
-        .width(1200.0)
-        .height(1152.0)
-        .children(rows)
-        .into_element()
+#[component]
+pub fn VRow(index: usize) -> impl IntoElement {
+    let bg = if index % 2 == 0 { 0xEDEFF3 } else { 0xE2E5EC };
+    let row_label = format!("vrow {index:05} — pack my box with five dozen liquor jugs");
+    view! {
+        <g w="fill" h=36.0 material={Fill::solid(bg)}>
+            <text s=14 color={INK}>{row_label}</text>
+        </g>
+    }
 }
 
-/// One virtualized row: uniform 36px, index-addressed so gaps show.
-fn vrow(i: usize) -> Element {
-    group()
-        .width(Size::fill())
-        .height(36.0)
-        .material(Fill::solid(if i % 2 == 0 { 0xEDEFF3 } else { 0xE2E5EC }))
-        .children([
-            text(format!("vrow {i:05} — pack my box with five dozen liquor jugs"))
-                .size(14.0)
-                .color(INK),
-        ])
-        .into_element()
+#[component]
+pub fn ScrollContent(axis: &'static str) -> impl IntoElement {
+    view! {
+        <g col w=1200.0 h=1152.0>
+            <for i in 0..24>
+                <g
+                    w=1200.0
+                    h=48.0
+                    material={Fill::solid(if i % 2 == 0 { 0xEDEFF3 } else { 0xE2E5EC })}
+                >
+                    <text s=14 color={INK}>
+                        {format!("{axis} · row {i:02} — pack my box with five dozen liquor jugs")}
+                    </text>
+                </g>
+            </for>
+        </g>
+    }
 }
 
-/// The three drift runs the demo opens with: X on the SCROLL channel, Y on
-/// the SCROLL channel, diagonal on PAINT (transform). Subpixel velocity.
-pub fn drift_rows(x: Computed<f32>, y: Computed<f32>, xy: Computed<Transform>) -> Vec<Element> {
-    vec![
-        ScrollRow("X SCROLL", group().absolute().children([scroll_content("x")]).scroll_offset_x(x).into_element())
-            .into_element(),
-        ScrollRow("Y SCROLL", group().absolute().children([scroll_content("y")]).scroll_offset_y(y).into_element())
-            .into_element(),
-        ScrollRow("X+Y PAINT", group().absolute().children([scroll_content("xy")]).transform(xy).into_element())
-            .into_element(),
-    ]
+#[component]
+pub fn DriftRows(x: Computed<f32>, y: Computed<f32>, xy: Computed<Transform>) -> impl IntoElement {
+    view! {
+        <g col w="fill" gap=16>
+            <ScrollRow label="X SCROLL">
+                <g absolute scroll_offset_x={x}>
+                    <ScrollContent axis="x" />
+                </g>
+            </ScrollRow>
+            <ScrollRow label="Y SCROLL">
+                <g absolute scroll_offset_y={y}>
+                    <ScrollContent axis="y" />
+                </g>
+            </ScrollRow>
+            <ScrollRow label="X+Y PAINT">
+                <g absolute transform={xy}>
+                    <ScrollContent axis="xy" />
+                </g>
+            </ScrollRow>
+        </g>
+    }
 }

@@ -10,7 +10,7 @@
 
 use std::rc::Rc;
 
-use crate::dsl::group::{Behavior, GroupDef};
+use crate::dsl::group::{Behavior, GroupElement};
 use crate::foundation::geometry::Point;
 use crate::input::event::{DragInfo, PointerEvent};
 use crate::reactive::{use_signal, Signal};
@@ -24,7 +24,7 @@ pub fn use_gesture() -> Signal<Option<Point>> {
 
 /// A drag gesture: grab offset, held flag, live position, and release.
 ///
-/// Built by [`Drag::start`] and attached with `GroupDef::on_drag` (RSX
+/// Built by [`Drag::start`] and attached with `GroupElement::on_drag` (RSX
 /// `on:drag={…}`). The builder fans out to the five typed slots, so call
 /// sites read as one verb instead of five closures — and every `on:drag` node
 /// is drag-gated by construction (the trio slots are always set), with release
@@ -87,7 +87,7 @@ impl Drag {
 }
 
 impl Behavior for Drag {
-    fn attach(self, row: GroupDef) -> GroupDef {
+    fn attach(self, row: GroupElement) -> GroupElement {
         let Self {
             at,
             held,

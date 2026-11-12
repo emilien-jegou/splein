@@ -1,14 +1,12 @@
-// Single responsibility: the `<if>` control-flow node — token-level pre-pass.
-//
-// `<if cond>…</if>` (+ `<else if c>` / `<else>` segments) desugars to
-// `group().children_of(move || if cond { vec![…] } …)`. Signals read inside
-// the builder resubscribe on change, so branches are reactive with no engine
-// work. A missing `<else>` means an empty branch. Branch swaps remount —
-// hooks inside a branch do not survive toggling.
+// Responsibility: The `<if>` control-flow node — token-level pre-pass and branch expansion.
 
-use crate::flow_util;
+use crate::engine::flow_util;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
+
+use crate::engine::children::expand_children_vec;
+use crate::engine::registry::RxEngine;
+
 
 /// One extracted `<if>` node: condition + raw RSX bodies per segment.
 pub struct IfNode {
@@ -262,20 +260,17 @@ fn is_op_cont(toks: &[proc_macro2::TokenTree], j: usize) -> bool {
     )
 }
 
-/// Emits a `ChildSegment::Dynamic` for one node: the active arm's segments
-/// splice directly into the parent, with no carrier node between.
-/// Arm bodies expand via [`crate::view::expand_children_vec`] (recursion
-/// handles nested control flow). No `<else>` means an empty fallback branch.
-pub fn expand(node: &IfNode) -> syn::Result<TokenStream2> {
+
+pub fn expand(node: &IfNode, engine: &RxEngine) -> syn::Result<TokenStream2> {
     let cond = &node.cond;
-    let then_v = crate::view::expand_children_vec(node.then_body.clone())?;
+    let then_v = expand_children_vec(node.then_body.clone(), engine)?;
     let mut out = quote! { if #cond { #then_v } };
     for (c, b) in &node.elifs {
-        let v = crate::view::expand_children_vec(b.clone())?;
+        let v = expand_children_vec(b.clone(), engine)?;
         out = quote! { #out else if #c { #v } };
     }
     if let Some(e) = &node.else_body {
-        let v = crate::view::expand_children_vec(e.clone())?;
+        let v = expand_children_vec(e.clone(), engine)?;
         out = quote! { #out else { #v } };
     } else {
         out = quote! { #out else { ::std::vec![] } };

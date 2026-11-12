@@ -2,6 +2,8 @@
 
 use crate::text::glyph::ShapedLine;
 
+use std::str::FromStr;
+
 /// Horizontal alignment of text lines within the paragraph box.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub enum TextAlign {
@@ -14,6 +16,31 @@ pub enum TextAlign {
     End,
     /// Inter-word gaps stretched so every line but the last fills the box.
     Justify,
+}
+
+impl FromStr for TextAlign {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, String> {
+        match s.trim().to_lowercase().as_str() {
+            "start" | "left" => Ok(TextAlign::Start),
+            "center" | "middle" => Ok(TextAlign::Center),
+            "end" | "right" => Ok(TextAlign::End),
+            "justify" | "justified" => Ok(TextAlign::Justify),
+            _ => Err(format!("bad text align {s}")),
+        }
+    }
+}
+
+impl From<&str> for TextAlign {
+    fn from(s: &str) -> Self {
+        Self::from_str(s).unwrap_or(TextAlign::Start)
+    }
+}
+
+impl From<String> for TextAlign {
+    fn from(s: String) -> Self {
+        Self::from(s.as_str())
+    }
 }
 
 /// Applies alignment to shaped lines, storing per-line offsets instead of moving glyphs.

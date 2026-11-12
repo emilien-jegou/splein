@@ -95,3 +95,39 @@ macro_rules! impl_num_prop {
 impl_num_prop!(Color);
 impl_num_prop!(Size);
 impl_num_prop!(Gap);
+
+/// Numeric literal acceptance for pixel-valued shorthand setters
+/// (`<g p=12>`, `<text s=14>`): bare integer literals auto-cast to f32 px.
+pub trait Px {
+    fn px(self) -> f32;
+}
+
+macro_rules! impl_px {
+    ($($t:ty),*) => {
+        $(impl Px for $t {
+            fn px(self) -> f32 {
+                self as f32
+            }
+        })*
+    };
+}
+
+impl_px!(f32, i8, i16, i32, i64, isize, u8, u16, u32, u64, usize);
+
+/// Numeric literal acceptance for count-valued shorthand setters
+/// (`<text max_lines=1 w=600>`): bare integer literals cast to the count type.
+pub trait Count {
+    fn count(self) -> u32;
+}
+
+macro_rules! impl_count {
+    ($($t:ty),*) => {
+        $(impl Count for $t {
+            fn count(self) -> u32 {
+                self as u32
+            }
+        })*
+    };
+}
+
+impl_count!(f32, i8, i16, i32, i64, isize, u8, u16, u32, u64, usize);

@@ -88,11 +88,11 @@ pub use scroll::{
     use_scroll, OnScroll, RowFn, ScrollHandle, ScrollView, ScrollViewProps, Scrollbar,
     VirtualScrollView, VirtualScrollViewProps,
 };
-pub use group::{group, index_keyed_list, keyed_list, Behavior, ChildSegment, GroupDef};
+pub use group::{group, index_keyed_list, keyed_list, Behavior, ChildSegment, GroupElement};
 pub use image::image;
 pub use reconciler::reconcile;
 pub use svg::svg;
-pub use text::{text, TextDef};
+pub use text::{text, TextElement};
 
 pub mod cleanup;
 pub use auto_grid::{columns_for, AutoGrid, AutoGridProps};

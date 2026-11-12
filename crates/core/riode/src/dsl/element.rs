@@ -2,15 +2,15 @@
 
 use crate::dsl::component::IntoElement;
 use crate::dsl::custom::CustomDef;
-use crate::dsl::group::GroupDef;
-use crate::dsl::text::TextDef;
+use crate::dsl::group::GroupElement;
+use crate::dsl::text::TextElement;
 use crate::foundation::Key;
 
 /// Ephemeral element enum representing declarative UI tree specifications.
 #[derive(Clone)]
 pub enum Element {
-    Group(GroupDef),
-    Text(TextDef),
+    Group(GroupElement),
+    Text(TextElement),
     Custom(CustomDef),
 }
 
@@ -38,17 +38,6 @@ impl Element {
             Self::Custom(c) => c.key = key,
         }
         self
-    }
-
-    /// Whether reconciling this element may read context (and therefore miss
-    /// a provider). Reconcile wraps such children so a missing provider
-    /// mounts an empty placeholder plus a console error instead of aborting the walk.
-    pub fn has_context_reads(&self) -> bool {
-        match self {
-            Self::Group(g) => g.has_context_reads(),
-            Self::Text(t) => t.has_context_reads(),
-            Self::Custom(_) => false,
-        }
     }
 
     /// One-line-per-node debug summary of the ephemeral tree: the reload IR made
@@ -148,14 +137,14 @@ fn prop_summary<T: std::fmt::Debug>(
     }
 }
 
-impl From<GroupDef> for Element {
-    fn from(def: GroupDef) -> Self {
+impl From<GroupElement> for Element {
+    fn from(def: GroupElement) -> Self {
         Element::Group(def)
     }
 }
 
-impl From<TextDef> for Element {
-    fn from(def: TextDef) -> Self {
+impl From<TextElement> for Element {
+    fn from(def: TextElement) -> Self {
         Element::Text(def)
     }
 }

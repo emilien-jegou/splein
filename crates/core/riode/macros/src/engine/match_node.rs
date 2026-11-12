@@ -1,15 +1,12 @@
-// Single responsibility: the `<match>` control-flow node — token-level pre-pass.
-//
-// `<match scrut>` takes only `<case PAT [if GUARD]>…</case>` children and
-// desugars to `group().children_of(move || match scrut { PAT => vec![…], … })`.
-// Arm patterns are real Rust patterns (bindings scope the arm body free;
-// exhaustiveness is checked by rustc on the generated code). Signals read in
-// the scrutinee, guards, or arm bodies resubscribe, so arms are reactive.
+// Responsibility: The `<match>` control-flow node — token-level pre-pass and arm expansion.
 
-use crate::flow_util;
+use crate::engine::flow_util;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use syn::parse::Parser;
+
+use crate::engine::children::expand_children_vec;
+use crate::engine::registry::RxEngine;
 
 /// One extracted `<match>` node: scrutinee + raw RSX bodies per arm.
 pub struct MatchArm {
@@ -188,15 +185,13 @@ fn parse_arm_shape(
     Ok((pat, guard))
 }
 
-/// Emits a `ChildSegment::Dynamic` for one node: the active arm's segments
-/// splice directly into the parent, with no carrier node between.
-/// Arm bodies expand via [`crate::view::expand_children_vec`].
-pub fn expand(node: &MatchNode) -> syn::Result<TokenStream2> {
+
+pub fn expand(node: &MatchNode, engine: &RxEngine) -> syn::Result<TokenStream2> {
     let scrut = &node.scrut;
     let mut arms = Vec::new();
     for arm in &node.arms {
         let pat = &arm.pat;
-        let body = crate::view::expand_children_vec(arm.body.clone())?;
+        let body = expand_children_vec(arm.body.clone(), engine)?;
         if let Some(g) = &arm.guard {
             arms.push(quote! { #pat if #g => #body, });
         } else {

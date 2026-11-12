@@ -3,6 +3,7 @@
 /// Blend modes for shader-level compositing across surfaces, effects, and leaf elements.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
 #[repr(u8)]
+#[allow(non_camel_case_types)]
 pub enum BlendMode {
     #[default]
     Normal = 0,

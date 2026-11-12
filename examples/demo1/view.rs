@@ -1,4 +1,4 @@
-use riode::dsl::IntoElement;
+use riode::dsl::{GroupElement, IntoElement};
 use riode::prelude::*;
 use riode_shader::{ Shape, Fill };
 
@@ -12,9 +12,9 @@ pub fn Page() -> impl IntoElement {
     build_ui()
 }
 
-pub fn build_ui() -> impl IntoElement {
+pub fn build_ui() -> GroupElement {
     view! {
-        <Group
+        <g
             direction="vertical"
             width="fill"
             height="fill"
@@ -82,6 +82,6 @@ pub fn build_ui() -> impl IntoElement {
                     </Group>
                 </Group>
             </Group>
-        </Group>
+        </g>
     }
 }

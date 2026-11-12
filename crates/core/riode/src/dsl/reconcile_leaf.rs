@@ -3,7 +3,7 @@
 use crate::dsl::cleanup::clean_orphaned_children;
 use crate::dsl::custom::CustomDef;
 use crate::dsl::reconciler::evaluate_prop;
-use crate::dsl::text::TextDef;
+use crate::dsl::text::TextElement;
 use crate::foundation::Size;
 use crate::reactive::ReactiveRuntime;
 use crate::tree::binding::{DynamicBindings, NodeBindings};
@@ -19,7 +19,7 @@ pub fn reconcile_text(
     arena: &mut TreeArena,
     router: &mut SubscriberRouter,
     existing: Option<NodeId>,
-    def: TextDef,
+    def: TextElement,
 ) -> NodeId {
     let id = existing.unwrap_or_else(|| arena.insert(LayoutNode::default()));
     clean_orphaned_children(runtime, arena, router, id);

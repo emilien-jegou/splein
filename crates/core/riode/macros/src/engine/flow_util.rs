@@ -264,3 +264,4 @@ pub fn is_control_placeholder(name: &str) -> bool {
     };
     matches!(kind, "for" | "if" | "match") && n.parse::<usize>().is_ok()
 }
+

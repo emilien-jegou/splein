@@ -1,25 +1,13 @@
-// Single responsibility: nested RSX in attribute position — `<Panel head={<Strip …/>}>`.
-//
-/// Attribute values are the one place rstml never recovers: `{…}` after `=`
-/// must parse as Rust, so `{<Strip/>}` dies with `expected '>'` before any
-/// fallback runs. This pre-pass (running after the flow extracts, before
-/// rstml) finds `=` + brace-group-starting-with-`<Tag`, stashes the inner
-/// RSX, and substitutes `{__riode_attr_N}` — a plain path expression rstml
-/// accepts. Expansion is DEFERRED to the final splice (see
-/// [`crate::view::FlowTables`]): stored raw tokens expand then, so nested
-/// attr references (strictly smaller indices — inner stashes first) resolve
-/// in one pass with no ordering hazard.
-///
-/// Scope: only brace groups *starting* with `<Tag` are touched. Rust blocks
-/// containing `<` deeper (`{a < b}`, `{foo(head={<X/>})}`) are left alone —
-/// RSX inside Rust expressions inside RSX is out of scope by design.
-use proc_macro2::TokenStream as TokenStream2;
+// Responsibility: Nested RSX in attribute position — `<Panel head={<Strip …/>}>`.
 
-use crate::flow_util;
+use proc_macro2::TokenStream as TokenStream2;
+use quote::quote;
+
+use crate::engine::flow::FlowTables;
+use crate::engine::flow_util;
 
 /// Extracts top-level `<Tag>` headers' nested-RSX attr values, replacing each
-/// with a `{__riode_attr_N}` placeholder. Headers already rewritten by the
-/// flow extracts (`{__riode_for_N}` etc.) are opaque groups and pass through.
+/// with a `{__riode_attr_N}` placeholder.
 pub fn extract(tokens: TokenStream2, attr_raw: &mut Vec<TokenStream2>) -> TokenStream2 {
     let toks: Vec<proc_macro2::TokenTree> = tokens.into_iter().collect();
     let mut out: Vec<proc_macro2::TokenTree> = Vec::with_capacity(toks.len());
@@ -43,10 +31,6 @@ pub fn extract(tokens: TokenStream2, attr_raw: &mut Vec<TokenStream2>) -> TokenS
     out.into_iter().collect()
 }
 
-/// `<` + identifier, not a close tag. Tag name is irrelevant here: flow nodes
-/// (`for`/`if`/`match`) already became placeholders upstream, and anything
-/// else is either a real tag (process) or a later hard error (skip safely —
-/// only headers matter, and a broken header still ends at `>`).
 fn is_any_open(toks: &[proc_macro2::TokenTree], i: usize) -> bool {
     use proc_macro2::TokenTree::*;
     matches!(
@@ -59,10 +43,6 @@ fn is_any_open(toks: &[proc_macro2::TokenTree], i: usize) -> bool {
         )
 }
 
-/// Rewrites one header's `=` + RSX-group values in place. Groups are opaque
-/// tokens, so nesting *inside* a value (`a={<B c={<D/>}/>}`) is handled by
-/// recursing [`extract`] into the value first — strictly smaller input, so
-/// stashed indices decrease inward and splice-time recursion terminates.
 fn process_header(header: &mut Vec<proc_macro2::TokenTree>, attr_raw: &mut Vec<TokenStream2>) {
     use proc_macro2::TokenTree::*;
     let mut j = 0;
@@ -84,7 +64,7 @@ fn process_header(header: &mut Vec<proc_macro2::TokenTree>, attr_raw: &mut Vec<T
                     );
                     header[j + 1] = Group(proc_macro2::Group::new(
                         proc_macro2::Delimiter::Brace,
-                        quote::quote! { #ident },
+                        quote! { #ident },
                     ));
                 }
             }
@@ -93,7 +73,6 @@ fn process_header(header: &mut Vec<proc_macro2::TokenTree>, attr_raw: &mut Vec<T
     }
 }
 
-/// A brace group's stream starting with `<Tag` (open, not close).
 fn group_starts_with_tag(stream: TokenStream2) -> bool {
     let toks: Vec<proc_macro2::TokenTree> = stream.into_iter().collect();
     use proc_macro2::TokenTree::*;
@@ -102,28 +81,23 @@ fn group_starts_with_tag(stream: TokenStream2) -> bool {
         && !matches!(toks.get(2), Some(Punct(p)) if p.as_char() == '/')
 }
 
-/// Expands one stashed attr body to a final element expression, resolving
-/// nested control flow with fresh local tables and nested attr references by
-/// recursing into `outer`.
-pub fn expand_attr(
-    raw: &TokenStream2,
-    outer: &crate::view::FlowTables,
-) -> syn::Result<TokenStream2> {
-    let mut flow = crate::view::FlowTables::default();
+pub fn expand_attr(raw: &TokenStream2, outer: &FlowTables) -> syn::Result<TokenStream2> {
+    let engine = crate::primitives::riode_engine();
+    let mut flow = FlowTables::default();
     let rewritten = flow.extract(raw.clone());
     flow.warn();
     let config = rstml::ParserConfig::default().recover_block(true);
     let parser = rstml::Parser::new(config);
     let (nodes, errors) = parser.parse_recoverable(rewritten).split_vec();
-    let mut out = quote::quote! {};
+    let mut out = quote! {};
     for e in errors {
         let t = e.emit_as_expr_tokens();
-        out = quote::quote! { #out #t; };
+        out = quote! { #out #t; };
     }
     let single = match nodes.as_slice() {
         [single] => single,
         _ => {
-            return Ok(quote::quote! {
+            return Ok(quote! {
                 #out ::std::compile_error!(
                     "view!: an attribute holds one nested element — `<Panel head={<Strip …/>}>`; anything else goes in `{…}` as Rust"
                 )
@@ -137,29 +111,27 @@ pub fn expand_attr(
                 .iter()
                 .any(|k| tag.ends_with(k))
             {
-                return Ok(quote::quote! {
+                return Ok(quote! {
                     #out ::std::compile_error!(
                         "view!: control nodes (`<for>`, `<if>`, `<match>`) must be direct children — hoist them out of attributes into children position"
                     )
                 });
             }
-            match crate::view::element_expr(el, &flow) {
-                Ok(e) => quote::quote! { (#e) },
+            match crate::engine::element_expr(el, &flow, &engine) {
+                Ok(e) => quote! { (#e) },
                 Err(err) => {
                     let compile = err.to_compile_error();
-                    quote::quote! { #out #compile }
+                    quote! { #out #compile }
                 }
             }
         }
         _ => {
-            return Ok(quote::quote! {
+            return Ok(quote! {
                 #out ::std::compile_error!(
                     "view!: an attribute holds one nested element — `<Panel head={<Strip …/>}>`; anything else goes in `{…}` as Rust"
                 )
             });
         }
     };
-    // Local flow nodes (control flow nested in the attr) resolve here;
-    // `attr` references recurse into the outer tables (smaller indices only).
-    flow.splice_attr_ref(body, outer)
+    flow.splice_attr_ref(body, outer, &engine)
 }

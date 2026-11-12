@@ -17,6 +17,6 @@
 
 pub use crate::dsl::{
     component_scope, component_scope_named, custom, group, image, index_keyed_list, keyed_list,
-    svg, text, view_child, ChildSegment, CustomDef, Element, GroupDef, IntoElement, IntoSplice,
-    TextDef,
+    svg, text, view_child, ChildSegment, CustomDef, Element, GroupElement, IntoElement, IntoSplice,
+    TextElement,
 };

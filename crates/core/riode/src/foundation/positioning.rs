@@ -60,6 +60,42 @@ impl Anchor {
     }
 }
 
+use std::str::FromStr;
+
+impl FromStr for Anchor {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, String> {
+        parse_anchor(s).ok_or_else(|| format!("bad anchor {s}"))
+    }
+}
+
+impl From<&str> for Anchor {
+    fn from(s: &str) -> Self {
+        parse_anchor(s).unwrap_or(Anchor::TopLeft)
+    }
+}
+
+impl From<String> for Anchor {
+    fn from(s: String) -> Self {
+        Self::from(s.as_str())
+    }
+}
+
+fn parse_anchor(s: &str) -> Option<Anchor> {
+    match s.trim().to_lowercase().replace(['-', '_'], "-").as_str() {
+        "top-left" | "topleft" => Some(Anchor::TopLeft),
+        "top" => Some(Anchor::Top),
+        "top-right" | "topright" => Some(Anchor::TopRight),
+        "left" => Some(Anchor::Left),
+        "center" | "middle" => Some(Anchor::Center),
+        "right" => Some(Anchor::Right),
+        "bottom-left" | "bottomleft" => Some(Anchor::BottomLeft),
+        "bottom" => Some(Anchor::Bottom),
+        "bottom-right" | "bottomright" => Some(Anchor::BottomRight),
+        _ => None,
+    }
+}
+
 impl Anchors {
     pub fn derive_size(&self, parent_width: f32, parent_height: f32) -> (Option<f32>, Option<f32>) {
         let width = match (self.left, self.right) {

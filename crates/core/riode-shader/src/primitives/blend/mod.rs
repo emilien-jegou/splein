@@ -24,6 +24,7 @@ pub struct Blend {
     pub mode: BlendMode,
 }
 
+#[allow(non_upper_case_globals)]
 impl Blend {
     pub const fn new(mode: BlendMode) -> Self {
         Self { mode }

@@ -447,8 +447,13 @@ impl From<&str> for crate::foundation::sizing::Size {
         if s == "fill" {
             return crate::foundation::sizing::Size::Fill;
         }
-        if s == "hug" || s == "fit" {
+        if s == "auto" || s == "hug" || s == "fit" {
             return crate::foundation::sizing::Size::Fit;
+        }
+        if let Some(pct) = s.strip_suffix('%') {
+            if let Ok(v) = pct.trim().parse::<f32>() {
+                return crate::foundation::sizing::Size::Percent(v / 100.0);
+            }
         }
         if s.ends_with("px") {
             let t = s.trim_end_matches("px").trim();

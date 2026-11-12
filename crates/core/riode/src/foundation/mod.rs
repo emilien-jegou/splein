@@ -25,6 +25,7 @@ pub mod sizing;
 pub mod snapshot;
 pub mod spacing;
 pub mod transform;
+pub mod surface;
 
 pub use alignment::*;
 pub use blend::*;
@@ -46,3 +47,4 @@ pub use sizing::*;
 pub use snapshot::*;
 pub use spacing::*;
 pub use transform::*;
+pub use surface::*;

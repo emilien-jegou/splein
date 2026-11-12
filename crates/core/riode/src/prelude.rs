@@ -1,5 +1,6 @@
 // Single responsibility: Convenient top-level re-exports for declarative application authoring.
 
+pub use crate::riode::internal::{TextElement, GroupElement};
 pub use crate::anim::{
     ControllerHandle, Ease, Millis, PlayState, Repeat, Spring, Transition, Tween,
 };
@@ -9,7 +10,7 @@ pub use crate::app::{App, AppConfig, AppExtension, FpsLimit, OverlayCaps, Overla
 /// Named computed handle (memoized derivation) from a plain closure: `computed!(move || signal.get() + 1)`.
 pub use crate::computed;
 // User-facing vocabulary only. The repr-builders (`group`/`text`/`image`/`svg`/`custom`)
-// and their def types (`GroupDef`/`TextDef`/`ChildSegment`/`CustomDef`) moved to
+// and their def types (`GroupElement`/`TextElement`/`ChildSegment`/`CustomDef`) moved to
 // `riode::internal` (P10) — spell `<Group>`/`<Text>` in `view!` instead. `Element`/
 // `IntoElement`/`IntoSplice`/`Component` stay here: they are the component contract.
 pub use crate::dsl::{

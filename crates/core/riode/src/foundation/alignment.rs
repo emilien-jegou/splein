@@ -144,6 +144,78 @@ fn parse_flow_wrap(s: &str) -> Option<FlowWrap> {
     }
 }
 
+/// Physical-axis alignment intent: always means the same edge regardless of
+/// row/col direction (unlike `Alignment`/`Distribution`, which are main/cross).
+///
+/// `Between` and `Stretch` are axis-specific: `Between` only exists along a
+/// main axis, `Stretch` only along a cross axis; a mismatched request falls
+/// back to `Start` at resolution (see `GroupElement::resolved_layout`).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+pub enum PhysAlign {
+    #[default]
+    Start,
+    Center,
+    End,
+    /// Distribute children with equal gaps, flush at both ends (main axis).
+    Between,
+    /// Grow children to fill the axis (cross axis).
+    Stretch,
+}
+
+impl PhysAlign {
+    /// Main-axis reading: what this intent means as a `Distribution`.
+    pub fn as_distribution(self) -> Distribution {
+        match self {
+            PhysAlign::Start => Distribution::Start,
+            PhysAlign::Center => Distribution::Center,
+            PhysAlign::End => Distribution::End,
+            PhysAlign::Between => Distribution::SpaceBetween,
+            // Stretch is a cross-axis concept; on the main axis it degenerates.
+            PhysAlign::Stretch => Distribution::Start,
+        }
+    }
+
+    /// Cross-axis reading: what this intent means as an `Alignment`.
+    pub fn as_alignment(self) -> Alignment {
+        match self {
+            PhysAlign::Start => Alignment::Start,
+            PhysAlign::Center => Alignment::Center,
+            PhysAlign::End => Alignment::End,
+            // Space-between has no cross-axis meaning; center-ish fallback.
+            PhysAlign::Between => Alignment::Start,
+            PhysAlign::Stretch => Alignment::Stretch,
+        }
+    }
+}
+
+impl FromStr for PhysAlign {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, String> {
+        parse_phys_align(s).ok_or_else(|| "bad physical alignment".to_string())
+    }
+}
+impl From<&str> for PhysAlign {
+    fn from(s: &str) -> Self {
+        parse_phys_align(s).unwrap_or(PhysAlign::Start)
+    }
+}
+impl From<String> for PhysAlign {
+    fn from(s: String) -> Self {
+        Self::from(s.as_str())
+    }
+}
+
+fn parse_phys_align(s: &str) -> Option<PhysAlign> {
+    match s.trim().to_lowercase().as_str() {
+        "start" | "left" | "top" | "before" => Some(PhysAlign::Start),
+        "center" | "middle" => Some(PhysAlign::Center),
+        "end" | "right" | "bottom" | "after" => Some(PhysAlign::End),
+        "between" | "space-between" | "spacebetween" => Some(PhysAlign::Between),
+        "stretch" => Some(PhysAlign::Stretch),
+        _ => None,
+    }
+}
+
 impl FromStr for Direction {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, String> {

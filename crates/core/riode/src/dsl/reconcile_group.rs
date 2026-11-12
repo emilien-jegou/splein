@@ -1,7 +1,7 @@
 // Single responsibility: Container group reconciliation and reactive binding attachment.
 
 use crate::dsl::element::Element;
-use crate::dsl::group::GroupDef;
+use crate::dsl::group::GroupElement;
 use crate::dsl::reconcile_children::reconcile_children;
 use crate::dsl::reconciler::{evaluate_prop, reconcile};
 use crate::foundation::{LayerPaint, LayoutPresence, Size, Transform};
@@ -23,7 +23,7 @@ pub fn reconcile_group(
     arena: &mut TreeArena,
     router: &mut SubscriberRouter,
     existing: Option<NodeId>,
-    def: GroupDef,
+    def: GroupElement,
 ) -> NodeId {
     let id = existing.unwrap_or_else(|| arena.insert(LayoutNode::default()));
 
@@ -207,7 +207,7 @@ pub fn replace_child(
     child
 }
 
-fn paint_binding(def: &GroupDef) -> Option<Rc<dyn Fn() -> LayerPaint>> {
+fn paint_binding(def: &GroupElement) -> Option<Rc<dyn Fn() -> LayerPaint>> {
     let any_dynamic = def.shape.as_ref().is_some_and(|p| p.is_dynamic())
         || def.material.as_ref().is_some_and(|p| p.is_dynamic())
         || def.overlay.as_ref().is_some_and(|p| p.is_dynamic())
@@ -227,7 +227,7 @@ fn paint_binding(def: &GroupDef) -> Option<Rc<dyn Fn() -> LayerPaint>> {
     }))
 }
 
-fn pose_bindings(def: &GroupDef) -> Option<PoseBindings> {
+fn pose_bindings(def: &GroupElement) -> Option<PoseBindings> {
     let pose = PoseBindings {
         x: def.x.as_ref().and_then(|p| p.dynamic_closure()),
         y: def.y.as_ref().and_then(|p| p.dynamic_closure()),
@@ -240,7 +240,7 @@ fn pose_bindings(def: &GroupDef) -> Option<PoseBindings> {
     pose.is_bound().then_some(pose)
 }
 
-fn static_pose(def: &GroupDef) -> Option<Transform> {
+fn static_pose(def: &GroupElement) -> Option<Transform> {
     let static_val = |p: &Option<Prop<f32>>| match p {
         Some(Prop::Static(v)) => Some(*v),
         _ => None,
@@ -288,7 +288,7 @@ struct ResolvedProps {
 
 impl ResolvedProps {
     fn evaluate(
-        def: &GroupDef,
+        def: &GroupElement,
         pose: Option<&PoseBindings>,
         m_sub: Option<SubscriberId>,
         p_sub: Option<SubscriberId>,
@@ -318,7 +318,7 @@ impl ResolvedProps {
         };
 
         // Explicit axis props win; the scalar alias is vertical by
-        // definition (see `GroupDef::scroll_offset`) — never guessed from
+        // definition (see `GroupElement::scroll_offset`) — never guessed from
         // the layout direction, so mount placement and the retained
         // SCROLL-channel updates can never disagree.
         let scroll_x = evaluate_prop(&def.scroll_offset_x, s_sub, runtime).unwrap_or(0.0);
@@ -381,7 +381,7 @@ struct ChangeSet {
 }
 
 impl ChangeSet {
-    fn detect(prev: &LayoutNode, def: &GroupDef, props: &ResolvedProps) -> Self {
+    fn detect(prev: &LayoutNode, def: &GroupElement, props: &ResolvedProps) -> Self {
         let presence_changed =
             props.presence.is_some() && props.presence != Some(prev.state.core.presence);
         let layout = (props.width.is_some() && props.width != Some(prev.style.width))
