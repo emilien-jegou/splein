@@ -39,10 +39,18 @@ pub struct GroupDef {
     pub overscroll: f32,
     /// Compile each child of this node as its own scene chunk (see `NodeStyle`).
     pub isolate_children: bool,
-    /// Vertical scroll offset in logical px, bound to the `SCROLL` channel.
-    /// Composed into the node's transform as a `(0, -offset)` translation:
-    /// paint-class like x/y, so it never triggers layout.
+    /// Scroll offset alias in logical px, bound to the `SCROLL` channel.
+    /// Vertical by definition: composed into the node's transform as a
+    /// `(0, -offset)` translation — paint-class like x/y, so it never
+    /// triggers layout. Explicit axes: `scroll_offset_x` / `scroll_offset_y`
+    /// (a bound axis prop wins over this alias on its axis).
     pub scroll_offset: Option<Prop<f32>>,
+    /// Horizontal scroll offset in logical px, bound to the `SCROLL` channel.
+    /// Composed into the node's transform as a `(-offset, 0)` translation.
+    pub scroll_offset_x: Option<Prop<f32>>,
+    /// Vertical scroll offset in logical px, bound to the `SCROLL` channel.
+    /// Composed into the node's transform as a `(0, -offset)` translation.
+    pub scroll_offset_y: Option<Prop<f32>>,
     pub anchor: Option<Anchor>,
     /// Optional width-to-height ratio, resolved by the layout engine.
     pub aspect_ratio: Option<f32>,
@@ -117,6 +125,8 @@ pub fn group() -> GroupDef {
         overscroll: 0.0,
         isolate_children: false,
         scroll_offset: None,
+        scroll_offset_x: None,
+        scroll_offset_y: None,
         anchor: None,
         aspect_ratio: None,
         z_index: None,
@@ -262,10 +272,25 @@ impl GroupDef {
         self.isolate_children = on;
         self
     }
-    /// Vertical scroll offset in logical px, usually bound to a scroll signal.
-    /// Rides the `SCROLL` channel: shifts the transform, never lays out.
+    /// Scroll offset alias in logical px, usually bound to a scroll signal.
+    /// Vertical by definition; rides the `SCROLL` channel: shifts the
+    /// transform, never lays out. Same as `.scroll_offset_y(v)`.
     pub fn scroll_offset<P: IntoProp<f32>>(mut self, v: P) -> Self {
         self.scroll_offset = Some(v.into_prop());
+        self
+    }
+    /// Horizontal scroll offset in logical px, usually bound to a scroll
+    /// signal. Rides the `SCROLL` channel: shifts the transform, never
+    /// lays out.
+    pub fn scroll_offset_x<P: IntoProp<f32>>(mut self, v: P) -> Self {
+        self.scroll_offset_x = Some(v.into_prop());
+        self
+    }
+    /// Vertical scroll offset in logical px, usually bound to a scroll
+    /// signal. Rides the `SCROLL` channel: shifts the transform, never
+    /// lays out.
+    pub fn scroll_offset_y<P: IntoProp<f32>>(mut self, v: P) -> Self {
+        self.scroll_offset_y = Some(v.into_prop());
         self
     }
     pub fn direction(mut self, d: impl Into<Direction>) -> Self {
@@ -375,6 +400,8 @@ impl GroupDef {
             || is_ctx(&self.z_index)
             || is_ctx(&self.presence)
             || is_ctx(&self.scroll_offset)
+            || is_ctx(&self.scroll_offset_x)
+            || is_ctx(&self.scroll_offset_y)
     }
 
     /// Appends pre-built child segments (static elements and reactive builders

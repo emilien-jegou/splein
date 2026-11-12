@@ -8,7 +8,7 @@
 //   P3  text inside a material group inside a clipped group
 //   P4  text through the chrome component path (u32 color, weight 700)
 //   P5  chrome Blurb path: material root + tuple children + clip + margin
-//   P6  SCROLL-channel drift: scroll_offset driven by the frame clock
+//   P6  SCROLL-channel drift: scroll_offset_x driven by the frame clock
 //   P7  ScrollView mount with thumb_fill (the restored thumb)
 
 use riode::internal::*;
@@ -71,7 +71,7 @@ pub fn Page() -> impl IntoElement {
                 ))
                 .into_element()
         }),
-        // P6: SCROLL-channel drift (frame clock → scroll_offset).
+        // P6: SCROLL-channel drift (frame clock → scroll_offset_x).
         strip(0x00ACC1, "P6", {
             group()
                 .width("fill")
@@ -80,7 +80,7 @@ pub fn Page() -> impl IntoElement {
                 .children([group()
                     .absolute()
                     .children([plain_text("drifting scroll text — moves slowly left/right")])
-                    .scroll_offset(x)
+                    .scroll_offset_x(x)
                     .into_element()])
                 .into_element()
         }),

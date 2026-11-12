@@ -45,7 +45,9 @@ pub fn reconcile_group(
         || def.y.as_ref().is_some_and(|p| p.is_dynamic())
         || def.scale.as_ref().is_some_and(|p| p.is_dynamic())
         || def.rotate_degrees.as_ref().is_some_and(|p| p.is_dynamic());
-    let has_dyn_scroll = def.scroll_offset.as_ref().is_some_and(|p| p.is_dynamic());
+    let has_dyn_scroll = def.scroll_offset.as_ref().is_some_and(|p| p.is_dynamic())
+        || def.scroll_offset_x.as_ref().is_some_and(|p| p.is_dynamic())
+        || def.scroll_offset_y.as_ref().is_some_and(|p| p.is_dynamic());
 
     let m_sub = has_dyn_measure.then(|| router.measure_sub(id, &mut runtime.borrow_mut()));
     let p_sub = has_dyn_paint.then(|| router.paint_sub(id, &mut runtime.borrow_mut()));
@@ -60,9 +62,15 @@ pub fn reconcile_group(
         presence: def.presence.as_ref().and_then(|p| p.dynamic_closure()),
         z_index: def.z_index.as_ref().and_then(|p| p.dynamic_closure()),
         pose: pose_bindings(&def),
-        scroll_offset_x: None,
-        scroll_offset_y: def.scroll_offset.as_ref().and_then(|p| p.dynamic_closure()),
-        scroll_offset: def.scroll_offset.as_ref().and_then(|p| p.dynamic_closure()),
+        // Axis props fill their own slot; the scalar alias is vertical
+        // (its documented meaning), so it resolves into the Y slot —
+        // matching the retained update path.
+        scroll_offset_x: def.scroll_offset_x.as_ref().and_then(|p| p.dynamic_closure()),
+        scroll_offset_y: def
+            .scroll_offset_y
+            .as_ref()
+            .or(def.scroll_offset.as_ref())
+            .and_then(|p| p.dynamic_closure()),
         children: def
             .has_dynamic_segments()
             .then(|| def.child_segments.clone()),
@@ -309,15 +317,18 @@ impl ResolvedProps {
             None => declared_transform,
         };
 
-        let scroll_offset = evaluate_prop(&def.scroll_offset, s_sub, runtime).unwrap_or(0.0);
-        let (ox, oy) = match def.layout.direction {
-            crate::foundation::Direction::Horizontal => (scroll_offset, 0.0),
-            crate::foundation::Direction::Vertical => (0.0, scroll_offset),
-        };
+        // Explicit axis props win; the scalar alias is vertical by
+        // definition (see `GroupDef::scroll_offset`) — never guessed from
+        // the layout direction, so mount placement and the retained
+        // SCROLL-channel updates can never disagree.
+        let scroll_x = evaluate_prop(&def.scroll_offset_x, s_sub, runtime).unwrap_or(0.0);
+        let scroll_y = evaluate_prop(&def.scroll_offset_y, s_sub, runtime)
+            .or_else(|| evaluate_prop(&def.scroll_offset, s_sub, runtime))
+            .unwrap_or(0.0);
         let transform = NodeBindings::compose_with_scroll(
             NodeBindings::compose_with_declared(declared_transform, composed_pose),
-            ox,
-            oy,
+            scroll_x,
+            scroll_y,
         );
 
         let paint = LayerPaint {

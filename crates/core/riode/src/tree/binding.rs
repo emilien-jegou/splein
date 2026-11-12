@@ -22,9 +22,8 @@ pub struct DynamicBindings {
     /// Horizontal scroll offset in logical px, when the node declares one.
     pub scroll_offset_x: Option<Rc<dyn Fn() -> f32>>,
     /// Vertical scroll offset in logical px, when the node declares one.
+    /// The scalar `scroll_offset` DSL alias resolves into this slot.
     pub scroll_offset_y: Option<Rc<dyn Fn() -> f32>>,
-    /// Legacy alias retaining backward compatibility with single-scalar vertical offset.
-    pub scroll_offset: Option<Rc<dyn Fn() -> f32>>,
     /// Retained child segments, when any rebuild from reactive state.
     ///
     /// `None` means static-only (today's fast path: children reconcile once at
@@ -117,7 +116,6 @@ impl DynamicBindings {
             && self.pose.as_ref().is_none_or(|p| !p.is_bound())
             && self.scroll_offset_x.is_none()
             && self.scroll_offset_y.is_none()
-            && self.scroll_offset.is_none()
             && self.children.is_none()
     }
 }
@@ -217,11 +215,9 @@ impl NodeBindings {
     /// Whether this node has a bound scroll offset evaluator.
     #[inline(always)]
     pub fn has_scroll_binding(&self) -> bool {
-        self.inner.as_ref().is_some_and(|b| {
-            b.scroll_offset_x.is_some()
-                || b.scroll_offset_y.is_some()
-                || b.scroll_offset.is_some()
-        })
+        self.inner
+            .as_ref()
+            .is_some_and(|b| b.scroll_offset_x.is_some() || b.scroll_offset_y.is_some())
     }
 
     /// Folds 2D scroll offsets into a composed transform.
@@ -243,11 +239,7 @@ impl NodeBindings {
             .as_deref()
             .map_or((0.0, 0.0), |b| {
                 let ox = b.scroll_offset_x.as_ref().map_or(0.0, |f| f());
-                let oy = b
-                    .scroll_offset_y
-                    .as_ref()
-                    .or(b.scroll_offset.as_ref())
-                    .map_or(0.0, |f| f());
+                let oy = b.scroll_offset_y.as_ref().map_or(0.0, |f| f());
                 (ox, oy)
             })
     }
@@ -274,11 +266,7 @@ impl NodeBindings {
         let composed =
             Self::compose_with_declared(declared, b.pose.as_ref().map(PoseBindings::compose));
         let ox = b.scroll_offset_x.as_ref().map_or(0.0, |f| f());
-        let oy = b
-            .scroll_offset_y
-            .as_ref()
-            .or(b.scroll_offset.as_ref())
-            .map_or(0.0, |f| f());
+        let oy = b.scroll_offset_y.as_ref().map_or(0.0, |f| f());
         let composed = Self::compose_with_scroll(composed, ox, oy);
         if *transform == composed {
             false

@@ -188,9 +188,9 @@ fn vrow(i: usize) -> Element {
 /// the SCROLL channel, diagonal on PAINT (transform). Subpixel velocity.
 pub fn drift_rows(x: Computed<f32>, y: Computed<f32>, xy: Computed<Transform>) -> Vec<Element> {
     vec![
-        ScrollRow("X SCROLL", group().absolute().children([scroll_content("x")]).scroll_offset(x).into_element())
+        ScrollRow("X SCROLL", group().absolute().children([scroll_content("x")]).scroll_offset_x(x).into_element())
             .into_element(),
-        ScrollRow("Y SCROLL", group().absolute().children([scroll_content("y")]).scroll_offset(y).into_element())
+        ScrollRow("Y SCROLL", group().absolute().children([scroll_content("y")]).scroll_offset_y(y).into_element())
             .into_element(),
         ScrollRow("X+Y PAINT", group().absolute().children([scroll_content("xy")]).transform(xy).into_element())
             .into_element(),

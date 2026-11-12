@@ -464,15 +464,18 @@ pub fn ScrollView(
     let mut content_group = group()
         .absolute()
         .isolate_children(true)
-        .direction(direction)
-        .scroll_offset(offset_sig.clone())
-        .bind_ref(content_ref)
-        .children(children);
-
+        .direction(direction);
     content_group = match direction {
-        Direction::Vertical => content_group.width(Size::Percent(1.0)),
-        Direction::Horizontal => content_group.height(Size::Percent(1.0)),
+        // The offset rides the scroll axis explicitly; a scalar alias
+        // would mean vertical even for a horizontal scroller.
+        Direction::Vertical => content_group
+            .scroll_offset_y(offset_sig.clone())
+            .width(Size::Percent(1.0)),
+        Direction::Horizontal => content_group
+            .scroll_offset_x(offset_sig.clone())
+            .height(Size::Percent(1.0)),
     };
+    content_group = content_group.bind_ref(content_ref).children(children);
 
     let viewport = scroll_viewport_group(
         width,
@@ -1062,8 +1065,14 @@ pub fn VirtualScrollView(
     let mut content_group = group()
         .absolute()
         .isolate_children(true)
-        .direction(direction)
-        .scroll_offset(offset_sig.clone())
+        .direction(direction);
+    content_group = match direction {
+        // The offset rides the scroll axis explicitly; a scalar alias
+        // would mean vertical even for a horizontal scroller.
+        Direction::Vertical => content_group.scroll_offset_y(offset_sig.clone()),
+        Direction::Horizontal => content_group.scroll_offset_x(offset_sig.clone()),
+    };
+    content_group = content_group
         .bind_ref(content_ref)
         .children_of(move || {
             let (s, e) = window_sig.get();
