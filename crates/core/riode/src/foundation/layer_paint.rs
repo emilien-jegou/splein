@@ -6,7 +6,7 @@
 // each one separately. They are one value with one identity, so they cross
 // every boundary as one field.
 
-use crate::foundation::{Effect, Material, Overlay, Shape};
+use crate::foundation::{Effect, Material, Overlay, ShapeContainer};
 use std::fmt;
 
 /// What a node paints: the four optional stage chains, as one value.
@@ -17,7 +17,7 @@ use std::fmt;
 /// dropped at a pipeline boundary.
 #[derive(Clone, Default, PartialEq)]
 pub struct LayerPaint {
-    pub shape: Option<Shape>,
+    pub shape: Option<ShapeContainer>,
     pub material: Option<Material>,
     pub overlay: Option<Overlay>,
     pub effect: Option<Effect>,

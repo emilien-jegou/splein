@@ -5,11 +5,11 @@ use std::fmt;
 use std::sync::Arc;
 
 #[derive(Clone)]
-pub struct Shape {
+pub struct ShapeContainer {
     pub stages: Arc<Vec<Box<dyn Stage>>>,
 }
 
-impl Shape {
+impl ShapeContainer {
     pub fn empty() -> Self {
         Self {
             stages: Arc::new(Vec::new()),
@@ -52,37 +52,37 @@ impl Shape {
     }
 }
 
-impl Default for Shape {
+impl Default for ShapeContainer {
     fn default() -> Self {
         Self::empty()
     }
 }
 
-impl<S: Stage> From<S> for Shape {
+impl<S: Stage> From<S> for ShapeContainer {
     fn from(stage: S) -> Self {
         Self::new(stage)
     }
 }
 
-impl<S: Stage, const N: usize> From<[S; N]> for Shape {
+impl<S: Stage, const N: usize> From<[S; N]> for ShapeContainer {
     fn from(stages: [S; N]) -> Self {
         Self::collect(stages)
     }
 }
 
-impl From<Vec<Box<dyn Stage>>> for Shape {
+impl From<Vec<Box<dyn Stage>>> for ShapeContainer {
     fn from(stages: Vec<Box<dyn Stage>>) -> Self {
         Self::from_boxes(stages)
     }
 }
 
-impl PartialEq for Shape {
+impl PartialEq for ShapeContainer {
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.stages, &other.stages)
     }
 }
 
-impl fmt::Debug for Shape {
+impl fmt::Debug for ShapeContainer {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Shape")
             .field("stages", &self.stages.len())

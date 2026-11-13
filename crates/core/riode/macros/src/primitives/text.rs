@@ -35,6 +35,9 @@ pub fn expand(cx: EngineContext) -> syn::Result<TokenStream2> {
                             modifiers.push(quote! { .#method(true) });
                         }
                     }
+                } else if key == "line_height" || key == "line-height" || key == "lh" {
+                    let val = expand_line_height_val(attr_value_tokens(&attr), cx.flow);
+                    modifiers.push(quote! { .#method(#val) });
                 } else {
                     let val = slot_literal_value(attr_value_tokens(&attr), cx.flow);
                     modifiers.push(quote! { .#method(#val) });
@@ -75,4 +78,43 @@ pub fn expand(cx: EngineContext) -> syn::Result<TokenStream2> {
     };
 
     Ok(quote! { ::riode::internal::text(#content) #(#modifiers)* })
+}
+
+fn expand_line_height_val(tokens: TokenStream2, flow: &crate::engine::flow::FlowTables) -> TokenStream2 {
+    let raw = slot_literal_value(tokens, flow);
+
+    // 16 or 16.0 -> Absolute(16.0)
+    if let Ok(lit) = syn::parse2::<syn::LitInt>(raw.clone()) {
+        if let Ok(val) = lit.base10_parse::<f32>() {
+            return quote! { ::riode::prelude::LineHeight::Absolute(#val) };
+        }
+    }
+    if let Ok(lit) = syn::parse2::<syn::LitFloat>(raw.clone()) {
+        if let Ok(val) = lit.base10_parse::<f32>() {
+            return quote! { ::riode::prelude::LineHeight::Absolute(#val) };
+        }
+    }
+
+    // String formats: "140%" -> Multiple(1.4), "16px" -> Absolute(16.0), "1.4" -> Multiple(1.4)
+    if let Ok(lit) = syn::parse2::<syn::LitStr>(raw.clone()) {
+        let s = lit.value();
+        let s_trim = s.trim();
+        if let Some(pct) = s_trim.strip_suffix('%') {
+            if let Ok(val) = pct.trim().parse::<f32>() {
+                let mult = val / 100.0;
+                return quote! { ::riode::prelude::LineHeight::Multiple(#mult) };
+            }
+        }
+        if let Some(px) = s_trim.strip_suffix("px") {
+            if let Ok(val) = px.trim().parse::<f32>() {
+                return quote! { ::riode::prelude::LineHeight::Absolute(#val) };
+            }
+        }
+        if let Ok(val) = s_trim.parse::<f32>() {
+            return quote! { ::riode::prelude::LineHeight::Multiple(#val) };
+        }
+    }
+
+    // Fallback for expressions like {lh_var} or LineHeight::Absolute(...)
+    quote! { ::std::convert::Into::<::riode::prelude::LineHeight>::into(#raw) }
 }

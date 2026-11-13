@@ -23,6 +23,7 @@ pub fn attr_method(tag: &str, key: &str) -> String {
         "s" if tag == "text" => "s",
         "w" if tag == "text" => "w",
         "align" if tag == "text" => "align",
+        "lh" | "line-height" if tag == "text" => "line_height",
         "show" => "show",
         "hide" => "hide",
         other => other,
@@ -77,23 +78,23 @@ pub fn attr_value(key: &str, attr: &KeyedAttribute, flow: &FlowTables) -> TokenS
     }
     match key {
         "material" => {
-            if let Some(list) = bracket_list(attr, &quote!(::riode::foundation::Material), &quote!(::riode::foundation::Stage)) {
+            if let Some(list) = bracket_list(attr, &quote!(::riode::prelude::Material), &quote!(::riode::prelude::Stage)) {
                 return slot_literal_value(list, flow);
             }
             if let Some(syn::Expr::Closure(_)) = attr_expr(attr) {
                 let inner = attr_value_tokens(attr);
-                return slot_literal_value(quote! { ::riode::foundation::GeoFn(#inner) }, flow);
+                return slot_literal_value(quote! { ::riode::prelude::GeoFn(#inner) }, flow);
             }
             slot_literal_value(attr_value_tokens(attr), flow)
         }
         "overlay" => {
-            if let Some(list) = bracket_list(attr, &quote!(::riode::foundation::Overlay), &quote!(::riode::foundation::Stage)) {
+            if let Some(list) = bracket_list(attr, &quote!(::riode::prelude::Overlay), &quote!(::riode::prelude::Stage)) {
                 return slot_literal_value(list, flow);
             }
             slot_literal_value(attr_value_tokens(attr), flow)
         }
         "effect" => {
-            if let Some(list) = bracket_list(attr, &quote!(::riode::foundation::Effect), &quote!(::riode::foundation::EffectStage)) {
+            if let Some(list) = bracket_list(attr, &quote!(::riode::prelude::Effect), &quote!(::riode::prelude::EffectStage)) {
                 return slot_literal_value(list, flow);
             }
             slot_literal_value(attr_value_tokens(attr), flow)

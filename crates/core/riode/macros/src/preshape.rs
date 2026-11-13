@@ -64,6 +64,20 @@ fn manifest_relative(path: &str) -> std::path::PathBuf {
     std::path::Path::new(&dir).join(path)
 }
 
+fn warn_missing_asset(macro_name: &str, path: &str, full_path: &std::path::Path, err: &std::io::Error) {
+    let msg = format!("{macro_name}!: asset `{path}` not found at {}: {err}", full_path.display());
+    proc_macro::Diagnostic::new(proc_macro::Level::Warning, &msg).emit();
+    eprintln!("warning: {msg}");
+}
+
+fn empty_image_source(w: u32, h: u32) -> TokenStream2 {
+    quote!(::riode::scene::ImageSource::from_static_rgba8(
+        #w,
+        #h,
+        &[0u8; (#w * #h * 4) as usize]
+    ))
+}
+
 /// Byte-blob encoder mirroring `riode::text::preshaped::encode_blob`
 /// (duplicated: the macro crate cannot depend on riode — cycle).
 #[allow(clippy::too_many_arguments)]
@@ -314,8 +328,7 @@ pub fn pre_shaped_impl(input: proc_macro::TokenStream) -> syn::Result<TokenStrea
 /// px and emits `::riode::scene::ImageSource::from_static_rgba8(..)`.
 /// Dynamic theming/animation stays on the runtime resvg path.
 pub fn include_svg_impl(input: proc_macro::TokenStream) -> syn::Result<TokenStream2> {
-    let parser =
-        Punctuated::<Lit, Token![,]>::parse_terminated;
+    let parser = Punctuated::<Lit, Token![,]>::parse_terminated;
     let args: Vec<Lit> = parser.parse(input.into())?.into_iter().collect();
     if args.len() != 3 {
         return Err(syn::Error::new(
@@ -350,9 +363,16 @@ pub fn include_svg_impl(input: proc_macro::TokenStream) -> syn::Result<TokenStre
             "width/height must be in 1..=4096",
         ));
     }
-    let svg_data = std::fs::read(manifest_relative(&path)).map_err(|e| {
-        syn::Error::new(proc_macro2::Span::call_site(), format!("cannot read SVG: {e}"))
-    })?;
+
+    let full_path = manifest_relative(&path);
+    let svg_data = match std::fs::read(&full_path) {
+        Ok(data) => data,
+        Err(err) => {
+            warn_missing_asset("include_svg", &path, &full_path, &err);
+            return Ok(empty_image_source(w, h));
+        }
+    };
+
     let svg_str = String::from_utf8(svg_data).map_err(|_| {
         syn::Error::new(proc_macro2::Span::call_site(), "SVG file is not UTF-8")
     })?;
@@ -386,8 +406,7 @@ pub fn include_svg_impl(input: proc_macro::TokenStream) -> syn::Result<TokenStre
 /// Decodes a PNG/WebP on the build host, resamples to exactly `width`x`height`
 /// with Lanczos3, and emits `::riode::scene::ImageSource::from_static_rgba8(..)`.
 pub fn include_image_impl(input: proc_macro::TokenStream) -> syn::Result<TokenStream2> {
-    let parser =
-        Punctuated::<Lit, Token![,]>::parse_terminated;
+    let parser = Punctuated::<Lit, Token![,]>::parse_terminated;
     let args: Vec<Lit> = parser.parse(input.into())?.into_iter().collect();
     if args.len() != 3 {
         return Err(syn::Error::new(
@@ -422,9 +441,16 @@ pub fn include_image_impl(input: proc_macro::TokenStream) -> syn::Result<TokenSt
             "width/height must be in 1..=4096",
         ));
     }
-    let img_data = std::fs::read(manifest_relative(&path)).map_err(|e| {
-        syn::Error::new(proc_macro2::Span::call_site(), format!("cannot read image: {e}"))
-    })?;
+
+    let full_path = manifest_relative(&path);
+    let img_data = match std::fs::read(&full_path) {
+        Ok(data) => data,
+        Err(err) => {
+            warn_missing_asset("include_image", &path, &full_path, &err);
+            return Ok(empty_image_source(w, h));
+        }
+    };
+
     let img = image::load_from_memory(&img_data).map_err(|e| {
         syn::Error::new(proc_macro2::Span::call_site(), format!("image decode failed: {e}"))
     })?;

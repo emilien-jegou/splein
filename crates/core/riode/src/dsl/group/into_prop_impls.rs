@@ -27,19 +27,19 @@ where
         Prop::Static(Material::from(self))
     }
 }
-impl IntoProp<Shape> for Shape {
-    fn into_prop(self) -> Prop<Shape> {
+impl IntoProp<ShapeContainer> for ShapeContainer {
+    fn into_prop(self) -> Prop<ShapeContainer> {
         Prop::Static(self)
     }
 }
-impl<S: Stage, const N: usize> IntoProp<Shape> for [S; N] {
-    fn into_prop(self) -> Prop<Shape> {
-        Prop::Static(Shape::from(self))
+impl<S: Stage, const N: usize> IntoProp<ShapeContainer> for [S; N] {
+    fn into_prop(self) -> Prop<ShapeContainer> {
+        Prop::Static(ShapeContainer::from(self))
     }
 }
-impl IntoProp<Shape> for Vec<Box<dyn Stage>> {
-    fn into_prop(self) -> Prop<Shape> {
-        Prop::Static(Shape::from_boxes(self))
+impl IntoProp<ShapeContainer> for Vec<Box<dyn Stage>> {
+    fn into_prop(self) -> Prop<ShapeContainer> {
+        Prop::Static(ShapeContainer::from_boxes(self))
     }
 }
 impl IntoProp<Overlay> for Overlay {

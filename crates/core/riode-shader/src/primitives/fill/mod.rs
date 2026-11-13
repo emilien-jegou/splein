@@ -30,6 +30,16 @@ impl Fill {
     pub fn solid(color: impl Into<Color>) -> Self {
         Self::new(color)
     }
+
+    pub fn linear_gradient<I, C>(_angle_deg: f32, stops: I) -> Self
+    where
+        I: IntoIterator<Item = (f32, C)>,
+        C: Into<Color>,
+    {
+        let mut iter = stops.into_iter();
+        let color = iter.next().map(|(_, c)| c.into()).unwrap_or(Color::WHITE);
+        Self { color }
+    }
 }
 
 impl Stage for Fill {

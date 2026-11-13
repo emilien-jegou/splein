@@ -1,4 +1,6 @@
 use riode::foundation::BlendMode;
+use riode::foundation::{Geo, Material, Stage};
+use riode::reactive::prop::{IntoProp, Prop};
 
 use crate::foundation::{Color, FalloffCurve, LightEnvironment};
 use super::shadow_ext::{ShadowLayerExt, ShadowSpec};
@@ -41,7 +43,42 @@ pub struct Shadow {
     layers: Vec<ShadowLayer>,
 }
 
+pub trait IntoF32 {
+    fn into_f32(self) -> f32;
+}
+impl IntoF32 for f32 { fn into_f32(self) -> f32 { self } }
+impl IntoF32 for f64 { fn into_f32(self) -> f32 { self as f32 } }
+impl IntoF32 for i32 { fn into_f32(self) -> f32 { self as f32 } }
+impl IntoF32 for u32 { fn into_f32(self) -> f32 { self as f32 } }
+impl IntoF32 for usize { fn into_f32(self) -> f32 { self as f32 } }
+
+pub trait IntoOffset {
+    fn into_offset(self) -> (f32, f32);
+}
+impl<X: IntoF32, Y: IntoF32> IntoOffset for (X, Y) {
+    fn into_offset(self) -> (f32, f32) {
+        (self.0.into_f32(), self.1.into_f32())
+    }
+}
+
 impl Shadow {
+    /// Drop shadow constructor: `Shadow::drop((0, 16), 33, "#00000066")`.
+    pub fn drop<O: IntoOffset, B: IntoF32, C: Into<Color>>(offset: O, blur: B, color: C) -> Self {
+        let (ox, oy) = offset.into_offset();
+        Self::web_like(ox, oy, blur.into_f32(), 0.0, color.into())
+    }
+
+    pub fn add_layer(mut self, offset_x: f32, offset_y: f32, blur: f32) -> Self {
+        self.layers.push(ShadowLayer {
+            falloff: FalloffCurve::Linear,
+            softness: (blur * 0.5).max(0.0),
+            extent: blur.max(0.0),
+            opacity: 1.0,
+            offset: Some((offset_x, offset_y)),
+        });
+        self
+    }
+
     pub fn elevation(elevation: f32) -> Self {
         Self {
             elevation,
@@ -93,20 +130,9 @@ impl Shadow {
         }
     }
 
-    pub fn drop(mut self, offset_x: f32, offset_y: f32, blur: f32) -> Self {
-        self.layers.push(ShadowLayer {
-            falloff: FalloffCurve::Linear,
-            softness: (blur * 0.5).max(0.0),
-            extent: blur.max(0.0),
-            opacity: 1.0,
-            offset: Some((offset_x, offset_y)),
-        });
-        self
-    }
-
     pub fn drops(mut self, layers: &[(f32, f32, f32)]) -> Self {
         for &(ox, oy, blur) in layers {
-            self = self.drop(ox, oy, blur);
+            self = self.add_layer(ox, oy, blur);
         }
         self
     }
@@ -294,5 +320,32 @@ impl From<&str> for Shadow {
 impl From<String> for Shadow {
     fn from(s: String) -> Self {
         Self::from(s.as_str())
+    }
+}
+
+impl Stage for Shadow {
+    fn wgsl_source(&self) -> &'static str {
+        crate::primitives::fill::FILL_WGSL
+    }
+
+    fn uniform_size(&self) -> usize {
+        16 // vec4<f32> (RGBA)
+    }
+
+    fn write_uniforms(&self, _geo: &Geo, buffer: &mut [u8]) {
+        let c = [self.color.r, self.color.g, self.color.b, self.color.a];
+        for (i, val) in c.iter().enumerate() {
+            buffer[i * 4..(i + 1) * 4].copy_from_slice(&val.to_ne_bytes());
+        }
+    }
+
+    fn requires_backdrop(&self) -> bool {
+        false
+    }
+}
+
+impl IntoProp<Material> for Shadow {
+    fn into_prop(self) -> Prop<Material> {
+        Prop::Static(Material::collect([self]))
     }
 }

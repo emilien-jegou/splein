@@ -8,25 +8,25 @@ pub use squircle::Squircle;
 pub struct Shape;
 
 impl Shape {
-    pub fn rect() -> riode::foundation::Shape {
-        riode::foundation::Shape::new(rounded_rect::RoundedRect::rect())
+    pub fn rect() -> riode::foundation::ShapeContainer {
+        riode::foundation::ShapeContainer::new(rounded_rect::RoundedRect::rect())
     }
 
-    pub fn rounded(r: f32) -> riode::foundation::Shape {
-        riode::foundation::Shape::new(rounded_rect::RoundedRect::rounded(r))
+    pub fn rounded(r: f32) -> riode::foundation::ShapeContainer {
+        riode::foundation::ShapeContainer::new(rounded_rect::RoundedRect::rounded(r))
     }
 
-    pub fn corners(tl: f32, tr: f32, br: f32, bl: f32) -> riode::foundation::Shape {
-        riode::foundation::Shape::new(rounded_rect::RoundedRect::corners(tl, tr, br, bl))
+    pub fn corners(tl: f32, tr: f32, br: f32, bl: f32) -> riode::foundation::ShapeContainer {
+        riode::foundation::ShapeContainer::new(rounded_rect::RoundedRect::corners(tl, tr, br, bl))
     }
 
     /// Standard iOS-style squircle (superellipse corner with exponent $n = 4.0$).
-    pub fn squircle(r: f32) -> riode::foundation::Shape {
-        riode::foundation::Shape::new(squircle::Squircle::new(r))
+    pub fn squircle(r: f32) -> riode::foundation::ShapeContainer {
+        riode::foundation::ShapeContainer::new(squircle::Squircle::new(r))
     }
 
     /// Squircle with parametric exponent $n$ (2.0 = circle, 4.0 = classic squircle, 5.0+ = flatter sides).
-    pub fn superellipse(r: f32, exponent: f32) -> riode::foundation::Shape {
-        riode::foundation::Shape::new(squircle::Squircle::with_exponent(r, exponent))
+    pub fn superellipse(r: f32, exponent: f32) -> riode::foundation::ShapeContainer {
+        riode::foundation::ShapeContainer::new(squircle::Squircle::with_exponent(r, exponent))
     }
 }

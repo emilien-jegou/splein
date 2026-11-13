@@ -13,6 +13,31 @@ pub struct VectorGraphic {
     pub height: f32,
 }
 
+impl VectorGraphic {
+    /// Creates an empty/stub graphic (used when parsing fails or svg-runtime is disabled).
+    pub fn stub(width: f32, height: f32) -> Self {
+        #[cfg(feature = "svg-runtime")]
+        {
+            let opt = resvg::usvg::Options::default();
+            let tree = resvg::usvg::Tree::from_str("<svg xmlns='http://www.w3.org/2000/svg'/>", &opt)
+                .expect("valid empty svg");
+            Self {
+                tree: Arc::new(tree),
+                width,
+                height,
+            }
+        }
+        #[cfg(not(feature = "svg-runtime"))]
+        {
+            Self {
+                tree_stub: (),
+                width,
+                height,
+            }
+        }
+    }
+}
+
 #[cfg(feature = "svg-runtime")]
 impl VectorGraphic {
     /// Parses an SVG XML string into a vector graphic handle.
@@ -38,20 +63,10 @@ impl VectorGraphic {
     }
 }
 
-/// Stub when `svg-runtime` is off: parsing is unavailable (use
-/// pre-rasterized images); dimensions default to zero.
 #[cfg(not(feature = "svg-runtime"))]
 impl VectorGraphic {
     pub fn from_str(_xml: &str) -> Result<Self, String> {
         Err("svg-runtime feature is disabled".to_string())
-    }
-
-    pub fn stub(width: f32, height: f32) -> Self {
-        Self {
-            tree_stub: (),
-            width,
-            height,
-        }
     }
 }
 

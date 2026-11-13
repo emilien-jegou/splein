@@ -28,7 +28,7 @@ pub struct GroupElement {
     pub y: Option<Prop<f32>>,
     pub scale: Option<Prop<f32>>,
     pub rotate_degrees: Option<Prop<f32>>,
-    pub shape: Option<Prop<Shape>>,
+    pub shape: Option<Prop<ShapeContainer>>,
     pub material: Option<Prop<Material>>,
     pub overlay: Option<Prop<Overlay>>,
     pub effect: Option<Prop<Effect>>,
@@ -51,6 +51,7 @@ pub struct GroupElement {
     pub scroll_offset_y: Option<Prop<f32>>,
     pub anchor: Option<Anchor>,
     pub aspect_ratio: Option<f32>,
+    pub opacity: Option<Prop<f32>>,
     pub z_index: Option<Prop<i32>>,
     pub is_overlay: bool,
     pub has_layer: bool,
@@ -99,6 +100,7 @@ pub fn group() -> GroupElement {
         anchor: None,
         aspect_ratio: None,
         z_index: None,
+        opacity: None,
         is_overlay: false,
         has_layer: false,
         presence: None,
@@ -140,6 +142,11 @@ impl GroupElement {
         self.scale = Some(v.into_prop());
         self
     }
+    pub fn opacity<P: IntoProp<f32>>(mut self, o: P) -> Self {
+        self.opacity = Some(o.into_prop());
+        self.has_layer = true;
+        self
+    }
     pub fn rotate_degrees<P: IntoProp<f32>>(mut self, v: P) -> Self {
         self.rotate_degrees = Some(v.into_prop());
         self
@@ -154,7 +161,7 @@ impl GroupElement {
         }
         self
     }
-    pub fn shape<P: IntoProp<Shape>>(mut self, s: P) -> Self {
+    pub fn shape<P: IntoProp<ShapeContainer>>(mut self, s: P) -> Self {
         self.shape = Some(s.into_prop());
         self
     }

@@ -1,8 +1,10 @@
-// Single responsibility: First-class declarative builder for vector graphics.
+// Single responsibility: First-class declarative builder for vector graphics and build-time rasterized SVGs.
 
+use std::sync::Arc;
 use crate::dsl::custom::{custom, CustomDef};
 use crate::foundation::{Constraints, IntrinsicSize, ResolvedRect};
 use crate::scene::context::PaintContext;
+use crate::scene::image::ImageSource;
 use crate::scene::vector::VectorGraphic;
 use crate::tree::Primitive;
 
@@ -25,17 +27,55 @@ impl Primitive for SvgPrimitive {
     }
 }
 
+pub trait IntoSvg {
+    fn into_custom_def(self) -> CustomDef;
+}
+
+impl IntoSvg for VectorGraphic {
+    fn into_custom_def(self) -> CustomDef {
+        custom(SvgPrimitive {
+            width: self.width,
+            height: self.height,
+            graphic: self,
+        })
+    }
+}
+
+impl IntoSvg for Arc<VectorGraphic> {
+    fn into_custom_def(self) -> CustomDef {
+        (*self).clone().into_custom_def()
+    }
+}
+
+impl IntoSvg for &Arc<VectorGraphic> {
+    fn into_custom_def(self) -> CustomDef {
+        (**self).clone().into_custom_def()
+    }
+}
+
+#[cfg(feature = "svg-runtime")]
+impl IntoSvg for &str {
+    fn into_custom_def(self) -> CustomDef {
+        match VectorGraphic::from_str(self) {
+            Ok(g) => g.into_custom_def(),
+            Err(e) => {
+                eprintln!("warning: failed to parse SVG string: {e}");
+                VectorGraphic::stub(0.0, 0.0).into_custom_def()
+            }
+        }
+    }
+}
+
+impl IntoSvg for ImageSource {
+    fn into_custom_def(self) -> CustomDef {
+        crate::dsl::image::image(self)
+    }
+}
+
 /// Constructs a first-class declarative SVG element.
 ///
-/// Sized by content: the intrinsic vector size is the `Fit` measure, so the graphic
-/// draws at natural size in an unbounded parent and shrinks with its min-content floor
-/// under pressure. Pin an exact box with `.size(w, h)` when the layout, not the
-/// artwork, owns the dimensions.
-pub fn svg(graphic: impl Into<VectorGraphic>) -> CustomDef {
-    let g = graphic.into();
-    custom(SvgPrimitive {
-        width: g.width,
-        height: g.height,
-        graphic: g,
-    })
+/// Accepts a runtime [`VectorGraphic`] or a build-time pre-rasterized [`ImageSource`]
+/// produced by `include_svg!`.
+pub fn svg(graphic: impl IntoSvg) -> CustomDef {
+    graphic.into_custom_def()
 }

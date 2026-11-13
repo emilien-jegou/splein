@@ -132,6 +132,14 @@ fn parse_scope_arg(attr: TokenStream) -> syn::Result<ScopeArgs> {
     parser.parse(attr)
 }
 
+fn strip_prop_attrs(sig: &mut syn::Signature) {
+    for input in &mut sig.inputs {
+        if let syn::FnArg::Typed(pat_type) = input {
+            pat_type.attrs.retain(|attr| !attr.path().is_ident("prop"));
+        }
+    }
+}
+
 fn expand_component(input: ItemFn, args: ScopeArgs) -> syn::Result<proc_macro2::TokenStream> {
     if input.sig.asyncness.is_some() {
         return Err(syn::Error::new_spanned(
@@ -149,7 +157,10 @@ fn expand_component(input: ItemFn, args: ScopeArgs) -> syn::Result<proc_macro2::
     let where_clause = &input.sig.generics.where_clause;
     let arg_names = call_arg_names(&input);
 
-    let mut body_sig = sig.clone();
+    let mut clean_sig = sig.clone();
+    strip_prop_attrs(&mut clean_sig);
+
+    let mut body_sig = clean_sig.clone();
     body_sig.ident = body_name.clone();
     let body_fn: ItemFn = syn::parse2(quote! {
         #[doc(hidden)]
@@ -159,7 +170,7 @@ fn expand_component(input: ItemFn, args: ScopeArgs) -> syn::Result<proc_macro2::
     })?;
 
     let custom_scope = args.path.is_some();
-    let mut wrapper_sig = sig.clone();
+    let mut wrapper_sig = clean_sig.clone();
     let scope_call = if let Some(path) = args.path {
         wrapper_sig.output = syn::parse_quote!(-> impl IntoElement);
         quote! { #path(|| #body_name(#(#arg_names),*)) }
@@ -191,7 +202,7 @@ fn expand_component(input: ItemFn, args: ScopeArgs) -> syn::Result<proc_macro2::
     let build_tokens = if custom_scope || !input.sig.generics.params.is_empty() {
         quote! {}
     } else {
-        let inputs = &sig.inputs;
+        let inputs = &clean_sig.inputs;
         quote! {
             #[doc(hidden)]
             #[allow(non_snake_case)]

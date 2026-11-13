@@ -8,6 +8,7 @@ struct Field {
     name: syn::Ident,
     ty: Type,
     optional: bool,
+    default: Option<TokenStream2>,
     is_children: bool,
 }
 
@@ -43,6 +44,29 @@ pub fn expand_props(input: &ItemFn, root_tag: Option<&str>) -> syn::Result<Optio
                 "#[component]: `key` is reserved",
             ));
         }
+
+        let mut default = None;
+        for attr in &pt.attrs {
+            if attr.path().is_ident("prop") {
+                attr.parse_nested_meta(|meta| {
+                    if meta.path.is_ident("default") {
+                        if meta.input.peek(syn::Token![=]) {
+                            let value = meta.value()?;
+                            let expr: syn::Expr = value.parse()?;
+                            default = Some(quote! { #expr });
+                        } else {
+                            default = Some(quote! { ::std::default::Default::default() });
+                        }
+                        Ok(())
+                    } else {
+                        Err(meta.error(
+                            "unsupported prop attribute; expected `default` or `default = ...`",
+                        ))
+                    }
+                })?;
+            }
+        }
+
         let ty = (*pt.ty).clone();
         let is_children = arg_name == "children";
         let optional = strip_outer_option(&ty).is_some();
@@ -50,13 +74,28 @@ pub fn expand_props(input: &ItemFn, root_tag: Option<&str>) -> syn::Result<Optio
             name: arg_name,
             ty,
             optional,
+            default,
             is_children,
         });
     }
 
+    // Synthesize lifetime parameter for props structs if types have elided lifetimes (e.g. `&str`)
+    let mut generics = input.sig.generics.clone();
+    let mut has_elided = false;
+    for f in &mut fields {
+        if type_has_elided_lifetime(&f.ty) {
+            has_elided = true;
+            add_lifetime_to_type(&mut f.ty, &syn::parse_quote!('__riode_a));
+        }
+    }
+    if has_elided {
+        let lt_param: syn::GenericParam = syn::parse_quote!('__riode_a);
+        generics.params.insert(0, lt_param);
+    }
+
     let public_props = format_ident!("{}Props", type_stem);
     let builder_name = format_ident!("{}PropsBuilder", type_stem);
-    let (impl_g, ty_g, where_c) = input.sig.generics.split_for_impl();
+    let (impl_g, ty_g, where_c) = generics.split_for_impl();
 
     let struct_fields = fields.iter().map(|f| {
         let (n, t) = (&f.name, &f.ty);
@@ -98,7 +137,13 @@ pub fn expand_props(input: &ItemFn, root_tag: Option<&str>) -> syn::Result<Optio
         .iter()
         .map(|f| {
             let (n, comp) = (&f.name, name.to_string());
-            if f.optional {
+            if let Some(default_expr) = &f.default {
+                if f.optional {
+                    quote! { #n: self.#n.unwrap_or_else(|| ::std::option::Option::Some(#default_expr)) }
+                } else {
+                    quote! { #n: self.#n.unwrap_or_else(|| #default_expr) }
+                }
+            } else if f.optional {
                 quote! { #n: self.#n.unwrap_or(None) }
             } else {
                 let msg = format!("{comp}: missing required prop `{n}`");
@@ -114,10 +159,12 @@ pub fn expand_props(input: &ItemFn, root_tag: Option<&str>) -> syn::Result<Optio
 
     // Explicit opt-in: Defaults to empty surface setters unless root primitive is specified!
     let engine = crate::primitives::riode_engine();
-    let effective_tag = root_tag.or_else(|| {
-        let ty_ident = return_type_ident(&input.sig.output)?;
-        engine.tag_for_type_name(&ty_ident)
-    });
+    let effective_tag = root_tag
+        .or_else(|| {
+            let ty_ident = return_type_ident(&input.sig.output)?;
+            engine.tag_for_type_name(&ty_ident)
+        })
+        .or(Some("g")); // Default composite components to group surface facets
 
     let surface_setters: Vec<TokenStream2> = match effective_tag {
         Some(tag) => engine
@@ -202,4 +249,53 @@ fn strip_outer_option(ty: &Type) -> Option<Type> {
         }
     }
     None
+}
+
+fn type_has_elided_lifetime(ty: &Type) -> bool {
+    match ty {
+        Type::Reference(r) => r.lifetime.is_none() || type_has_elided_lifetime(&r.elem),
+        Type::Path(p) => p.path.segments.iter().any(|seg| {
+            if let syn::PathArguments::AngleBracketed(args) = &seg.arguments {
+                args.args.iter().any(|arg| match arg {
+                    syn::GenericArgument::Type(inner) => type_has_elided_lifetime(inner),
+                    syn::GenericArgument::Lifetime(lt) => lt.ident == "_",
+                    _ => false,
+                })
+            } else {
+                false
+            }
+        }),
+        Type::Slice(s) => type_has_elided_lifetime(&s.elem),
+        Type::Tuple(t) => t.elems.iter().any(type_has_elided_lifetime),
+        _ => false,
+    }
+}
+
+fn add_lifetime_to_type(ty: &mut Type, lt: &syn::Lifetime) {
+    match ty {
+        Type::Reference(r) => {
+            if r.lifetime.is_none() {
+                r.lifetime = Some(lt.clone());
+            }
+            add_lifetime_to_type(&mut r.elem, lt);
+        }
+        Type::Path(p) => {
+            for seg in &mut p.path.segments {
+                if let syn::PathArguments::AngleBracketed(args) = &mut seg.arguments {
+                    for arg in &mut args.args {
+                        if let syn::GenericArgument::Type(inner) = arg {
+                            add_lifetime_to_type(inner, lt);
+                        }
+                    }
+                }
+            }
+        }
+        Type::Slice(s) => add_lifetime_to_type(&mut s.elem, lt),
+        Type::Tuple(t) => {
+            for elem in &mut t.elems {
+                add_lifetime_to_type(elem, lt);
+            }
+        }
+        _ => {}
+    }
 }

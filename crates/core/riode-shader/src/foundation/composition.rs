@@ -1,6 +1,6 @@
 // Single responsibility: Shader compilation and uniform layout resolution for surfaces, overlays, and effects.
 
-use riode::foundation::{BlendMode, Geo, LayerPaint, Material, Shape, Stage};
+use riode::foundation::{BlendMode, Geo, LayerPaint, Material, ShapeContainer, Stage};
 use crate::primitives::blend::BLEND_LIBRARY_WGSL;
 
 pub struct ComposedMaterialShader {
@@ -17,7 +17,7 @@ pub fn compose_material_shader(paint: &LayerPaint) -> ComposedMaterialShader {
 /// shader. Both public composers funnel through here so the bundle is only
 /// taken apart at the point where the ordering actually matters.
 fn compose_surface_shader(
-    shape: Option<&Shape>,
+    shape: Option<&ShapeContainer>,
     chain: Option<&Material>,
 ) -> ComposedMaterialShader {
     let mut stages: Vec<&Box<dyn Stage>> = Vec::new();
@@ -146,9 +146,16 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         }
 
         if size > 0 {
-            wgsl.push_str(&format!(
-                "    stage_{idx}_apply(&payload, uniforms.data[{vec4_offset}]);\n"
-            ));
+            if stage.wgsl_source().contains("uniforms: StrokeUniforms") {
+                wgsl.push_str(&format!(
+                    "    let u_{idx} = StrokeUniforms(uniforms.data[{vec4_offset}], uniforms.data[{}].x);\n    stage_{idx}_apply(&payload, u_{idx});\n",
+                    vec4_offset + 1
+                ));
+            } else {
+                wgsl.push_str(&format!(
+                    "    stage_{idx}_apply(&payload, uniforms.data[{vec4_offset}]);\n"
+                ));
+            }
             vec4_offset += aligned_size / 16;
         } else {
             wgsl.push_str(&format!("    stage_{idx}_apply(&payload);\n"));
@@ -193,7 +200,7 @@ pub fn write_material_uniforms(
 }
 
 fn write_surface_uniforms(
-    shape: Option<&Shape>,
+    shape: Option<&ShapeContainer>,
     chain: Option<&Material>,
     geo: &Geo,
     buffer: &mut [u8],

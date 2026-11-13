@@ -49,6 +49,12 @@ impl SurfaceProps {
                 if let Some(h) = self.height {
                     if let Prop::Static(s) = h { t.height = Some(s); }
                 }
+                if let Some(x) = self.x {
+                    if let Prop::Static(val) = x { t.x = Some(val); }
+                }
+                if let Some(y) = self.y {
+                    if let Prop::Static(val) = y { t.y = Some(val); }
+                }
                 if let Some(m) = self.margin { t.margin = t.margin.merged(m); }
                 if self.is_absolute { t.is_absolute = true; }
                 if let Some(a) = self.anchor { t.anchor = Some(a); t.is_absolute = true; }
@@ -56,7 +62,26 @@ impl SurfaceProps {
                     if let Prop::Static(val) = z { t.z_index = val; }
                 }
             }
-            Element::Custom(_) => {}
+            Element::Custom(c) => {
+                if let Some(w) = self.width {
+                    if let Prop::Static(s) = w { c.width = Some(s); }
+                }
+                if let Some(h) = self.height {
+                    if let Prop::Static(s) = h { c.height = Some(s); }
+                }
+                if let Some(x) = self.x {
+                    if let Prop::Static(val) = x { c.x = Some(val); }
+                }
+                if let Some(y) = self.y {
+                    if let Prop::Static(val) = y { c.y = Some(val); }
+                }
+                if let Some(m) = self.margin { c.margin = c.margin.merged(m); }
+                if self.is_absolute { c.is_absolute = true; }
+                if let Some(a) = self.anchor { c.anchor = Some(a); c.is_absolute = true; }
+                if let Some(z) = self.z_index {
+                    if let Prop::Static(val) = z { c.z_index = val; }
+                }
+            }
         }
         element
     }

@@ -2,9 +2,26 @@
 
 use super::TextElement;
 use crate::foundation::{Anchor, Color, Key, Margin, Material, Padding, Size};
+use crate::reactive::{IntoProp, Prop};
 use crate::text::{
     FontId, FontStyle, FontVariation, LineHeight, TextAlign, TextDecoration, TextOverflow, TextWrap,
 };
+
+impl From<f32> for LineHeight {
+    fn from(v: f32) -> Self {
+        LineHeight::Absolute(v)
+    }
+}
+impl From<i32> for LineHeight {
+    fn from(v: i32) -> Self {
+        LineHeight::Absolute(v as f32)
+    }
+}
+impl From<u32> for LineHeight {
+    fn from(v: u32) -> Self {
+        LineHeight::Absolute(v as f32)
+    }
+}
 
 impl TextElement {
     pub fn key<K: Into<Key>>(mut self, k: K) -> Self {
@@ -42,8 +59,8 @@ impl TextElement {
         self.weight = w;
         self
     }
-    pub fn w(self, weight: impl crate::dsl::prop::Count) -> Self {
-        self.weight(weight.count() as u16)
+    pub fn w(self, w: impl Into<Size>) -> Self {
+        self.width(w)
     }
     pub fn font_variation(mut self, tag: &str, value: f32) -> Self {
         if let Some(setting) = FontVariation::named(tag, value) {
@@ -58,8 +75,8 @@ impl TextElement {
         }
         self
     }
-    pub fn line_height(mut self, lh: f32) -> Self {
-        self.line_height = LineHeight::Absolute(lh);
+    pub fn line_height(mut self, lh: impl Into<LineHeight>) -> Self {
+        self.line_height = lh.into();
         self
     }
     pub fn line_height_multiple(mut self, mult: f32) -> Self {
@@ -134,7 +151,22 @@ impl TextElement {
         self.height = Some(h.into());
         self
     }
-    pub fn absolute(mut self) -> Self {
+    pub fn absolute(mut self, is_abs: impl Into<bool>) -> Self {
+        self.is_absolute = is_abs.into();
+        self
+    }
+    pub fn x(mut self, x: impl IntoProp<f32>) -> Self {
+        if let Prop::Static(v) = x.into_prop() {
+            self.x = Some(v);
+        }
+        self.is_absolute = true;
+        self
+    }
+
+    pub fn y(mut self, y: impl IntoProp<f32>) -> Self {
+        if let Prop::Static(v) = y.into_prop() {
+            self.y = Some(v);
+        }
         self.is_absolute = true;
         self
     }
