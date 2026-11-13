@@ -136,8 +136,11 @@ impl TextContext {
             .store(RESIZE_HINT_FRAMES, std::sync::atomic::Ordering::Relaxed);
     }
 
-    /// Ages the resize hint by one frame (called once per frame).
+    /// Ages the resize hint by one frame (called once per frame). Also
+    /// advances the `key_map` epoch clock: the per-frame tick is the single
+    /// monotonic frame boundary the generational sweep ages against.
     pub(crate) fn tick_resize_hint(&self) {
+        crate::text::engine::tick_key_epoch();
         let _ = self.resize_hint.try_update(
             std::sync::atomic::Ordering::Relaxed,
             std::sync::atomic::Ordering::Relaxed,
@@ -191,10 +194,11 @@ impl TextContext {
     /// alone always resolves to the default instance, so weight/width
     /// variations would silently render as Regular without it.
     pub fn glyph_coords(&self, key: GlyphKey) -> Option<Vec<i16>> {
-        let map = self.engine.key_map.lock().unwrap();
-        // Tripwire: key_map is insert-only (shaping proof, never invalidated).
-        // Past 64k distinct glyphs something is generating unbounded identity
-        // (e.g. per-frame variation coordinates) — warn once, keep working.
+        let mut map = self.engine.key_map.lock().unwrap();
+        // Tripwire: unbounded identity generation (e.g. per-frame variation
+        // coordinates) would grow the map without bound — the sweep in
+        // `runs.rs` bounds legitimate growth; this warns about pathological
+        // input once past 64k distinct glyphs.
         if map.len() > 65536 {
             static WARNED: std::sync::atomic::AtomicBool =
                 std::sync::atomic::AtomicBool::new(false);
@@ -205,7 +209,10 @@ impl TextContext {
                 );
             }
         }
-        map.get(&key).map(|rk| rk.coords.clone())
+        map.get_mut(&key).map(|rk| {
+            rk.last_used = crate::text::engine::key_epoch();
+            rk.coords.clone()
+        })
     }
 
     /// Shapes a text string into multi-line glyph runs under given constraints.
@@ -526,7 +533,10 @@ impl TextContext {
                 data: &cached.data,
             }));
         }
-        let rk = self.engine.key_map.lock().unwrap().get(&key).cloned();
+        let rk = self.engine.key_map.lock().unwrap().get_mut(&key).map(|rk| {
+            rk.last_used = crate::text::engine::key_epoch();
+            rk.clone()
+        });
         let Some(rk) = rk else {
             self.bitmaps.note_miss();
             return f(None);
@@ -698,7 +708,10 @@ impl TextContext {
         // asymmetric quanta map exactly with no coarsening.
         let fallback_phase = (qx & 3) | ((qy & (GLYPH_QUANTA_Y - 1)) << 2);
 
-        let rk = self.engine.key_map.lock().unwrap().get(&map_key).cloned();
+        let rk = self.engine.key_map.lock().unwrap().get_mut(&map_key).map(|rk| {
+            rk.last_used = crate::text::engine::key_epoch();
+            rk.clone()
+        });
         let Some(rk) = rk else {
             self.bitmaps.note_miss();
             return f(None);
@@ -836,7 +849,10 @@ impl TextContext {
             }));
         }
 
-        let rk = self.engine.key_map.lock().unwrap().get(&map_key).cloned();
+        let rk = self.engine.key_map.lock().unwrap().get_mut(&map_key).map(|rk| {
+            rk.last_used = crate::text::engine::key_epoch();
+            rk.clone()
+        });
         let Some(rk) = rk else {
             self.bitmaps.note_miss();
             return f(None);

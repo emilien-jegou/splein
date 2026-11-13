@@ -11,6 +11,9 @@
 #![cfg_attr(not(feature = "text-runtime"), allow(dead_code))]
 #[cfg(feature = "text-runtime")]
 use swash::zeno::{Point, Verb};
+use std::cell::RefCell;
+#[cfg(not(feature = "text-runtime"))]
+use zenostub::{Point, Verb};
 
 /// Stub outline types when `text-runtime` is off: identical shape to the
 /// swash/zeno types this module's pure geometry operates on, so the exact
@@ -74,6 +77,46 @@ const FLAT_TOL: f32 = 0.1;
 /// Recursion cap (2^24 segments per curve worst-case, unreachable in practice).
 const FLAT_DEPTH: u8 = 24;
 
+/// Fast-reject band test: does the pixel box `[px,px+1) × [py,py+1)`
+/// intersect the contour AABB `[b0,b1,b2,b3]`? Runs once per
+/// (contour, pixel) before any polygon clipping.
+#[inline(always)]
+fn band_intersects(b: &[f32; 4], px: f32, py: f32) -> bool {
+    !(b[3] <= py || b[1] >= py + 1.0 || b[2] <= px || b[0] >= px + 1.0)
+}
+
+/// Flat contour arena: one contiguous point buffer plus an index range per
+/// contour. Replaces the nested `Vec<Vec<[f32; 2]>>` (a heap allocation per
+/// glyph contour, thousands of small allocations during text rasterization
+/// bursts); the arena lives in a thread-local scratch reused across glyphs,
+/// so steady-state rasterization performs no outline-flattening allocation.
+struct FlatPolygons {
+    points: Vec<[f32; 2]>,
+    contours: Vec<std::ops::Range<usize>>,
+}
+
+/// Per-rasterizer scratch, thread-local: flat arena, per-contour bounds, and
+/// the Sutherland–Hodgman clip buffers, all with capacity reused across
+/// glyphs and layers.
+struct RasterScratch {
+    flat: FlatPolygons,
+    bounds: Vec<[f32; 4]>,
+    buf_a: Vec<[f32; 2]>,
+    buf_b: Vec<[f32; 2]>,
+}
+
+thread_local! {
+    static SCRATCH: RefCell<RasterScratch> = RefCell::new(RasterScratch {
+        flat: FlatPolygons {
+            points: Vec::new(),
+            contours: Vec::new(),
+        },
+        bounds: Vec::new(),
+        buf_a: Vec::new(),
+        buf_b: Vec::new(),
+    });
+}
+
 /// Rasterizes one outline layer at subpixel translation `(tx, ty)`.
 ///
 /// `points`/`verbs` follow `zeno` `PathData` pairing: MoveTo=1pt, LineTo=1pt,
@@ -88,109 +131,105 @@ pub(crate) fn rasterize_layer(
     tx: f32,
     ty: f32,
 ) -> AnalyticBitmap {
-    let mut polys = flatten(points, verbs, tx, -ty);
-    // Font y-up → bitmap y-down. (Translation was pre-negated so the flip
-    // lands it on the correct side.)
-    for p in &mut polys {
-        for q in p {
+    SCRATCH.with(|cell| {
+        let mut s = cell.borrow_mut();
+        let RasterScratch {
+            flat,
+            bounds,
+            buf_a,
+            buf_b,
+        } = &mut *s;
+        flatten_into(points, verbs, tx, -ty, flat);
+        // Font y-up → bitmap y-down. (Translation was pre-negated so the flip
+        // lands it on the correct side.)
+        for q in &mut flat.points {
             q[1] = -q[1];
         }
-    }
-    if polys.is_empty() {
-        return AnalyticBitmap::empty();
-    }
-    // Union bounds over all contours.
-    let (mut minx, mut miny) = (f32::INFINITY, f32::INFINITY);
-    let (mut maxx, mut maxy) = (f32::NEG_INFINITY, f32::NEG_INFINITY);
-    let mut any = false;
-    for p in &polys {
-        for q in p {
-            minx = minx.min(q[0]);
-            miny = miny.min(q[1]);
-            maxx = maxx.max(q[0]);
-            maxy = maxy.max(q[1]);
-            any = true;
+        if flat.contours.is_empty() {
+            return AnalyticBitmap::empty();
         }
-    }
-    if !any {
-        return AnalyticBitmap::empty();
-    }
-    let (left, top) = (minx.floor() as i32, miny.floor() as i32);
-    let (right, bottom) = (maxx.ceil() as i32, maxy.ceil() as i32);
-    let (w, h) = (right - left, bottom - top);
-    if w <= 0 || h <= 0 || w as u32 > MAX_DIM || h as u32 > MAX_DIM {
-        return AnalyticBitmap::empty();
-    }
-    let (w, h) = (w as u32, h as u32);
-    // Per-contour bboxes for the row/containment prefilter.
-    let bounds: Vec<[f32; 4]> = polys
-        .iter()
-        .map(|p| {
-            let (mut x0, mut y0) = (f32::INFINITY, f32::INFINITY);
-            let (mut x1, mut y1) = (f32::NEG_INFINITY, f32::NEG_INFINITY);
-            for q in p {
-                x0 = x0.min(q[0]);
-                y0 = y0.min(q[1]);
-                x1 = x1.max(q[0]);
-                y1 = y1.max(q[1]);
-            }
-            [x0, y0, x1, y1]
-        })
-        .collect();
-    let mut data = vec![0u8; (w * h) as usize];
-    // Scratch clip buffers reused across pixels (no per-pixel allocation).
-    let mut buf_a: Vec<[f32; 2]> = Vec::new();
-    let mut buf_b: Vec<[f32; 2]> = Vec::new();
-    // Per-row relevant contour lists: contours whose y-range touches the band.
-    for row in 0..h {
-        let py = (top + row as i32) as f32;
-        let mut relevant: [usize; 32] = [0; 32];
-        let mut n_rel = 0usize;
-        let mut overflow = false;
-        for (i, b) in bounds.iter().enumerate() {
-            if b[3] > py && b[1] < py + 1.0 {
-                if n_rel < relevant.len() {
-                    relevant[n_rel] = i;
-                    n_rel += 1;
-                } else {
-                    overflow = true;
-                    break;
-                }
+        // Union bounds over all contours, plus a bbox per contour for the
+        // row/containment prefilter.
+        bounds.clear();
+        bounds.resize(flat.contours.len(), [f32::MAX, f32::MAX, f32::MIN, f32::MIN]);
+        let (mut minx, mut miny) = (f32::INFINITY, f32::INFINITY);
+        let (mut maxx, mut maxy) = (f32::NEG_INFINITY, f32::NEG_INFINITY);
+        for (ci, r) in flat.contours.iter().enumerate() {
+            let b = &mut bounds[ci];
+            for q in &flat.points[r.clone()] {
+                b[0] = b[0].min(q[0]);
+                b[1] = b[1].min(q[1]);
+                b[2] = b[2].max(q[0]);
+                b[3] = b[3].max(q[1]);
+                minx = minx.min(q[0]);
+                miny = miny.min(q[1]);
+                maxx = maxx.max(q[0]);
+                maxy = maxy.max(q[1]);
             }
         }
-        for col in 0..w {
-            let px = (left + col as i32) as f32;
-            let mut acc: f32;
-            if overflow {
-                acc = pixel_area_all(&polys, &mut buf_a, &mut buf_b, px, py);
-            } else {
-                acc = 0.0;
-                for k in 0..n_rel {
-                    let p = &polys[relevant[k]];
-                    let b = &bounds[relevant[k]];
-                    if b[2] <= px || b[0] >= px + 1.0 {
-                        continue;
+        if !(minx.is_finite() && miny.is_finite() && maxx.is_finite() && maxy.is_finite()) {
+            return AnalyticBitmap::empty();
+        }
+        let (left, top) = (minx.floor() as i32, miny.floor() as i32);
+        let (right, bottom) = (maxx.ceil() as i32, maxy.ceil() as i32);
+        let (w, h) = (right - left, bottom - top);
+        if w <= 0 || h <= 0 || w as u32 > MAX_DIM || h as u32 > MAX_DIM {
+            return AnalyticBitmap::empty();
+        }
+        let (w, h) = (w as u32, h as u32);
+        let mut data = vec![0u8; (w * h) as usize];
+        let flat = &*flat;
+        // Per-row relevant contour lists: contours whose y-range touches the band.
+        for row in 0..h {
+            let py = (top + row as i32) as f32;
+            let mut relevant: [usize; 32] = [0; 32];
+            let mut n_rel = 0usize;
+            let mut overflow = false;
+            for (i, b) in bounds.iter().enumerate() {
+                if b[3] > py && b[1] < py + 1.0 {
+                    if n_rel < relevant.len() {
+                        relevant[n_rel] = i;
+                        n_rel += 1;
+                    } else {
+                        overflow = true;
+                        break;
                     }
-                    acc += clipped_area(p, &mut buf_a, &mut buf_b, px, py);
                 }
             }
-            // Absolute winding weight: interiors may wind either way
-            // depending on contour orientation; holes cancel to zero either
-            // way, and overlaps clamp to full coverage (non-zero rule).
-            acc = acc.abs().clamp(0.0, 1.0);
-            if acc > 0.0 {
-                data[row as usize * w as usize + col as usize] =
-                    (acc * 255.0).round().clamp(0.0, 255.0) as u8;
+            for col in 0..w {
+                let px = (left + col as i32) as f32;
+                let mut acc: f32;
+                if overflow {
+                    acc = pixel_area_all(flat, buf_a, buf_b, px, py);
+                } else {
+                    acc = 0.0;
+                    for k in 0..n_rel {
+                        let b = &bounds[relevant[k]];
+                        if !band_intersects(b, px, py) {
+                            continue; // Pixel box does not intersect contour AABB
+                        }
+                        let r = flat.contours[relevant[k]].clone();
+                        acc += clipped_area(&flat.points[r], buf_a, buf_b, px, py);
+                    }
+                }
+                // Absolute winding weight: interiors may wind either way
+                // depending on contour orientation; holes cancel to zero either
+                // way, and overlaps clamp to full coverage (non-zero rule).
+                acc = acc.abs().clamp(0.0, 1.0);
+                if acc > 0.0 {
+                    data[row as usize * w as usize + col as usize] =
+                        (acc * 255.0).round().clamp(0.0, 255.0) as u8;
+                }
             }
         }
-    }
-    // Trim zero borders so blits stay tight.
-    trim(AnalyticBitmap {
-        left,
-        top,
-        width: w,
-        height: h,
-        data,
+        // Trim zero borders so blits stay tight.
+        trim(AnalyticBitmap {
+            left,
+            top,
+            width: w,
+            height: h,
+            data,
+        })
     })
 }
 
@@ -239,15 +278,15 @@ pub(crate) fn union_max(a: AnalyticBitmap, b: AnalyticBitmap) -> AnalyticBitmap 
 }
 
 fn pixel_area_all(
-    polys: &[Vec<[f32; 2]>],
+    flat: &FlatPolygons,
     buf_a: &mut Vec<[f32; 2]>,
     buf_b: &mut Vec<[f32; 2]>,
     px: f32,
     py: f32,
 ) -> f32 {
     let mut acc = 0.0;
-    for p in polys {
-        acc += clipped_area(p, buf_a, buf_b, px, py);
+    for r in &flat.contours {
+        acc += clipped_area(&flat.points[r.clone()], buf_a, buf_b, px, py);
     }
     acc
 }
@@ -345,76 +384,94 @@ fn shoelace(poly: &[[f32; 2]]) -> f32 {
     0.5 * s
 }
 
-/// Flattens outline verbs into closed polygons, translated by `(tx, ty)`.
-fn flatten(points: &[Point], verbs: &[Verb], tx: f32, ty: f32) -> Vec<Vec<[f32; 2]>> {
-    let mut polys: Vec<Vec<[f32; 2]>> = Vec::new();
-    let mut cur: Vec<[f32; 2]> = Vec::new();
+/// Flattens outline verbs into the flat contour arena, translated by
+/// `(tx, ty)`. The arena is cleared first; its point/contour capacity is
+/// reused across calls (the caller owns a persistent scratch).
+fn flatten_into(points: &[Point], verbs: &[Verb], tx: f32, ty: f32, out: &mut FlatPolygons) {
+    out.points.clear();
+    out.contours.clear();
+    let mut start = 0usize;
     let mut pen = [0.0f32, 0.0];
     let mut pi = 0usize;
     // Returns None on malformed input (truncated point stream): the glyph is
     // skipped rather than rasterized from misaligned data.
     let mut malformed = false;
-    let take = |pi: &mut usize, n: usize, points: &[Point]| -> Option<[[f32; 2]; 3]> {
-        let mut out = [[0.0f32, 0.0]; 3];
-        for k in 0..n {
-            let p = points.get(*pi)?;
-            *pi += 1;
-            out[k] = [p.x + tx, p.y + ty];
-        }
-        Some(out)
-    };
-    let flush = |cur: &mut Vec<[f32; 2]>, polys: &mut Vec<Vec<[f32; 2]>>| {
-        if cur.len() >= 3 {
-            polys.push(std::mem::take(cur));
-        } else {
-            cur.clear();
-        }
-    };
     for v in verbs {
         match v {
             Verb::MoveTo => {
-                flush(&mut cur, &mut polys);
-                let Some(q) = take(&mut pi, 1, points) else {
+                flush_contour(out, &mut start);
+                let Some(q) = take_point(points, &mut pi, tx, ty) else {
                     malformed = true;
                     break;
                 };
-                pen = q[0];
-                cur.push(pen);
+                pen = q;
+                out.points.push(pen);
             }
             Verb::LineTo => {
-                let Some(q) = take(&mut pi, 1, points) else {
+                let Some(q) = take_point(points, &mut pi, tx, ty) else {
                     malformed = true;
                     break;
                 };
-                pen = q[0];
-                cur.push(pen);
+                pen = q;
+                out.points.push(pen);
             }
             Verb::QuadTo => {
-                let Some(q) = take(&mut pi, 2, points) else {
+                let Some(q0) = take_point(points, &mut pi, tx, ty) else {
                     malformed = true;
                     break;
                 };
-                flatten_quad(pen, q[0], q[1], &mut cur);
-                pen = q[1];
+                let Some(q1) = take_point(points, &mut pi, tx, ty) else {
+                    malformed = true;
+                    break;
+                };
+                flatten_quad(pen, q0, q1, &mut out.points);
+                pen = q1;
             }
             Verb::CurveTo => {
-                let Some(q) = take(&mut pi, 3, points) else {
+                let Some(q0) = take_point(points, &mut pi, tx, ty) else {
                     malformed = true;
                     break;
                 };
-                flatten_cubic(pen, q[0], q[1], q[2], &mut cur);
-                pen = q[2];
+                let Some(q1) = take_point(points, &mut pi, tx, ty) else {
+                    malformed = true;
+                    break;
+                };
+                let Some(q2) = take_point(points, &mut pi, tx, ty) else {
+                    malformed = true;
+                    break;
+                };
+                flatten_cubic(pen, q0, q1, q2, &mut out.points);
+                pen = q2;
             }
             Verb::Close => {
-                flush(&mut cur, &mut polys);
+                flush_contour(out, &mut start);
             }
         }
     }
-    flush(&mut cur, &mut polys);
+    flush_contour(out, &mut start);
     if malformed {
-        return Vec::new();
+        out.points.clear();
+        out.contours.clear();
     }
-    polys
+}
+
+/// Closes the contour in progress: contours with three or more points are
+/// recorded as a range, shorter runs are dropped.
+fn flush_contour(out: &mut FlatPolygons, start: &mut usize) {
+    let end = out.points.len();
+    if end - *start >= 3 {
+        out.contours.push(*start..end);
+    } else {
+        out.points.truncate(*start);
+    }
+    *start = end;
+}
+
+/// Takes one translated point from the stream, or None when truncated.
+fn take_point(points: &[Point], pi: &mut usize, tx: f32, ty: f32) -> Option<[f32; 2]> {
+    let p = points.get(*pi)?;
+    *pi += 1;
+    Some([p.x + tx, p.y + ty])
 }
 
 fn flatten_quad(p0: [f32; 2], p1: [f32; 2], p2: [f32; 2], out: &mut Vec<[f32; 2]>) {

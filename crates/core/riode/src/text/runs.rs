@@ -2,7 +2,7 @@
 
 #![cfg_attr(not(feature = "text-runtime"), allow(dead_code))]
 use crate::foundation::Point;
-use crate::text::engine::{ParleyEngine, RasterKey};
+use crate::text::engine::{key_epoch, ParleyEngine, RasterKey, KEY_MAP_SWEEP_FRAMES, KEY_MAP_SWEEP_THRESHOLD};
 use crate::text::glyph::{GlyphKey, ShapedGlyph, ShapedLine};
 #[cfg(feature = "text-runtime")]
 use parley::{Layout, PositionedLayoutItem};
@@ -126,8 +126,9 @@ pub(crate) fn extract_lines(
         ));
     }
 
-    // Single batch flush: insert-only, the same key always maps to the same
-    // entry, and `or_insert_with` keeps the first writer's value.
+    // Single batch flush: the same key always maps to the same entry, and
+    // `or_insert_with` keeps the first writer's value. Every insert stamps
+    // the current frame epoch, so the sweep below can age entries out.
     if !pending.is_empty() {
         let mut key_map = engine.key_map.lock().unwrap();
         for p in pending {
@@ -136,7 +137,23 @@ pub(crate) fn extract_lines(
                 glyph_id: p.glyph_id,
                 size_bits: p.size_bits,
                 coords: p.coords,
+                last_used: key_epoch(),
             });
+        }
+        // Generational sweep: once the map crosses the sweep threshold,
+        // entries unused for more than the stale window are dropped.
+        // Layouts hold `GlyphKey`s; a still-cached layout rasterizing an
+        // evicted key skips the glyph until the next reshape, which
+        // re-inserts deterministically through `or_insert_with` above —
+        // the epoch clock is the only ref-counting needed.
+        if key_map.len() > KEY_MAP_SWEEP_THRESHOLD {
+            let now = key_epoch();
+            let before = key_map.len();
+            key_map.retain(|_, rk| now.saturating_sub(rk.last_used) <= KEY_MAP_SWEEP_FRAMES);
+            let swept = before - key_map.len();
+            if swept > 0 {
+                tracing::info!(swept, remaining = key_map.len(), "key_map epoch sweep");
+            }
         }
     }
 

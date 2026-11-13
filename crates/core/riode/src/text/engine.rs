@@ -23,7 +23,11 @@ use crate::text::shaper::{TextShapeParams, TextShaper};
 /// Raster identity for one shaped glyph behind an opaque [`GlyphKey`].
 ///
 /// The same key always maps to the same entry: shaping is deterministic for
-/// identical inputs, so the map is insert-only and never invalidated.
+/// identical inputs. Entries are stamped with the frame epoch on insert and
+/// on every raster-path read; past the sweep threshold, entries unused for
+/// longer than [`KEY_MAP_SWEEP_FRAMES`] frames are dropped (see `runs.rs`).
+/// A reshaped layout re-inserts its keys deterministically, so eviction only
+/// costs one re-insert on the next reshape.
 #[cfg(feature = "text-runtime")]
 #[derive(Clone)]
 pub(crate) struct RasterKey {
@@ -35,7 +39,33 @@ pub(crate) struct RasterKey {
     pub size_bits: u32,
     /// Resolved normalized variation coordinates (variable-font instance).
     pub coords: Vec<i16>,
+    /// Frame epoch of the last shaping/raster touch (generational sweep).
+    pub last_used: u64,
 }
+
+/// Frame clock for `key_map` LRU epochs: bumped once per frame by the
+/// runtime (see `TextContext::tick_resize_hint`). A static keeps the map
+/// self-contained — shaping runs on worker threads without a context
+/// handle, and the epoch only needs monotonic order.
+static KEY_EPOCH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Current frame epoch for `RasterKey::last_used` stamping.
+pub(crate) fn key_epoch() -> u64 {
+    KEY_EPOCH.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Advances the frame epoch. Called once per frame.
+pub(crate) fn tick_key_epoch() {
+    KEY_EPOCH.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// `key_map` sweep trigger: past this many distinct glyph entries, the
+/// generational sweep drops entries unused for [`KEY_MAP_SWEEP_FRAMES`].
+pub(crate) const KEY_MAP_SWEEP_THRESHOLD: usize = 16384;
+
+/// `key_map` sweep staleness: entries untouched for more frames than this
+/// are swept once the map crosses [`KEY_MAP_SWEEP_THRESHOLD`].
+pub(crate) const KEY_MAP_SWEEP_FRAMES: u64 = 300;
 
 /// Style inputs that determine family resolution: same key, same faces.
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -49,14 +79,17 @@ pub(crate) struct ResolvedStyleKey {
 #[derive(Clone)]
 pub struct ParleyEngine {
     pub(crate) font_ctx: Arc<Mutex<FontContext>>,
-    /// Glyph raster identity side table. Deliberately insert-only: raster
-    /// paths (`raster_glyph_exact`, `raster_inner`) skip glyphs whose key is
-    /// absent, and shaped-layout cache hits never re-populate, so evicting
-    /// here would drop glyphs until content reshapes. Entries are small
-    /// (~1 Arc + 8 B + coords vec, typically <100 B); cardinality is bounded
-    /// in practice by distinct glyphs ever shaped, watched by the 64k
-    /// tripwire in `glyph_coords`. Do NOT add eviction without also
-    /// invalidating the layouts that reference the keys.
+    /// Glyph raster identity side table. Insert-first: entries are stamped
+    /// with the frame epoch on insert and read, and a generational sweep
+    /// (triggered past [`KEY_MAP_SWEEP_THRESHOLD`] in `runs.rs`) drops
+    /// entries unused for [`KEY_MAP_SWEEP_FRAMES`] frames. Raster paths
+    /// (`raster_glyph_exact`, `raster_inner`) skip glyphs whose key is
+    /// absent, and a reshaped layout re-inserts its keys deterministically
+    /// via `or_insert_with` — eviction costs at most one re-insert per key
+    /// on the next reshape, no separate ref-counting needed. Entries are
+    /// small (~1 Arc + 8 B + coords vec, typically <100 B); the sweep bounds
+    /// cardinality where the 64k tripwire in `glyph_coords` used to only
+    /// watch it.
     pub(crate) key_map: Arc<Mutex<HashMap<GlyphKey, RasterKey>>>,
     pub(crate) blob_families: Arc<Mutex<Vec<Vec<String>>>>,
     /// Registration blob id → blob index: O(1) font resolution without memcmp.
@@ -278,6 +311,8 @@ pub(crate) struct RasterKey {
     pub glyph_id: u32,
     pub size_bits: u32,
     pub coords: Vec<i16>,
+    /// Frame epoch of the last touch (parity with the runtime struct).
+    pub last_used: u64,
 }
 
 /// Stub shaper: font database accepts loads (indexes retained for
