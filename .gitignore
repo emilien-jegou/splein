@@ -48,6 +48,8 @@
 !plugins/riode-glass/src/**/*.hpp
 !plugins/riode-glass/src/**/*.c
 !plugins/riode-glass/src/**/*.h
+!plugins/riode-shader-glue/
+!plugins/riode-shader-glue/**/*
 
 !documentation/
 !documentation/app
