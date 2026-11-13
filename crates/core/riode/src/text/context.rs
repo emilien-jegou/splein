@@ -25,6 +25,11 @@ use swash::scale::{Render, ScaleContext, Source, StrikeWith};
 /// small UI text, while display type above it stays linear and smooth.
 pub const SMALL_TEXT_HINT_CUTOFF_PX: f32 = 16.0;
 
+/// Layout-size ceiling for opt-in CFF stem darkening: darkening calibrates
+/// small physical text only; at or above this size stems are wide enough
+/// that FreeType's curve returns Δw = 0 anyway.
+pub const STEM_DARKENING_MAX_PX: f32 = 14.0;
+
 /// Baseline snap for text Y placement (GPUI's 4x1 policy, default ON; the
 /// `B` debug key A/Bs against the legacy 4x4 mode): glyph pens snap Y to
 /// whole device pixels (X keeps quarter quanta) instead of quantizing both
@@ -774,12 +779,47 @@ impl TextContext {
                 let Some(layer) = outline.get(i) else {
                     continue;
                 };
-                let b = analytic::rasterize_layer(layer.points(), layer.verbs(), tx, ty);
+                let b = analytic::rasterize_layer(layer.points(), layer.verbs(), tx, ty, size_mul);
                 if first {
                     acc = b;
                     first = false;
                 } else {
                     acc = analytic::union_max(acc, b);
+                }
+            }
+            // Opt-in CFF stem darkening (FreeType control points): unhinted
+            // CFF outlines at small physical sizes wash out. Two-pass —
+            // measure the median solid-ink run from the first-pass coverage,
+            // then displace outline points outward by Δw/2 along
+            // orientation-aware vertex normals and re-rasterize. Gate:
+            // caller opt-in AND layout size ≤ [`STEM_DARKENING_MAX_PX`] AND
+            // the face carries a CFF table (native TrueType bytecode hinting
+            // is not detectable through swash, so TrueType faces are never
+            // darkened — hinting already sharpens stems there).
+            if !acc.is_empty()
+                && analytic::stem_darkening_enabled()
+                && f32::from_bits(rk.size_bits) <= STEM_DARKENING_MAX_PX
+                && analytic::is_cff_outline(rk.font.data.data())
+            {
+                let w = analytic::median_ink_run(&acc);
+                let dw = analytic::darken_delta(w);
+                if dw > 0.0 {
+                    acc = analytic::AnalyticBitmap::empty();
+                    let mut first = true;
+                    for i in 0..outline.len() {
+                        let Some(layer) = outline.get(i) else {
+                            continue;
+                        };
+                        let pts =
+                            analytic::offset_outward(layer.points(), layer.verbs(), dw * 0.5);
+                        let b = analytic::rasterize_layer(&pts, layer.verbs(), tx, ty, size_mul);
+                        if first {
+                            acc = b;
+                            first = false;
+                        } else {
+                            acc = analytic::union_max(acc, b);
+                        }
+                    }
                 }
             }
         }
