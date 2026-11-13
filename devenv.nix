@@ -47,7 +47,7 @@ in {
     pkgs.xorg.xcbutil
     pkgs.xorg.xcbutilerrors
     pkgs.xorg.xcbutilwm
-   # tracy
+    tracy
   ];
 
   env.LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [

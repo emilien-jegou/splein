@@ -1,6 +1,7 @@
 *
 
 !.relacher.lock
+!tracy.nix
 !.envrc
 !cliff.toml
 !bacon.toml
