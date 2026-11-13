@@ -25,14 +25,18 @@ use swash::scale::{Render, ScaleContext, Source, StrikeWith};
 /// small UI text, while display type above it stays linear and smooth.
 pub const SMALL_TEXT_HINT_CUTOFF_PX: f32 = 16.0;
 
-/// Baseline snap for text Y placement (debug A/B, `B` key): when set,
-/// glyph pens snap Y to whole device pixels (X keeps quarter quanta) —
-/// GPUI's 4x1 policy — instead of quantizing both axes to quarters.
-/// Read by the bitmap engines on every emit; cache keys on both sides
-/// include the flag, so toggling never replays stale verts. Vello
-/// engines ignore it (exact positions are their reference behavior).
+/// Baseline snap for text Y placement (GPUI's 4x1 policy, default ON; the
+/// `B` debug key A/Bs against the legacy 4x4 mode): glyph pens snap Y to
+/// whole device pixels (X keeps quarter quanta) instead of quantizing both
+/// axes to quarters. Rasterization follows: with the snap armed, the exact
+/// and hinted raster entry points lock `qy = 0`, so every glyph occupies
+/// only the 4 X phases — a 75% cut in atlas slots and bitmap-cache churn
+/// with no perceptible quality loss on horizontal text. Read by the bitmap
+/// engines on every emit; cache keys on both sides include the flag, so
+/// toggling never replays stale verts. Vello engines ignore it (exact
+/// positions are their reference behavior).
 pub static BASELINE_SNAP_Y: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
+    std::sync::atomic::AtomicBool::new(true); // Default ON
 
 /// Whether baseline Y-snap is currently armed (see [`BASELINE_SNAP_Y`]).
 pub fn baseline_snap_y() -> bool {
@@ -40,7 +44,8 @@ pub fn baseline_snap_y() -> bool {
 }
 
 /// Flips baseline Y-snap, returning the new state. Called by the `B`
-/// debug key; logs so the terminal shows which mode rendered.
+/// debug key (now A/Bs against the default 4x1 policy); logs so the
+/// terminal shows which mode rendered.
 pub fn toggle_baseline_snap_y() -> bool {
     let next = !baseline_snap_y();
     BASELINE_SNAP_Y.store(next, std::sync::atomic::Ordering::Relaxed);
@@ -445,8 +450,9 @@ impl TextContext {
         qy: u8,
         f: impl FnOnce(Option<GlyphBitmap>) -> R,
     ) -> R {
+        let (qx, qy) = Self::normalize_quanta(qx, qy);
         let cache_key = Self::exact_cache_key(key, qx, qy, None);
-        self.raster_exact_inner(cache_key, key, qx & 3, qy & (GLYPH_QUANTA_Y - 1), 1.0, f)
+        self.raster_exact_inner(cache_key, key, qx, qy, 1.0, f)
     }
 
     /// Scaled sibling of [`Self::raster_glyph_exact`] for device-pixel
@@ -469,8 +475,9 @@ impl TextContext {
         if sq == 1.0 {
             return self.raster_glyph_exact(key, qx, qy, f);
         }
+        let (qx, qy) = Self::normalize_quanta(qx, qy);
         let cache_key = Self::exact_cache_key(key, qx, qy, Some(sq));
-        self.raster_exact_inner(cache_key, key, qx & 3, qy & (GLYPH_QUANTA_Y - 1), sq, f)
+        self.raster_exact_inner(cache_key, key, qx, qy, sq, f)
     }
 
     /// Rasterizes a glyph with the hinter engaged at a quarter-pixel
@@ -506,7 +513,7 @@ impl TextContext {
         scale: f32,
         f: impl FnOnce(Option<GlyphBitmap>) -> R,
     ) -> R {
-        let (qx, qy) = (qx & 3, qy & (GLYPH_QUANTA_Y - 1));
+        let (qx, qy) = Self::normalize_quanta(qx, qy);
         let sq = quantize_raster_scale(scale);
         let sq_opt = (sq != 1.0).then_some(sq);
         let cache_key = Self::hinted_cache_key(key, qx, qy, sq_opt);
@@ -600,6 +607,21 @@ impl TextContext {
                 f,
             ),
         }
+    }
+
+    /// Normalizes caller quanta: X always lands on quarters; Y bins
+    /// collapse to 0 while the baseline snap is armed (the 4x1 policy —
+    /// see [`BASELINE_SNAP_Y`]) and hold `GLYPH_QUANTA_Y` bins otherwise.
+    /// Locking the Y quantum here means glyphs allocate only the 4 X
+    /// phases — 4 atlas slots instead of 16 — under the default policy.
+    #[cfg(feature = "text-runtime")]
+    fn normalize_quanta(qx: u8, qy: u8) -> (u8, u8) {
+        let qy = if baseline_snap_y() {
+            0
+        } else {
+            qy & (GLYPH_QUANTA_Y - 1)
+        };
+        (qx & 3, qy)
     }
 
     /// Cache key for hinted-variant slots: (key, hinted tag, qx, qy[, scale]).

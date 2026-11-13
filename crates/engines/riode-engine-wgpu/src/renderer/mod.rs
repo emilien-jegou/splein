@@ -195,6 +195,10 @@ impl WgpuRenderer {
             }
         }
 
+        // Resolve the frame's batched atlas uploads before anything submits:
+        // every dirty glyph cell reaches the GPU in one write_texture.
+        self.atlas.flush(&self.gpu.queue);
+
         self.upload_vertex_buffers();
 
         let mut enc = self.gpu.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {

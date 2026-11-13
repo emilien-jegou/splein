@@ -17,7 +17,7 @@ pub struct AtlasEntry {
     pub h: u32,
 }
 
-const ATLAS_SIZE: u32 = 1024;
+const ATLAS_SIZE: u32 = 2048;
 /// Transparent gutter around every cell so linear taps at borders read
 /// replicated edge texels instead of neighbor glyphs.
 const GUTTER: u32 = 2;
@@ -42,20 +42,43 @@ struct Cursor {
 /// Scaled coverage lives in distinct slots so 1x and 2x never share texels.
 pub type AtlasSlot = (u64, u8, u16);
 
+/// One dirty atlas cell waiting for the frame's single GPU upload.
+///
+/// `x`/`y` is the cell origin in the atlas (gutter included); `data` is
+/// the guttered coverage in `cw × ch` layout, built once at insert.
+struct PendingUpload {
+    x: u32,
+    y: u32,
+    cw: u32,
+    ch: u32,
+    data: Vec<u8>,
+}
+
 /// Shelf-packed coverage atlas over R8Unorm (1 channel, gpui-style).
 ///
 /// Stores the exact alpha coverage bitmap from the analytic rasterizer.
 /// No distance transform -- the raw per-pixel coverage (0-255) is stored directly.
 /// Shader simply multiplies vertex alpha by the sampled coverage value.
 ///
+/// Uploads are batched: `insert` only records the cell (position + retained
+/// coverage); every dirty cell accumulated during the frame reaches the GPU
+/// in ONE `write_texture` when the renderer calls `flush` before the render
+/// pass. No per-glyph driver submissions, no per-glyph padded buffers beyond
+/// the retained data the repack already needs.
+///
 /// Eviction is repack-based LRU: on overflow, cells unused in the last
-/// STALE_FRAMES are dropped and survivors re-uploaded into a fresh shelf.
+/// STALE_FRAMES are dropped and survivors re-uploaded into a fresh shelf —
+/// also as a single `write_texture` over the repacked bounding box.
 /// Steady-state UI glyph sets fit without ever repacking.
 pub struct GlyphAtlas {
     pub texture: wgpu::Texture,
     pub view: wgpu::TextureView,
     map: FxHashMap<AtlasSlot, Cell>,
     cursor: Cursor,
+    /// Cells recorded this frame, waiting for [`GlyphAtlas::flush`].
+    pending: Vec<PendingUpload>,
+    /// Scratch staging image, reused across flushes/repacks.
+    staging: Vec<u8>,
     frame: u64,
     gen: u64,
 }
@@ -85,6 +108,8 @@ impl GlyphAtlas {
                 y: 0,
                 row_h: 0,
             },
+            pending: Vec::new(),
+            staging: Vec::new(),
             frame: 0,
             gen: 0,
         }
@@ -131,15 +156,9 @@ impl GlyphAtlas {
         Some((pos.0, pos.1, cur))
     }
 
-    fn upload_cell(
-        queue: &wgpu::Queue,
-        texture: &wgpu::Texture,
-        x: u32,
-        y: u32,
-        w: u32,
-        h: u32,
-        data: &[u8],
-    ) {
+    /// Pads raw `w × h` coverage into a guttered `(w+2G) × (h+2G)` cell,
+    /// replicating edge texels outward (the old per-cell `upload_cell` body).
+    fn gutter(w: u32, h: u32, data: &[u8]) -> Vec<u8> {
         // Coverage is 1 byte per pixel (R8Unorm)
         let (cw, ch) = ((w + 2 * GUTTER) as usize, (h + 2 * GUTTER) as usize);
         let mut padded = vec![0u8; cw * ch];
@@ -154,25 +173,64 @@ impl GlyphAtlas {
                 }
             }
         }
+        padded
+    }
+
+    /// Blits every upload into one CPU staging image and issues exactly ONE
+    /// `queue.write_texture` covering the batch's bounding box.
+    fn upload_batch(&mut self, queue: &wgpu::Queue, uploads: &[PendingUpload]) {
+        if uploads.is_empty() {
+            return;
+        }
+        let (mut x0, mut y0) = (u32::MAX, u32::MAX);
+        let (mut x1, mut y1) = (0u32, 0u32);
+        for u in uploads {
+            x0 = x0.min(u.x);
+            y0 = y0.min(u.y);
+            x1 = x1.max(u.x + u.cw);
+            y1 = y1.max(u.y + u.ch);
+        }
+        let (bw, bh) = (x1 - x0, y1 - y0);
+        self.staging.clear();
+        self.staging.resize((bw * bh) as usize, 0);
+        for u in uploads {
+            for row in 0..u.ch {
+                let src = (row * u.cw) as usize;
+                let dst = ((u.y - y0 + row) as usize) * bw as usize + (u.x - x0) as usize;
+                self.staging[dst..dst + u.cw as usize]
+                    .copy_from_slice(&u.data[src..src + u.cw as usize]);
+            }
+        }
         queue.write_texture(
             wgpu::ImageCopyTexture {
-                texture,
+                texture: &self.texture,
                 mip_level: 0,
-                origin: wgpu::Origin3d { x, y, z: 0 },
+                origin: wgpu::Origin3d { x: x0, y: y0, z: 0 },
                 aspect: wgpu::TextureAspect::All,
             },
-            &padded,
+            &self.staging,
             wgpu::ImageDataLayout {
                 offset: 0,
-                bytes_per_row: Some(cw as u32),
-                rows_per_image: Some(ch as u32),
+                bytes_per_row: Some(bw),
+                rows_per_image: Some(bh),
             },
             wgpu::Extent3d {
-                width: cw as u32,
-                height: ch as u32,
+                width: bw,
+                height: bh,
                 depth_or_array_layers: 1,
             },
         );
+    }
+
+    /// Uploads everything accumulated this frame: one driver submission for
+    /// the whole glyph batch. Called by the renderer right before the render
+    /// pass; also called internally before a repack (see [`Self::repack`]).
+    pub fn flush(&mut self, queue: &wgpu::Queue) {
+        if self.pending.is_empty() {
+            return;
+        }
+        let uploads = std::mem::take(&mut self.pending);
+        self.upload_batch(queue, &uploads);
     }
 
     fn entry_for(x: u32, y: u32, w: u32, h: u32) -> AtlasEntry {
@@ -188,8 +246,13 @@ impl GlyphAtlas {
         }
     }
 
-    /// Drops stale cells and re-uploads survivors into a fresh shelf.
+    /// Drops stale cells and re-uploads survivors into a fresh shelf, batched
+    /// into a single `write_texture` over the repacked bounding box.
     fn repack(&mut self, queue: &wgpu::Queue) {
+        // In-flight batched uploads first: their positions are relative to
+        // the current shelf cursor and must reach the GPU before the repack
+        // re-places every surviving cell.
+        self.flush(queue);
         let now = self.frame;
         let live: Vec<(AtlasSlot, Vec<u8>, u32, u32)> = self
             .map
@@ -204,10 +267,17 @@ impl GlyphAtlas {
             y: 0,
             row_h: 0,
         };
+        let mut placed: Vec<PendingUpload> = Vec::with_capacity(live.len());
         for (k, data, w, h) in live {
             if let Some((x, y, cur)) = self.probe(w, h) {
-                Self::upload_cell(queue, &self.texture, x, y, w, h, &data);
                 self.cursor = cur;
+                placed.push(PendingUpload {
+                    x,
+                    y,
+                    cw: w + 2 * GUTTER,
+                    ch: h + 2 * GUTTER,
+                    data: Self::gutter(w, h, &data),
+                });
                 self.map.insert(
                     k,
                     Cell {
@@ -218,16 +288,15 @@ impl GlyphAtlas {
                 );
             }
         }
-        tracing::info!(
-            dropped,
-            live = self.map.len(),
-            "TEMP atlas repack (remove after fix)"
-        );
+        self.upload_batch(queue, &placed);
+        tracing::debug!(dropped, live = self.map.len(), "atlas repack");
         self.gen += 1;
     }
 
-    /// Uploads a coverage bitmap, returning its atlas entry.
-    /// Returns None for empty bitmaps or glyphs larger than the atlas.
+    /// Records a coverage bitmap into the atlas, returning its atlas entry.
+    /// The GPU upload is deferred: the cell joins the frame's pending batch
+    /// (see [`GlyphAtlas::flush`]). Returns None for empty bitmaps or glyphs
+    /// larger than the atlas.
     /// `scale_q16` is the quantized raster scale (distinct slots per scale).
     pub fn insert(
         &mut self,
@@ -252,9 +321,15 @@ impl GlyphAtlas {
                 self.probe(w, h)?
             }
         };
-        Self::upload_cell(queue, &self.texture, x, y, w, h, data);
         self.cursor = cur;
         let entry = Self::entry_for(x, y, w, h);
+        self.pending.push(PendingUpload {
+            x,
+            y,
+            cw: w + 2 * GUTTER,
+            ch: h + 2 * GUTTER,
+            data: Self::gutter(w, h, data),
+        });
         self.map.insert(
             (key.0, phase, scale_q16),
             Cell {
