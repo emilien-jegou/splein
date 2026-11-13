@@ -1,7 +1,7 @@
 // Batched solid rects: CPU-transformed screen-space verts + per-vertex color.
-// Ortho uniform maps pixels -> NDC. Vertex colors arrive sRGB-encoded and
-// composite as-is: the plain Unorm persistent target blends in encoded
-// space (vello-like, no transfer handling anywhere).
+// Ortho uniform maps pixels -> NDC. Vertex colors arrive LINEAR (converted
+// from the sRGB-encoded author color once at the CPU boundary) and blend in
+// linear light: the sRGB-tagged persistent target re-encodes on store.
 struct Ortho {
     w: f32,
     h: f32,

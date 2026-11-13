@@ -34,6 +34,16 @@ fn to_wgpu(c: Color) -> wgpu::Color {
     }
 }
 
+/// Clear color for the sRGB-tagged persistent target. wgpu passes clear
+/// values raw to the backend, and Vulkan treats them as LINEAR on sRGB
+/// formats ("clear value being treated as linear if the image is sRGB") —
+/// so the author color converts here, once, like every other pipeline
+/// input. Rendered damage repaints agree (BaseQuads carry linear vertex
+/// colors).
+fn to_wgpu_clear(c: Color) -> wgpu::Color {
+    to_wgpu(c.to_linear())
+}
+
 pub struct WgpuRenderer {
     pub gpu: WgpuContext,
     pub pipes: Pipelines,
@@ -55,7 +65,7 @@ pub struct WgpuRenderer {
 
 impl WgpuRenderer {
     pub fn new(gpu: WgpuContext, text_ctx: TextContext) -> Self {
-        let pipes = create_pipelines(&gpu.device, wgpu::TextureFormat::Rgba8Unorm, gpu.config.format);
+        let pipes = create_pipelines(&gpu.device, wgpu::TextureFormat::Rgba8UnormSrgb, gpu.config.format);
         let buffers = StagingBuffers::new(&gpu.device, &pipes.ortho_layout, gpu.config.width, gpu.config.height);
         let atlas = GlyphAtlas::new(&gpu.device, &text_ctx);
 
@@ -205,7 +215,7 @@ impl WgpuRenderer {
             label: Some("riode-frame"),
         });
         let load_op = if clear {
-            wgpu::LoadOp::Clear(to_wgpu(base_color))
+            wgpu::LoadOp::Clear(to_wgpu_clear(base_color))
         } else {
             wgpu::LoadOp::Load
         };

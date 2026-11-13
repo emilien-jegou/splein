@@ -1,20 +1,13 @@
-// Glyph coverage sampling: plain alpha coverage from the R8 atlas,
-// corrected for display, then * vertex alpha.
+// Glyph coverage sampling: pure linear-light source-over.
 //
-// Stores the exact coverage bitmap from the analytic rasterizer.
-// No MSDF decoding needed.
-//
-// Display correction is the grayscale contrast + gamma chain ported
-// from GPUI's shaders.wgsl (itself adapted from microsoft/terminal
-// dwrite.hlsl, MIT), applied at ALL sizes: brightness-dependent
-// contrast boost plus a quadratic alpha correction driven by the
-// baked gamma-1.8 ratio row. There is deliberately no font-size
-// threshold — the chain is coverage-proportional, so dense stems pass
-// through nearly unchanged while faint fringes lift.
-// Scalar twin of the correction lives in riode's text::gamma
-// (CPU-side alpha tables build their per-run table from it); this WGSL is a
-// transliteration of that module. Always selected — there is no passthrough
-// shader anymore.
+// Stores the exact geometric area coverage from the analytic rasterizer
+// (R8 atlas, unmodified coverage — no contrast curves, no gamma tables).
+// The vertex color arrives already converted to linear RGB at the CPU
+// boundary (command.rs); the fragment computes straight alpha
+// (rgb unchanged, alpha = vertex alpha * coverage) and the sRGB-tagged
+// render target performs the exact linear-to-sRGB transfer on store.
+// Blending factors (SrcAlpha / OneMinusSrcAlpha) match the straight-alpha
+// output; every blend step executes in linear light.
 struct Ortho {
     w: f32,
     h: f32,
@@ -48,56 +41,8 @@ fn vs_main(in: Vin) -> Vout {
     return out;
 }
 
-// Grayscale contrast + gamma correction, verbatim port of GPUI's
-// shaders.wgsl chain (itself adapted from microsoft/terminal
-// dwrite.hlsl, MIT). Always applied.
-//
-// Defaults match GPUI: gamma 1.8 ratio row baked below,
-// grayscale enhanced contrast 1.0 (override via uniform later).
-const GAMMA_RATIOS = vec4<f32>(0.14805442, -0.89459451, 1.47590801, -0.32466824);
-const GRAYSCALE_ENHANCED_CONTRAST = 1.0;
-
-fn color_brightness(color: vec3<f32>) -> f32 {
-    return dot(color, vec3<f32>(0.30, 0.59, 0.11));
-}
-
-fn light_on_dark_contrast(enhanced_contrast: f32, color: vec3<f32>) -> f32 {
-    let brightness = color_brightness(color);
-    let multiplier = saturate(4.0 * (0.75 - brightness));
-    return enhanced_contrast * multiplier;
-}
-
-fn enhance_contrast(alpha: f32, k: f32) -> f32 {
-    return alpha * (k + 1.0) / (alpha * k + 1.0);
-}
-
-fn apply_alpha_correction(a: f32, b: f32, g: vec4<f32>) -> f32 {
-    let brightness_adjustment = g.x * b + g.y;
-    let correction = brightness_adjustment * a + (g.z * b + g.w);
-    return a + a * (1.0 - a) * correction;
-}
-
-fn apply_contrast_and_gamma_correction(
-    sample: f32,
-    color: vec3<f32>,
-    enhanced_contrast_factor: f32,
-    gamma_ratios: vec4<f32>,
-) -> f32 {
-    let enhanced_contrast = light_on_dark_contrast(enhanced_contrast_factor, color);
-    let brightness = color_brightness(color);
-    let contrasted = enhance_contrast(sample, enhanced_contrast);
-    return apply_alpha_correction(contrasted, brightness, gamma_ratios);
-}
-
 @fragment
 fn fs_main(in: Vout) -> @location(0) vec4<f32> {
-    let sample = textureSample(atlas, atlas_sampler, in.uv).r;
-    let cov = apply_contrast_and_gamma_correction(
-        sample,
-        in.color.rgb,
-        GRAYSCALE_ENHANCED_CONTRAST,
-        GAMMA_RATIOS,
-    );
-    // Encoded-space composite on the plain Unorm target (vello-like).
-    return vec4<f32>(in.color.rgb, in.color.a * cov);
+    let coverage = textureSample(atlas, atlas_sampler, in.uv).r;
+    return vec4<f32>(in.color.rgb, in.color.a * coverage);
 }

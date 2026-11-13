@@ -23,6 +23,23 @@ impl Color {
         Self { r, g, b, a }
     }
 
+    /// Converts the sRGB-encoded channels to linear RGB, alpha untouched.
+    ///
+    /// Authors specify colors in sRGB-encoded space (hex, `rgb()`, design
+    /// tokens); the linear-light pipeline blends in linear space, so every
+    /// color handed to a shader must cross this boundary once, at the
+    /// engine boundary — never inside a shader (double-decode) and never on
+    /// the GPU (the vertex path has no reason to pay per-fragment for what
+    /// the CPU can fold into the vertex).
+    pub fn to_linear(self) -> Self {
+        Self {
+            r: srgb_to_linear(self.r),
+            g: srgb_to_linear(self.g),
+            b: srgb_to_linear(self.b),
+            a: self.a,
+        }
+    }
+
     pub const fn rgb(r: f32, g: f32, b: f32) -> Self {
         Self { r, g, b, a: 1.0 }
     }
@@ -143,5 +160,15 @@ impl From<&str> for Color {
 impl From<String> for Color {
     fn from(s: String) -> Self {
         Self::from(s.as_str())
+    }
+}
+
+/// One sRGB-encoded channel → linear (piecewise IEC 61966-2-1, the exact
+/// transfer the sRGB texture formats encode/decode in hardware).
+pub fn srgb_to_linear(c: f32) -> f32 {
+    if c <= 0.04045 {
+        c / 12.92
+    } else {
+        ((c + 0.055) / 1.055).powf(2.4)
     }
 }

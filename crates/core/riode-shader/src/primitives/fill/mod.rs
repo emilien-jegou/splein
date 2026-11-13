@@ -52,7 +52,11 @@ impl Stage for Fill {
     }
 
     fn write_uniforms(&self, _geo: &Geo, buffer: &mut [u8]) {
-        let c = [self.color.r, self.color.g, self.color.b, self.color.a];
+        // Linear-light contract: shader uniforms carry linear RGB (the
+        // sRGB-encoded author color converts once, here, at the CPU
+        // boundary); the sRGB-tagged render target re-encodes on store.
+        let lin = self.color.to_linear();
+        let c = [lin.r, lin.g, lin.b, lin.a];
         for (i, val) in c.iter().enumerate() {
             buffer[i * 4..(i + 1) * 4].copy_from_slice(&val.to_ne_bytes());
         }

@@ -182,7 +182,8 @@ pub fn create_pipelines(
     target_format: wgpu::TextureFormat,
     swapchain_format: wgpu::TextureFormat,
 ) -> Pipelines {
-    // Rect pipeline (renders into Rgba8Unorm persistent target).
+    // Rect pipeline (renders into the sRGB-tagged persistent target;
+    // vertex colors arrive linear).
     let rect_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("riode-wgpu-rect"),
         source: wgpu::ShaderSource::Wgsl(include_str!("shaders/rect.wgsl").into()),
@@ -280,8 +281,8 @@ pub fn create_pipelines(
             entry_point: "fs_main",
             compilation_options: wgpu::PipelineCompilationOptions {
                 constants: &std::collections::HashMap::from([(
-                    "SRGB_DECODE".to_string(),
-                    if swapchain_format.is_srgb() { 1.0 } else { 0.0 },
+                    "SRGB_ENCODE".to_string(),
+                    if swapchain_format.is_srgb() { 0.0 } else { 1.0 },
                 )]),
                 ..Default::default()
             },
@@ -303,10 +304,9 @@ pub fn create_pipelines(
 
     // Glyph pipeline (coverage atlas -> persistent target).
     //
-    // Display correction is always on: the dwrite/GPUI contrast+gamma chain
-    // (brightness-dependent contrast boost + quadratic gamma-1.8 alpha
-    // correction) is the only glyph shader. The CPU twin (text::gamma)
-    // applies the same chain for CPU-side alpha tables.
+    // Linear-light source-over: the fragment outputs straight linear RGB +
+    // alpha*coverage (see glyph.wgsl); the sRGB-tagged target encodes on
+    // store. Vertex colors arrive linearized at the CPU boundary.
     let glyph_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("riode-wgpu-glyph"),
         source: wgpu::ShaderSource::Wgsl(include_str!("shaders/glyph.wgsl").into()),
@@ -354,8 +354,9 @@ pub fn create_pipelines(
         multiview: None,
     });
 
-    // Image pipeline: premultiplied sRGB bytes composited as-is onto the
-    // plain Unorm target, premultiplied alpha, per-image bind group on
+    // Image pipeline: premultiplied LINEAR bytes (ImageSource premultiplied
+    // sRGB converted once at upload, see image.rs) composited as-is onto the
+    // linear persistent target, premultiplied alpha, per-image bind group on
     // group 1 (same layout shape as the glyph atlas).
 
     let image_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -393,7 +394,7 @@ pub fn create_pipelines(
     });
 
     // Composite: layer source over the parent target (both render into
-    // the Rgba8Unorm scene targets).
+    // the sRGB-tagged scene targets).
     let composite_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("riode-wgpu-composite"),
         source: wgpu::ShaderSource::Wgsl(include_str!("shaders/composite.wgsl").into()),

@@ -66,6 +66,7 @@ struct LayerStackEntry {
 }
 
 /// Emission context: batched verts + ordered ops.
+use rustc_hash::FxHashMap;
 pub struct Batch {
     pub clip: ClipStack,
     pub rect_verts: Vec<RectVertex>,
@@ -76,6 +77,9 @@ pub struct Batch {
     scale: f32,
     barrier: bool,
     layer_stack: Vec<LayerStackEntry>,
+    /// Screen-space Y tracking per text run: (last_screen_y, last_frame)
+    text_motion: FxHashMap<u64, (f32, u64)>,
+    frame: u64,
 }
 
 impl Batch {
@@ -90,6 +94,8 @@ impl Batch {
             scale: 1.0,
             barrier: false,
             layer_stack: Vec::new(),
+            text_motion: FxHashMap::default(),
+            frame: 0,
         }
     }
 
@@ -102,6 +108,11 @@ impl Batch {
     }
 
     pub fn reset(&mut self) {
+        self.frame += 1;
+        let current_frame = self.frame;
+        // Prune offscreen/dropped text runs older than 2 frames
+        self.text_motion.retain(|_, (_, f)| current_frame.saturating_sub(*f) <= 2);
+
         self.clip.reset();
         self.rect_verts.clear();
         self.glyph_verts.clear();
@@ -230,7 +241,8 @@ impl Batch {
         scale: f32,
         base: Color,
     ) {
-        let c = [base.r, base.g, base.b, base.a];
+        let lin = base.to_linear();
+        let c = [lin.r, lin.g, lin.b, lin.a];
         for r in damage.rects() {
             let (x0, y0) = (r.x * scale, r.y * scale);
             let (x1, y1) = ((r.x + r.width) * scale, (r.y + r.height) * scale);
@@ -263,7 +275,8 @@ impl Batch {
         if x1 <= x0 || y1 <= y0 {
             return;
         }
-        let c = [base.r, base.g, base.b, base.a];
+        let lin = base.to_linear();
+        let c = [lin.r, lin.g, lin.b, lin.a];
         for (px, py) in [(x0, y0), (x1, y0), (x0, y1), (x1, y0), (x1, y1), (x0, y1)] {
             self.rect_verts.push(RectVertex {
                 pos: [px, py],
@@ -295,13 +308,32 @@ impl Batch {
         t: Transform,
         op: f32,
     ) {
-        let a = (color.a * op).clamp(0.0, 1.0);
+        let lin = color.to_linear();
+        let a = (lin.a * op).clamp(0.0, 1.0);
         if a <= 0.0 {
             return;
         }
-        let c = [color.r, color.g, color.b, a];
+        let c = [lin.r, lin.g, lin.b, a];
         let q = quantize_raster_scale(self.scale);
         let sq16 = (q * 16.0).round() as u16;
+
+        // Screen-space motion inference:
+        // Hash the run identity (layout pointer + local origin)
+        let run_id = (Arc::as_ptr(layout) as u64)
+            ^ ((origin.x.to_bits() as u64) << 32)
+            ^ (origin.y.to_bits() as u64);
+
+        let screen_origin_y = t.transform_point(*origin).y;
+        let current_frame = self.frame;
+
+        let is_moving_y = match self.text_motion.get(&run_id) {
+            Some(&(last_y, last_frame)) if last_frame + 1 == current_frame => {
+                (screen_origin_y - last_y).abs() > 0.001
+            }
+            _ => false, // Stationary debut on first sight
+        };
+        self.text_motion.insert(run_id, (screen_origin_y, current_frame));
+
         for line in layout.lines.iter() {
             for g in line.glyphs.iter() {
                 let pen_x = origin.x + g.point.x + line.align_offset;
@@ -309,13 +341,16 @@ impl Batch {
                 let placed = t.transform_point(Point::new(pen_x, pen_y));
                 let (bx, qx) = quantize_quarter(placed.x);
                 let fx = placed.x - bx as f32;
-                let (qy, fy) = if riode::text::baseline_snap_y() {
-                    let by = placed.y.round() as i32;
-                    (0u8, placed.y - by as f32)
-                } else {
+
+                // Moving text uses 4x4 (Y quarters); stationary text uses 4x1 (Y snapped to 0)
+                let (qy, fy) = if is_moving_y {
                     let (by, qy) = quantize_y(placed.y);
                     (qy, placed.y - by as f32)
+                } else {
+                    let by = placed.y.round() as i32;
+                    (0u8, placed.y - by as f32)
                 };
+
                 let phase = (qx as u8) | ((qy as u8) << 2);
                 let rastered =
                     text_ctx.raster_glyph_exact_scaled(g.cache_key, qx, qy, self.scale, |bmp| {
@@ -351,14 +386,14 @@ impl Batch {
                     (lx0, ly0 + bh, u0, v1),
                     (lx0 + bw, ly0 + bh, u1, v1),
                 ];
-                let q: [([f32; 2], [f32; 2]); 4] = corners.map(|(x, y, u, v)| {
+                let q_pts: [([f32; 2], [f32; 2]); 4] = corners.map(|(x, y, u, v)| {
                     let pt = t.transform_point(Point::new(x, y));
                     ([pt.x, pt.y], [u, v])
                 });
                 for i in [0usize, 1, 2, 1, 3, 2] {
                     self.glyph_verts.push(GlyphVertex {
-                        pos: q[i].0,
-                        uv: q[i].1,
+                        pos: q_pts[i].0,
+                        uv: q_pts[i].1,
                         color: c,
                     });
                 }

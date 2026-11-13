@@ -1,11 +1,14 @@
-// Image sampling: premultiplied sRGB-encoded bytes (ImageSource convention,
-// shared with tiny-skia/vello) composited as-is on the plain Unorm target
-// (vello-like, no transfer handling). Full-quad UVs let the hardware pick
-// the mip level from screen-space derivatives (the CPU uploaded a full
-// box-filtered mip chain), so minified images resolve smoothly instead of
-// shimmering. Pipeline blends PREMULTIPLIED_ALPHA; vertex color is a
-// straight-alpha tint: rgb modulates the premultiplied sample, alpha
-// multiplies.
+// Image sampling: premultiplied LINEAR bytes — ImageSource premultiplied
+// sRGB is converted once at upload (image.rs: sRGB decode per channel,
+// then premultiply), so the plain Unorm texture holds linear premultiplied
+// values with no format-decode ambiguity (decode(rgb*a) != decode(rgb)*a
+// cannot arise: there is no decode). Composited as-is in linear light via
+// PREMULTIPLIED blending onto the linear persistent target. Full-quad UVs
+// let the hardware pick the mip level from screen-space derivatives (the
+// CPU uploaded a full box-filtered premultiplied-linear mip chain), so
+// minified images resolve smoothly instead of shimmering. Vertex color is
+// a straight-alpha tint slot: rgb modulates the premultiplied sample,
+// alpha multiplies.
 struct Ortho {
     w: f32,
     h: f32,
@@ -46,4 +49,3 @@ fn fs_main(in: Vout) -> @location(0) vec4<f32> {
     // scales both color and alpha to keep the result premultiplied.
     return vec4<f32>(s.rgb * in.color.rgb, s.a * in.color.a);
 }
-

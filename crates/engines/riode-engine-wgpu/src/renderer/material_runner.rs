@@ -37,7 +37,7 @@ impl<'a> MaterialRunner<'a> {
             &self.buffers.material_uniform_buf,
             &composed.wgsl,
             composed.total_uniform_size > 0,
-            wgpu::TextureFormat::Rgba8Unorm,
+            wgpu::TextureFormat::Rgba8UnormSrgb,
         );
 
         let geo_offset = self.buffers.alloc_geo_offset();
@@ -114,7 +114,7 @@ impl<'a> MaterialRunner<'a> {
             &self.buffers.material_uniform_buf,
             &composed.wgsl,
             composed.total_uniform_size > 0,
-            wgpu::TextureFormat::Rgba8Unorm,
+            wgpu::TextureFormat::Rgba8UnormSrgb,
         );
 
         let geo_offset = self.buffers.alloc_geo_offset();
@@ -191,7 +191,7 @@ impl<'a> MaterialRunner<'a> {
             &self.buffers.material_geo_buf,
             &composed.wgsl,
             composed.total_uniform_size > 0,
-            wgpu::TextureFormat::Rgba8Unorm,
+            wgpu::TextureFormat::Rgba8UnormSrgb,
         );
 
         let geo_offset = self.buffers.alloc_geo_offset();

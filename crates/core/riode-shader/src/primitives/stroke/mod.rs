@@ -51,8 +51,9 @@ impl Stage for Stroke {
     }
 
     fn write_uniforms(&self, _geo: &Geo, buffer: &mut [u8]) {
-        // [0..16]: color (RGBA f32)
-        let c = [self.color.r, self.color.g, self.color.b, self.color.a];
+        // [0..16]: color (RGBA f32) — linear RGB (see fill::write_uniforms).
+        let lin = self.color.to_linear();
+        let c = [lin.r, lin.g, lin.b, lin.a];
         for (i, val) in c.iter().enumerate() {
             buffer[i * 4..(i + 1) * 4].copy_from_slice(&val.to_ne_bytes());
         }

@@ -120,14 +120,13 @@ fn wrap_width(constraints: Constraints) -> Option<f32> {
     }
 }
 
-/// Sanitizes tracking into a finite interval, falling back to the Apple
-/// SF tracking curve for the size when the caller left tracking unset.
+/// Sanitizes tracking into a finite interval.
 #[cfg(feature = "text-runtime")]
-fn safe_spacing(spacing: f32, font_size: f32) -> f32 {
+fn safe_spacing(spacing: f32) -> f32 {
     if spacing.is_finite() && spacing > 0.0 {
         spacing
     } else {
-        default_tracking(font_size)
+        0.0
     }
 }
 
@@ -175,7 +174,7 @@ fn shape_at_width(
     } else {
         safe_size * 1.2
     };
-    let spacing = safe_spacing(params.letter_spacing, safe_size);
+    let spacing = safe_spacing(params.letter_spacing);
 
     let style = match params.style {
         FontStyle::Normal => ParleyStyle::Normal,

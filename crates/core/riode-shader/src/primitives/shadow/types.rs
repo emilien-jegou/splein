@@ -333,7 +333,9 @@ impl Stage for Shadow {
     }
 
     fn write_uniforms(&self, _geo: &Geo, buffer: &mut [u8]) {
-        let c = [self.color.r, self.color.g, self.color.b, self.color.a];
+        // Linear RGB (see fill::write_uniforms for the boundary contract).
+        let lin = self.color.to_linear();
+        let c = [lin.r, lin.g, lin.b, lin.a];
         for (i, val) in c.iter().enumerate() {
             buffer[i * 4..(i + 1) * 4].copy_from_slice(&val.to_ne_bytes());
         }

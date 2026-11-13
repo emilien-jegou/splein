@@ -41,7 +41,7 @@ pub const STEM_DARKENING_MAX_PX: f32 = 14.0;
 /// toggling never replays stale verts. Vello engines ignore it (exact
 /// positions are their reference behavior).
 pub static BASELINE_SNAP_Y: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(true); // Default ON
+    std::sync::atomic::AtomicBool::new(false);
 
 /// Whether baseline Y-snap is currently armed (see [`BASELINE_SNAP_Y`]).
 pub fn baseline_snap_y() -> bool {
@@ -631,12 +631,7 @@ impl TextContext {
     /// phases — 4 atlas slots instead of 16 — under the default policy.
     #[cfg(feature = "text-runtime")]
     fn normalize_quanta(qx: u8, qy: u8) -> (u8, u8) {
-        let qy = if baseline_snap_y() {
-            0
-        } else {
-            qy & (GLYPH_QUANTA_Y - 1)
-        };
-        (qx & 3, qy)
+        (qx & 3, qy & (GLYPH_QUANTA_Y - 1))
     }
 
     /// Cache key for hinted-variant slots: (key, hinted tag, qx, qy[, scale]).

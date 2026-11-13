@@ -1,15 +1,17 @@
-// Fullscreen blit: copies the persistent Unorm scene target onto the swapchain.
+// Fullscreen blit: copies the persistent scene target onto the swapchain.
 // Raw copy: shader vec4(r,g,b,a) addresses logical channels and the surface
 // format describes memory layout, so no manual R/B swizzle is needed (or
-// correct) for BGRA targets. The persistent target is plain Unorm holding
-// straight-alpha sRGB-encoded bytes, so textureLoad returns exact stored
-// values (no decode ambiguity).
+// correct) for BGRA targets. The persistent target is sRGB-tagged holding
+// straight-alpha LINEAR values, so textureLoad returns decoded linear RGB
+// (Vulkan/WebGPU decode sRGB formats on every sampled read, fetch included)
+// and alpha untouched.
 //
-// Transfer: on a plain Unorm swapchain this is a byte-exact copy with a
-// premultiply for the compositor (vello's BlitPipeline does the same).
-// On an sRGB swapchain fallback the hardware OETF encodes on store, so
-// SRGB_DECODE linearizes first and the store nets identity.
-override SRGB_DECODE: bool = false;
+// Transfer: this is the one encode point of the pipeline. The shader
+// premultiplies (persistent stores straight alpha; the swapchain/compositor
+// expects premultiplied RGB) and encodes linear -> sRGB on a plain Unorm
+// swapchain. On an sRGB swapchain fallback the hardware OETF encodes on
+// store, so SRGB_ENCODE stays off and the store nets the same encode.
+override SRGB_ENCODE: bool = false;
 
 @vertex
 fn vs_main(@builtin(vertex_index) ix: u32) -> @builtin(position) vec4<f32> {
@@ -26,19 +28,20 @@ fn vs_main(@builtin(vertex_index) ix: u32) -> @builtin(position) vec4<f32> {
 @group(0) @binding(0)
 var src_tex: texture_2d<f32>;
 
-fn srgb_to_linear(c: vec3<f32>) -> vec3<f32> {
-    let lo = c / 12.92;
-    let hi = pow((c + vec3<f32>(0.055)) / vec3<f32>(1.055), vec3<f32>(2.4));
-    return select(hi, lo, c <= vec3<f32>(0.04045));
+fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
+    let lo = c * 12.92;
+    let hi = vec3<f32>(1.055) * pow(c, vec3<f32>(1.0 / 2.4)) - vec3<f32>(0.055);
+    return select(hi, lo, c <= vec3<f32>(0.0031308));
 }
 
 @fragment
 fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
     let px = textureLoad(src_tex, vec2<i32>(pos.xy), 0);
-    // Persistent target stores straight alpha; swapchain expects premultiplied RGB.
+    // Persistent target stores straight linear alpha; swapchain expects
+    // premultiplied encoded RGB.
     var rgb = px.rgb * px.a;
-    if (SRGB_DECODE) {
-        rgb = srgb_to_linear(rgb);
+    if (SRGB_ENCODE) {
+        rgb = linear_to_srgb(rgb);
     }
     return vec4<f32>(rgb, px.a);
 }

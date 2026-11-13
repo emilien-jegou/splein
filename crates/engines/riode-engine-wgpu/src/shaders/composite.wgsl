@@ -5,10 +5,13 @@
 // fragment's framebuffer position (the blit's textureLoad trick, no
 // sampler).
 //
-// The offscreen holds premultiplied values (scene content alpha-blended
-// over a transparent clear accumulates premultiplied), so the read is
-// passed through as-is for PREMULTIPLIED_ALPHA_BLENDING. Vertex color is
-// a [1,1,1,1] tint slot kept for attribute-consumption parity.
+// Both targets are sRGB-tagged holding premultiplied LINEAR values (scene
+// content alpha-blended over a transparent clear accumulates
+// premultiplied). textureLoad on an sRGB format returns decoded linear
+// RGB (Vulkan/WebGPU decode on every sampled read, fetch included), so
+// the composite runs in linear light; the sRGB parent target re-encodes
+// on store. Vertex color is a [1,1,1,1] tint slot kept for
+// attribute-consumption parity.
 
 struct Ortho {
     w: f32,
