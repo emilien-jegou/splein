@@ -68,6 +68,9 @@ in {
     targets = [ "wasm32-unknown-unknown" "x86_64-unknown-linux-gnu" ];
   };
 
+  # in devenv.nix
+  env.VK_DRIVER_FILES = "${pkgs.mesa}/share/vulkan/icd.d/radeon_icd.x86_64.json:${pkgs.mesa}/share/vulkan/icd.d/lvp_icd.x86_64.json";
+
   enterShell = ''
     [ -f .localrc ] && source .localrc
 

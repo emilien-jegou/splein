@@ -2,8 +2,8 @@
 
 use std::sync::Arc;
 use wgpu::{
-    Backends, CompositeAlphaMode, Device, DeviceDescriptor, Extent3d, Instance, InstanceDescriptor,
-    PresentMode, Queue, RequestAdapterOptions, Surface, SurfaceConfiguration, Texture,
+    Adapter, Backends, CompositeAlphaMode, Device, DeviceDescriptor, Extent3d, Instance,
+    InstanceDescriptor, InstanceFlags, PresentMode, Queue, Surface, SurfaceConfiguration, Texture,
     TextureDescriptor, TextureDimension, TextureFormat, TextureUsages, TextureView,
 };
 use winit::window::Window;
@@ -18,6 +18,109 @@ pub struct WgpuContext {
     pub config: SurfaceConfiguration,
     pub persistent: Texture,
     pub persistent_view: TextureView,
+}
+
+fn select_backends() -> Backends {
+    match std::env::var("WGPU_BACKEND").as_deref() {
+        Ok("vulkan") => Backends::VULKAN,
+        Ok("metal") => Backends::METAL,
+        Ok("dx12") => Backends::DX12,
+        _ => Backends::PRIMARY,
+    }
+}
+
+fn create_instance() -> (Instance, Backends) {
+    let backends = select_backends();
+    let instance = Instance::new(InstanceDescriptor {
+        backends,
+        flags: InstanceFlags::default() | InstanceFlags::ALLOW_UNDERLYING_NONCOMPLIANT_ADAPTER,
+        ..Default::default()
+    });
+    (instance, backends)
+}
+
+/// Enumerates and scores all available adapters instead of relying on
+/// `request_adapter`, which discards valid iGPUs if the window surface
+/// has not completed its initial Wayland/X11 configuration.
+fn select_best_adapter(
+    instance: &Instance,
+    surface: Option<&Surface<'_>>,
+    backends: Backends,
+) -> Result<Adapter, String> {
+    let mut adapters: Vec<Adapter> = instance.enumerate_adapters(backends).into_iter().collect();
+
+    if adapters.is_empty() {
+        return Err(
+            "No Vulkan GPU adapters found on this system.\n\
+             If you are on Linux (ThinkPad):\n\
+             - Ensure Vulkan drivers are installed: 'sudo apt install mesa-vulkan-drivers' (Debian/Ubuntu) or 'sudo pacman -S vulkan-intel' (Arch)\n\
+             - Verify by running 'vulkaninfo' in your terminal."
+                .to_string(),
+        );
+    }
+
+    // Diagnostic logging: inspect everything WGPU sees on this laptop
+    for (idx, a) in adapters.iter().enumerate() {
+        let info = a.get_info();
+        let surface_ok = surface.map_or(true, |s| a.is_surface_supported(s));
+        tracing::info!(
+            "[wgpu adapter {}] name={:?}, type={:?}, backend={:?}, surface_supported={}",
+            idx,
+            info.name,
+            info.device_type,
+            info.backend,
+            surface_ok
+        );
+    }
+
+    // Rank adapters:
+    // +1000 if surface is confirmed supported
+    // +500 Discrete GPU > +400 Integrated GPU > +300 Virtual GPU > +100 CPU / Software
+    adapters.sort_by_key(|a| {
+        let info = a.get_info();
+        let mut score = 0i32;
+
+        if surface.map_or(true, |s| a.is_surface_supported(s)) {
+            score += 1000;
+        }
+
+        score += match info.device_type {
+            wgpu::DeviceType::DiscreteGpu => 500,
+            wgpu::DeviceType::IntegratedGpu => 400,
+            wgpu::DeviceType::VirtualGpu => 300,
+            wgpu::DeviceType::Cpu => 100,
+            wgpu::DeviceType::Other => 50,
+        };
+
+        score
+    });
+
+    let best = adapters.pop().unwrap();
+    tracing::info!(
+        adapter = ?best.get_info().name,
+        device_type = ?best.get_info().device_type,
+        "Selected GPU adapter"
+    );
+
+    Ok(best)
+}
+
+async fn create_device(adapter: &Adapter) -> Result<(Device, Queue), String> {
+    // Accommodate weak/older Intel iGPUs by capping requirements to downlevel defaults
+    let limits = wgpu::Limits::downlevel_defaults().using_resolution(adapter.limits());
+
+    adapter
+        .request_device(
+            &DeviceDescriptor {
+                label: Some("riode-wgpu-device"),
+                required_features: wgpu::Features::empty(),
+                required_limits: limits,
+                ..Default::default()
+            },
+            None,
+        )
+        .await
+        .map_err(|e| format!("Failed to create GPU device: {e:?}"))
 }
 
 fn make_persistent(device: &Device, width: u32, height: u32) -> (Texture, TextureView) {
@@ -42,13 +145,6 @@ fn make_persistent(device: &Device, width: u32, height: u32) -> (Texture, Textur
     (texture, view)
 }
 
-/// Format pick: the persistent scene target is sRGB-tagged — fragment
-/// shaders output linear values and the hardware blends them in linear
-/// light, re-encoding via the exact OETF on store. The swapchain stays
-/// plain Unorm (exact byte control): the blit premultiplies and encodes
-/// linear→sRGB once in-shader; on an sRGB swapchain fallback the hardware
-/// OETF encodes on store instead (SRGB_ENCODE off) and the store nets the
-/// same encoded bytes.
 fn pick_format(formats: &[TextureFormat]) -> TextureFormat {
     let picked = [TextureFormat::Bgra8Unorm, TextureFormat::Rgba8Unorm]
         .into_iter()
@@ -84,51 +180,63 @@ fn pick_present_mode(modes: &[PresentMode]) -> PresentMode {
 
 impl WgpuContext {
     pub async fn init(window: Arc<Window>, width: u32, height: u32) -> Result<Self, String> {
-        let instance = Instance::new(InstanceDescriptor {
-            backends: Backends::PRIMARY,
-            ..Default::default()
-        });
+        let (instance, backends) = create_instance();
         let surface = instance
             .create_surface(Arc::clone(&window))
             .map_err(|e| format!("Failed to create WGPU surface: {e:?}"))?;
-        let adapter = instance
-            .request_adapter(&RequestAdapterOptions {
-                compatible_surface: Some(&surface),
-                power_preference: wgpu::PowerPreference::HighPerformance,
-                force_fallback_adapter: false,
-            })
-            .await
-            .ok_or_else(|| "No compatible GPU adapter found".to_string())?;
-        let (device, queue) = adapter
-            .request_device(&DeviceDescriptor::default(), None)
-            .await
-            .map_err(|e| format!("Failed to create GPU device: {e:?}"))?;
+
+        let adapter = select_best_adapter(&instance, Some(&surface), backends)?;
+
+        let (device, queue) = create_device(&adapter).await?;
         let device = Arc::new(device);
         let queue = Arc::new(queue);
+
         let caps = surface.get_capabilities(&adapter);
-        if caps.formats.is_empty() {
-            return Err("GPU surface exposes no texture formats".to_string());
-        }
-        let format = pick_format(&caps.formats);
+
+        // Fall back gracefully if capabilities query occurs before window is mapped
+        let format = if caps.formats.is_empty() {
+            tracing::warn!("Surface exposed no formats (unmapped window). Falling back to Bgra8Unorm.");
+            TextureFormat::Bgra8Unorm
+        } else {
+            pick_format(&caps.formats)
+        };
+
         let present_mode = pick_present_mode(&caps.present_modes);
+
+        let alpha_mode = if caps.alpha_modes.contains(&CompositeAlphaMode::Auto) {
+            CompositeAlphaMode::Auto
+        } else {
+            caps.alpha_modes
+                .first()
+                .copied()
+                .unwrap_or(CompositeAlphaMode::Opaque)
+        };
+
+        let mut usage = TextureUsages::RENDER_ATTACHMENT;
+        if caps.usages.contains(TextureUsages::COPY_DST) {
+            usage |= TextureUsages::COPY_DST;
+        }
+
         tracing::info!(
             mode = ?present_mode,
             available = ?caps.present_modes,
             format = ?format,
             "riode-wgpu swapchain configured",
         );
+
         let config = SurfaceConfiguration {
-            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_DST,
+            usage,
             format,
             width: width.max(1),
             height: height.max(1),
             present_mode,
-            alpha_mode: CompositeAlphaMode::Auto,
+            alpha_mode,
             view_formats: vec![],
-            desired_maximum_frame_latency: 1,
+            desired_maximum_frame_latency: 2,
         };
         surface.configure(&device, &config);
         let (persistent, persistent_view) = make_persistent(&device, config.width, config.height);
+
         Ok(Self {
             device,
             queue,
@@ -139,30 +247,15 @@ impl WgpuContext {
         })
     }
 
-    /// Initializes a headless GPU context: adapter + device with no window
-    /// surface. Only the offscreen path (`render_scene_offscreen` +
-    /// `readback_rgba8`) is usable. Used by the quad-combine backend so
-    /// several rasterizers share one window without opening one swapchain
-    /// surface each (platforms allow a single surface per window).
+    /// Initializes a headless GPU context: adapter + device with no window surface.
     pub async fn init_headless(width: u32, height: u32) -> Result<Self, String> {
-        let instance = Instance::new(InstanceDescriptor {
-            backends: Backends::PRIMARY,
-            ..Default::default()
-        });
-        let adapter = instance
-            .request_adapter(&RequestAdapterOptions {
-                compatible_surface: None,
-                power_preference: wgpu::PowerPreference::HighPerformance,
-                force_fallback_adapter: false,
-            })
-            .await
-            .ok_or_else(|| "No compatible GPU adapter found".to_string())?;
-        let (device, queue) = adapter
-            .request_device(&DeviceDescriptor::default(), None)
-            .await
-            .map_err(|e| format!("Failed to create GPU device: {e:?}"))?;
+        let (instance, backends) = create_instance();
+        let adapter = select_best_adapter(&instance, None, backends)?;
+
+        let (device, queue) = create_device(&adapter).await?;
         let device = Arc::new(device);
         let queue = Arc::new(queue);
+
         let config = SurfaceConfiguration {
             usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_DST,
             format: TextureFormat::Rgba8Unorm,
@@ -171,9 +264,10 @@ impl WgpuContext {
             present_mode: PresentMode::Fifo,
             alpha_mode: CompositeAlphaMode::Auto,
             view_formats: vec![],
-            desired_maximum_frame_latency: 1,
+            desired_maximum_frame_latency: 2,
         };
         let (persistent, persistent_view) = make_persistent(&device, config.width, config.height);
+
         Ok(Self {
             device,
             queue,
