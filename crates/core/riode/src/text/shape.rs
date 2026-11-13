@@ -120,14 +120,36 @@ fn wrap_width(constraints: Constraints) -> Option<f32> {
     }
 }
 
-/// Sanitizes tracking into a finite, non-negative interval.
+/// Sanitizes tracking into a finite interval, falling back to the Apple
+/// SF tracking curve for the size when the caller left tracking unset.
 #[cfg(feature = "text-runtime")]
-fn safe_spacing(spacing: f32) -> f32 {
+fn safe_spacing(spacing: f32, font_size: f32) -> f32 {
     if spacing.is_finite() && spacing > 0.0 {
         spacing
     } else {
-        0.0
+        default_tracking(font_size)
     }
+}
+
+/// Apple San Francisco tracking approximation (converted from 1000em
+/// units to px): small sizes get expanded tracking, display sizes get
+/// condensed tracking. Applied when the caller's tracking is 0.0 — an
+/// explicit positive spacing always wins.
+#[cfg(feature = "text-runtime")]
+fn default_tracking(font_size: f32) -> f32 {
+    if font_size <= 0.0 {
+        return 0.0;
+    }
+    // Small sizes get expanded tracking; large sizes get condensed tracking
+    let em_tracking = match font_size {
+        s if s <= 11.0 => 20.0,
+        s if s <= 13.0 => 10.0,
+        s if s <= 16.0 => 0.0,
+        s if s <= 20.0 => -10.0,
+        s if s <= 28.0 => -18.0,
+        _ => -24.0,
+    };
+    (em_tracking / 1000.0) * font_size
 }
 
 /// Shapes the string at one wrap width, returning tracked lines and total size.
@@ -153,7 +175,7 @@ fn shape_at_width(
     } else {
         safe_size * 1.2
     };
-    let spacing = safe_spacing(params.letter_spacing);
+    let spacing = safe_spacing(params.letter_spacing, safe_size);
 
     let style = match params.style {
         FontStyle::Normal => ParleyStyle::Normal,
@@ -162,8 +184,22 @@ fn shape_at_width(
     };
     let family_name = engine.resolve_family(fcx, params.font, params.family);
     // Owned variation settings: the builder only borrows them during `build`.
-    let parley_variations: Vec<parley::FontVariation> =
+    // Automatic optical sizing: when the resolved family carries an `opsz`
+    // axis the layout size drives it (Apple-style optical proportion), unless
+    // the caller set the axis explicitly. Fonts without the axis ignore the
+    // setting, and this never varies for identical cache keys (size + family
+    // are both keyed), so cached layouts stay consistent.
+    let mut parley_variations: Vec<parley::FontVariation> =
         params.variations.iter().map(|v| v.to_parley()).collect();
+    let caller_opsz = params
+        .variations
+        .iter()
+        .any(|v| v.tag == *b"opsz");
+    if !caller_opsz && engine.family_has_opsz(fcx, family_name.as_deref()) {
+        if let Some(v) = crate::text::fonts::FontVariation::named("opsz", safe_size) {
+            parley_variations.push(v.to_parley());
+        }
+    }
 
     // The built layout owns its data: the font context is released before
     // line extraction so remaining locks are never stacked inside it. The

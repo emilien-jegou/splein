@@ -5,13 +5,12 @@
 //! wgpu glyph shader (`engine-wgpu/src/shaders/glyph.wgsl`) is a
 //! transliteration of this module — keep the two in sync.
 //!
-//! Applied at ALL sizes. There is deliberately no font-size threshold:
-//! the old `line.font_size <= SMALL_TEXT_HINT_CUTOFF_PX` split (linear
-//! below, corrected above) died with this module — the chain is
-//! coverage-proportional, so dense hinted stems pass through nearly
-//! unchanged while faint fringes lift, without a size heuristic. (A
-//! layout-unit threshold was the wrong signal anyway: under device
-//! scale the raster size differs from the layout size.)
+//! Applied at ALL sizes, ALWAYS ON: contrast and gamma correction is the
+//! default and only behavior (the old `RIODE_TEXT_CORRECTION=on` env gate
+//! and the passthrough fallback are gone). There is deliberately no
+//! font-size threshold: the chain is coverage-proportional, so dense
+//! hinted stems pass through nearly unchanged while faint fringes lift,
+//! without a size heuristic.
 
 /// Gamma-1.8 correction ratios, matching GPUI's
 /// `GAMMA_INCORRECT_TARGET_RATIOS[8]` pre-scaled by `NORM13`/`NORM24`.
@@ -27,15 +26,6 @@ pub const GAMMA_RATIOS_1_8: [f32; 4] = [
 /// Default grayscale enhanced contrast, matching GPUI's
 /// `ZED_FONTS_GRAYSCALE_ENHANCED_CONTRAST` default of `1.0`.
 pub const GRAYSCALE_ENHANCED_CONTRAST: f32 = 1.0;
-
-/// Display-correction switch, mirroring the wgpu glyph shader selection:
-/// the dwrite contrast+gamma chain applies only with
-/// `RIODE_TEXT_CORRECTION=on` in the process environment; default is the
-/// vello_cpu behavior (coverage passes straight through, premultiplied-sRGB
-/// composite, no transfer handling). Read once per process — no rebuild
-/// needed to flip, just restart.
-pub static CORRECTION_ON: std::sync::LazyLock<bool> =
-    std::sync::LazyLock::new(|| std::env::var("RIODE_TEXT_CORRECTION").as_deref() == Ok("on"));
 
 /// Perceived brightness, REC.601 coefficients (matches GPUI).
 pub fn color_brightness(color: [f32; 3]) -> f32 {
@@ -72,15 +62,10 @@ pub fn correct_coverage(sample: f32, ink_rgb: [f32; 3], enhanced_contrast: f32) 
 }
 
 /// Per-run alpha table: coverage byte → alpha byte with run opacity
-/// folded in. Default (vello_cpu behavior) is the identity table —
-/// raw coverage × opacity, no transfer handling. With CORRECTION_ON the
-/// dwrite contrast+gamma chain applies instead.
+/// folded in. The dwrite contrast+gamma chain is always active (the
+/// correction is the engine's default and only glyph treatment).
 pub fn corrected_alpha_table(ink_rgb: [f32; 3], opacity: f32) -> [u8; 256] {
     let opacity = opacity.clamp(0.0, 1.0);
-    if !*CORRECTION_ON {
-        let q = (opacity * 255.0).round() as u32;
-        return std::array::from_fn(|i| ((i as u32 * q + 127) / 255) as u8);
-    }
     std::array::from_fn(|i| {
         let corrected = correct_coverage(i as f32 / 255.0, ink_rgb, GRAYSCALE_ENHANCED_CONTRAST);
         (corrected * opacity * 255.0).round().clamp(0.0, 255.0) as u8

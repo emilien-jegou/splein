@@ -65,6 +65,10 @@ pub struct ParleyEngine {
     pub(crate) resolved_styles: Arc<Mutex<FxHashMap<ResolvedStyleKey, Option<String>>>>,
     /// Raw font binaries by registration index, shared with `TextContext::font_data`.
     pub(crate) font_blobs: Arc<Mutex<Vec<Arc<Vec<u8>>>>>,
+    /// Per-family `opsz`-axis presence, cached out of the shaping path.
+    /// Families are bounded (loaded blobs × their declared names), so the
+    /// cache is uncapped.
+    opsz_families: Arc<Mutex<FxHashMap<String, bool>>>,
 }
 
 #[cfg(feature = "text-runtime")]
@@ -86,6 +90,7 @@ impl ParleyEngine {
             blob_ids: Arc::new(Mutex::new(FxHashMap::default())),
             resolved_styles: Arc::new(Mutex::new(FxHashMap::default())),
             font_blobs: Arc::new(Mutex::new(Vec::new())),
+            opsz_families: Arc::new(Mutex::new(FxHashMap::default())),
         }
     }
 
@@ -190,6 +195,34 @@ impl ParleyEngine {
             .map(|name| name.to_string())
             .collect();
         first.into_iter().next()
+    }
+
+    /// Whether the resolved family's faces carry an `opsz` (optical size)
+    /// variable axis, cached per family name.
+    ///
+    /// Checked against the family's default face: variable fonts expose the
+    /// same axis set across their instance range, so the default face's axes
+    /// answer for every weight/style the family resolves to. The default
+    /// (no family) path returns `false` — automatic optical sizing needs a
+    /// concrete face to bind to.
+    pub(crate) fn family_has_opsz(&self, fcx: &mut FontContext, family: Option<&str>) -> bool {
+        let Some(name) = family else {
+            return false;
+        };
+        if let Some(hit) = self.opsz_families.lock().unwrap().get(name) {
+            return *hit;
+        }
+        let has_opsz = fcx
+            .collection
+            .family_id(name)
+            .and_then(|id| fcx.collection.family(id))
+            .and_then(|fam| fam.default_font().cloned())
+            .is_some_and(|font| font.axes().iter().any(|a| a.tag.to_be_bytes() == *b"opsz"));
+        self.opsz_families
+            .lock()
+            .unwrap()
+            .insert(name.to_string(), has_opsz);
+        has_opsz
     }
 }
 

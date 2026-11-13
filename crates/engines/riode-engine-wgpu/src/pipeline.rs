@@ -303,20 +303,13 @@ pub fn create_pipelines(
 
     // Glyph pipeline (coverage atlas -> persistent target).
     //
-    // Display correction is opt-in (dwrite/GPUI experiment): only with
-    // RIODE_TEXT_CORRECTION=on in the environment is the contrast+gamma
-    // shader selected; default is the passthrough shader (straight
-    // coverage × alpha, vello_cpu-like). No rebuild needed to flip, just
-    // restart. The CPU twin (text::gamma) honors the same variable, so
-    // both engines move together.
-    let glyph_src: &str = if *riode::text::gamma::CORRECTION_ON {
-        include_str!("shaders/glyph.wgsl")
-    } else {
-        include_str!("shaders/glyph_plain.wgsl")
-    };
+    // Display correction is always on: the dwrite/GPUI contrast+gamma chain
+    // (brightness-dependent contrast boost + quadratic gamma-1.8 alpha
+    // correction) is the only glyph shader. The CPU twin (text::gamma)
+    // applies the same chain for CPU-side alpha tables.
     let glyph_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("riode-wgpu-glyph"),
-        source: wgpu::ShaderSource::Wgsl(glyph_src.into()),
+        source: wgpu::ShaderSource::Wgsl(include_str!("shaders/glyph.wgsl").into()),
     });
     let glyph_layout = glyph_bind_layout(device);
     let glyph_sampler_linear = device.create_sampler(&wgpu::SamplerDescriptor {

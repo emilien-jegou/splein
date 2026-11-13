@@ -12,10 +12,9 @@
 // threshold — the chain is coverage-proportional, so dense stems pass
 // through nearly unchanged while faint fringes lift.
 // Scalar twin of the correction lives in riode's text::gamma
-// (tiny-skia builds its per-run table from it); this WGSL is a
-// transliteration of that module. Selected only with
-// RIODE_TEXT_CORRECTION=on (see pipeline.rs); default is the
-// passthrough shader glyph_plain.wgsl.
+// (CPU-side alpha tables build their per-run table from it); this WGSL is a
+// transliteration of that module. Always selected — there is no passthrough
+// shader anymore.
 struct Ortho {
     w: f32,
     h: f32,
@@ -51,8 +50,7 @@ fn vs_main(in: Vin) -> Vout {
 
 // Grayscale contrast + gamma correction, verbatim port of GPUI's
 // shaders.wgsl chain (itself adapted from microsoft/terminal
-// dwrite.hlsl, MIT). Opt-in via RIODE_TEXT_CORRECTION=on; default is
-// the passthrough shader (glyph_plain.wgsl).
+// dwrite.hlsl, MIT). Always applied.
 //
 // Defaults match GPUI: gamma 1.8 ratio row baked below,
 // grayscale enhanced contrast 1.0 (override via uniform later).
