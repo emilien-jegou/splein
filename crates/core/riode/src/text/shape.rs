@@ -185,19 +185,24 @@ fn shape_at_width(
     let family_name = engine.resolve_family(fcx, params.font, params.family);
     // Owned variation settings: the builder only borrows them during `build`.
     // Automatic optical sizing: when the resolved family carries an `opsz`
-    // axis the layout size drives it (Apple-style optical proportion), unless
-    // the caller set the axis explicitly. Fonts without the axis ignore the
-    // setting, and this never varies for identical cache keys (size + family
-    // are both keyed), so cached layouts stay consistent.
+    // axis the layout size drives it, clamped to the font's declared axis
+    // limits (the point size is typographic — never multiplied by device
+    // pixel ratio or raster scale here). Explicit caller-set `opsz` always
+    // wins. Fonts without the axis ignore the setting, and this never varies
+    // for identical cache keys (size + family are both keyed), so cached
+    // layouts stay consistent.
     let mut parley_variations: Vec<parley::FontVariation> =
         params.variations.iter().map(|v| v.to_parley()).collect();
     let caller_opsz = params
         .variations
         .iter()
         .any(|v| v.tag == *b"opsz");
-    if !caller_opsz && engine.family_has_opsz(fcx, family_name.as_deref()) {
-        if let Some(v) = crate::text::fonts::FontVariation::named("opsz", safe_size) {
-            parley_variations.push(v.to_parley());
+    if !caller_opsz {
+        if let Some((min, max)) = engine.family_opsz_range(fcx, family_name.as_deref()) {
+            let opsz = safe_size.clamp(min, max);
+            if let Some(v) = crate::text::fonts::FontVariation::named("opsz", opsz) {
+                parley_variations.push(v.to_parley());
+            }
         }
     }
 
