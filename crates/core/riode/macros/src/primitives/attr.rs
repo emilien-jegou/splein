@@ -87,7 +87,7 @@ pub fn attr_value(key: &str, attr: &KeyedAttribute) -> TokenStream2 {
     }
 }
 
-fn attr_expr(attr: &KeyedAttribute) -> Option<syn::Expr> {
+pub fn attr_expr(attr: &KeyedAttribute) -> Option<syn::Expr> {
     match &attr.possible_value {
         KeyedAttributeValue::Value(v) => match &v.value {
             KVAttributeValue::Expr(syn::Expr::Block(b)) if b.attrs.is_empty() && b.label.is_none() => {

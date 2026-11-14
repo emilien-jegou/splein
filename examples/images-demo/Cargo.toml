@@ -1,0 +1,18 @@
+[package]
+name = "images-demo"
+version = "0.2.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+path = "lib.rs"
+
+[[bin]]
+name = "images-demo"
+path = "main.rs"
+
+[dependencies]
+riode = { package = "riode-shared", path = "../../crates/core/riode-shared", version = "0.2.0" }
+riode-shader = { path = "../../crates/core/riode-shader" }
+riode-engine-wgpu = { path = "../../crates/engines/riode-engine-wgpu", version = "0.2.0" }

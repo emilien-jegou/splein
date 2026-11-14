@@ -8,7 +8,6 @@ pub const HOT_WIDTH: u32 = 800;
 pub const HOT_HEIGHT: u32 = 985;
 pub const HOT_BG: u32 = 0xFFFFFF;
 
-//#[component(name = "scroll_demo::Page")]
 #[component]
 pub fn Page() -> GroupElement {
     view! {

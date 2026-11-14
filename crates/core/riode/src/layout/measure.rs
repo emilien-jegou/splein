@@ -8,23 +8,11 @@ use crate::tree::{NodeId, NodeKind};
 
 /// Derives resolved pixel size from sizing intent, intrinsic size, and parent bound.
 pub fn resolve_desired_dimension(size: Size, intrinsic: f32, parent_dim: Option<f32>) -> f32 {
-    let safe_intrinsic = if intrinsic.is_finite() {
-        intrinsic.max(0.0)
-    } else {
-        0.0
-    };
+    let safe_intrinsic = if intrinsic.is_finite() { intrinsic.max(0.0) } else { 0.0 };
     match size {
-        Size::Fixed(px) => {            if px.is_finite() {
-                px.max(0.0)
-            } else {
-                0.0
-            }
-        }
-        Size::Fit => safe_intrinsic,
-        // Fold sizes like Fit off its (min-content) intrinsic; the fold
-        // itself happens at the assigned box via the forced refit.
-        Size::Fold => safe_intrinsic,
-        Size::Fill => 0.0,
+        Size::Fixed(px) => if px.is_finite() { px.max(0.0) } else { 0.0 },
+        Size::Fit | Size::Fold => safe_intrinsic,
+        Size::Fill => parent_dim.filter(|p| p.is_finite() && *p >= 0.0).unwrap_or(0.0),
         Size::Percent(pct) => parent_dim
             .filter(|p| p.is_finite() && *p >= 0.0)
             .map_or(0.0, |p| {
@@ -34,12 +22,6 @@ pub fn resolve_desired_dimension(size: Size, intrinsic: f32, parent_dim: Option<
     }
 }
 
-/// Computes intrinsic bounding size, fast-pathing cache hits with zero tracing overhead.
-///
-/// `for_height` selects the query role (see `TextConfig::wrap_width`): `false`
-/// sizes an item for row allocation (max-content), `true` sizes a fit box's
-/// wrapped height (clamped at the offer).
-#[inline(always)]
 pub fn compute_intrinsic(
     arena: &mut TreeArena,
     node_id: NodeId,
@@ -49,28 +31,13 @@ pub fn compute_intrinsic(
 ) -> IntrinsicSize {
     let (w_size, h_size, is_text) = {
         let n = arena.get(node_id);
-        (
-            n.style.width,
-            n.style.height,
-            matches!(n.kind, NodeKind::Text(_)),
-        )
+        (n.style.width, n.style.height, matches!(n.kind, NodeKind::Text(_)))
     };
 
-    // 1. O(1) Fixed dimension short-circuit (0 allocations, 0 child traversals)
     if let (Size::Fixed(w), Size::Fixed(h)) = (w_size, h_size) {
-        return IntrinsicSize {
-            width: w,
-            height: h,
-        };
+        return IntrinsicSize { width: w, height: h };
     }
 
-    // Text wraps against its inline width; a group measures against the offered
-    // bounds (never widened past them), unless the parent has already fixed one,
-    // in which case that used width must stay binding for descendants. Groups no
-    // longer re-widen to infinity here: an ancestor boundary must reach every
-    // descendant, or nested `Fit` subtrees expand forever (the fit-vs-wrap bug).
-    // `Fit` text clamps `max(min-content, min(max-content, available))`, so bounded
-    // parents force wrapping instead of expanding forever (see `TextConfig::wrap_width`).
     let effective_constraints = if is_text {
         let wrap_w = {
             let n = arena.get(node_id);
@@ -97,7 +64,6 @@ pub fn compute_intrinsic(
         Constraints::loose(constraints.max_width, constraints.max_height)
     };
 
-    // 2. O(1) Cache Hit (0 tracing overhead)
     if let Some(cached) = arena
         .get(node_id)
         .state
@@ -108,11 +74,9 @@ pub fn compute_intrinsic(
         return cached;
     }
 
-    // 3. Uncached Intrinsic Calculation (Explicitly Instrumented)
     measure_intrinsic_uncached(arena, node_id, effective_constraints, text_ctx, for_height)
 }
 
-/// Computes intrinsic size under explicit constraints, reusing the memoized measurement.
 pub fn compute_intrinsic_with_constraints(
     arena: &mut TreeArena,
     node_id: NodeId,
@@ -142,8 +106,6 @@ fn measure_intrinsic_uncached(
 ) -> IntrinsicSize {
     if matches!(arena.get(node_id).kind, NodeKind::Group) {
         let mut intrinsic = measure_group_intrinsic(arena, node_id, constraints, text_ctx, for_height);
-        // Aspect boxes report ratio height as intrinsic so parents slot them
-        // final (see `aspect_fit_height`).
         if let Some(h) = aspect_fit_height(&arena.get(node_id).style, constraints) {
             intrinsic.height = h.min(constraints.max_height);
         }
@@ -165,8 +127,6 @@ fn measure_intrinsic_uncached(
         NodeKind::Custom(p) => (p.measure(constraints), None),
         NodeKind::Group => unreachable!(),
     };
-    // Padding grows leaf boxes exactly like group boxes: the content measures
-    // first, then the inset is added around it.
     let pad = arena.get(node_id).style.padding;
     let intrinsic = IntrinsicSize {
         width: intrinsic.width + pad.horizontal(),
@@ -186,22 +146,11 @@ fn measure_intrinsic_uncached(
     intrinsic
 }
 
-/// Aspect-derived height for a `Fit`-height box with a determined width.
-///
-/// A `320×Fit` card at 16/9 is 180 tall no matter what its (empty) content
-/// measures. This feeds child *desired* sizes so parents slot aspect boxes at
-/// their final height; otherwise the slot is 0 tall, the tight follow-up
-/// clamps to it, and the aspect backstop in `resolve_node_bounds` can never
-/// recover. `Fit×Fit` stays content-sized; unbounded `Fill` stays unbounded.
-/// Min-content floors still win downstream (tall content overflows the ratio
-/// rather than crushing).
 pub(crate) fn aspect_fit_height(
     style: &crate::tree::NodeStyle,
     constraints: Constraints,
 ) -> Option<f32> {
-    let ratio = style
-        .aspect_ratio
-        .filter(|r| r.is_finite() && *r > 0.0)?;
+    let ratio = style.aspect_ratio.filter(|r| r.is_finite() && *r > 0.0)?;
     if !style.height.is_fit() {
         return None;
     }
@@ -216,16 +165,6 @@ pub(crate) fn aspect_fit_height(
     Some(w / ratio)
 }
 
-/// Re-shapes a text run when its cached layout is wider than the inline size it finally received.
-///
-/// A `Fit` run already folds at a bounded offer, but a sibling can still
-/// shrink its box below the cached run (below the offer it shaped against);
-/// the run then re-shapes at the assigned width and paints wrapped inside
-/// its own box. A `Fold` run always re-shapes: its intrinsic is min-content
-/// by design, so the cached layout is narrower than the assigned box and
-/// `needs_refit` alone would leave it painting a one-word column. Shaping is
-/// memoized by content and width, so the common case costs one cache lookup
-/// and no shaping.
 pub fn fit_text_run_to_width(
     arena: &mut TreeArena,
     id: NodeId,
@@ -247,10 +186,6 @@ pub fn fit_text_run_to_width(
     arena.get_mut(id).state.text.cached_text_layout = Some(layout);
 }
 
-/// Derives desired width and height for a child in O(1) without subtree recursion when fixed.
-///
-/// Item sizing (max-content role); container-height probes use
-/// [`compute_child_desired_for_height`].
 pub fn compute_child_desired(
     arena: &mut TreeArena,
     child_id: NodeId,
@@ -262,10 +197,6 @@ pub fn compute_child_desired(
     compute_child_desired_inner(arena, child_id, constraints, parent_width, parent_height, text_ctx, false)
 }
 
-/// Desired size for container-height sizing: children wrap at the offer.
-///
-/// Used by height probes (`resolve_node_bounds`) and wrapping column bands so
-/// nested text reports wrapped heights instead of single-line ones.
 pub(crate) fn compute_child_desired_for_height(
     arena: &mut TreeArena,
     child_id: NodeId,
@@ -286,12 +217,8 @@ fn compute_child_desired_inner(
     text_ctx: &TextContext,
     for_height: bool,
 ) -> DesiredSize {
-    // A node presenting no footprint measures to nothing on either axis.
     if arena.get(child_id).state.core.presence == LayoutPresence::Absent {
-        return DesiredSize {
-            width: 0.0,
-            height: 0.0,
-        };
+        return DesiredSize { width: 0.0, height: 0.0 };
     }
 
     let node = arena.get(child_id);
@@ -303,10 +230,7 @@ fn compute_child_desired_inner(
     let intrinsic = if needs_intrinsic_w || needs_intrinsic_h {
         compute_intrinsic(arena, child_id, constraints, text_ctx, for_height)
     } else {
-        IntrinsicSize {
-            width: 0.0,
-            height: 0.0,
-        }
+        IntrinsicSize { width: 0.0, height: 0.0 }
     };
 
     DesiredSize {

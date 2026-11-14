@@ -1,7 +1,8 @@
 // Responsibility: Test-fig-gen application entry point with self-hosted live reload.
+use riode::prelude::*;
 
 fn main() {
-    riode::App::config()
+    App::config()
         .title("Aurora — Figure Generation Test")
         .size(800, 600)
         .background(0x18181B)

@@ -11,11 +11,21 @@ struct ImagePrimitive {
 }
 
 impl Primitive for ImagePrimitive {
-    fn measure(&self, _constraints: Constraints) -> IntrinsicSize {
-        IntrinsicSize {
-            width: self.image.width as f32,
-            height: self.image.height as f32,
+    fn measure(&self, constraints: Constraints) -> IntrinsicSize {
+        let (iw, ih) = (self.image.width as f32, self.image.height as f32);
+        if iw <= 0.0 || ih <= 0.0 {
+            return IntrinsicSize { width: 0.0, height: 0.0 };
         }
+        let ratio = iw / ih;
+
+        // If a width constraint is offered, scale height by aspect ratio
+        if constraints.max_width.is_finite() && constraints.max_width > 0.0 {
+            let w = constraints.max_width;
+            let h = (w / ratio).min(constraints.max_height);
+            return IntrinsicSize { width: w, height: h };
+        }
+
+        IntrinsicSize { width: iw, height: ih }
     }
 
     fn paint(&self, ctx: &mut PaintContext, bounds: ResolvedRect) {
@@ -24,10 +34,11 @@ impl Primitive for ImagePrimitive {
 }
 
 /// Constructs a first-class declarative image element.
-///
-/// Sized by content like [`svg`](crate::dsl::svg()): the pixel dimensions are the `Fit`
-/// measure, so the image draws 1:1 in an unbounded parent. Pin an exact box with
-/// `.size(w, h)` to scale it into a layout-owned box.
 pub fn image(source: ImageSource) -> CustomDef {
-    custom(ImagePrimitive { image: source })
+    let (w, h) = (source.width as f32, source.height as f32);
+    let mut def = custom(ImagePrimitive { image: source });
+    if w > 0.0 && h > 0.0 {
+        def.aspect_ratio = Some(w / h);
+    }
+    def
 }

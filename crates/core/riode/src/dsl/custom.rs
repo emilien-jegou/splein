@@ -11,11 +11,10 @@ use std::rc::Rc;
 #[derive(Clone)]
 pub struct CustomDef {
     pub key: Option<Key>,
-    /// Shared render primitive. Cloning shares rather than duplicates: primitives
-    /// are stateless (`measure`/`paint` take `&self`), so a refcount bump is exact.
     pub primitive: Rc<dyn Primitive>,
     pub width: Option<Size>,
     pub height: Option<Size>,
+    pub aspect_ratio: Option<f32>,
     pub x: Option<f32>,
     pub y: Option<f32>,
     pub margin: Margin,
@@ -33,6 +32,7 @@ pub fn custom<P: Primitive + 'static>(primitive: P) -> CustomDef {
         primitive: Rc::new(primitive),
         width: None,
         height: None,
+        aspect_ratio: None,
         x: None,
         y: None,
         margin: Margin::ZERO,
@@ -46,7 +46,6 @@ pub fn custom<P: Primitive + 'static>(primitive: P) -> CustomDef {
 }
 
 impl CustomDef {
-    /// Explicit reconciliation key for custom primitives (e.g. SVGs).
     pub fn key<K: Into<Key>>(mut self, k: K) -> Self {
         self.key = Some(k.into());
         self
@@ -80,6 +79,11 @@ impl CustomDef {
         self.h(h)
     }
 
+    pub fn ratio(mut self, ratio: impl Into<crate::foundation::AspectRatio>) -> Self {
+        self.aspect_ratio = Some(ratio.into().ratio());
+        self
+    }
+
     pub fn absolute(mut self, is_abs: impl Into<bool>) -> Self {
         self.is_absolute = is_abs.into();
         self
@@ -109,13 +113,11 @@ impl CustomDef {
         self
     }
 
-    /// Merges a margin: nonzero sides of `m` win, the rest is kept.
     pub fn margin(mut self, m: Margin) -> Self {
         self.margin = self.margin.merged(m);
         self
     }
 
-    /// Merges a padding: nonzero sides of `p` win, the rest is kept.
     pub fn padding(mut self, p: Padding) -> Self {
         self.padding = self.padding.merged(p);
         self

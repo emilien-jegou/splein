@@ -13,7 +13,6 @@ use crate::tree::{LayoutNode, TreeArena};
 use std::cell::RefCell;
 use std::rc::Rc;
 
-/// Reconciles text typography run and binds reactive text updates.
 pub fn reconcile_text(
     runtime: &Rc<RefCell<ReactiveRuntime>>,
     arena: &mut TreeArena,
@@ -24,9 +23,7 @@ pub fn reconcile_text(
     let id = existing.unwrap_or_else(|| arena.insert(LayoutNode::default()));
     clean_orphaned_children(runtime, arena, router, id);
 
-    // See reconcile_group: evaluation node for context reads in `content`.
     let _eval_node = crate::reactive::context::enter_node(id, arena);
-
     let is_dynamic = def.content.is_dynamic();
     let m_sub = is_dynamic.then(|| router.measure_sub(id, &mut runtime.borrow_mut()));
 
@@ -49,42 +46,19 @@ pub fn reconcile_text(
         || node_ref.style.width != def.width.unwrap_or(Size::Fit)
         || node_ref.style.height != def.height.unwrap_or(Size::Fit);
 
-    // Stale byte offsets would highlight the wrong text after an edit, and a
-    // node that stops being selectable keeps no highlight at all.
     let clear_selection = match &node_ref.kind {
         NodeKind::Text(old) => old.content != config.content || !config.selectable,
         _ => true,
     };
 
-    tracing::debug!(
-        "riode: reconcile text {:?} changed={} content={:?}",
-        id,
-        changed,
-        config.content,
-    );
     if changed {
-        // PAINT alongside measure/layout: `changed` covers non-geometric edits
-        // (notably `color`), and the layout pass clears MEASURE|LAYOUT before the
-        // damage pass reads them — without PAINT a color-only edit reconciles
-        // into the arena and is never repainted. Over-marking is safe: damage
-        // unions regions and the node recompiles either way.
-        arena.mark_dirty(
-            id,
-            DirtyFlags::MEASURE | DirtyFlags::LAYOUT | DirtyFlags::PAINT,
-        );
+        arena.mark_dirty(id, DirtyFlags::MEASURE | DirtyFlags::LAYOUT | DirtyFlags::PAINT);
     }
     if clear_selection {
-        let node = arena.get_mut(id);
-        node.state.text.text_selection = None;
+        arena.get_mut(id).state.text.text_selection = None;
     }
 
-    let effective_z = if def.z_index != 0 {
-        def.z_index
-    } else if def.is_absolute {
-        1
-    } else {
-        0
-    };
+    let effective_z = if def.z_index != 0 { def.z_index } else if def.is_absolute { 1 } else { 0 };
     let node = arena.get_mut(id);
     node.kind = NodeKind::Text(config);
     node.style.margin = def.margin;
@@ -99,7 +73,6 @@ pub fn reconcile_text(
     id
 }
 
-/// Reconciles user-defined custom primitive elements.
 pub fn reconcile_custom(
     runtime: &Rc<RefCell<ReactiveRuntime>>,
     arena: &mut TreeArena,
@@ -109,24 +82,16 @@ pub fn reconcile_custom(
 ) -> NodeId {
     let id = existing.unwrap_or_else(|| arena.insert(LayoutNode::default()));
     clean_orphaned_children(runtime, arena, router, id);
-    // Custom primitives take no dynamic props, but the guard keeps nesting
-    // uniform: a custom node under evaluation still anchors context reads in
-    // any nested evaluation the reconciler performs for it.
     let _eval_node = crate::reactive::context::enter_node(id, arena);
     arena.get_mut(id).state.core.bindings = NodeBindings::default();
     arena.invalidate_static_up(id);
 
-    let effective_z = if def.z_index != 0 {
-        def.z_index
-    } else if def.is_absolute {
-        1
-    } else {
-        0
-    };
+    let effective_z = if def.z_index != 0 { def.z_index } else if def.is_absolute { 1 } else { 0 };
     let node = arena.get_mut(id);
     node.kind = NodeKind::Custom(def.primitive.clone());
     node.style.width = def.width.unwrap_or(Size::Fit);
     node.style.height = def.height.unwrap_or(Size::Fit);
+    node.style.aspect_ratio = def.aspect_ratio;
     node.style.margin = def.margin;
     node.style.padding = def.padding;
     node.style.anchor = def.anchor;

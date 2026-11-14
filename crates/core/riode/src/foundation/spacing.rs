@@ -33,7 +33,6 @@ impl Margin {
         }
     }
 
-    /// Applies a top margin only.
     pub const fn top(val: f32) -> Self {
         Self {
             top: val,
@@ -42,7 +41,6 @@ impl Margin {
             left: 0.0,
         }
     }
-    /// Applies a right margin only.
     pub const fn right(val: f32) -> Self {
         Self {
             top: 0.0,
@@ -51,7 +49,6 @@ impl Margin {
             left: 0.0,
         }
     }
-    /// Applies a bottom margin only.
     pub const fn bottom(val: f32) -> Self {
         Self {
             top: 0.0,
@@ -60,7 +57,6 @@ impl Margin {
             left: 0.0,
         }
     }
-    /// Applies a left margin only.
     pub const fn left(val: f32) -> Self {
         Self {
             top: 0.0,
@@ -70,12 +66,10 @@ impl Margin {
         }
     }
 
-    /// Symmetrical padding along horizontal (x) and vertical (y) axes.
     pub const fn xy(x: f32, y: f32) -> Self {
         Self::symmetric(y, x)
     }
 
-    /// Applies a symmetric horizontal (left and right) margin.
     pub const fn x(val: f32) -> Self {
         Self {
             top: 0.0,
@@ -84,7 +78,6 @@ impl Margin {
             left: val,
         }
     }
-    /// Applies a symmetric vertical (top and bottom) margin.
     pub const fn y(val: f32) -> Self {
         Self {
             top: val,
@@ -94,7 +87,6 @@ impl Margin {
         }
     }
 
-    /// Applies every side explicitly, clockwise from top.
     pub const fn sides(top: f32, right: f32, bottom: f32, left: f32) -> Self {
         Self {
             top,
@@ -104,48 +96,24 @@ impl Margin {
         }
     }
 
-    /// Field-wise merge for chained `.margin()` builders.
-    ///
-    /// Nonzero sides of `over` win; zero sides keep `self`. This is what lets
-    /// `.margin(Margin::left(300.0)).margin(Margin::top(200.0))` compose instead
-    /// of the second call silently discarding the first: the per-side
-    /// constructors only make sense when they accumulate.
     pub const fn merged(self, over: Self) -> Self {
         Self {
             top: if over.top != 0.0 { over.top } else { self.top },
-            right: if over.right != 0.0 {
-                over.right
-            } else {
-                self.right
-            },
-            bottom: if over.bottom != 0.0 {
-                over.bottom
-            } else {
-                self.bottom
-            },
-            left: if over.left != 0.0 {
-                over.left
-            } else {
-                self.left
-            },
+            right: if over.right != 0.0 { over.right } else { self.right },
+            bottom: if over.bottom != 0.0 { over.bottom } else { self.bottom },
+            left: if over.left != 0.0 { over.left } else { self.left },
         }
     }
 
-    /// Returns the combined left and right margin.
     pub fn horizontal(&self) -> f32 {
         self.left + self.right
     }
-    /// Returns the combined top and bottom margin.
     pub fn vertical(&self) -> f32 {
         self.top + self.bottom
     }
 }
 
 /// Internal spacing inset applied inside an element's bounding box.
-///
-/// Padding shrinks the content box its children lay out in and grows the
-/// element's intrinsic size; unlike [`Margin`] it never offsets the element
-/// within its parent. Paint (fill/stroke) still covers the full box.
 #[derive(Copy, Clone, Debug, Default, PartialEq)]
 pub struct Padding {
     pub top: f32,
@@ -178,7 +146,6 @@ impl Padding {
         }
     }
 
-    /// Applies a top padding only.
     pub const fn top(val: f32) -> Self {
         Self {
             top: val,
@@ -187,7 +154,6 @@ impl Padding {
             left: 0.0,
         }
     }
-    /// Applies a right padding only.
     pub const fn right(val: f32) -> Self {
         Self {
             top: 0.0,
@@ -196,7 +162,6 @@ impl Padding {
             left: 0.0,
         }
     }
-    /// Applies a bottom padding only.
     pub const fn bottom(val: f32) -> Self {
         Self {
             top: 0.0,
@@ -205,7 +170,6 @@ impl Padding {
             left: 0.0,
         }
     }
-    /// Applies a left padding only.
     pub const fn left(val: f32) -> Self {
         Self {
             top: 0.0,
@@ -215,13 +179,10 @@ impl Padding {
         }
     }
 
-    /// Symmetrical padding along horizontal (x) and vertical (y) axes.
     pub const fn xy(x: f32, y: f32) -> Self {
         Self::symmetric(y, x)
     }
 
-
-    /// Applies a symmetric horizontal (left and right) padding.
     pub const fn x(val: f32) -> Self {
         Self {
             top: 0.0,
@@ -230,7 +191,6 @@ impl Padding {
             left: val,
         }
     }
-    /// Applies a symmetric vertical (top and bottom) padding.
     pub const fn y(val: f32) -> Self {
         Self {
             top: val,
@@ -240,7 +200,6 @@ impl Padding {
         }
     }
 
-    /// Applies every side explicitly, clockwise from top.
     pub const fn sides(top: f32, right: f32, bottom: f32, left: f32) -> Self {
         Self {
             top,
@@ -250,37 +209,18 @@ impl Padding {
         }
     }
 
-    /// Field-wise merge for chained `.padding()` builders.
-    ///
-    /// Nonzero sides of `over` win; zero sides keep `self`. This is what lets
-    /// `.padding(Padding::left(8.0)).padding(Padding::top(4.0))` compose instead
-    /// of the second call silently discarding the first.
     pub const fn merged(self, over: Self) -> Self {
         Self {
             top: if over.top != 0.0 { over.top } else { self.top },
-            right: if over.right != 0.0 {
-                over.right
-            } else {
-                self.right
-            },
-            bottom: if over.bottom != 0.0 {
-                over.bottom
-            } else {
-                self.bottom
-            },
-            left: if over.left != 0.0 {
-                over.left
-            } else {
-                self.left
-            },
+            right: if over.right != 0.0 { over.right } else { self.right },
+            bottom: if over.bottom != 0.0 { over.bottom } else { self.bottom },
+            left: if over.left != 0.0 { over.left } else { self.left },
         }
     }
 
-    /// Returns the combined left and right padding.
     pub fn horizontal(&self) -> f32 {
         self.left + self.right
     }
-    /// Returns the combined top and bottom padding.
     pub fn vertical(&self) -> f32 {
         self.top + self.bottom
     }
@@ -315,14 +255,6 @@ impl From<u32> for Padding {
     }
 }
 
-/// Spacing interval applied between adjacent layout siblings.
-///
-/// `Fixed(px)` applies one interval on both axes. `Split` separates the
-/// main-axis interval (between items on one line) from the cross-axis
-/// interval (between wrapped lines): `row_gap` sets cross, `col_gap` sets
-/// main. For a horizontal container that reads naturally (columns apart vs
-/// rows apart); for vertical containers the axes transpose — documented at
-/// the builder.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Gap {
     Fixed(f32),
@@ -330,7 +262,6 @@ pub enum Gap {
 }
 
 impl Gap {
-    /// Interval between items along the main axis (within one line).
     pub fn main_px(self) -> f32 {
         match self {
             Gap::Fixed(px) if px.is_finite() => px.max(0.0),
@@ -340,7 +271,6 @@ impl Gap {
         }
     }
 
-    /// Interval between wrapped lines along the cross axis.
     pub fn cross_px(self) -> f32 {
         match self {
             Gap::Fixed(px) if px.is_finite() => px.max(0.0),
@@ -350,20 +280,12 @@ impl Gap {
         }
     }
 
-    /// Returns a copy with the main-axis interval replaced.
     pub fn with_main(self, main: f32) -> Self {
-        Gap::Split {
-            main,
-            cross: self.cross_px(),
-        }
+        Gap::Split { main, cross: self.cross_px() }
     }
 
-    /// Returns a copy with the cross-axis (inter-line) interval replaced.
     pub fn with_cross(self, cross: f32) -> Self {
-        Gap::Split {
-            main: self.main_px(),
-            cross,
-        }
+        Gap::Split { main: self.main_px(), cross }
     }
 }
 
@@ -393,6 +315,7 @@ impl From<&str> for Gap {
         Gap::Fixed(0.0)
     }
 }
+
 impl From<String> for Gap {
     fn from(s: String) -> Self {
         Self::from(s.as_str())
@@ -414,6 +337,7 @@ impl From<&str> for Margin {
         Margin::ZERO
     }
 }
+
 impl From<String> for Margin {
     fn from(s: String) -> Self {
         Self::from(s.as_str())
@@ -435,6 +359,7 @@ impl From<&str> for Padding {
         Padding::ZERO
     }
 }
+
 impl From<String> for Padding {
     fn from(s: String) -> Self {
         Self::from(s.as_str())
@@ -444,7 +369,7 @@ impl From<String> for Padding {
 impl From<&str> for crate::foundation::sizing::Size {
     fn from(s: &str) -> Self {
         let s = s.trim();
-        if s == "fill" {
+        if s == "fill" || s == "full" {
             return crate::foundation::sizing::Size::Fill;
         }
         if s == "auto" || s == "hug" || s == "fit" {
@@ -467,6 +392,7 @@ impl From<&str> for crate::foundation::sizing::Size {
         crate::foundation::sizing::Size::Fit
     }
 }
+
 impl From<String> for crate::foundation::sizing::Size {
     fn from(s: String) -> Self {
         Self::from(s.as_str())
@@ -478,6 +404,7 @@ impl From<u32> for Gap {
         Gap::Fixed(v as f32)
     }
 }
+
 impl From<i32> for Gap {
     fn from(v: i32) -> Self {
         Gap::Fixed(v as f32)
