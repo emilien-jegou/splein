@@ -1,8 +1,9 @@
 # devenv.nix
-{ pkgs, ... }:
+{ pkgs, inputs, ... }:
 
 let
   tracy = pkgs.callPackage ./tracy.nix { };
+
   # `dev` launcher on PATH: delegates to the nushell toolbox. Root resolves
   # via DEVENV_ROOT inside the shell, else the enclosing git checkout, so the
   # command works from any subdirectory.
@@ -17,6 +18,7 @@ let
 in {
   packages = [
     devLauncher
+    #blazePkg
     pkgs.bacon
     pkgs.bun
     pkgs.wtype

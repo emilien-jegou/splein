@@ -1,60 +1,30 @@
-// Hot-reload host loop moved into riode-shared so the shared image also owns devkit entry points.
-// (Originally crates/riode-devkit-bin; kept here to remove a second dylib boundary.)
+// Responsibility: Host runner entry point (`devkit_run`) for running UI crates under the shared runtime.
 
-use riode::hot_reload::{
-    blocking_hot_build, ComponentReloadExtension, DevLoopConfig, DylibReloader, HotTitleFn,
-    HotWindowFn, HotWindowInfo,
-};
-use riode::prelude::*;
-// NOTE: import `text` qualified at the call site (not via glob/use): a
-// `text` binding at this file's scope would collide with the `text`
-// module re-exported at the crate root and break `riode_shared::text`
-// for every downstream user.
+use riode::hot_reload::builder::cargo::CargoRunner;
+use riode::hot_reload::builder::BuildRunner;
+use riode::hot_reload::contract::LoadedUiContract;
+use riode::hot_reload::{ComponentReloadExtension, DylibReloader, HotWindowInfo};
 use riode::internal::group;
+use riode::prelude::*;
 use std::ffi::{c_char, CStr};
+use std::path::PathBuf;
 
-/// Reads a borrowed C string. The stub keeps every string alive for the call.
-fn arg<'a>(ptr: *const c_char) -> &'a str {
-    // SAFETY: the stub passes valid NUL-terminated strings that outlive the call.
+fn parse_c_str<'a>(ptr: *const c_char) -> &'a str {
     unsafe { CStr::from_ptr(ptr).to_str().unwrap_or("") }
 }
 
-#[no_mangle]
-pub extern "Rust" fn devkit_run(package: *const c_char, example: *const c_char, workspace_root: *const c_char) {
-    riode::hot_reload::init_dev_logging();
-    let example_raw = arg(example);
-    let example = (!example_raw.is_empty()).then(|| example_raw.to_string());
-    let package_raw = arg(package);
-    let root = std::path::PathBuf::from(arg(workspace_root));
-    let loop_config = || DevLoopConfig {
-        package: package_raw.to_string(),
-        example: example.clone(),
-        workspace_root: root.clone(),
-        watch_dir: example.as_deref().map(|name| root.join("examples").join(name)),
-        lib_path: None,
-        auto_build: true,
-        // Canonical set (scripts/hot-sets/window): must equal the hand-build
-        // set or rival `riode` units break dylib loads. Never inline a list.
-        companion_packages: riode::hot_reload::companion_set("window"),
-    };
-    let build_log = std::env::temp_dir().join(format!("riode-hot-boot-{}.log", std::process::id()));
-    if let Err(tail) = blocking_hot_build(&loop_config(), &build_log) {
-        eprintln!("riode: hot-reload boot build failed; log: {}", build_log.display());
-        for line in &tail {
-            eprintln!("riode: hot-reload build | {line}");
-        }
-        std::process::exit(1);
+fn read_boot_chrome(runner: &dyn BuildRunner) -> (HotWindowInfo, String) {
+    let mut loader = DylibReloader::new(runner.lib_path());
+    if !loader.refresh() {
+        return (HotWindowInfo::fallback(), "Aurora Hot Reload".to_string());
     }
-    let (info, title) = read_boot_chrome(&loop_config());
-    let ext = ComponentReloadExtension::new(loop_config());
-    App::config()
-        .title(title)
-        .size(info.width.max(1), info.height.max(1))
-        .font("Inter", include_bytes!("../../riode/assets/inter-var.ttf"))
-        .background(Color::hex(info.background))
-        .backend_factory(crate::wgpu::create_backend)
-        .extension(ext)
-        .run(placeholder);
+    match LoadedUiContract::resolve(&loader) {
+        Ok(contract) => (contract.window_info, contract.window_title),
+        Err(err) => {
+            eprintln!("riode: boot image contract invalid ({err}); using fallback chrome");
+            (HotWindowInfo::fallback(), "Aurora Hot Reload".to_string())
+        }
+    }
 }
 
 fn placeholder() -> impl IntoElement {
@@ -64,163 +34,52 @@ fn placeholder() -> impl IntoElement {
         .children([riode::internal::text("building hot-ui…").size(16.0)])
 }
 
-fn read_boot_chrome(config: &DevLoopConfig) -> (HotWindowInfo, String) {
-    let fallback = (HotWindowInfo::fallback(), "Aurora Hot Reload".to_string());
-    let mut loader = DylibReloader::new(config.lib_path());
-    if !loader.refresh() {
-        eprintln!("riode: hot-reload boot image not loadable; default chrome");
-        return fallback;
-    }
-    let skewed = unsafe {
-        match loader.get::<riode::hot_reload::ComponentVersionFn>(b"riode_hot_version") {
-            Ok(f) => f() != riode::hot_reload::component_abi_fingerprint(),
-            Err(_) => true,
-        }
-    };
-    if skewed {
-        eprintln!("riode: hot-reload boot image handshake failed; default chrome");
-        return fallback;
-    }
-    let info = unsafe {
-        match loader.get::<HotWindowFn>(b"riode_hot_window") {
-            Ok(f) => f(),
-            Err(_) => HotWindowInfo::fallback(),
-        }
-    };
-    let title = unsafe {
-        match loader.get::<HotTitleFn>(b"riode_hot_title") {
-            Ok(f) => f().to_string(),
-            Err(_) => fallback.1.clone(),
-        }
-    };
-    (info, title)
-}
-
 #[no_mangle]
-pub extern "Rust" fn devkit_selftest(version_fn: usize, root_fn: usize) -> i32 {
-    let outcome = std::panic::catch_unwind(|| selftest_body(version_fn, root_fn));
-    match outcome {
-        Ok(0) => 0,
-        Ok(code) => code,
-        Err(_) => {
-            eprintln!("hot selftest: panicked; see logs above");
-            1
+pub extern "Rust" fn devkit_run(
+    package: *const c_char,
+    example: *const c_char,
+    workspace_root: *const c_char,
+) {
+    riode::hot_reload::init_dev_logging();
+    let example_raw = parse_c_str(example);
+    let example = (!example_raw.is_empty()).then(|| example_raw.to_string());
+    let package = parse_c_str(package).to_string();
+    let root = PathBuf::from(parse_c_str(workspace_root));
+
+    let watch_dir = example.as_deref().map(|name| {
+        let ex_path = root.join("examples").join(name);
+        if ex_path.exists() {
+            ex_path
+        } else {
+            root.join("src")
         }
-    }
-}
+    });
 
-fn check(cond: bool, what: &str) -> Result<(), i32> {
-    if cond {
-        Ok(())
-    } else {
-        eprintln!("hot selftest FAILED: {what}");
-        Err(1)
-    }
-}
+    let runner = CargoRunner::builder()
+        .package(package)
+        .maybe_example(example)
+        .workspace_root(root)
+        .maybe_watch_dir(watch_dir)
+        .build();
 
-fn selftest_body(version_fn: usize, root_fn: usize) -> i32 {
-    use riode::hot_reload::{
-        component_abi_fingerprint, ComponentRootFn, ComponentVersionFn, SharedFactory,
-    };
-    use std::cell::{Cell, RefCell};
-    use std::rc::Rc;
-
-    let version_fn: ComponentVersionFn = unsafe { std::mem::transmute(version_fn) };
-    let root_fn: ComponentRootFn = unsafe { std::mem::transmute(root_fn) };
-    let run = || -> Result<(), i32> {
-        check(
-            version_fn() == component_abi_fingerprint(),
-            "protocol handshake agrees",
-        )?;
-
-        let runtime = Rc::new(RefCell::new(riode::reactive::ReactiveRuntime::new()));
-        runtime.borrow_mut().begin_build_window();
-        let cx = riode::reactive::Cx::new(Rc::clone(&runtime));
-        let current = Rc::new(Cell::new(Some(root_fn)));
-        let factory: SharedFactory = {
-            let current = Rc::clone(&current);
-            Rc::new(move || {
-                let build = current.get().expect("component entry installed");
-                build()
-            })
-        };
-        let tree = cx.enter_keyed("root", || factory());
-        let mut engine = riode::runtime::Engine::with_runtime(Rc::clone(&runtime), tree, 500, 560);
-        runtime.borrow_mut().end_build_window(true);
-        engine.set_root_factory(Rc::clone(&factory));
-        engine.advance(1.0 / 60.0);
-        engine.frame();
-
-        check(
-            engine.hot_reload().registry().contains("hot_ui::Counter"),
-            "dylib component scopes tracked",
-        )?;
-        let hero_material = engine.with_arena(|arena, _| {
-            let key: riode::foundation::Key = "hero".into();
-            arena
-                .node_for_key(&key)
-                .and_then(|id| arena.get(id).style.paint.material.clone())
-        });
-        check(
-            hero_material.is_some(),
-            "dylib hero material lands on the live node",
-        )?;
-        let height = engine.rect("counter").map(|r| r.height).unwrap_or(-1.0);
-        check(
-            (height - 100.0).abs() < 0.5,
-            "counter mounts at base height",
-        )?;
-
-        let (x, y) = engine
-            .rect("counter")
-            .map(|r| (r.x + r.width / 2.0, r.y + r.height / 2.0))
-            .expect("counter mounted");
-        engine.queue_pointer_down(x, y);
-        engine.advance(1.0 / 60.0);
-        engine.frame();
-        engine.queue_pointer_up(x, y);
-        engine.advance(1.0 / 60.0);
-        engine.frame();
-        let tapped = engine.rect("counter").map(|r| r.height).unwrap_or(-1.0);
-        check(
-            (tapped - 120.0).abs() < 0.5,
-            "tap lands in dylib hook state",
-        )?;
-
-        current.set(Some(root_fn));
-        engine.queue_full_reload();
-        engine.advance(1.0 / 60.0);
-        engine.frame();
-        let kept = engine.rect("counter").map(|r| r.height).unwrap_or(-1.0);
-        check(
-            (kept - 120.0).abs() < 0.5,
-            "taps survive rebuild from swapped code",
-        )?;
-        let stats = engine.hot_reload_stats();
-        check(stats.reloads_total == 1, "exactly one reload recorded")?;
-        check(stats.last_error.is_none(), "no reload error recorded")?;
-
-        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| root_fn()));
-        check(outcome.is_err(), "unscoped entry call panics")?;
-        let msg = match outcome {
-            Err(payload) => payload
-                .downcast_ref::<&str>()
-                .map(|s| s.to_string())
-                .or_else(|| payload.downcast_ref::<String>().cloned())
-                .unwrap_or_default(),
-            Ok(_) => String::new(),
-        };
-        check(
-            msg.contains("component body"),
-            "panic payload crosses the boundary intact",
-        )?;
-        Ok(())
-    };
-    match run() {
-        Ok(()) => {
-            eprintln!("hot selftest: all checks passed");
-            0
+    let build_log = std::env::temp_dir().join(format!("riode-hot-boot-{}.log", std::process::id()));
+    if let Err(tail) = runner.blocking_build(&build_log) {
+        eprintln!("riode: hot-reload boot build failed; log: {}", build_log.display());
+        for line in &tail {
+            eprintln!("riode: hot-reload build | {line}");
         }
-        Err(code) => code,
+        std::process::exit(1);
     }
+
+    let (info, title) = read_boot_chrome(&runner);
+    let ext = ComponentReloadExtension::new(Box::new(runner));
+
+    App::config()
+        .title(title)
+        .size(info.width.max(1), info.height.max(1))
+        .font("Inter", include_bytes!("../../riode/assets/inter-var.ttf"))
+        .background(Color::hex(info.background))
+        .backend_factory(crate::wgpu::create_backend)
+        .extension(ext)
+        .run(placeholder);
 }

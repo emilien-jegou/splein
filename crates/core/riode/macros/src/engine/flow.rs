@@ -3,7 +3,6 @@
 use super::registry::RxEngine;
 use super::{attr_node, flow_util, for_node, if_node, match_node};
 use proc_macro2::TokenStream as TokenStream2;
-use std::cell::Cell;
 
 #[derive(Default)]
 pub struct FlowTables {
@@ -11,7 +10,6 @@ pub struct FlowTables {
     pub if_nodes: Vec<if_node::IfNode>,
     pub match_nodes: Vec<match_node::MatchNode>,
     pub attr_raw: Vec<TokenStream2>,
-    pub slots: Cell<usize>,
 }
 
 impl FlowTables {
@@ -83,16 +81,15 @@ impl FlowTables {
             .iter()
             .filter(|n| matches!(n.key, for_node::ForKey::Default))
         {
-            // Skip warning for literal ranges:
             if matches!(n.items, syn::Expr::Range(_)) {
                 continue;
             }
 
             proc_macro::Diagnostic::spanned(
-            proc_macro2::Span::call_site().unwrap(),
-            proc_macro::Level::Warning,
-            "<for> without `key=` uses row index as identity. Add `key={.id}`, or silence with `key=_` if index identity is intentional.",
-        ).emit();
+                proc_macro2::Span::call_site().unwrap(),
+                proc_macro::Level::Warning,
+                "<for> without `key=` uses row index as identity. Add `key={.id}`, or silence with `key=_` if index identity is intentional.",
+            ).emit();
         }
     }
 }

@@ -1,14 +1,8 @@
 // Responsibility: Scroll-demo page assembly, clock drivers, auto-scroll interval, and root shell layout.
 
 use riode::prelude::*;
-
 use super::chrome::*;
 use super::rows::*;
-
-pub const HOT_TITLE: &str = "Aurora — Scroll · thumb · selection";
-pub const HOT_WIDTH: u32 = 800;
-pub const HOT_HEIGHT: u32 = 985;
-pub const HOT_BG: u32 = PAGE;
 
 #[component(name = "scroll_demo::Page")]
 pub fn Page() -> impl IntoElement {

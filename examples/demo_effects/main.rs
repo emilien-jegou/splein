@@ -1,18 +1,12 @@
-// Single responsibility: Native OS window presenting the live effects & blending showcase.
-
-#[path = "../common/mod.rs"]
-mod common;
-
-mod view;
-
-pub use view::*;
+// Responsibility: Demo-effects application entry point with self-hosted live reload.
 
 fn main() {
-    common::example_cli_run(
-        view::HOT_TITLE,
-        view::HOT_WIDTH,
-        view::HOT_HEIGHT,
-        view::HOT_BG,
-        view::Page,
-    );
+    riode::App::config()
+        .title("Aurora — Effects & Blending Showcase")
+        .size(960, 680)
+        .background(0x111116)
+        .backend_factory(riode_engine_wgpu::create_backend)
+        .parse_cli()
+        .hot_reload(true)
+        .run(demo_effects::Page);
 }

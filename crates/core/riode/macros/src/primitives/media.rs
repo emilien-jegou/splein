@@ -13,10 +13,10 @@ fn expand_media(cx: EngineContext, ctor: TokenStream2, tag: &str) -> syn::Result
         if let NodeAttribute::Attribute(attr) = a {
             let key = node_name_string(&attr.key);
             if matches!(key.as_str(), "src" | "source" | "graphic") {
-                src_val = Some(attr_value(&key, attr, cx.flow));
+                src_val = Some(attr_value(&key, attr));
             } else {
                 let method = format_ident!("{}", attr_method(tag, &key));
-                let val = attr_value(&key, attr, cx.flow);
+                let val = attr_value(&key, attr);
                 modifiers.push(quote! { .#method(#val) });
             }
         }

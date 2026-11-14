@@ -1,19 +1,12 @@
-// Responsibility: Scroll-demo release driver — argv teardown, telemetry, and
-// the run loop; window facts live once in `view.rs`.
-
-#[path = "../common/mod.rs"]
-mod common;
-
-mod view;
-
-pub use view::*;
+// Responsibility: Test-fig-gen application entry point with self-hosted live reload.
 
 fn main() {
-    common::example_cli_run(
-        view::HOT_TITLE,
-        view::HOT_WIDTH,
-        view::HOT_HEIGHT,
-        view::HOT_BG,
-        view::Page,
-    );
+    riode::App::config()
+        .title("Aurora — Figure Generation Test")
+        .size(800, 600)
+        .background(0x18181B)
+        .backend_factory(riode_engine_wgpu::create_backend)
+        .parse_cli()
+        .hot_reload(true)
+        .run(test_fig_gen::Page);
 }

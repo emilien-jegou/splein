@@ -1,12 +1,13 @@
-// Single responsibility: Riode-specific attribute normalization (Tailwind, shorthands) and value wrapping.
+// Responsibility: Riode-specific attribute normalization (Tailwind, shorthands) and value wrapping.
 
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use rstml::node::{KVAttributeValue, KeyedAttribute, KeyedAttributeValue};
-use crate::engine::flow::FlowTables;
 
 pub fn attr_method(tag: &str, key: &str) -> String {
-    if key == "ref" { return "bind_ref".to_string(); }
+    if key == "ref" {
+        return "bind_ref".to_string();
+    }
     if let Some(ev) = key.strip_prefix("on:") {
         return format!("on_{}", ev.replace(['-', ':'], "_"));
     }
@@ -31,23 +32,6 @@ pub fn attr_method(tag: &str, key: &str) -> String {
     normalized.replace(['-', ':'], "_")
 }
 
-pub fn slot_literal_value(val: TokenStream2, flow: &FlowTables) -> TokenStream2 {
-    if let Ok(s) = syn::parse2::<syn::LitStr>(val.clone()) {
-        let idx = flow.slots.get();
-        flow.slots.set(idx + 1);
-        return quote! { ::riode::hot_reload::template::tpl_string(::std::concat!(::std::file!(), ":", ::std::line!(), ":", #idx), #s) };
-    }
-    if let Ok(f) = syn::parse2::<syn::LitFloat>(val.clone()) {
-        let repr = f.to_string();
-        if repr.contains('.') {
-            let idx = flow.slots.get();
-            flow.slots.set(idx + 1);
-            return quote! { ::riode::hot_reload::template::tpl_f32(::std::concat!(::std::file!(), ":", ::std::line!(), ":", #idx), #f) };
-        }
-    }
-    val
-}
-
 pub fn attr_value_tokens(attr: &KeyedAttribute) -> TokenStream2 {
     match &attr.possible_value {
         KeyedAttributeValue::Binding(_) => quote! { ::std::compile_error!("view!: closure bindings not supported") },
@@ -70,7 +54,7 @@ pub fn strip_braces(block: &syn::Block) -> TokenStream2 {
     block.to_token_stream()
 }
 
-pub fn attr_value(key: &str, attr: &KeyedAttribute, flow: &FlowTables) -> TokenStream2 {
+pub fn attr_value(key: &str, attr: &KeyedAttribute) -> TokenStream2 {
     if key.starts_with("on:") {
         if let Some(syn::Expr::Field(syn::ExprField { base, member, .. })) = attr_expr(attr) {
             return quote! { move |_| (#base).#member() };
@@ -79,27 +63,27 @@ pub fn attr_value(key: &str, attr: &KeyedAttribute, flow: &FlowTables) -> TokenS
     match key {
         "material" => {
             if let Some(list) = bracket_list(attr, &quote!(::riode::prelude::Material), &quote!(::riode::prelude::Stage)) {
-                return slot_literal_value(list, flow);
+                return list;
             }
             if let Some(syn::Expr::Closure(_)) = attr_expr(attr) {
                 let inner = attr_value_tokens(attr);
-                return slot_literal_value(quote! { ::riode::prelude::GeoFn(#inner) }, flow);
+                return quote! { ::riode::prelude::GeoFn(#inner) };
             }
-            slot_literal_value(attr_value_tokens(attr), flow)
+            attr_value_tokens(attr)
         }
         "overlay" => {
             if let Some(list) = bracket_list(attr, &quote!(::riode::prelude::Overlay), &quote!(::riode::prelude::Stage)) {
-                return slot_literal_value(list, flow);
+                return list;
             }
-            slot_literal_value(attr_value_tokens(attr), flow)
+            attr_value_tokens(attr)
         }
         "effect" => {
             if let Some(list) = bracket_list(attr, &quote!(::riode::prelude::Effect), &quote!(::riode::prelude::EffectStage)) {
-                return slot_literal_value(list, flow);
+                return list;
             }
-            slot_literal_value(attr_value_tokens(attr), flow)
+            attr_value_tokens(attr)
         }
-        _ => slot_literal_value(attr_value_tokens(attr), flow),
+        _ => attr_value_tokens(attr),
     }
 }
 

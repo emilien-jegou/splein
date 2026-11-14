@@ -12,7 +12,7 @@ pub mod nested;
 pub mod props;
 pub mod registry;
 
-pub use ast::{element_expr, node_name_string, shape_of_nodes};
+pub use ast::{element_expr, node_name_string};
 pub use children::{children_segments_vec, is_control_child};
 pub use nested::nested_element_value;
 pub use registry::{EngineContext, RxEngine};
@@ -34,13 +34,22 @@ pub fn view_expand(tokens: TokenStream2, engine: &RxEngine) -> syn::Result<Token
         out = quote! { #out #t; };
     }
     match nodes.as_slice() {
-        [] => Err(syn::Error::new(proc_macro2::Span::call_site(), "view!: expected at least one element")),
+        [] => Err(syn::Error::new(
+            proc_macro2::Span::call_site(),
+            "view!: expected at least one element",
+        )),
         [single] => {
             if is_control_child(single) {
-                return Err(syn::Error::new_spanned(single, "view!: control nodes are not layout roots — wrap in a `<g>`"));
+                return Err(syn::Error::new_spanned(
+                    single,
+                    "view!: control nodes are not layout roots — wrap in a `<g>`",
+                ));
             }
             if matches!(single, Node::Fragment(_)) {
-                return Err(syn::Error::new_spanned(single, "view!: fragment at root — wrap in a `<g>`"));
+                return Err(syn::Error::new_spanned(
+                    single,
+                    "view!: fragment at root — wrap in a `<g>`",
+                ));
             }
 
             let expr = match single {
@@ -51,7 +60,9 @@ pub fn view_expand(tokens: TokenStream2, engine: &RxEngine) -> syn::Result<Token
                 }
                 Node::Block(b) => {
                     let inner = match b {
-                        rstml::node::NodeBlock::ValidBlock(block) => crate::primitives::attr::strip_braces(block),
+                        rstml::node::NodeBlock::ValidBlock(block) => {
+                            crate::primitives::attr::strip_braces(block)
+                        }
                         other => quote! { #other },
                     };
                     quote! { ::riode::internal::IntoElement::into_element(#inner) }
@@ -60,14 +71,15 @@ pub fn view_expand(tokens: TokenStream2, engine: &RxEngine) -> syn::Result<Token
             };
 
             let body = flow.splice(expr, engine)?;
-            let shape = shape_of_nodes(std::slice::from_ref(single));
             Ok(quote! {
                 {
-                    ::riode::hot_reload::template::note_view_template(::std::file!(), ::std::line!(), #shape);
                     #out #body
                 }
             })
         }
-        _ => Err(syn::Error::new(proc_macro2::Span::call_site(), "view!: multiple roots — wrap in a `<g>`")),
+        _ => Err(syn::Error::new(
+            proc_macro2::Span::call_site(),
+            "view!: multiple roots — wrap in a `<g>`",
+        )),
     }
 }

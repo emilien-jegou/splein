@@ -1,19 +1,13 @@
-// Single responsibility: Native OS window presenting the live Paper 1 showcase design.
-
-
-#[path = "../common/mod.rs"]
-mod common;
-
-mod view;
-
-pub use view::*;
+// Responsibility: Demo1 application entry point with self-hosted live reload.
+use riode::prelude::*;
 
 fn main() {
-    common::example_cli_run(
-        view::HOT_TITLE,
-        view::HOT_WIDTH,
-        view::HOT_HEIGHT,
-        view::HOT_BG,
-        view::Page,
-    );
+    App::config()
+        .title("Aurora — Paper 1 Showcase")
+        .size(900, 700)
+        .background(0xFFFFFF)
+        .backend_factory(riode_engine_wgpu::create_backend)
+        .parse_cli()
+        .hot_reload(true)
+        .run(demo1::Page);
 }

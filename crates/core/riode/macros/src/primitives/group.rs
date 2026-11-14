@@ -1,10 +1,10 @@
-// Single responsibility: Macro expansion descriptor for the `<g>` / `<Group>` flex container primitive.
+// Responsibility: Macro expansion descriptor for the `<g>` / `<Group>` flex container primitive.
 
+use super::attr::{attr_method, attr_value};
+use crate::engine::{children_segments_vec, node_name_string, EngineContext};
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
 use rstml::node::{KeyedAttributeValue, NodeAttribute};
-use crate::engine::{children_segments_vec, node_name_string, EngineContext};
-use super::attr::{attr_method, attr_value};
 
 pub fn expand(cx: EngineContext) -> syn::Result<TokenStream2> {
     let mut out = quote! { ::riode::internal::group() };
@@ -22,7 +22,7 @@ pub fn expand(cx: EngineContext) -> syn::Result<TokenStream2> {
                     }
                 }
             } else {
-                let val = attr_value(&key, attr, cx.flow);
+                let val = attr_value(&key, attr);
                 out = quote! { #out.#method(#val) };
             }
         }
