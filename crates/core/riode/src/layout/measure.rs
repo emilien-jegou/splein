@@ -4,9 +4,8 @@ use crate::foundation::{Constraints, DesiredSize, IntrinsicSize, LayoutPresence,
 use crate::layout::group_measure::measure_group_intrinsic;
 use crate::text::TextContext;
 use crate::tree::TreeArena;
-use crate::tree::{NodeId, NodeKind};
+use crate::tree::NodeId;
 
-/// Derives resolved pixel size from sizing intent, intrinsic size, and parent bound.
 pub fn resolve_desired_dimension(size: Size, intrinsic: f32, parent_dim: Option<f32>) -> f32 {
     let safe_intrinsic = if intrinsic.is_finite() { intrinsic.max(0.0) } else { 0.0 };
     match size {
@@ -31,7 +30,7 @@ pub fn compute_intrinsic(
 ) -> IntrinsicSize {
     let (w_size, h_size, is_text) = {
         let n = arena.get(node_id);
-        (n.style.width, n.style.height, matches!(n.kind, NodeKind::Text(_)))
+        (n.style.width, n.style.height, n.kind.is_text())
     };
 
     if let (Size::Fixed(w), Size::Fixed(h)) = (w_size, h_size) {
@@ -39,19 +38,13 @@ pub fn compute_intrinsic(
     }
 
     let effective_constraints = if is_text {
-        let wrap_w = {
-            let n = arena.get(node_id);
-            match &n.kind {
-                NodeKind::Text(t) => crate::text::TextConfig::wrap_width(
-                    t,
-                    n.style.width,
-                    text_ctx,
-                    constraints,
-                    for_height,
-                ),
-                _ => constraints.max_width,
+        let wrap_w = arena.get(node_id).kind.text_content().map_or(constraints.max_width, |_| {
+            if let crate::tree::NodeKind::Text(t) = &arena.get(node_id).kind {
+                crate::text::TextConfig::wrap_width(t, arena.get(node_id).style.width, text_ctx, constraints, for_height)
+            } else {
+                constraints.max_width
             }
-        };
+        });
         Constraints {
             min_width: 0.0,
             max_width: wrap_w,
@@ -64,13 +57,7 @@ pub fn compute_intrinsic(
         Constraints::loose(constraints.max_width, constraints.max_height)
     };
 
-    if let Some(cached) = arena
-        .get(node_id)
-        .state
-        .core
-        .cache
-        .get_intrinsic(&effective_constraints, for_height)
-    {
+    if let Some(cached) = arena.get(node_id).state.core.cache.get_intrinsic(&effective_constraints, for_height) {
         return cached;
     }
 
@@ -84,13 +71,7 @@ pub fn compute_intrinsic_with_constraints(
     text_ctx: &TextContext,
     for_height: bool,
 ) -> IntrinsicSize {
-    if let Some(cached) = arena
-        .get(node_id)
-        .state
-        .core
-        .cache
-        .get_intrinsic(&constraints, for_height)
-    {
+    if let Some(cached) = arena.get(node_id).state.core.cache.get_intrinsic(&constraints, for_height) {
         return cached;
     }
     measure_intrinsic_uncached(arena, node_id, constraints, text_ctx, for_height)
@@ -104,29 +85,19 @@ fn measure_intrinsic_uncached(
     text_ctx: &TextContext,
     for_height: bool,
 ) -> IntrinsicSize {
-    if matches!(arena.get(node_id).kind, NodeKind::Group) {
+    if arena.get(node_id).kind.is_group() {
         let mut intrinsic = measure_group_intrinsic(arena, node_id, constraints, text_ctx, for_height);
         if let Some(h) = aspect_fit_height(&arena.get(node_id).style, constraints) {
             intrinsic.height = h.min(constraints.max_height);
         }
-        arena
-            .get_mut(node_id)
-            .state
-            .core
-            .cache
-            .store_intrinsic(constraints, for_height, intrinsic);
+        arena.get_mut(node_id).state.core.cache.store_intrinsic(constraints, for_height, intrinsic);
         return intrinsic;
     }
 
     let node = arena.get(node_id);
-    let (intrinsic, shaped_layout) = match &node.kind {
-        NodeKind::Text(t) => {
-            let (size, layout) = t.measure(text_ctx, constraints);
-            (size, Some(layout))
-        }
-        NodeKind::Custom(p) => (p.measure(constraints), None),
-        NodeKind::Group => unreachable!(),
-    };
+    let (intrinsic, shaped_layout) = node.kind.measure_leaf(constraints, text_ctx)
+        .expect("measure_leaf must handle non-group nodes");
+
     let pad = arena.get(node_id).style.padding;
     let intrinsic = IntrinsicSize {
         width: intrinsic.width + pad.horizontal(),
@@ -134,11 +105,7 @@ fn measure_intrinsic_uncached(
     };
 
     let target_node = arena.get_mut(node_id);
-    target_node
-        .state
-        .core
-        .cache
-        .store_intrinsic(constraints, for_height, intrinsic);
+    target_node.state.core.cache.store_intrinsic(constraints, for_height, intrinsic);
     if let Some(layout) = shaped_layout {
         target_node.state.text.cached_text_layout = Some(layout);
     }
@@ -172,7 +139,7 @@ pub fn fit_text_run_to_width(
     text_ctx: &TextContext,
 ) {
     let config = match &arena.get(id).kind {
-        NodeKind::Text(config) => {
+        crate::tree::NodeKind::Text(config) => {
             let force = arena.get(id).style.width.is_fold();
             let cached = arena.get(id).state.text.cached_text_layout.as_deref();
             if !force && !crate::text::TextConfig::needs_refit(cached, width) {

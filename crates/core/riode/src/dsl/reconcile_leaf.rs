@@ -1,7 +1,8 @@
-// Single responsibility: Leaf element reconciliation for typography and custom primitives.
+// Single responsibility: Leaf element reconciliation for typography, images, and custom primitives.
 
 use crate::dsl::cleanup::clean_orphaned_children;
 use crate::dsl::custom::CustomDef;
+use crate::dsl::image::ImageElement;
 use crate::dsl::reconciler::evaluate_prop;
 use crate::dsl::text::TextElement;
 use crate::foundation::Size;
@@ -22,15 +23,11 @@ pub fn reconcile_text(
 ) -> NodeId {
     let id = existing.unwrap_or_else(|| arena.insert(LayoutNode::default()));
     clean_orphaned_children(runtime, arena, router, id);
-
     let _eval_node = crate::reactive::context::enter_node(id, arena);
+
     let is_dynamic = def.content.is_dynamic();
     let m_sub = is_dynamic.then(|| router.measure_sub(id, &mut runtime.borrow_mut()));
-
-    let store = DynamicBindings {
-        text: def.content.dynamic_closure(),
-        ..Default::default()
-    };
+    let store = DynamicBindings { text: def.content.dynamic_closure(), ..Default::default() };
     arena.get_mut(id).state.core.bindings = NodeBindings::from_store(store);
     arena.invalidate_static_up(id);
 
@@ -70,6 +67,35 @@ pub fn reconcile_text(
     node.style.z_index = effective_z;
     node.style.is_overlay = def.is_overlay;
     node.style.has_layer = def.has_layer;
+    id
+}
+
+pub fn reconcile_image(
+    runtime: &Rc<RefCell<ReactiveRuntime>>,
+    arena: &mut TreeArena,
+    router: &mut SubscriberRouter,
+    existing: Option<NodeId>,
+    def: ImageElement,
+) -> NodeId {
+    let id = existing.unwrap_or_else(|| arena.insert(LayoutNode::default()));
+    clean_orphaned_children(runtime, arena, router, id);
+    let _eval_node = crate::reactive::context::enter_node(id, arena);
+    arena.get_mut(id).state.core.bindings = NodeBindings::default();
+    arena.invalidate_static_up(id);
+
+    let effective_z = if def.z_index != 0 { def.z_index } else if def.is_absolute { 1 } else { 0 };
+    let config = def.to_config();
+    let node = arena.get_mut(id);
+    node.kind = NodeKind::Image(config);
+    node.style.width = def.width.unwrap_or(Size::Fit);
+    node.style.height = def.height.unwrap_or(Size::Fit);
+    node.style.aspect_ratio = def.aspect_ratio;
+    node.style.margin = def.margin;
+    node.style.padding = def.padding;
+    node.style.anchor = def.anchor;
+    node.style.is_absolute = def.is_absolute;
+    node.style.z_index = effective_z;
+    arena.mark_dirty(id, DirtyFlags::MEASURE | DirtyFlags::LAYOUT);
     id
 }
 

@@ -6,13 +6,8 @@ use crate::foundation::{Direction, FlowWrap};
 use crate::text::TextContext;
 use crate::tree::cache::LayoutCache;
 use crate::tree::TreeArena;
-use crate::tree::{NodeId, NodeKind};
+use crate::tree::NodeId;
 
-/// Smallest main-axis size a node can be shrunk to before its own content is crushed.
-///
-/// Mirrors CSS flexbox's automatic minimum size: content cannot be starved to zero by a
-/// competing sibling. Callers clamp this by the item's own desired size so the guard can
-/// never inflate a box past what the author asked for.
 pub fn compute_min_size(
     arena: &mut TreeArena,
     id: NodeId,
@@ -31,7 +26,6 @@ pub fn compute_min_size(
     measured
 }
 
-/// Reads the memoized floor for one axis.
 fn cached_min_size(cache: &LayoutCache, axis: Direction) -> Option<f32> {
     match axis {
         Direction::Horizontal => cache.min_inline,
@@ -39,25 +33,18 @@ fn cached_min_size(cache: &LayoutCache, axis: Direction) -> Option<f32> {
     }
 }
 
-/// Measures the floor: longest word for text, one line box vertically, flex rules for groups.
 fn measure_min_size(
     arena: &mut TreeArena,
     id: NodeId,
     axis: Direction,
     text_ctx: &TextContext,
 ) -> f32 {
-    // CSS exempts items that clip their overflow: clipping is precisely how an author opts out
-    // of the automatic minimum, so a `clip(true)` box stays freely crushable.
     if arena.get(id).style.clip {
         return 0.0;
     }
-    let leaf = match &arena.get(id).kind {
-        NodeKind::Text(config) => Some(config.min_content(text_ctx, axis)),
-        NodeKind::Custom(primitive) => Some(primitive.min_content(axis)),
-        NodeKind::Group => None,
-    };
 
-    if let Some(floor) = leaf {
+    // Encapsulated polymorphic dispatch: no leaking of leaf variants
+    if let Some(floor) = arena.get(id).kind.min_content(axis, text_ctx) {
         let pad = arena.get(id).style.padding;
         return floor
             + match axis {
@@ -69,7 +56,6 @@ fn measure_min_size(
     min_group_size(arena, id, axis, text_ctx)
 }
 
-/// Flex min-content of a container: summed along its main axis, widest child across its cross axis.
 fn min_group_size(
     arena: &mut TreeArena,
     id: NodeId,
@@ -78,20 +64,13 @@ fn min_group_size(
 ) -> f32 {
     let (own_dir, gap, wrapping) = {
         let layout = arena.get(id).style.layout;
-        (
-            layout.direction,
-            layout.gap,
-            layout.flow_wrap == FlowWrap::Wrap,
-        )
+        (layout.direction, layout.gap, layout.flow_wrap == FlowWrap::Wrap)
     };
 
-    // Out-of-flow children do not participate in intrinsic sizing, exactly as in CSS.
-    // Borrowed iteration: no child-list copy for the filter scan.
     let flow: SmallVec<[NodeId; 8]> = arena
         .each_child(id)
         .filter(|child| {
-            !arena.get(*child).style.is_absolute
-                && arena.get(*child).state.core.presence.occupies_space()
+            !arena.get(*child).style.is_absolute && arena.get(*child).state.core.presence.occupies_space()
         })
         .collect();
     if flow.is_empty() {
@@ -115,10 +94,6 @@ fn min_group_size(
         widest = widest.max(item);
     }
 
-    // A wrapping container's main-axis floor is its widest item: every line
-    // holds at least one item, so the container can always narrow to that.
-    // (Cross-axis floors stay single-line lower bounds; wrapped height depends
-    // on the final width, which the floor must not presume.)
     if own_dir != axis || (own_dir == axis && wrapping) {
         let pad = arena.get(id).style.padding;
         return widest

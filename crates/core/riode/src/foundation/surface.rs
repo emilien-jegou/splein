@@ -4,7 +4,6 @@ use crate::dsl::element::Element;
 use crate::foundation::*;
 use crate::reactive::prop::Prop;
 
-/// Outer placement and layout overrides applied to a component's root element.
 #[derive(Default, Clone)]
 pub struct SurfaceProps {
     pub width: Option<Prop<Size>>,
@@ -23,12 +22,10 @@ impl SurfaceProps {
         Self::default()
     }
 
-    /// Merges an outer margin override.
     pub fn merge_margin(&mut self, m: Margin) {
         self.margin = Some(self.margin.unwrap_or(Margin::ZERO).merged(m));
     }
 
-    /// Applies the outer surface overrides onto any root element.
     pub fn apply(self, mut element: Element) -> Element {
         match &mut element {
             Element::Group(g) => {
@@ -60,6 +57,26 @@ impl SurfaceProps {
                 if let Some(a) = self.anchor { t.anchor = Some(a); t.is_absolute = true; }
                 if let Some(z) = self.z_index {
                     if let Prop::Static(val) = z { t.z_index = val; }
+                }
+            }
+            Element::Image(i) => {
+                if let Some(w) = self.width {
+                    if let Prop::Static(s) = w { i.width = Some(s); }
+                }
+                if let Some(h) = self.height {
+                    if let Prop::Static(s) = h { i.height = Some(s); }
+                }
+                if let Some(x) = self.x {
+                    if let Prop::Static(val) = x { i.x = Some(val); }
+                }
+                if let Some(y) = self.y {
+                    if let Prop::Static(val) = y { i.y = Some(val); }
+                }
+                if let Some(m) = self.margin { i.margin = i.margin.merged(m); }
+                if self.is_absolute { i.is_absolute = true; }
+                if let Some(a) = self.anchor { i.anchor = Some(a); i.is_absolute = true; }
+                if let Some(z) = self.z_index {
+                    if let Prop::Static(val) = z { i.z_index = val; }
                 }
             }
             Element::Custom(c) => {

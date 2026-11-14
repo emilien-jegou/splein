@@ -7,20 +7,15 @@ use crate::tree::state::NodeState;
 use crate::tree::style::NodeStyle;
 use std::ops::{Deref, DerefMut};
 
-/// Lowest z-index an overlay may declare, so it always paints above ordinary content.
 pub const OVERLAY_Z_FLOOR: i32 = 100;
 
-/// Where a node paints relative to its siblings, and in what order.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum PaintLayer {
-    /// Painted before the parent's own content, in ascending z order.
     Below(i32),
-    /// Painted after the parent's own content, in ascending z order.
     Above(i32),
 }
 
 impl PaintLayer {
-    /// The sort key within this layer; siblings compare on it directly.
     #[inline(always)]
     pub fn z(self) -> i32 {
         match self {
@@ -29,25 +24,14 @@ impl PaintLayer {
     }
 }
 
-/// Retained tree node composed of styling intent, computed geometry, and engine state.
 #[derive(Default)]
 pub struct LayoutNode {
     pub key: Option<Key>,
     pub kind: NodeKind,
     pub style: NodeStyle,
-    /// The node's own box, in its parent's coordinates. What layout produces.
     pub resolved_rect: ResolvedRect,
-    /// The same box in window coordinates.
-    ///
-    /// Layout computes this on the way down anyway, to place children and to report bounds, so
-    /// keeping it costs nothing. It exists because a component that wants to know where it ended
-    /// up otherwise has to walk its ancestor chain and sum offsets, which it cannot do: it holds
-    /// no reference to the tree. A pointer arrives in window coordinates, so anything comparing
-    /// layout against a gesture needs this frame rather than the parent-relative one.
     pub absolute_rect: ResolvedRect,
     pub transform: Transform,
-    /// Cached screen-space transform [STAGE1 #15]; valid when `abs_tx_frame`
-    /// equals the arena's current frame (see `TreeArena::tx_frame`).
     pub abs_tx: Transform,
     pub abs_tx_frame: u64,
     pub state: NodeState,
@@ -70,8 +54,41 @@ impl LayoutNode {
         }
     }
 
-    /// An independent 2D layout boundary isolates layout changes within its subtree.
-    /// Requires fixed dimensions on both axes and non-absolute positioning.
+    #[inline(always)]
+    pub fn is_group(&self) -> bool {
+        self.kind.is_group()
+    }
+
+    #[inline(always)]
+    pub fn is_text(&self) -> bool {
+        self.kind.is_text()
+    }
+
+    #[inline(always)]
+    pub fn is_image(&self) -> bool {
+        self.kind.is_image()
+    }
+
+    #[inline(always)]
+    pub fn is_selectable_text(&self) -> bool {
+        self.kind.is_selectable()
+    }
+
+    #[inline(always)]
+    pub fn text_content(&self) -> Option<&str> {
+        self.kind.text_content()
+    }
+
+    #[inline(always)]
+    pub fn is_text_empty(&self) -> bool {
+        self.kind.text_content().map_or(true, |s| s.is_empty())
+    }
+
+    #[inline(always)]
+    pub fn text_len(&self) -> usize {
+        self.kind.text_content().map_or(0, |s| s.len())
+    }
+
     #[inline]
     pub fn is_layout_boundary(&self) -> bool {
         !self.style.is_absolute
@@ -79,24 +96,14 @@ impl LayoutNode {
             && matches!(self.style.height, Size::Fixed(_))
     }
 
-    /// The transform this node paints with, pivoted about its centre so scale and rotation do
-    /// not drift toward the top-left origin.
     #[inline(always)]
     pub fn effective_transform(&self) -> Transform {
         let combined = self.transform;
-        // Pure translation needs no pivot; skipping it also keeps it free of float drift.
-        let linear = Transform {
-            tx: 0.0,
-            ty: 0.0,
-            ..combined
-        };
+        let linear = Transform { tx: 0.0, ty: 0.0, ..combined };
         if linear == Transform::IDENTITY {
             return combined;
         }
-        let (cx, cy) = (
-            self.resolved_rect.width * 0.5,
-            self.resolved_rect.height * 0.5,
-        );
+        let (cx, cy) = (self.resolved_rect.width * 0.5, self.resolved_rect.height * 0.5);
         Transform {
             tx: combined.tx + cx - (combined.a * cx + combined.c * cy),
             ty: combined.ty + cy - (combined.b * cx + combined.d * cy),
@@ -104,22 +111,14 @@ impl LayoutNode {
         }
     }
 
-    /// Whether the node must be isolated into its own stacking context.
     #[inline]
     pub fn creates_stacking_context(&self) -> bool {
         self.style.z_index != 0
             || self.style.is_overlay
             || self.effective_transform() != Transform::IDENTITY
-            // A material isolates its content — the card composites over a
-            // well-defined backdrop painted beneath it.
             || self.style.paint.material.is_some()
     }
 
-    /// Painter layer this node occupies relative to its siblings.
-    ///
-    /// Painting and hit testing must agree on this or a click lands on whatever happens to
-    /// be painted last rather than whatever is on top, so both read it from here instead of
-    /// repeating the partition rule.
     #[inline]
     pub fn paint_layer(&self) -> PaintLayer {
         let z = if self.style.is_overlay {
@@ -127,25 +126,15 @@ impl LayoutNode {
         } else {
             self.style.z_index
         };
-        if z < 0 {
-            PaintLayer::Below(z)
-        } else {
-            PaintLayer::Above(z)
-        }
+        if z < 0 { PaintLayer::Below(z) } else { PaintLayer::Above(z) }
     }
 
-    /// Axis-aligned box of a local rect projected through `tx`, used for screen-space bounds.
-    ///
-    /// Inflated by `AA_PAD` on every side: rasterizers (tiny-skia, Vello) emit
-    /// antialiased edge pixels up to 1px outside the geometric box (rounded
-    /// corners, glyph edges, strokes). Damage culled on the tight box would
-    /// leave a 1px ghost fringe; the pad makes culling conservative.
     pub const AA_PAD: f32 = 1.0;
+
     fn project(tx: &Transform, x: f32, y: f32, w: f32, h: f32) -> ResolvedRect {
         Self::project_aa(tx, x, y, w, h, Self::AA_PAD)
     }
 
-    /// Projected box with explicit extra padding (for callers that already pad).
     fn project_aa(tx: &Transform, x: f32, y: f32, w: f32, h: f32, pad: f32) -> ResolvedRect {
         let corners = [
             Point::new(x, y),
@@ -162,77 +151,27 @@ impl LayoutNode {
             max_x = max_x.max(p.x);
             max_y = max_y.max(p.y);
         }
-        ResolvedRect::new(
-            min_x - pad,
-            min_y - pad,
-            (max_x - min_x) + 2.0 * pad,
-            (max_y - min_y) + 2.0 * pad,
-        )
+        ResolvedRect::new(min_x - pad, min_y - pad, (max_x - min_x) + 2.0 * pad, (max_y - min_y) + 2.0 * pad)
     }
 
-    /// Bounds of this node's content alone, sized by the flow box rather than the render box.
-    ///
-    /// This is what changes when layout re-flows the interior while the render box is
-    /// stationary, so damage must compare it separately. `tx` is the node's own transform,
-    /// so the node's motion (scale, rotation) is included exactly once.
-    ///
-    /// Implemented as [`Self::compute_visual_bounds`]: both size from
-    /// projection would recompute the same box (N1). Kept as a named alias
-    /// so call sites keep reading intent; if flow and render boxes ever
-    /// diverge again, this is the single place to re-split them.
-    pub fn compute_flow_bounds(
-        &self,
-        tx: &Transform,
-        active_clip: Option<ResolvedRect>,
-    ) -> ResolvedRect {
+    pub fn compute_flow_bounds(&self, tx: &Transform, active_clip: Option<ResolvedRect>) -> ResolvedRect {
         self.compute_visual_bounds(tx, active_clip)
     }
 
-    /// Box that must be repainted when this node's geometry changes.
-    ///
-    /// A node paints its content at the *flow* size but is clipped to the *render* size,
-    /// so the pixels it can own span both. When only the flow box changes the render box
-    /// has not moved yet, and visual bounds alone would look unchanged while the content
-    /// has already shrunk. Nodes with no render box take the plain visual path, so the
-    /// common case is unaffected.
-
-    /// Computes the laid-out box projected through `tx`, with no coverage pad.
-    ///
-    /// Same projection as [`compute_visual_bounds`](Self::compute_visual_bounds) but tight:
-    /// geometry snapshot the publish pass writes (which stores layout boxes), so a handle
-    /// and the engine report the same box once nothing is in flight. Mid-flight it still
-    /// tracks the live transform, unlike the stored box, which is layout-time.
     pub fn compute_layout_bounds(&self, tx: &Transform) -> ResolvedRect {
         let (w, h) = (self.resolved_rect.width, self.resolved_rect.height);
         Self::project_aa(tx, 0.0, 0.0, w, h, 0.0)
     }
 
-    /// The node's committed geometry as a Chain-spec [`Geo`] snapshot.
-    /// Corners are square — `radius` was purged — so a `Material` sees a
-    /// zeroed corner row. The pad readers build this to ask a `Material`
-    /// for its reach without a live compile context.
     pub fn geo(&self) -> Geo {
         let (w, h) = (self.resolved_rect.width, self.resolved_rect.height);
         Geo::new(w, h, [0.0; 4], 0.0)
     }
 
-    /// Computes the visual screen-space bounds projected through `tx`, with
-    /// the material chain's outward reach and ancestor clipping folded in.
-    pub fn compute_visual_bounds(
-        &self,
-        tx: &Transform,
-        active_clip: Option<ResolvedRect>,
-    ) -> ResolvedRect {
-        // Sized from the render box so damage and clipping track what is on screen,
-        // while the origin comes from the transform chain built on the same box.
+    pub fn compute_visual_bounds(&self, tx: &Transform, active_clip: Option<ResolvedRect>) -> ResolvedRect {
         let (w, h) = (self.resolved_rect.width, self.resolved_rect.height);
         let bounds = Self::project(tx, 0.0, 0.0, w, h);
-
-        if let Some(clip) = active_clip {
-            bounds.intersect(&clip)
-        } else {
-            bounds
-        }
+        if let Some(clip) = active_clip { bounds.intersect(&clip) } else { bounds }
     }
 }
 

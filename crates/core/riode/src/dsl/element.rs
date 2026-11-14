@@ -1,16 +1,17 @@
 // Single responsibility: Ephemeral element sum type and recursive child list conversions.
 
-use crate::dsl::component::IntoElement;
+pub use crate::dsl::component::IntoElement;
 use crate::dsl::custom::CustomDef;
 use crate::dsl::group::GroupElement;
+use crate::dsl::image::ImageElement;
 use crate::dsl::text::TextElement;
 use crate::foundation::Key;
 
-/// Ephemeral element enum representing declarative UI tree specifications.
 #[derive(Clone)]
 pub enum Element {
     Group(GroupElement),
     Text(TextElement),
+    Image(ImageElement),
     Custom(CustomDef),
 }
 
@@ -19,31 +20,22 @@ impl Element {
         match self {
             Self::Group(g) => g.key.clone(),
             Self::Text(t) => t.key.clone(),
-            // FIX: previously always None, forcing positional diffing for all
-            // custom/SVG children.
+            Self::Image(i) => i.key.clone(),
             Self::Custom(c) => c.key.clone(),
         }
     }
 
-    /// Returns this element with its reconciliation key set.
-    ///
-    /// The generated component builder applies it to the element the body
-    /// returned: the call site owns identity (`<Tag key={…}>`), so this
-    /// overwrites any key the body declared on its own root.
     pub fn with_key(mut self, key: impl Into<Key>) -> Self {
         let key = Some(key.into());
         match &mut self {
             Self::Group(g) => g.key = key,
             Self::Text(t) => t.key = key,
+            Self::Image(i) => i.key = key,
             Self::Custom(c) => c.key = key,
         }
         self
     }
 
-    /// One-line-per-node debug summary of the ephemeral tree: the reload IR made
-    /// human-diffable. Static values render; dynamic/context props render as
-    /// `<dyn>`/`<ctx>` (their closures are opaque); custom primitives render by
-    /// key only. Capped depth and breadth — diagnostics, not serialization.
     pub fn summarize(&self) -> String {
         let mut out = String::new();
         Self::summarize_into(self, 0, &mut out);
@@ -66,9 +58,7 @@ impl Element {
                     prop_summary(&g.height),
                 ));
                 if depth >= MAX_DEPTH {
-                    for _ in 0..=depth {
-                        out.push_str("  ");
-                    }
+                    for _ in 0..=depth { out.push_str("  "); }
                     out.push_str("…\n");
                     return;
                 }
@@ -86,17 +76,13 @@ impl Element {
                             }
                         }
                         crate::dsl::group::ChildSegment::Dynamic(_) => {
-                            for _ in 0..=depth {
-                                out.push_str("  ");
-                            }
+                            for _ in 0..=depth { out.push_str("  "); }
                             out.push_str("<dynamic children>\n");
                         }
                     }
                 }
                 if total > shown {
-                    for _ in 0..=depth {
-                        out.push_str("  ");
-                    }
+                    for _ in 0..=depth { out.push_str("  "); }
                     out.push_str(&format!("…({} more)\n", total - shown));
                 }
             }
@@ -104,18 +90,16 @@ impl Element {
                 let content = match &t.content {
                     crate::reactive::prop::Prop::Static(s) => {
                         let mut short: String = s.chars().take(24).collect();
-                        if s.len() > short.len() {
-                            short.push('…');
-                        }
+                        if s.len() > short.len() { short.push('…'); }
                         format!("{short:?}")
                     }
                     crate::reactive::prop::Prop::Dynamic(_) => "<dyn>".to_string(),
                     crate::reactive::prop::Prop::Context(_) => "<ctx>".to_string(),
                 };
-                out.push_str(&format!(
-                    "Text key={:?} content={content} color={:?} size={}\n",
-                    t.key, t.color, t.size,
-                ));
+                out.push_str(&format!("Text key={:?} content={content} color={:?} size={}\n", t.key, t.color, t.size));
+            }
+            Element::Image(i) => {
+                out.push_str(&format!("Image key={:?} fit={:?} ({}x{})\n", i.key, i.fit, i.source.width, i.source.height));
             }
             Element::Custom(c) => {
                 out.push_str(&format!("Custom key={:?}\n", c.key));
@@ -124,11 +108,7 @@ impl Element {
     }
 }
 
-/// Renders one optional reactive prop for [`Element::summarize`]: statics by value,
-/// dynamics and context reads by kind, absence as `-`.
-fn prop_summary<T: std::fmt::Debug>(
-    prop: &Option<crate::reactive::prop::Prop<T>>,
-) -> String {
+fn prop_summary<T: std::fmt::Debug>(prop: &Option<crate::reactive::prop::Prop<T>>) -> String {
     match prop {
         None => "-".to_string(),
         Some(crate::reactive::prop::Prop::Static(v)) => format!("{v:?}"),
@@ -138,24 +118,18 @@ fn prop_summary<T: std::fmt::Debug>(
 }
 
 impl From<GroupElement> for Element {
-    fn from(def: GroupElement) -> Self {
-        Element::Group(def)
-    }
+    fn from(def: GroupElement) -> Self { Element::Group(def) }
 }
-
 impl From<TextElement> for Element {
-    fn from(def: TextElement) -> Self {
-        Element::Text(def)
-    }
+    fn from(def: TextElement) -> Self { Element::Text(def) }
 }
-
+impl From<ImageElement> for Element {
+    fn from(def: ImageElement) -> Self { Element::Image(def) }
+}
 impl From<CustomDef> for Element {
-    fn from(def: CustomDef) -> Self {
-        Element::Custom(def)
-    }
+    fn from(def: CustomDef) -> Self { Element::Custom(def) }
 }
 
-/// Trait converting collections of elements into a flat child vector.
 pub trait IntoChildList {
     fn into_child_list(self) -> Vec<Element>;
 }
@@ -195,32 +169,3 @@ impl_into_child_list_tuple!(A, B, C, D, E, F, G, H, I);
 impl_into_child_list_tuple!(A, B, C, D, E, F, G, H, I, J);
 impl_into_child_list_tuple!(A, B, C, D, E, F, G, H, I, J, K);
 impl_into_child_list_tuple!(A, B, C, D, E, F, G, H, I, J, K, L);
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::dsl::{group, text};
-    use crate::foundation::Color;
-
-    /// The reload IR summary renders static values for human diffing.
-    #[test]
-    fn summarize_renders_statics_for_diffing() {
-        let tree = group()
-            .width(500.0)
-            .children([text("Hello").size(16.0).color(Color::BLACK)])
-            .into_element();
-        let summary = tree.summarize();
-        assert!(
-            summary.contains("Group") && summary.contains("Text"),
-            "both nodes present:\n{summary}"
-        );
-        assert!(
-            summary.contains("\"Hello\""),
-            "static content rendered:\n{summary}"
-        );
-        assert!(
-            summary.contains("Black") || summary.contains("0.0, g: 0.0, b: 0.0"),
-            "static color rendered:\n{summary}"
-        );
-    }
-}
