@@ -9,7 +9,7 @@
 //! # The command vocabulary
 //!
 //! Two kinds, and the distinction matters for diagnostics: `Draw*`
-//! ([`SceneCommand::DrawRect`], `DrawText`, `DrawImage`, `DrawSvg`, `DrawShadow`) paint
+//! ([`SceneCommand::DrawRect`], `DrawText`, `DrawImage`, `DrawShadow`) paint
 //! pixels; `Push*`/`Pop*`/`BeginLayer`/`EndLayer` are chunk framing (offsets, clips,
 //! opacity, isolation). `commands_emitted` counts drawing commands only — framing is
 //! overhead, not work.
@@ -37,8 +37,7 @@
 //! ```
 //!
 //! [`PaintContext`] is also the scope for `with_transform` / `with_clip` nesting, and
-//! [`VectorGraphic::from_str`] / [`ImageSource::from_rgba8`] are the asset handles the
-//! `svg()` / `image()` builders carry.
+//! [`ImageSource::from_rgba8`] is the asset handle the `image()` builder carries.
 //!
 //! # Module map
 //!
@@ -48,7 +47,7 @@
 //! | [`chunk`] | [`SceneChunk`]: bounds, placement, clips, retained-cache identity |
 //! | [`command`] | [`SceneCommand`], [`command::LayerId`], `hash_commands` (allocation-identity content hashing for chunk reuse) |
 //! | [`context`] | [`PaintContext`]: the emit API custom primitives see |
-//! | [`image`] / [`vector`] | [`ImageSource`], [`VectorGraphic`]: retained asset handles |
+//! | [`image`] | [`ImageSource`]: the retained asset handle |
 //!
 //! # Pitfalls
 //!
@@ -68,7 +67,6 @@ pub mod settle;
 pub mod sink;
 pub mod snap;
 pub mod stack;
-pub mod vector;
 
 pub use chunk::SceneChunk;
 pub use command::{LayerId, SceneCommand};
@@ -76,7 +74,7 @@ pub use context::PaintContext;
 pub use image::ImageSource;
 pub use scene::Scene;
 pub use sink::{
-    chunk_base, lower_chunk, sink_ignored_counts, PlacedClip, PlacedImage, PlacedLayer, PlacedSvg,
+    chunk_base, lower_chunk, sink_ignored_counts, PlacedClip, PlacedImage, PlacedLayer,
     PlacedText, SceneSink, SinkDiagnostics, TextRaster,
 };
 pub use settle::RectSettle;
@@ -86,4 +84,3 @@ pub use snap::{
 };
 pub use snap::GLYPH_QUANTA_Y;
 pub use stack::SceneStack;
-pub use vector::VectorGraphic;

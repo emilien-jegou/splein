@@ -7,7 +7,6 @@ pub mod image;
 pub mod material_pipeline;
 pub mod pipeline;
 pub mod renderer;
-pub mod svg;
 pub mod text;
 
 pub use backend::WgpuBackend;

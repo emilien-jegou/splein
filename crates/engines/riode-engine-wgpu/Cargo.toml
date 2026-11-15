@@ -7,16 +7,11 @@ description = "Raw wgpu rasterization backend for the Aurora UI engine (analytic
 license = "GPL-3.0"
 readme = "README.md"
 
-[features]
-default = ["svg-runtime"]
-svg-runtime = ["dep:resvg", "riode/svg-runtime"]
-
 [dependencies]
 riode = { package = "riode-core", path = "../../core/riode-core", version = "0.2.0" }
 riode-shader = { path = "../../core/riode-shader", version = "0.2.0" }
 wgpu = "0.20"
 pollster = "0.3"
-resvg = { version = "0.42", optional = true }
 winit = { version = "0.29", default-features = false, features = ["rwh_06"] }
 rustc-hash = "2.1.3"
 bytemuck = "1.25.2"

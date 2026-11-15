@@ -15,7 +15,7 @@
 // stays out of the items.
 //
 // `DrawRect`/`DrawShadow` and the folded opacity are gone: a node's paint is
-// its material layer, so the sink's primitives are text, image, svg and the
+// its material layer, so the sink's primitives are text, image and the
 // layer open/close pair.
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -25,7 +25,6 @@ use crate::scene::chunk::SceneChunk;
 use crate::scene::command::SceneCommand;
 use crate::scene::image::ImageSource;
 use crate::scene::stack::SceneStack;
-use crate::scene::vector::VectorGraphic;
 use crate::text::layout::TextLayout;
 use std::sync::Arc;
 
@@ -68,14 +67,6 @@ pub struct PlacedImage<'a> {
     pub transform: Transform,
 }
 
-/// A vector graphic, fully placed.
-#[derive(Clone, Debug)]
-pub struct PlacedSvg<'a> {
-    pub rect: ResolvedRect,
-    pub graphic: &'a VectorGraphic,
-    pub transform: Transform,
-}
-
 /// An isolated layer carrying its paint bundle, fully placed.
 ///
 /// The paint rides along as the contract for the shader rewrite: the
@@ -103,19 +94,16 @@ fn warn_ignored(what: &'static str, flag: &AtomicBool, counter: &AtomicU64) {
 pub struct SinkDiagnostics {
     pub ignored_text: u64,
     pub ignored_image: u64,
-    pub ignored_svg: u64,
 }
 
 static IGNORED_TEXT: AtomicU64 = AtomicU64::new(0);
 static IGNORED_IMAGE: AtomicU64 = AtomicU64::new(0);
-static IGNORED_SVG: AtomicU64 = AtomicU64::new(0);
 
 /// Snapshot of the cumulative ignored-primitive counters.
 pub fn sink_ignored_counts() -> SinkDiagnostics {
     SinkDiagnostics {
         ignored_text: IGNORED_TEXT.load(Ordering::Relaxed),
         ignored_image: IGNORED_IMAGE.load(Ordering::Relaxed),
-        ignored_svg: IGNORED_SVG.load(Ordering::Relaxed),
     }
 }
 
@@ -137,11 +125,6 @@ pub trait SceneSink {
     fn image(&mut self, _i: &PlacedImage) {
         static WARNED: AtomicBool = AtomicBool::new(false);
         warn_ignored("image", &WARNED, &IGNORED_IMAGE);
-    }
-    /// Paints a placed vector graphic.
-    fn svg(&mut self, _s: &PlacedSvg) {
-        static WARNED: AtomicBool = AtomicBool::new(false);
-        warn_ignored("svg", &WARNED, &IGNORED_SVG);
     }
     /// Opens an isolated layer. The default treats it as a plain clip, so
     /// engines that don't implement layers degrade to clip semantics
@@ -220,11 +203,6 @@ pub fn lower_chunk(
             SceneCommand::DrawImage { rect, image } => sink.image(&PlacedImage {
                 rect: *rect,
                 image,
-                transform: stack.transform(),
-            }),
-            SceneCommand::DrawSvg { rect, graphic } => sink.svg(&PlacedSvg {
-                rect: *rect,
-                graphic,
                 transform: stack.transform(),
             }),
         }

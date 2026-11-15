@@ -4,14 +4,13 @@ use crate::foundation::{Color, Point, ResolvedRect, Transform};
 use crate::scene::chunk::SceneChunk;
 use crate::scene::command::{LayerId, SceneCommand};
 use crate::scene::image::ImageSource;
-use crate::scene::vector::VectorGraphic;
 use crate::text::layout::TextLayout;
 use crate::text::TextContext;
 use std::sync::Arc;
 
 /// Context provided to primitives to record display list commands directly into a chunk.
 ///
-/// A custom primitive paints images, vector graphics, or shaped text — anything
+/// A custom primitive paints images or shaped text — anything
 /// with its own raster path. Frame inputs (text shaping context, layer identity,
 /// caret blink, absolute Y origin) come along so a text leaf can paint without
 /// the compile pass knowing anything about text.
@@ -101,11 +100,6 @@ impl<'a> PaintContext<'a> {
     /// Appends a raster image drawing command.
     pub fn draw_image(&mut self, rect: ResolvedRect, image: ImageSource) {
         self.chunk.push(SceneCommand::DrawImage { rect, image });
-    }
-
-    /// Appends a vector graphic drawing command.
-    pub fn draw_svg(&mut self, rect: ResolvedRect, graphic: VectorGraphic) {
-        self.chunk.push(SceneCommand::DrawSvg { rect, graphic });
     }
 
     /// Appends a shaped typography run command.

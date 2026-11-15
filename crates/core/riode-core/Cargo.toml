@@ -8,7 +8,7 @@ license = "GPL-3.0"
 readme = "README.md"
 
 [features]
-default = ["os-clipboard", "text-runtime", "svg-runtime", "desktop"]
+default = ["os-clipboard", "text-runtime", "desktop"]
 tracy = ["dep:tracy-client", "dep:tracing-tracy"]
 # Pushes Ctrl+C selections to the OS clipboard in real windows (arboard).
 # Opt out (`--no-default-features`) for display-less builds; the engine keeps
@@ -18,9 +18,6 @@ os-clipboard = ["dep:arboard"]
 # text measures empty, glyphs don't rasterize. Pre-shaped text (S2 #2) is the
 # long-term no-runtime path; this flag is the kill-switch meanwhile.
 text-runtime = ["dep:parley", "dep:swash"]
-# Runtime SVG parsing (resvg/usvg). Off = VectorGraphic stub (dims only,
-# from_str errors). Pre-rasterized images (S2 #3) are the replacement.
-svg-runtime = ["dep:resvg"]
 desktop = ["dep:winit"]
 
 [dependencies]
@@ -37,7 +34,6 @@ arboard = { version = "3", default-features = false, features = ["wayland-data-c
 
 # Attribute macros (#[component])
 riode-macros = { path = "./macros", version = "0.2.0" }
-resvg = { version = "0.42", optional = true }
 
 # Tracing
 tracing = "0.1"

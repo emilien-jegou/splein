@@ -3,7 +3,7 @@
 use riode::foundation::{Color, LayerPaint, Point, ResolvedRect, Transform};
 use riode::scene::command::SceneCommand;
 use riode::scene::{
-    quantize_quarter, quantize_y, PlacedClip, PlacedImage, PlacedLayer, PlacedSvg, PlacedText,
+    quantize_quarter, quantize_y, PlacedClip, PlacedImage, PlacedLayer, PlacedText,
     SceneSink,
 };
 use riode::text::{quantize_raster_scale, TextContext};
@@ -411,7 +411,6 @@ impl Batch {
         queue: &wgpu::Queue,
         device: &wgpu::Device,
         images: &mut crate::image::ImageCache,
-        svgs: &mut crate::svg::SvgCache,
     ) {
         let mut sink = WgpuSink {
             batch: self,
@@ -420,7 +419,6 @@ impl Batch {
             queue,
             device,
             images,
-            svgs,
         };
         riode::scene::lower_chunk(commands, base, &mut sink);
     }
@@ -433,7 +431,6 @@ pub struct WgpuSink<'a> {
     pub queue: &'a wgpu::Queue,
     pub device: &'a wgpu::Device,
     pub images: &'a mut crate::image::ImageCache,
-    pub svgs: &'a mut crate::svg::SvgCache,
 }
 
 /// Transforms a rect's four corners and returns their device-space bounding
@@ -539,20 +536,6 @@ impl SceneSink for WgpuSink<'_> {
         if let Some(gpu) = self.images.get_or_insert(self.device, self.queue, i.image) {
             let t = self.batch.device_tx(&i.transform);
             self.batch.emit_image_quad(&i.rect, gpu, t, 1.0);
-        }
-    }
-
-    fn svg(&mut self, s: &PlacedSvg) {
-        if let Some(gpu) = self.svgs.get_or_insert(
-            self.device,
-            self.queue,
-            self.images,
-            s.graphic,
-            &s.rect,
-            self.batch.scale(),
-        ) {
-            let t = self.batch.device_tx(&s.transform);
-            self.batch.emit_image_quad(&s.rect, gpu, t, 1.0);
         }
     }
 

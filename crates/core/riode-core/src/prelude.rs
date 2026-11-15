@@ -26,7 +26,6 @@ pub use crate::reactive::{
 };
 pub use crate::use_signal;
 pub use crate::runtime::{Engine, FrameDiagnostics, FrameReport};
-pub use crate::scene::vector::VectorGraphic;
 pub use crate::text::{
     FontStyle, LineHeight, SelectionGranularity, TextAlign, TextDecoration, TextOverflow,
     TextSelection,

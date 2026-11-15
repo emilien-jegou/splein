@@ -2,7 +2,6 @@
 
 use crate::foundation::{Color, LayerPaint, Point, ResolvedRect, Transform};
 use crate::scene::image::ImageSource;
-use crate::scene::vector::VectorGraphic;
 use crate::text::layout::TextLayout;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
@@ -46,10 +45,6 @@ pub enum SceneCommand {
         rect: ResolvedRect,
         image: ImageSource,
     },
-    DrawSvg {
-        rect: ResolvedRect,
-        graphic: VectorGraphic,
-    },
     DrawText {
         origin: Point,
         layout: Arc<TextLayout>,
@@ -66,9 +61,7 @@ impl SceneCommand {
     pub fn is_drawing(&self) -> bool {
         matches!(
             self,
-            SceneCommand::DrawImage { .. }
-                | SceneCommand::DrawSvg { .. }
-                | SceneCommand::DrawText { .. }
+            SceneCommand::DrawImage { .. } | SceneCommand::DrawText { .. }
         )
     }
 }
@@ -122,11 +115,6 @@ pub fn hash_commands(commands: &[SceneCommand]) -> u64 {
                 11u8.hash(&mut h);
                 rect_bits(rect).hash(&mut h);
                 image_bits(image).hash(&mut h);
-            }
-            SceneCommand::DrawSvg { rect, graphic } => {
-                12u8.hash(&mut h);
-                rect_bits(rect).hash(&mut h);
-                svg_bits(graphic).hash(&mut h);
             }
             SceneCommand::DrawText {
                 origin,
@@ -191,17 +179,3 @@ fn image_bits(img: &ImageSource) -> [usize; 3] {
     ]
 }
 
-fn svg_bits(g: &VectorGraphic) -> [u32; 3] {
-    [
-        #[cfg(feature = "svg-runtime")]
-        {
-            (Arc::as_ptr(&g.tree) as usize) as u32 ^ ((Arc::as_ptr(&g.tree) as usize) >> 32) as u32
-        },
-        #[cfg(not(feature = "svg-runtime"))]
-        {
-            0u32
-        },
-        g.width.to_bits(),
-        g.height.to_bits(),
-    ]
-}

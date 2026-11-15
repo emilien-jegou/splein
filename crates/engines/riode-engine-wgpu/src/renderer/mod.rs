@@ -22,7 +22,6 @@ use crate::renderer::buffers::StagingBuffers;
 use crate::renderer::layers::LayerPool;
 use crate::renderer::readback::ReadbackBuffer;
 use crate::renderer::scene_pass::ScenePassExecutor;
-use crate::svg::SvgCache;
 use crate::text::GlyphAtlas;
 
 fn to_wgpu(c: Color) -> wgpu::Color {
@@ -54,7 +53,6 @@ pub struct WgpuRenderer {
     pub glyph_bg_linear: wgpu::BindGroup,
     pub glyph_bg_nearest: wgpu::BindGroup,
     pub images: ImageCache,
-    pub svgs: SvgCache,
     pub scale: f32,
     pub chunks: ChunkCache,
     pub clear_next: bool,
@@ -95,7 +93,6 @@ impl WgpuRenderer {
             glyph_bg_linear,
             glyph_bg_nearest,
             images: ImageCache::new(&gpu.device),
-            svgs: SvgCache::new(),
             scale: 1.0,
             chunks: ChunkCache::default(),
             clear_next: true,
@@ -147,7 +144,6 @@ impl WgpuRenderer {
         self.atlas.next_frame();
         self.chunks.next_frame();
         self.images.next_frame();
-        self.svgs.next_frame();
         self.batch.set_scale(self.scale);
         self.batch.reset();
 
@@ -198,7 +194,6 @@ impl WgpuRenderer {
                 &self.gpu.queue,
                 &self.gpu.device,
                 &mut self.images,
-                &mut self.svgs,
             );
             for _ in chunk.inherited_clips.iter() {
                 self.batch.clip.pop();
