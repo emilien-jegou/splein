@@ -3,7 +3,7 @@ name = "riode-macros"
 version = "0.2.0"
 edition = "2021"
 publish = true
-description = "Attribute macros for the Aurora UI engine"
+description = "Engine-side view!/#[component] macros for the Aurora UI"
 license = "GPL-3.0"
 readme = "README.md"
 
@@ -15,11 +15,3 @@ proc-macro2 = "1"
 quote = "1"
 syn = { version = "2", features = ["full"] }
 rstml = "0.12"
-# Build-time typography + vector rasterization (host only — never ships in
-# the binary; the macros emit plain byte blobs). Versions pinned to the
-# riode runtime's so shaping/rendering semantics match exactly.
-parley = { version = "0.11", default-features = false, features = ["std"] }
-swash = "0.2"
-resvg = "0.42"
-tiny-skia = "0.11"
-image = { version = "0.25", default-features = true }

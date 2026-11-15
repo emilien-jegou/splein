@@ -4,6 +4,7 @@ use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use syn::{parse::Parser, punctuated::Punctuated, Lit, Token};
 
+use super::image::bake_image;
 use super::util::{bytes_literal, empty_image_source, resolve_asset_path, warn_missing_asset, BakedAsset};
 
 pub fn bake_svg(
@@ -18,11 +19,7 @@ pub fn bake_svg(
             warn_missing_asset("bake_svg", rel_path, &full_path, &err);
             let w = target_w.unwrap_or(1.0).round() as u32;
             let h = target_h.unwrap_or(1.0).round() as u32;
-            return Ok(BakedAsset {
-                tokens: empty_image_source(w.max(1), h.max(1)),
-                logical_w: w as f32,
-                logical_h: h as f32,
-            });
+            return Ok(BakedAsset { tokens: empty_image_source(w.max(1), h.max(1)) });
         }
     };
 
@@ -63,7 +60,7 @@ pub fn bake_svg(
     let bytes = bytes_literal(pixmap.data());
     let tokens = quote!(::riode::scene::ImageSource::from_static_rgba8(#pw, #ph, #bytes));
 
-    Ok(BakedAsset { tokens, logical_w: lw, logical_h: lh })
+    Ok(BakedAsset { tokens })
 }
 
 pub fn include_svg_impl(input: proc_macro::TokenStream) -> syn::Result<TokenStream2> {
@@ -89,5 +86,32 @@ pub fn include_svg_impl(input: proc_macro::TokenStream) -> syn::Result<TokenStre
     };
     let (w, h) = (int_arg(&args[1], "width")?, int_arg(&args[2], "height")?);
     let baked = bake_svg(&path, Some(w as f32), Some(h as f32))?;
+    Ok(baked.tokens)
+}
+
+/// `bake_src!("path")` / `bake_src!("path", w, h)` — the string-literal `src=`
+/// bridge emitted by the generic `view!` lowering. Extension-dispatched:
+/// `.svg` rasterizes, anything else decodes. Target dims are optional and
+/// only forwarded when the element declared literal `w` *and* `h`.
+pub fn bake_src_impl(tokens: proc_macro::TokenStream) -> syn::Result<TokenStream2> {
+    let parser = |input: syn::parse::ParseStream| -> syn::Result<(syn::LitStr, Option<f32>, Option<f32>)> {
+        let path: syn::LitStr = input.parse()?;
+        let mut target_w = None;
+        let mut target_h = None;
+        if input.peek(syn::Token![,]) {
+            input.parse::<syn::Token![,]>()?;
+            target_w = Some(input.parse::<syn::LitFloat>()?.base10_parse::<f32>()?);
+            input.parse::<syn::Token![,]>()?;
+            target_h = Some(input.parse::<syn::LitFloat>()?.base10_parse::<f32>()?);
+        }
+        Ok((path, target_w, target_h))
+    };
+    let (path, target_w, target_h) = syn::parse::Parser::parse2(parser, tokens.into())?;
+
+    let baked = if path.value().to_ascii_lowercase().ends_with(".svg") {
+        bake_svg(&path.value(), target_w, target_h)?
+    } else {
+        bake_image(&path.value(), target_w, target_h)?
+    };
     Ok(baked.tokens)
 }

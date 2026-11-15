@@ -51,7 +51,8 @@ impl ImageElement {
     }
 
     /// Sets the pixels this element draws. The source of `<img src=…>` and the
-    /// only way a zero-arg `img::build()` gets content.
+    /// only way a zero-arg `img::build()` gets content. Natural sizing is not
+    /// decided here — see `into_leaf`.
     pub fn src(mut self, source: ImageSource) -> Self {
         self.props.aspect_ratio = natural_ratio(&source);
         self.source = Some(source);
@@ -66,7 +67,20 @@ impl ImageElement {
     }
 
     /// Lowers the builder into the erased leaf shape every element shares.
-    pub fn into_leaf(self) -> riode_core::dsl::leaf_def::LeafDef {
+    /// Natural sizing is decided here, after the whole attribute chain ran, so
+    /// attribute order never matters: only a tag with no explicit axis at all
+    /// takes the source's pixel size. A single explicit axis (e.g. `w="full"`)
+    /// is left alone on purpose — the engine's aspect block derives the unset
+    /// axis from it, so `w="full"` fills the width and the height tracks the
+    /// photo's ratio instead of freezing at the natural pixel height.
+    pub fn into_leaf(mut self) -> riode_core::dsl::leaf_def::LeafDef {
+        if let Some(source) = &self.source {
+            if self.props.width.is_none() && self.props.height.is_none() {
+                let (w, h) = (source.width as f32, source.height as f32);
+                self.props.width = Some(riode_core::foundation::Size::fixed(w));
+                self.props.height = Some(riode_core::foundation::Size::fixed(h));
+            }
+        }
         let mut def = riode_core::dsl::leaf_def::LeafDef::new(self.to_config());
         def.props = self.props;
         def

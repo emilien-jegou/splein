@@ -6,11 +6,6 @@ use std::path::{Path, PathBuf};
 
 pub struct BakedAsset {
     pub tokens: TokenStream2,
-    /// Declared size in logical pixels (before the texture-pixel round),
-    /// which a string `src=` uses to inject natural bounds when the tag
-    /// carries no explicit `w`/`h`.
-    pub logical_w: f32,
-    pub logical_h: f32,
 }
 
 pub fn resolve_asset_path(path: &str) -> PathBuf {

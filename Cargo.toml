@@ -3,6 +3,7 @@ resolver = "2"
 members = [
   "crates/core/riode-core",
   "crates/core/riode-elements",
+  "crates/core/riode-elements/macros",
   "crates/core/riode-facade",
   "crates/core/riode-shader",
   "crates/core/riode-core/macros",

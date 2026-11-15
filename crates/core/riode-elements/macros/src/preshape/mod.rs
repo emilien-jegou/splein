@@ -5,6 +5,6 @@ pub mod svg;
 pub mod text;
 pub mod util;
 
-pub use text::pre_shaped_impl;
 pub use image::{bake_image, include_image_impl};
-pub use svg::{bake_svg, include_svg_impl};
+pub use svg::{bake_src_impl, bake_svg, include_svg_impl};
+pub use text::pre_shaped_impl;

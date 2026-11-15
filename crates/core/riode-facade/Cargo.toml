@@ -17,4 +17,5 @@ tracy = ["riode-core/tracy"]
 [dependencies]
 riode-core = { path = "../riode-core", version = "0.2.0", default-features = false }
 riode-elements = { path = "../riode-elements", version = "0.2.0" }
+riode-elements-macros = { path = "../riode-elements/macros", version = "0.2.0" }
 riode-macros = { path = "../riode-core/macros", version = "0.2.0" }

@@ -33,6 +33,3 @@ pub use crate::text::{
 pub use crate::tree::Primitive;
 pub use riode_macros::component;
 pub use riode_macros::view;
-pub use riode_macros::pre_shaped;
-pub use riode_macros::include_svg;
-pub use riode_macros::include_image;

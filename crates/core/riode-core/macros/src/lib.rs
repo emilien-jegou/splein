@@ -1,4 +1,5 @@
 // Single responsibility: Procedural macro entry points exposing Riode's declarative RSX and component model.
+// Engine-side only: `view!`, `#[component]`. Build-time asset baking lives in `riode-elements-macros`.
 
 #![feature(proc_macro_diagnostic)]
 
@@ -8,7 +9,6 @@ use syn::parse::Parser;
 use syn::{parse_macro_input, ItemFn};
 
 mod engine;
-mod preshape;
 mod primitives {
     pub mod attr;
     pub mod group;
@@ -35,33 +35,6 @@ pub fn component(attr: TokenStream, item: TokenStream) -> TokenStream {
     match expand_component(input, args) {
         Ok(tokens) => tokens.into(),
         Err(err) => err.to_compile_error().into(),
-    }
-}
-
-/// Build-time text shaping: `pre_shaped!(font = "f.ttf", text = "...", size = 16.0)`.
-#[proc_macro]
-pub fn pre_shaped(tokens: TokenStream) -> TokenStream {
-    match preshape::pre_shaped_impl(tokens) {
-        Ok(t) => t.into(),
-        Err(e) => e.to_compile_error().into(),
-    }
-}
-
-/// Build-time SVG rasterization: `include_svg!("icon.svg", 64, 64)`.
-#[proc_macro]
-pub fn include_svg(tokens: TokenStream) -> TokenStream {
-    match preshape::include_svg_impl(tokens) {
-        Ok(t) => t.into(),
-        Err(e) => e.to_compile_error().into(),
-    }
-}
-
-/// Build-time image decode + resample: `include_image!("icon.png", 64, 64)`.
-#[proc_macro]
-pub fn include_image(tokens: TokenStream) -> TokenStream {
-    match preshape::include_image_impl(tokens) {
-        Ok(t) => t.into(),
-        Err(e) => e.to_compile_error().into(),
     }
 }
 
