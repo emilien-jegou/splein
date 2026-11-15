@@ -1,0 +1,17 @@
+[package]
+name = "maio"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Concurrent macro-safe asset storage backing .maiodb: multi-process ACID task journal"
+license = "GPL-3.0"
+readme = "README.md"
+
+[dependencies]
+maio-core = { path = "../maio-core", version = "0.1.0" }
+fs4 = { workspace = true, features = ["sync"] }
+postcard = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+crc32fast = { workspace = true }
+blake3 = { workspace = true }

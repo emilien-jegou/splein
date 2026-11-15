@@ -9,6 +9,7 @@ members = [
   "crates/core/riode-core/macros",
   "crates/core/riode-shared",
   "crates/engines/riode-engine-wgpu",
+  "crates/maio/*",
   "plugins/riode-shader-glue",
   "examples/*",
 ]
@@ -29,6 +30,18 @@ default-members = [
 [workspace.dependencies]
 # CLI & Logging
 clap = { version = "4.5", features = ["derive"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Asset engine (maio suite)
+blake3 = "1.8"
+fs4 = "1.1"
+postcard = { version = "1.1", features = ["use-std"] }
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+image = "0.25"
+rayon = "1.12"
+crc32fast = "1.5"
 
 # Embedded size preset (S2 #11): optimize for flash footprint.
 # Build with: cargo build --profile embedded -p riode --no-default-features

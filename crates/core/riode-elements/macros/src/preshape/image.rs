@@ -1,19 +1,37 @@
-// Responsibility: Build-time decoding, Lanczos3 resampling, and static byte baking for raster images.
+// Responsibility: Macro AST lowering registering ImageTask into .maiodb with dependency anchors.
 
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use syn::{parse::Parser, punctuated::Punctuated, Lit, Token};
 
-use super::util::{bytes_literal, empty_image_source, resolve_asset_path, warn_missing_asset, BakedAsset};
+use maio::Maiodb;
+use maio_core::{AssetSource, AssetTask, TaskSpec};
+use serde::{Deserialize, Serialize};
+
+use super::util::{empty_image_source, resolve_asset_path, warn_missing_asset, BakedAsset};
+
+const IMAGE_KIND: &str = "image:rasterize";
+
+#[derive(Serialize, Deserialize)]
+struct MacroImageTask {
+    width: u32,
+    height: u32,
+}
+
+impl TaskSpec for MacroImageTask {
+    const KIND: &'static str = IMAGE_KIND;
+}
 
 pub fn bake_image(
     rel_path: &str,
     target_w: Option<f32>,
     target_h: Option<f32>,
 ) -> syn::Result<BakedAsset> {
-    let full_path = resolve_asset_path(rel_path);
-    let img_data = match std::fs::read(&full_path) {
-        Ok(data) => data,
+    let raw_path = resolve_asset_path(rel_path);
+    let full_path = std::fs::canonicalize(&raw_path).unwrap_or(raw_path);
+
+    let file_bytes = match std::fs::read(&full_path) {
+        Ok(bytes) => bytes,
         Err(err) => {
             warn_missing_asset("bake_image", rel_path, &full_path, &err);
             let w = target_w.unwrap_or(1.0).round() as u32;
@@ -22,19 +40,62 @@ pub fn bake_image(
         }
     };
 
-    let img = image::load_from_memory(&img_data).map_err(|e| {
-        syn::Error::new(proc_macro2::Span::call_site(), format!("image decode failed for `{rel_path}`: {e}"))
+    let (orig_w, orig_h) = match image::ImageReader::new(std::io::Cursor::new(&file_bytes))
+        .with_guessed_format()
+        .map_err(|e| e.to_string())
+        .and_then(|r| r.into_dimensions().map_err(|e| e.to_string()))
+    {
+        Ok((w, h)) => (w as f32, h as f32),
+        Err(err) => {
+            warn_missing_asset("bake_image", rel_path, &full_path, &std::io::Error::new(std::io::ErrorKind::InvalidData, err));
+            (1.0, 1.0)
+        }
+    };
+
+    let mut content_hash = [0u8; 16];
+    content_hash.copy_from_slice(&blake3::hash(&file_bytes).as_bytes()[..16]);
+
+    let (pw, ph) = calculate_dimensions(orig_w, orig_h, target_w, target_h);
+
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".into());
+    let db = Maiodb::open_workspace(std::path::Path::new(&manifest_dir))
+        .map_err(|e| syn::Error::new(proc_macro2::Span::call_site(), format!("Failed to open workspace maiodb: {e}")))?;
+
+    let callsite = format!("{}:{}", rel_path, pw);
+    let source = AssetSource::Path { path: full_path.clone(), content_hash };
+    let task = AssetTask::new(source, &MacroImageTask { width: pw, height: ph }, Some(callsite))
+        .map_err(|e| syn::Error::new(proc_macro2::Span::call_site(), format!("Task encoding failed: {e}")))?;
+
+    let asset_id = db.register(&task).map_err(|e| {
+        syn::Error::new(proc_macro2::Span::call_site(), format!("maio registration failed: {e}"))
     })?;
 
-    let (orig_w, orig_h) = (img.width() as f32, img.height() as f32);
-    let (mut lw, mut lh) = match (target_w, target_h) {
+    let id_bytes = asset_id.as_bytes();
+    let path_str = full_path.to_string_lossy();
+
+    let tokens = quote! {
+        {
+            const _: () = { let _ = include_bytes!(#path_str); };
+            ::riode::image::load_asset(
+                [#(#id_bytes),*],
+                #pw,
+                #ph,
+                ::std::path::Path::new("target/assets"),
+            )
+        }
+    };
+
+    Ok(BakedAsset { tokens })
+}
+
+fn calculate_dimensions(orig_w: f32, orig_h: f32, tw: Option<f32>, th: Option<f32>) -> (u32, u32) {
+    let (mut lw, mut lh) = match (tw, th) {
         (Some(w), Some(h)) => (w, h),
         (Some(w), None) => (w, (w * orig_h / orig_w).round()),
         (None, Some(h)) => (((h * orig_w / orig_h).round()), h),
         (None, None) => (orig_w, orig_h),
     };
 
-    // Safety guard: Clamp oversized images to 2048px to prevent GPU downlevel texture overflow
     const MAX_TEX: f32 = 2048.0;
     if lw > MAX_TEX || lh > MAX_TEX {
         let factor = (MAX_TEX / lw).min(MAX_TEX / lh);
@@ -42,48 +103,23 @@ pub fn bake_image(
         lh = (lh * factor).round();
     }
 
-    let pw = (lw.round() as u32).max(1);
-    let ph = (lh.round() as u32).max(1);
-
-    let resized = if pw == img.width() && ph == img.height() {
-        img
-    } else {
-        img.resize_exact(pw, ph, image::imageops::FilterType::Lanczos3)
-    };
-
-    let mut rgba = resized.into_rgba8();
-    for p in rgba.chunks_exact_mut(4) {
-        let a = p[3] as u32;
-        p[0] = ((p[0] as u32 * a) / 255) as u8;
-        p[1] = ((p[1] as u32 * a) / 255) as u8;
-        p[2] = ((p[2] as u32 * a) / 255) as u8;
-    }
-
-    let bytes = bytes_literal(&rgba.into_raw());
-    let tokens = quote!(::riode::scene::ImageSource::from_static_rgba8(#pw, #ph, #bytes));
-
-    Ok(BakedAsset { tokens })
+    ((lw.round() as u32).max(1), (lh.round() as u32).max(1))
 }
 
 pub fn include_image_impl(input: proc_macro::TokenStream) -> syn::Result<TokenStream2> {
     let parser = Punctuated::<Lit, Token![,]>::parse_terminated;
     let args: Vec<Lit> = parser.parse(input.into())?.into_iter().collect();
     if args.len() != 3 {
-        return Err(syn::Error::new(
-            proc_macro2::Span::call_site(),
-            "expected include_image!(\"assets/path.png\", WIDTH, HEIGHT)",
-        ));
+        return Err(syn::Error::new(proc_macro2::Span::call_site(), "expected include_image!(path, w, h)"));
     }
     let path = match &args[0] {
         Lit::Str(s) => s.value(),
-        _ => return Err(syn::Error::new_spanned(&args[0], "first argument must be the image path string")),
+        _ => return Err(syn::Error::new_spanned(&args[0], "first arg must be path string")),
     };
     let int_arg = |lit: &Lit, what: &str| -> syn::Result<u32> {
         match lit {
-            Lit::Int(v) => v.base10_parse::<u32>().map_err(|_| {
-                syn::Error::new_spanned(lit, format!("{what} must be a positive integer"))
-            }),
-            _ => Err(syn::Error::new_spanned(lit, format!("{what} must be a positive integer"))),
+            Lit::Int(v) => v.base10_parse::<u32>(),
+            _ => Err(syn::Error::new_spanned(lit, format!("{what} must be positive integer"))),
         }
     };
     let (w, h) = (int_arg(&args[1], "width")?, int_arg(&args[2], "height")?);

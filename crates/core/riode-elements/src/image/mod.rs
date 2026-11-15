@@ -1,4 +1,12 @@
-// Single responsibility: First-class declarative builder for raster images with object-fit scaling.
+// Responsibility: First-class declarative builder for raster images with object-fit scaling.
+
+pub mod loader;
+pub mod raster;
+pub mod task;
+
+pub use loader::load_asset;
+pub use raster::ImageProcessor;
+pub use task::{ImageTask, IMAGE_KIND};
 
 use riode_core::dsl::component::IntoElement;
 use riode_core::dsl::element::Element;
@@ -10,32 +18,24 @@ use crate::config::ImageConfig;
 #[derive(Clone)]
 pub struct ImageElement {
     pub props: LeafProps,
-    /// `None` until a `src` is set — `<img />` without one renders nothing.
     pub source: Option<ImageSource>,
     pub fit: ImageFit,
 }
 
 pub fn image(source: ImageSource) -> ImageElement {
     ImageElement {
-        props: LeafProps { aspect_ratio: natural_ratio(&source), ..LeafProps::default() },
+        props: LeafProps { aspect_ratio: source.aspect_ratio(), ..LeafProps::default() },
         source: Some(source),
         fit: ImageFit::Cover,
     }
 }
 
-/// Tag-namespace constructor for the `view!` macro: `<img>` lowers to
-/// `img::build()` and fills itself through setters (`.src(...)`, `w`, `h`, …).
 pub fn build() -> ImageElement {
     ImageElement {
         props: LeafProps::default(),
         source: None,
         fit: ImageFit::Cover,
     }
-}
-
-fn natural_ratio(source: &ImageSource) -> Option<f32> {
-    let (w, h) = (source.width as f32, source.height as f32);
-    (w > 0.0 && h > 0.0).then(|| w / h)
 }
 
 impl LeafBuilder for ImageElement {
@@ -50,11 +50,8 @@ impl ImageElement {
         self
     }
 
-    /// Sets the pixels this element draws. The source of `<img src=…>` and the
-    /// only way a zero-arg `img::build()` gets content. Natural sizing is not
-    /// decided here — see `into_leaf`.
     pub fn src(mut self, source: ImageSource) -> Self {
-        self.props.aspect_ratio = natural_ratio(&source);
+        self.props.aspect_ratio = source.aspect_ratio();
         self.source = Some(source);
         self
     }
@@ -66,13 +63,6 @@ impl ImageElement {
         }
     }
 
-    /// Lowers the builder into the erased leaf shape every element shares.
-    /// Natural sizing is decided here, after the whole attribute chain ran, so
-    /// attribute order never matters: only a tag with no explicit axis at all
-    /// takes the source's pixel size. A single explicit axis (e.g. `w="full"`)
-    /// is left alone on purpose — the engine's aspect block derives the unset
-    /// axis from it, so `w="full"` fills the width and the height tracks the
-    /// photo's ratio instead of freezing at the natural pixel height.
     pub fn into_leaf(mut self) -> riode_core::dsl::leaf_def::LeafDef {
         if let Some(source) = &self.source {
             if self.props.width.is_none() && self.props.height.is_none() {
@@ -94,5 +84,7 @@ impl IntoElement for ImageElement {
 }
 
 impl From<ImageElement> for riode_core::dsl::Element {
-    fn from(def: ImageElement) -> Self { Element::Leaf(def.into_leaf()) }
+    fn from(def: ImageElement) -> Self {
+        Element::Leaf(def.into_leaf())
+    }
 }

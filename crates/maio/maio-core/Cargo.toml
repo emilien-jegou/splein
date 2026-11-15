@@ -1,0 +1,14 @@
+[package]
+name = "maio-core"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "maio domain core: content-addressed AssetId, AssetTask models, deterministic BLAKE3 hashing"
+license = "GPL-3.0"
+readme = "README.md"
+
+[dependencies]
+blake3 = { workspace = true }
+postcard = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }

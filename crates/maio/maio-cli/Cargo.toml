@@ -1,0 +1,20 @@
+[package]
+name = "maio-cli"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Declarative CLI tool to inspect, invalidate, and manage .maiodb workspaces"
+license = "GPL-3.0"
+
+[[bin]]
+name = "maio"
+path = "src/main.rs"
+
+[dependencies]
+maio-core = { path = "../maio-core", version = "0.1.0" }
+maio = { path = "../maio", version = "0.1.0" }
+maio-compiler = { path = "../maio-compiler", version = "0.1.0" }
+clap = { workspace = true, features = ["derive"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+thiserror = { workspace = true }

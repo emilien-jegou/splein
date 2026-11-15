@@ -9,3 +9,10 @@ readme = "README.md"
 
 [dependencies]
 riode-core = { path = "../riode-core", version = "0.2.0" }
+maio = { path = "../../maio/maio", version = "0.1.0" }
+maio-core = { path = "../../maio/maio-core", version = "0.1.0" }
+maio-compiler = { path = "../../maio/maio-compiler", version = "0.1.0" }
+image = { workspace = true }
+serde = { workspace = true }
+postcard = { workspace = true }
+tracing = { workspace = true }

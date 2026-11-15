@@ -32,13 +32,18 @@ pub use telemetry::{HotReloadStats, ReloadReport};
 pub use watcher::FileWatcher;
 pub use window::{ComponentRootFn, ComponentVersionFn, HotTitleFn, HotWindowFn};
 
-/// Release profile used for all hot-reload builds.
+// Responsibility: Hot-reload module entry point, developer logging initializers, and public facade re-exports.
+
 pub const HOT_PROFILE: &str = "release";
 
 /// Initializes structured logging for dev workflows.
 pub fn init_dev_logging() {
     let filter = tracing_subscriber::EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| "info".parse().expect("valid filter"));
+        .unwrap_or_else(|_| "info".parse().expect("valid filter"))
+        .add_directive("GENERAL=warn".parse().unwrap())  // Silences Vulkan loader debug prints
+        .add_directive("wgpu_hal=warn".parse().unwrap()) // Silences adapter enumeration spam
+        .add_directive("naga=warn".parse().unwrap());
+
     let _ = tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_target(false)

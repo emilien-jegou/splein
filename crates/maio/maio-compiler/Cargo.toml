@@ -1,0 +1,15 @@
+[package]
+name = "maio-compiler"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Generic parallel batch executor for .maiodb tasks with disk-based artifact caching"
+license = "GPL-3.0"
+
+[dependencies]
+maio-core = { path = "../maio-core", version = "0.1.0" }
+maio = { path = "../maio", version = "0.1.0" }
+rayon = { workspace = true }
+blake3 = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }

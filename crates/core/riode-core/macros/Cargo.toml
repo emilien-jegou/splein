@@ -11,6 +11,8 @@ readme = "README.md"
 proc-macro = true
 
 [dependencies]
+maio-core = { path = "../../../maio/maio-core", version = "0.1.0" }
+maio = { path = "../../../maio/maio", version = "0.1.0" }
 proc-macro2 = "1"
 quote = "1"
 syn = { version = "2", features = ["full"] }

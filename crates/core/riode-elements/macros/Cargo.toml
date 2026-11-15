@@ -13,11 +13,14 @@ proc-macro = true
 proc-macro2 = "1"
 quote = "1"
 syn = "2"
-# Build-time typography + rasterization (host only — never ships in the
-# binary; the macros emit plain byte blobs). Versions pinned to the riode
-# runtime's so shaping/rendering semantics match exactly.
 parley = { version = "0.11", default-features = false, features = ["std"] }
 swash = "0.2"
 resvg = "0.42"
 tiny-skia = "0.11"
 image = { version = "0.25", default-features = true }
+
+# Asset engine
+maio = { path = "../../../maio/maio", version = "0.1.0" }
+maio-core = { path = "../../../maio/maio-core", version = "0.1.0" }
+serde = { workspace = true }
+blake3 = { workspace = true }

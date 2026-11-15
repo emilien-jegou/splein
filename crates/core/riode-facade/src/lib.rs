@@ -9,6 +9,8 @@
 //! macro machinery (which knows exactly one tag: `g`).
 
 pub use riode_core::*;
+pub use riode_elements::{image, img, svg, text};
+
 // `bake_src!` is invoked by absolute path from the `view!` expansion of a
 // string-literal `src=`, so it must live at the facade root, not the prelude.
 pub use riode_elements_macros::bake_src;
