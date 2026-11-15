@@ -18,7 +18,11 @@ pub fn bake_image(
             warn_missing_asset("bake_image", rel_path, &full_path, &err);
             let w = target_w.unwrap_or(1.0).round() as u32;
             let h = target_h.unwrap_or(1.0).round() as u32;
-            return Ok(BakedAsset { tokens: empty_image_source(w.max(1), h.max(1)) });
+            return Ok(BakedAsset {
+                tokens: empty_image_source(w.max(1), h.max(1)),
+                logical_w: w as f32,
+                logical_h: h as f32,
+            });
         }
     };
 
@@ -62,7 +66,7 @@ pub fn bake_image(
     let bytes = bytes_literal(&rgba.into_raw());
     let tokens = quote!(::riode::scene::ImageSource::from_static_rgba8(#pw, #ph, #bytes));
 
-    Ok(BakedAsset { tokens })
+    Ok(BakedAsset { tokens, logical_w: lw, logical_h: lh })
 }
 
 pub fn include_image_impl(input: proc_macro::TokenStream) -> syn::Result<TokenStream2> {

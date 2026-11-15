@@ -16,7 +16,7 @@ pub fn Page() -> GroupElement {
         >
             // Scales responsively to fill the width while preserving aspect ratio:
             <img
-                src={include_image!("pexels-valentin-ivantsov-2154772556-39599882.jpg", 5760, 3840)}
+                src="assets/pexels-valentin-ivantsov-2154772556-39599882.jpg"
                 absolute=true
                 w="full"
             />
@@ -34,11 +34,11 @@ pub fn Page() -> GroupElement {
                 alignment="center"
                 distribution="center"
             >
-                <svg src={include_svg!("Hugeicons1stBracketCircle.svg", 24, 24)} />
-                <svg src={include_svg!("Hugeicons3dRotate.svg", 24, 24)} />
-                <svg src={include_svg!("HugeiconsAbacus.svg", 24, 24)} />
-                <svg src={include_svg!("HugeiconsAiImage.svg", 24, 24)} />
-                <svg src={include_svg!("HugeiconsAirplaneTakeOff02.svg", 24, 24)} />
+                <svg src="assets/Hugeicons1stBracketCircle.svg" />
+                <svg src="assets/Hugeicons3dRotate.svg" />
+                <svg src="assets/HugeiconsAbacus.svg" />
+                <svg src="assets/HugeiconsAiImage.svg" />
+                <svg src="assets/HugeiconsAirplaneTakeOff02.svg" />
             </g>
         </g>
     }
