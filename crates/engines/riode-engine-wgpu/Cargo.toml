@@ -12,7 +12,7 @@ default = ["svg-runtime"]
 svg-runtime = ["dep:resvg", "riode/svg-runtime"]
 
 [dependencies]
-riode = { path = "../../core/riode", version = "0.2.0" }
+riode = { package = "riode-core", path = "../../core/riode-core", version = "0.2.0" }
 riode-shader = { path = "../../core/riode-shader", version = "0.2.0" }
 wgpu = "0.20"
 pollster = "0.3"

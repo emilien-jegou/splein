@@ -84,7 +84,7 @@ pub fn Page() -> impl IntoElement {
 
 pub fn build_ui() -> impl IntoElement {
     view! {
-        <Group
+        <g
             direction="vertical"
             width="fill"
             height="fill"
@@ -95,22 +95,22 @@ pub fn build_ui() -> impl IntoElement {
             distribution="center"
         >
             // Header
-            <Group direction="vertical" alignment="center" gap={6.0}>
-                <Text size={24.0} weight={700} color={Color::WHITE}>
+            <g direction="vertical" alignment="center" gap={6.0}>
+                <text size={24.0} weight={700} color={Color::WHITE}>
                     "Shader-Level Post-Processing & Blending"
-                </Text>
-                <Text size={13.0} color={0xA6ADC8}>
+                </text>
+                <text size={13.0} color={0xA6ADC8}>
                     "Live subtrees distorted by post-composite shaders and non-linear blend modes"
-                </Text>
-            </Group>
+                </text>
+            </g>
 
             // Row of Cards
-            <Group direction="horizontal" gap={28.0} alignment="center" distribution="center">
+            <g direction="horizontal" gap={28.0} alignment="center" distribution="center">
 
                 // Card 1: Subtree Effect applied directly to the container
                 // Declared: Blue background + White text
                 // Expected with Effect: Bright Yellow background + Black text
-                <Group
+                <g
                     direction="vertical"
                     width={210.0}
                     height={240.0}
@@ -121,19 +121,19 @@ pub fn build_ui() -> impl IntoElement {
                     alignment="center"
                     distribution="space_between"
                 >
-                    <Text size={12.0} weight={600} color={Color::WHITE}>
+                    <text size={12.0} weight={600} color={Color::WHITE}>
                         "POST-EFFECT"
-                    </Text>
-                    <Text size={20.0} weight={700} color={Color::WHITE}>
+                    </text>
+                    <text size={20.0} weight={700} color={Color::WHITE}>
                         "Inverted Card"
-                    </Text>
-                    <Text size={12.0} color={Color::WHITE}>
+                    </text>
+                    <text size={12.0} color={Color::WHITE}>
                         "Turned yellow by Effect"
-                    </Text>
-                </Group>
+                    </text>
+                </g>
 
                 // Card 2: Overlay running AFTER children, clipped to Squircle
-                <Group
+                <g
                     direction="vertical"
                     width={210.0}
                     height={240.0}
@@ -148,19 +148,19 @@ pub fn build_ui() -> impl IntoElement {
                     alignment="center"
                     distribution="space_between"
                 >
-                    <Text size={12.0} weight={600} color={0xCDD6F4}>
+                    <text size={12.0} weight={600} color={0xCDD6F4}>
                         "SURFACE + OVERLAY"
-                    </Text>
-                    <Text size={20.0} weight={700} color={Color::WHITE}>
+                    </text>
+                    <text size={20.0} weight={700} color={Color::WHITE}>
                         "Squircle Card"
-                    </Text>
-                    <Text size={12.0} color={0xF5C2E7}>
+                    </text>
+                    <text size={12.0} color={0xF5C2E7}>
                         "Gold border overlay"
-                    </Text>
-                </Group>
+                    </text>
+                </g>
 
                 // Card 3: Subtree Screen Blend & Leaf Additive Glow
-                <Group
+                <g
                     direction="vertical"
                     width={210.0}
                     height={240.0}
@@ -173,29 +173,29 @@ pub fn build_ui() -> impl IntoElement {
                     alignment="center"
                     distribution="space_between"
                 >
-                    <Text size={12.0} weight={600} color={0xA6E3A1}>
+                    <text size={12.0} weight={600} color={0xA6E3A1}>
                         "SUBTREE BLEND"
-                    </Text>
-                    <Text size={20.0} weight={700} color={Color::WHITE}>
+                    </text>
+                    <text size={20.0} weight={700} color={Color::WHITE}>
                         "Screen Composite"
-                    </Text>
-                    <Text size={14.0} weight={700} color={0x94E2D5} blend={BlendMode::Additive}>
+                    </text>
+                    <text size={14.0} weight={700} color={0x94E2D5} blend={BlendMode::Additive}>
                         "Additive Glow Text"
-                    </Text>
-                </Group>
+                    </text>
+                </g>
 
-            </Group>
+            </g>
 
             // Footer
-            <Group
+            <g
                 shape={Shape::rounded(12.0)}
                 material={Fill::solid(0x1E1E2E)}
                 padding={Padding::symmetric(10.0, 20.0)}
             >
-                <Text size={12.0} color={0x9399B2}>
+                <text size={12.0} color={0x9399B2}>
                     "Zero fixed-function GPU blend state permutations — 100% shader-evaluated"
-                </Text>
-            </Group>
-        </Group>
+                </text>
+            </g>
+        </g>
     }
 }

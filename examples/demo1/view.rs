@@ -22,7 +22,7 @@ pub fn build_ui() -> GroupElement {
             alignment="center"
             distribution="center"
         >
-            <Group
+            <g
                 direction="vertical"
                 width={500.0}
                 height="fill"
@@ -31,7 +31,7 @@ pub fn build_ui() -> GroupElement {
                 alignment="center"
                 distribution="center"
             >
-                <Group
+                <g
                     direction="horizontal"
                     width={460.0}
                     height={204.0}
@@ -40,7 +40,7 @@ pub fn build_ui() -> GroupElement {
                     alignment="center"
                     distribution="center"
                 >
-                    <Group
+                    <g
                         direction="vertical"
                         width={127.0}
                         height={96.0}
@@ -49,23 +49,23 @@ pub fn build_ui() -> GroupElement {
                         alignment="center"
                         distribution="center"
                     >
-                        <Text
+                        <text
                             selectable={true}
                             size={16.0}
                             line_height={20.0}
                             color={Color::WHITE}
-                        >"Hello you"</Text>
-                    </Group>
-                    <Group width={116.0} height={45.0} material={Fill::solid(0xFFFFFF)}>
-                        <Text
+                        >"Hello you"</text>
+                    </g>
+                    <g width={116.0} height={45.0} material={Fill::solid(0xFFFFFF)}>
+                        <text
                             selectable={true}
                             size={12.0}
                             line_height={16.0}
                             color={Color::BLACK}
                             anchor={Anchor::BottomRight}
-                        >"bottom-right"</Text>
-                    </Group>
-                    <Group
+                        >"bottom-right"</text>
+                    </g>
+                    <g
                         direction="vertical"
                         width={140.0}
                         height={144.0}
@@ -73,15 +73,15 @@ pub fn build_ui() -> GroupElement {
                         alignment="center"
                         distribution="center"
                     >
-                        <Text
+                        <text
                             size={12.0}
                             selectable={true}
                             line_height={16.0}
                             color={Color::WHITE}
-                        >"with radius"</Text>
-                    </Group>
-                </Group>
-            </Group>
+                        >"with radius"</text>
+                    </g>
+                </g>
+            </g>
         </g>
     }
 }

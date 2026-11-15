@@ -1,0 +1,20 @@
+[package]
+name = "riode"
+version = "0.2.0"
+edition = "2021"
+publish = true
+description = "Facade for the Aurora UI engine: core runtime, element builders and view! macros under one crate name"
+license = "GPL-3.0"
+readme = "README.md"
+
+[features]
+# Forwarded to `riode-core` so `--no-default-features -p riode` keeps working
+# (embedded/display-less builds) and `--features tracy` keeps profiling.
+default = ["core-default"]
+core-default = ["riode-core/default"]
+tracy = ["riode-core/tracy"]
+
+[dependencies]
+riode-core = { path = "../riode-core", version = "0.2.0", default-features = false }
+riode-elements = { path = "../riode-elements", version = "0.2.0" }
+riode-macros = { path = "../riode-core/macros", version = "0.2.0" }

@@ -31,7 +31,7 @@ fn placeholder() -> impl IntoElement {
     group()
         .width(400.0)
         .height(300.0)
-        .children([riode::internal::text("building hot-ui…").size(16.0)])
+        .children([text::build().child("building hot-ui…").size(16.0)])
 }
 
 #[no_mangle]
@@ -77,7 +77,7 @@ pub extern "Rust" fn devkit_run(
     App::config()
         .title(title)
         .size(info.width.max(1), info.height.max(1))
-        .font("Inter", include_bytes!("../../riode/assets/inter-var.ttf"))
+        .font("Inter", include_bytes!("../../riode-core/assets/inter-var.ttf"))
         .background(Color::hex(info.background))
         .backend_factory(crate::wgpu::create_backend)
         .extension(ext)

@@ -1,9 +1,11 @@
 [workspace]
 resolver = "2"
 members = [
-  "crates/core/riode",
+  "crates/core/riode-core",
+  "crates/core/riode-elements",
+  "crates/core/riode-facade",
   "crates/core/riode-shader",
-  "crates/core/riode/macros",
+  "crates/core/riode-core/macros",
   "crates/core/riode-shared",
   "crates/engines/riode-engine-wgpu",
   "plugins/riode-shader-glue",
@@ -13,10 +15,11 @@ members = [
 # The purge target: everything that must compile for a demo to build and run.
 # Platform/shim crates are parked out of the default set until they are needed.
 default-members = [
-  # TODO: Instead of two packages riode should re-export local macros
+  # The facade re-exports core + macros under the one name demos use.
   "crates/core/riode-shader",
-  "crates/core/riode",
-  "crates/core/riode/macros",
+  "crates/core/riode-core",
+  "crates/core/riode-facade",
+  "crates/core/riode-core/macros",
   "crates/core/riode-shared",
   "crates/engines/riode-engine-wgpu",
 ]

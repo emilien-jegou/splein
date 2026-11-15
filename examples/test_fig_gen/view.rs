@@ -120,16 +120,16 @@ pub fn MenuBarOverDarkWallpaper(#[prop(default = "App Name")] label: &'static st
                 <g row align_h="end" align_v="center">
                     <g row gap=6 align_v="center">
                         <g row align="center" pb=0.5 w=30>
-                            <svg src={include_svg!("Wifi.svg", 16, 12)} w=16.36 h=12 material=Fill::solid("#FFFFFFD9") />
+                            <svg src={include_svg!("Wifi.svg", 16, 12)} w=16.36 h=12 />
                         </g>
                         <g row align_v="center" pr=10 pb=1 pl=6 w=31>
                             <text s=13 weight=600 color="#FFFFFFD9" font_family="SF Pro">"􀊫"</text>
                         </g>
                         <g row align="center" pr=1.5 w=30 h="fill">
                             <g w=13.39 h=13.42>
-                                <svg src={include_svg!("Shape.svg", 13, 6)} w=13.14 h=5.89 absolute y=7.52 material=Fill::solid("#FFFFFFD9") />
-                                <svg src={include_svg!("Shape.svg", 13, 6)} w=13.14 h=6.48 absolute material=Fill::solid("#FFFFFFD9") />
-                                <svg src={include_svg!("Path.svg", 5, 3)} w=4.92 h=2.92 absolute x=1.84 y=1.78 material=Fill::solid("#FFFFFFD9") />
+                                <svg src={include_svg!("Shape.svg", 13, 6)} w=13.14 h=5.89 absolute y=7.52 />
+                                <svg src={include_svg!("Shape.svg", 13, 6)} w=13.14 h=6.48 absolute />
+                                <svg src={include_svg!("Path.svg", 5, 3)} w=4.92 h=2.92 absolute x=1.84 y=1.78 />
                             </g>
                         </g>
                     </g>

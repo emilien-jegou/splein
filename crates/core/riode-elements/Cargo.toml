@@ -1,0 +1,11 @@
+[package]
+name = "riode-elements"
+version = "0.2.0"
+edition = "2021"
+publish = true
+description = "Built-in leaf elements for the Aurora UI engine: text, img, svg — plain components, no engine privileges"
+license = "GPL-3.0"
+readme = "README.md"
+
+[dependencies]
+riode-core = { path = "../riode-core", version = "0.2.0" }

@@ -1,0 +1,17 @@
+[package]
+name = "fixture_img_override"
+version = "0.2.0"
+edition = "2021"
+publish = false
+
+[lib]
+path = "lib.rs"
+
+[[bin]]
+name = "fixture_img_override"
+path = "main.rs"
+
+[dependencies]
+riode = { path = "../../crates/core/riode-facade", version = "0.2.0" }
+riode-shader = { path = "../../crates/core/riode-shader", version = "0.2.0" }
+riode-engine-wgpu = { path = "../../crates/engines/riode-engine-wgpu", version = "0.2.0" }

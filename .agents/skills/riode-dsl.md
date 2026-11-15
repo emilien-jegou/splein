@@ -395,3 +395,39 @@ Inside any descendant component or builder:
 ```rust
 let current_theme = ThemeKey.expect(); // reads nearest ancestor grant
 ```
+
+---
+
+## N. Extension contract: adding a leaf element with zero engine changes
+
+Every leaf is a build-time component. `text`, `img` and `svg` are the components shipped in
+**`riode-elements`** — a leaf-crate that depends on `riode-core` one-way — with no privileges
+the engine or macro can see. A third party adds a new tag (say `video`) by doing exactly what
+the built-ins do:
+
+1. **Implement `Primitive`** (from `riode::tree`, re-exported by the prelude). Only three
+   methods are usually needed; everything else defaults to a no-op mapped onto an engine
+   phase: `measure(&self, style, state, ctx: &MeasureCtx) -> IntrinsicSize`,
+   `paint(&self, style, state, ctx: &mut PaintContext, bounds)`, and
+   `as_any(&self) -> &dyn Any` for same-type reconciliation. `reconcile(&self, next) ->
+   Option<LeafChange>` returns the dirty flags a content change triggers.
+2. **Expose a zero-arg `build()` entry point under a module named after the tag.** The
+   `view!` macro emits `<tag>` as `tag::build()` plus one fluent setter call per attribute
+   (`.w(...)`, `.src(...)`, …) and `.child(...)` per child. Data flows through setters;
+   the macro cannot synthesize constructor arguments. Declare the leaf's own payload
+   fields and accept `LeafProps` (the shared outer layout block) so the reconciler treats
+   your leaf uniformly.
+3. **Lower with `into_leaf()`**: wrap your primitive in `LeafDef::new(my_primitive)` and copy
+   `props` in. `impl IntoElement for MyElement { fn into_element(self) -> Element {
+   Element::Leaf(self.into_leaf()) } }` finishes it.
+4. **`use` it.** `view!` resolves `<video>` by plain name lookup at the call site — no
+   registration, no registry, no `TypeId` map, no change to `riode` core or
+   `riode-macros` (which contains exactly one tag name: `g`, the flow-splicing group).
+
+A crate can also **replace a built-in tag**: define your own `pub mod img { pub fn build() … }`
+and import it — the import shadows the `riode::prelude::*` glob and your element wins.
+`plain_text(content)` (in `riode-core`) is the string→leaf helper the orphan-bound
+`IntoElement for &str/String/…` impls use.
+
+Pre-rasterize what you can (`include_svg!` bakes SVG to pixels at build time); `PaintContext`
+offers `draw_image` / `draw_text` / vector commands for everything else.

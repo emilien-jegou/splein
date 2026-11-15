@@ -1,0 +1,18 @@
+[package]
+name = "fixture_video"
+version = "0.2.0"
+edition = "2021"
+publish = false
+
+[lib]
+path = "lib.rs"
+
+[[bin]]
+name = "fixture_video"
+path = "main.rs"
+
+[dependencies]
+riode = { path = "../../crates/core/riode-facade", version = "0.2.0" }
+fixture-video-elements = { path = "../fixture_video_elements", version = "0.2.0" }
+riode-shader = { path = "../../crates/core/riode-shader", version = "0.2.0" }
+riode-engine-wgpu = { path = "../../crates/engines/riode-engine-wgpu", version = "0.2.0" }
